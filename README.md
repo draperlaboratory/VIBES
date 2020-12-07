@@ -1,13 +1,7 @@
 # VIBES
 
-This is the main internal VIBES (DARPA AMP TA2) repository. It contains code,
-programmatic artifacts, documentation, relevant papers, etc.
-
-For software, this repository serves a place for Draper and CMU to collaborate,
-and a staging area for things that we aren't ready to make public or do not
-have DARPA permission to release yet. This repository will never be made public
-in its entirety. Instead, we will migrate pieces to public repositories as
-appropriate.
+This is the main external VIBES (DARPA AMP TA2) repository. It contains code,
+documentation, etc. regarding the VIBES tool.
 
 
 ## Getting the code
@@ -27,7 +21,7 @@ Go into the project root:
 Install `arm-linux-gnueabihf-as`, `arm-linux-gnueabihf-objcopy`, and 
 `arm-linux-gnueabihf-gcc`, for example on Ubuntu:
 
-    apt install -y binutils-arm-linux-gnueabihf gcc-arm-linux-gnueabihf
+    apt install -y binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
 If you don't have a `4.09.1` switch, create one. 
 

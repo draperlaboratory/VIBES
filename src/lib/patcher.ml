@@ -40,13 +40,13 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
   Out.write_lines asm_filename assembly;
 
   (* run assembler *)
-  let assembler = "/usr/bin/arm-linux-gnueabihf-as" in
+  let assembler = "/usr/bin/arm-linux-gnueabi-as" in
   let with_elf_filename = Stdlib.Filename.temp_file "vibes-assembly" ".o" in
   run_process_exn 
     assembler ["-o"; with_elf_filename ; asm_filename ] >>= fun () ->
 
   (* strip elf data *)
-  let objcopy = "/usr/bin/arm-linux-gnueabihf-objcopy" in
+  let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy" in
   let raw_bin_filename = Stdlib.Filename.temp_file "vibes-assembly" ".bin" in
   let objcopy_args = ["-O"; "binary"; with_elf_filename; raw_bin_filename ] in
   run_process_exn objcopy objcopy_args >>= fun () ->
