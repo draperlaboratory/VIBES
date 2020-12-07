@@ -18,8 +18,8 @@ Go into the project root:
 
 ## Getting a development environment locally
 
-Install `arm-linux-gnueabihf-as`, `arm-linux-gnueabihf-objcopy`, and 
-`arm-linux-gnueabihf-gcc`, for example on Ubuntu:
+Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and 
+`arm-linux-gnueabi-gcc`, for example on Ubuntu:
 
     apt install -y binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
