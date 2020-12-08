@@ -1,0 +1,18 @@
+# The docker image to run this CI pipeline in.
+image: "binaryanalysisplatform/bap:latest"
+
+# Run the tests
+run_tests:
+  tags:
+    # Tag this so docker CI runners pick it up.
+    - docker
+  script:
+    # Install bap_wp.
+    - pushd ~
+    - git clone https://github.com/draperlaboratory/cbat_tools.git
+    - cd cbat_tools/wp/lib/bap_wp
+    - make
+    - popd
+    # Run the VIBES tests.
+    - bash -x bin/ci/run-tests.bash
+    - echo "Done"
