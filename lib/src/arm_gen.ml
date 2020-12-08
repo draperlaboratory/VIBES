@@ -143,7 +143,7 @@ let ldr mem loc =
   let loc = {loc with op_eff = loc.op_eff @ mem} in
   uop `LDRrs (Imm 32) loc
 
-let str mem loc value =
+let str mem value loc =
   let {op_val = loc_val; op_eff = loc_sem} = loc in
   let {op_val = value_val; op_eff = value_sem} = value in
   let op = IR.simple_op `STRrs loc_val [value_val] in
@@ -228,7 +228,9 @@ struct
     let/ mem = mem in
     let- loc = loc in
     let- value = value in
-    memory @@ str mem loc value
+    (* We have to swap the arguments here, since ARM likes the value
+       first, and the location second *)
+    memory @@ str mem value loc
 
   let perform _sort = eff {current_blk = []; other_blks = IR.empty}
 
@@ -297,22 +299,47 @@ let insn_pretty i =
   | `STRrs -> "str"
   | _ -> failwith "insn_pretty: instruction not supported"
 
-let arm_operand_pretty (o : IR.operand) : string =
+type op_tag = Mem | Not_mem
+
+(* TODO: refactor this into insn_pretty? *)
+let tags_of_op i : op_tag list =
+  match i with
+  | `MOVr -> [Not_mem]
+  | `MOVi -> [Not_mem]
+  | `BX -> [Not_mem]
+  | `ADDrsi -> [Not_mem; Not_mem]
+  | `LSL -> [Not_mem; Not_mem]
+  | `LDRrs -> [Mem]
+  | `STRrs -> [Mem]
+  | _ -> failwith "tags_of_op: instruction not supported"
+
+
+let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
   match o with
-  | Var v -> Var.to_string v.id
+  | Var v ->
+     let v = Var.to_string v.id in
+     begin
+       match tag with
+       | Mem ->
+          Format.asprintf "[%s]" v
+       | Not_mem ->
+          Format.asprintf "%s" v
+     end
   | Const w ->
     (* A little calisthenics to get this to look nice *)
     Format.asprintf "#%a" Word.pp_dec w
 
-let arm_operands_pretty (l : IR.operand list) : string =
-  String.concat ~sep:"," (List.map l ~f:arm_operand_pretty)
+let arm_operands_pretty (tags : op_tag list) (l : IR.operand list) : string =
+  String.concat ~sep:","
+    (List.map2_exn tags l ~f:(fun t o -> arm_operand_pretty ~tag:t o))
 
 let arm_op_pretty (t : IR.operation) : string =
+  let op = List.hd_exn t.insns in
   Format.asprintf "%s %s, %s"
     (* We just handle exactly one instruction *)
-    (t.insns |> List.hd_exn |> insn_pretty)
+    (insn_pretty op)
     (t.lhs |> arm_operand_pretty)
-    (t.operands |> arm_operands_pretty)
+    (t.operands |> arm_operands_pretty (tags_of_op op))
 
 (* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : string list = List.map ~f:arm_op_pretty t.operations
