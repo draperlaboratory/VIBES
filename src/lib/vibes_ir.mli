@@ -51,12 +51,12 @@ type operand = Var of op_var | Const of word [@@deriving compare, equal]
 type operation = {
   id : tid;
   lhs : operand;
-  insns : ARM.insn list;
+  insns : [ARM.insn | ARM.shift] list;
   optional : bool;
   operands : operand list;
 } [@@deriving compare, equal]
 
-val simple_op : ARM.insn -> operand -> operand list -> operation
+val simple_op : [ARM.insn | ARM.shift] -> operand -> operand list -> operation
 
 (** A [vibes_blk] has an id,
     a set of operations,
