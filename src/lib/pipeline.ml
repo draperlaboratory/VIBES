@@ -2,7 +2,7 @@
 
 open !Core_kernel
 open Bap_knowledge
-open Knowledge.Syntax [@warning "-33"]
+open Knowledge.Syntax
 
 module KB = Knowledge
 
