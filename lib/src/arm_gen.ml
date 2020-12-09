@@ -151,8 +151,6 @@ let str mem value loc =
   let sem = loc_sem @ value_sem @ mem in
   {sem with current_blk = op::sem.current_blk}
 
-
-
 end
 
 
