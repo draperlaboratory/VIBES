@@ -66,6 +66,10 @@ type r32
 
 type 'a sort = 'a Theory.Bitv.t Theory.Value.sort
 
+(* We make this polymorphic, so that it can be instantiated in any
+   setting, despite being a fixed given size. We add a [unit] argument
+   to avoid the value restriction. *)
+(* TODO: fix this, so that s32 is of type r32 sort *)
 let s32 (_ : unit) : 'a sort = Theory.Bitv.define 32
 
 let memory m =
