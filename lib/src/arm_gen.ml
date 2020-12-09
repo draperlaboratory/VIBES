@@ -62,18 +62,24 @@ let eff d =
       (Theory.Effect.empty Theory.Effect.Sort.bot)
       (Some d)
 
+type r32
+
+type 'a sort = 'a Theory.Bitv.t Theory.Value.sort
+
+let s32 (_ : unit) : 'a sort = Theory.Bitv.define 32
+
 let memory m =
   KB.return @@
     KB.Value.put arm_mem
-      (Theory.Value.empty (Theory.Mem.define (Theory.Bitv.define 32) (Theory.Bitv.define 32)))
+      (Theory.Value.empty (Theory.Mem.define (s32 ()) (s32 ())))
   (Some m)
 
 let pure v =
   KB.return @@
     KB.Value.put arm_pure
       (* This means we only have 32 bit vectors as our values *)
-      (* TODO: extend this to handle memory, floats *)
-      (Theory.Value.empty (Theory.Bitv.define 32))
+      (* TODO: extend this arbitrary sizes *)
+      (Theory.Value.empty (s32 ()))
       (Some v)
 
 
@@ -191,11 +197,13 @@ struct
   let let_ _v _e _b = assert false
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
+  (* This is incorrect: we're assuming every constant is exactly 32
+     bits. *)
     let w = Bitvec.to_int32 w in
     KB.return @@
     KB.Value.put
       arm_pure
-      (Theory.Value.empty @@ Theory.Bitv.define 32)
+      (Theory.Value.empty sort)
       (Some (const (Word.of_int32 w)))
 
   let add a b =
