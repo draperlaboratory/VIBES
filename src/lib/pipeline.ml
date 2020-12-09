@@ -1,9 +1,8 @@
 (* Implements {!Pipeline}. *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
-open Knowledge.Syntax
+open Knowledge.Syntax [@warning "-33"]
 
 module KB = Knowledge
 

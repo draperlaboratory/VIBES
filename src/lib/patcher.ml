@@ -2,7 +2,6 @@
 
 open Bap_knowledge
 open Knowledge.Syntax
-open Bap.Std
 
 module KB = Knowledge
 module In = Core_kernel.In_channel

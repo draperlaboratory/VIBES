@@ -49,7 +49,7 @@ let check_naive (orig_prog : Program.t) (patch_prog : Program.t)
   let postconds, hyps =
     Compare.compare_subs_smtlib ~smtlib_hyp ~smtlib_post in
 
-  let precond, env_1, env_2 = Compare.compare_subs 
+  let precond, _env_1, _env_2 = Compare.compare_subs 
     ~postconds:[postconds] ~hyps:[hyps]
     ~original:(orig_func, env_1) ~modified:(patch_func, env_2) in
 

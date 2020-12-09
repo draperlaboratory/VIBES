@@ -10,7 +10,7 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   let fd_out = Unix.openfile dst_filepath write_restrictions stats.st_perm in
   let rec copy_loop () = match Unix.read fd_in buffer 0 buffer_size with
     | 0 -> ()
-    | r -> ignore (Unix.write fd_out buffer 0 r); copy_loop ()
+    | r -> let _ : int = (Unix.write fd_out buffer 0 r) in copy_loop ()
   in
   copy_loop ();
   Unix.close fd_in;

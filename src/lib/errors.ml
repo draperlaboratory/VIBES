@@ -58,6 +58,7 @@ type KB.Conflict.t += Problem of t
 let printer (e : KB.Conflict.t) =
   match e with
   | Problem err -> Some (Format.asprintf "%a" pp err)
+  | _ -> failwith "Unexpected Conflict Type"
 let () = KB.Conflict.register_printer printer
 
 (* Report an error and fail. *)

@@ -1,0 +1,6 @@
+(library
+   (name vibes)
+   (public_name vibes)
+   (libraries bap bap-arm bap_wp core_kernel z3)
+   (preprocess (pps ppx_jane ppx_deriving_yojson))
+   )

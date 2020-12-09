@@ -1,7 +1,6 @@
 (* Implements {!Config}. *)
 
 open !Core_kernel
-open Bap.Std
 open Monads.Std
 
 (* Encapsulate configuration errors. *)
