@@ -10,8 +10,12 @@ run_tests:
     # Install bap_wp.
     - pushd ~
     - git clone https://github.com/draperlaboratory/cbat_tools.git
-    - cd cbat_tools/wp/lib/bap_wp
+    - pushd cbat_tools/wp/lib/bap_wp
     - make
+    - popd
+    - curl -L https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz --output minizinc.tgz
+    - tar zxvf minizinc.tgz 
+    - ln -s MiniZincIDE-2.5.3-bundle-linux-x86_64/bin/minizinc usr/local/bin/minizinc
     - popd
     # Install dependencies
     - opam install -y ounit2 ppx_deriving_yojson

@@ -23,6 +23,7 @@ type t =
   | Unexpected_exit of string
   | WP_result_unknown of string
   | Max_tries of int
+  | Minizinc_deserialization of string
   | Other of string
 
 (* [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)

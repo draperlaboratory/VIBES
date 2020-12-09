@@ -2,10 +2,10 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 
-open OUnit2
 
 (* Create an empty project. *)
 let empty_proj (filename : string) : (Project.t, Error.t) result =

@@ -418,6 +418,7 @@ let tags_of_op i : (op_tag list, Errors.t) result =
 let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
   match o with
   | Var v ->
+     (* ARM.sexp_of_gpr_reg (Option.value_exn v.pre_assign) |> Sexp.to_string  *)
      let v = Var.to_string v.id in
      begin
        match tag with
