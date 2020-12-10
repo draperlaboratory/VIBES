@@ -71,8 +71,10 @@ uninstall:
 
 .PHONY: clean
 clean:
-	bapbundle remove $(PLUGIN)
-	bapbuild -clean $(PLUGIN)
+	@printf $(FMT_STR) "CLEANING LIB"
+	$(MAKE) -C $(LIB) clean
+	@printf $(FMT_STR) "CLEANING PLUGIN"
+	$(MAKE) -C $(PLUGIN) clean
 
 
 #####################################################

@@ -21,3 +21,8 @@ install: build
 .PHONY: uninstall
 uninstall:
 	bapbundle remove $(PLUGIN)
+
+.PHONY: clean
+clean:
+	bapbundle remove $(PLUGIN)
+	bapbuild -clean $(PLUGIN)

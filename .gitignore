@@ -6,3 +6,5 @@ _build
 *.swp
 *~
 *.patched
+src/lib/bap_vibes.install
+src/lib/.merlin
