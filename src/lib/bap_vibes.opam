@@ -1,0 +1,21 @@
+opam-version: "2.0"
+name: "bap_vibes"
+version: "0.0.1"
+synopsis: "The VIBES tool"
+description: """
+A CEGIS-driven binary patcher.
+"""
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+license: "MIT"
+homepage: "https://github.com/draperlaboratory/VIBES-internal"
+bug-reports: "https://github.com/draperlaboratory/VIBES-internal"
+dev-repo: "git://github.com/draperlaboratory/VIBES-internal"
+depends: [
+  "bap"
+  "bap_vibes" 
+  "ounit2"
+]
+build: [
+  [make]
+]

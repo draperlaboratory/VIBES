@@ -1,10 +1,10 @@
-PLUGIN = vibes.plugin
+PLUGIN = plugin
 PLUGIN_DESC = "the VIBES tool"
 SOURCE = $(wildcard *.ml) $(wildcard **/*.ml) $(wildcard **/*.mli)
-Is = lib
-PKGs = findlib.dynload,bap,bap-arm,bap_wp
+Is = ""
+PKGs = findlib.dynload,bap,bap-arm,bap_wp,bap_vibes
 TAG = "warn(all)"
-
+LIB = lib
 TEST = test.native
 TESTS = $(wildcard tests/*.ml)
 TEST_Is = lib,tests
@@ -25,18 +25,40 @@ all:
 
 
 #####################################################
-# PLUGIN
+# BUILD
 #####################################################
 
-build: $(PLUGIN)
-$(PLUGIN): $(SOURCE)
-	bapbuild -use-ocamlfind \
-		-pkgs $(PKGs) -Is $(Is) -tag $(TAG) $(PLUGIN)
+.PHONY: build
+build: build.lib build.plugin
+
+.PHONY: build.lib
+build.lib:
+	@printf $(FMT_STR) "BUILDING LIB"
+	$(MAKE) -C $(LIB) $*
+
+.PHONY: build.plugin
+build.plugin: build.lib install.lib
+	@printf $(FMT_STR) "BUILDING PLUGIN"
+	$(MAKE) -C $(PLUGIN) build
+
+
+#####################################################
+# INSTALL
+#####################################################
 
 .PHONY: install
-install: build
-	bapbundle update -desc $(PLUGIN_DESC) $(PLUGIN)
-	bapbundle install $(PLUGIN)
+install: install.plugin
+
+.PHONY: install.plugin
+install.plugin: install.lib
+	@printf $(FMT_STR) "INSTALLING PLUGIN"
+	$(MAKE) -C $(PLUGIN) $*
+
+# lib must be installed BEFORE building plugin
+.PHONY: install.lib
+install.lib:
+	@printf $(FMT_STR) "INSTALLING LIB"
+	$(MAKE) -C $(LIB) install
 
 .PHONY: uninstall
 uninstall:
