@@ -301,13 +301,13 @@ let ir (t : arm_eff) : IR.t =
 let insn_pretty i =
   match i with
   | `MOVr
-  | `MOVi -> "mov"
-  | `BX -> "bx"
+  | `MOVi   -> "mov"
+  | `BX     -> "bx"
   | `ADDrsi -> "add"
-  | `LSL -> "lsl"
-  | `LDRrs -> "ldr"
-  | `STRrs -> "str"
-  | _ -> failwith "insn_pretty: instruction not supported"
+  | `LSL    -> "lsl"
+  | `LDRrs  -> "ldr"
+  | `STRrs  -> "str"
+  | _       -> failwith "insn_pretty: instruction not supported"
 
 type op_tag = Mem | Not_mem
 
@@ -340,7 +340,7 @@ let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
     Format.asprintf "#%a" Word.pp_dec w
 
 let arm_operands_pretty (tags : op_tag list) (l : IR.operand list) : string =
-  String.concat ~sep:","
+  String.concat ~sep:", "
     (List.map2_exn tags l ~f:(fun t o -> arm_operand_pretty ~tag:t o))
 
 let arm_op_pretty (t : IR.operation) : string =

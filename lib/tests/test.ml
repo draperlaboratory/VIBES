@@ -6,6 +6,7 @@ let suite = "Full suite" >::: [
   "Compiler" >::: Test_compiler.suite;
   "Patcher" >::: Test_patcher.suite;
   "Verifier" >::: Test_verifier.suite;
+  "Arm_gen" >::: Test_arm.suite;
 ]
 
 let _ = run_test_tt_main suite
