@@ -126,21 +126,21 @@ let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
 let const c = {op_val = IR.Const c; op_eff = empty_eff}
 
 let uop o ty arg =
-  let v = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+  let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
   let {op_val = arg_val; op_eff = arg_sem} = arg in
-  let op = IR.simple_op o (IR.Var v) [arg_val] in
+  let op = IR.simple_op o (IR.Var res) [arg_val] in
   let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
-  {op_val = IR.Var v; op_eff = sem}
+  {op_val = IR.Var res; op_eff = sem}
 
 let binop o ty arg1 arg2 =
-  let v = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+  let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
   let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
   let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-  let op = IR.simple_op o (IR.Var v) [arg1_val; arg2_val] in
+  let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
   (* We do instruction ordering, of sorts, here. *)
   let sem = arg1_sem @ arg2_sem in
   let sem = {sem with current_blk = op::sem.current_blk} in
-  {op_val = IR.Var v; op_eff = sem}
+  {op_val = IR.Var res; op_eff = sem}
 
 let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
 

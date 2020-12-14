@@ -5,6 +5,7 @@ module ARM_Core : Theory.Core
 
 type arm_eff
 
+(* This is deprecated: It's better to work directly with terms parametrized over S : Core *)
 module BilARM :
   sig
     val run : ('e, 'r, 's) Theory.Parser.t -> 's list -> unit Theory.eff
