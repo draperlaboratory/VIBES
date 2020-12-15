@@ -4,6 +4,16 @@ SOURCE = $(wildcard *.ml) $(wildcard **/*.ml) $(wildcard **/*.mli)
 PKGs = findlib.dynload,bap,bap-arm,bap_wp,bap_vibes
 TAG = "warn(all)"
 Is = ""
+
+#####################################################
+# DEFAULT
+#####################################################
+
+.DEFAULT_GOAL = all
+
+.PHONY: all
+all: install
+
 #####################################################
 # PLUGIN
 #####################################################
