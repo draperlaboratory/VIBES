@@ -3,7 +3,7 @@
 ## Prerequisites
 
 Before installing this library, follow the instructions under
-[Getting a development environment](#getting-a-development-environment)
+[Getting a development environment](../README.md#getting-a-development-environment)
 to make sure you have the correct dependencies installed on your system.
 
 
