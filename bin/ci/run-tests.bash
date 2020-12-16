@@ -159,19 +159,11 @@ clean_up () {
 }
 
 # DESC
-#   Build the tests and stash the output in ${REPORT_FILE}
-# RETURNS
-#   The exit code of the attempt to build the tests.
-build_tests () {
-    make build_tests > "${REPORT_FILE}" 2>&1
-}
-
-# DESC
 #   Run the tests and stash the output in ${REPORT_FILE}
 # RETURNS
 #   The exit code of the attempt to run the tests.
 run_tests () {
-    make run_tests > "${REPORT_FILE}" 2>&1
+    make test > "${REPORT_FILE}" 2>&1
 }
 
 
@@ -229,15 +221,6 @@ fi
 # Record the BAP version.
 bap_version
 cat "${BAP_VERSION_FILE}"
-
-# Build the tests.
-build_tests
-if [ ${?} -ne 0 ]; then
-    echo "Failed to build the tests" > "${MSG_FILE}"
-    report_to_slack
-    fail
-    exit 1
-fi
 
 # Run the tests.
 run_tests
