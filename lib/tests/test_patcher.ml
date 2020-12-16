@@ -1,17 +1,18 @@
 open !Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 module H = Helpers
 
-open OUnit2
 
 (* A dummy patcher, that returns a fixed filename. *)
 let patcher _ _ _ = KB.return H.patched_exe
 
 (* Test that [Patcher.patch] works as expected. *)
-let test_patch (ctxt : test_ctxt) : unit =
+let test_patch (_ : test_ctxt) : unit =
 
   (* Run the patcher. *)
   let computation =
@@ -36,7 +37,7 @@ let test_patch (ctxt : test_ctxt) : unit =
 
 (* Test that [Patcher.patch] errors if there's no filepath to
    the original executable in the KB. *)
-let test_patch_with_no_original_exe (ctxt : test_ctxt) : unit =
+let test_patch_with_no_original_exe (_ : test_ctxt) : unit =
 
   (* Run the patcher. *)
   let computation =
@@ -53,7 +54,7 @@ let test_patch_with_no_original_exe (ctxt : test_ctxt) : unit =
     Data.Patched_exe.tmp_filepath expected result
 
 (* Test that [Patcher.patch] errors if there's no patch point in the KB. *)
-let test_patch_with_no_patch_point (ctxt : test_ctxt) : unit =
+let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
 
   (* Run the patcher. *)
   let computation =
@@ -76,7 +77,7 @@ let test_patch_with_no_patch_point (ctxt : test_ctxt) : unit =
     Data.Patched_exe.tmp_filepath expected result
 
 (* Test that [Patcher.patch] errors if there's no assembly in the KB. *)
-let test_patch_with_no_assembly (ctxt : test_ctxt) : unit =
+let test_patch_with_no_assembly (_ : test_ctxt) : unit =
 
   (* Run the patcher. *)
   let computation =

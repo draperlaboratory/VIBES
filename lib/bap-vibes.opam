@@ -1,9 +1,9 @@
 opam-version: "2.0"
-name: "vibes"
+name: "bap-vibes"
 version: "0.0.1"
-synopsis: "The VIBES tool"
+synopsis: "The VIBES library"
 description: """
-A CEGIS-driven binary patcher.
+A CEGIS-driven binary patcher library.
 """
 maintainer: "Draper Laboratory"
 authors: "Draper Laboratory"
@@ -13,8 +13,10 @@ bug-reports: "https://github.com/draperlaboratory/VIBES-internal"
 dev-repo: "git://github.com/draperlaboratory/VIBES-internal"
 depends: [
   "bap"
-  "bap_wp" 
+  "bap_wp"
   "ounit2"
+  "yojson"
+  "ppx_deriving_yojson"
 ]
 build: [
   [make]

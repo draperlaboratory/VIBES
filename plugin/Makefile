@@ -1,25 +1,27 @@
-PLUGIN = vibes.plugin
-PLUGIN_DESC = "the VIBES tool"
-SOURCE = $(wildcard *.ml) $(wildcard **/*.ml) $(wildcard **/*.mli)
-PKGs = findlib.dynload,bap,bap-arm,bap_wp,bap_vibes
-TAG = "warn(all)"
-Is = ""
+PLUGIN := vibes.plugin
+PLUGIN_DESC := "the VIBES tool"
+SRC_FILES := $(wildcard *.ml)
+PKGs := findlib.dynload,bap,bap-arm,bap_wp,bap-vibes
+TAG := "warn(all)"
+Is := ""
+
 
 #####################################################
 # DEFAULT
 #####################################################
 
-.DEFAULT_GOAL = all
+.DEFAULT_GOAL := all
 
 .PHONY: all
 all: install
+
 
 #####################################################
 # PLUGIN
 #####################################################
 
 build: $(PLUGIN)
-$(PLUGIN): $(SOURCE)
+$(PLUGIN): $(SRC_FILES)
 	bapbuild -use-ocamlfind \
 		-pkgs $(PKGs) -Is $(Is) -tag $(TAG) $(PLUGIN)
 

@@ -2,14 +2,15 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 module H = Helpers
 
-open OUnit2
 
 (* Test that [Exe_ingester.ingest] stashes the address size in the KB. *)
-let test_ingest_addr_size (ctxt : test_ctxt) : unit =
+let test_ingest_addr_size (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
@@ -31,7 +32,7 @@ let test_ingest_addr_size (ctxt : test_ctxt) : unit =
     Data.Original_exe.addr_size expected result
 
 (* Test that [Exe_ingester.ingest] stashes the lifted program in the KB. *)
-let test_ingest_prog (ctxt : test_ctxt) : unit =
+let test_ingest_prog (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
@@ -53,7 +54,7 @@ let test_ingest_prog (ctxt : test_ctxt) : unit =
     Data.Original_exe.prog expected result
 
 (* Test that [Exe_ingester.ingest] errors with no filepath in the KB. *)
-let test_ingest_with_no_exe_filepath (ctxt : test_ctxt) : unit =
+let test_ingest_with_no_exe_filepath (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =

@@ -1,6 +1,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_vibes
 
 module KB = Knowledge
 

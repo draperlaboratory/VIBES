@@ -1,14 +1,15 @@
 open !Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 module H = Helpers
 
-open OUnit2
 
 (* Test that [Compiler.compile] works as expected. *)
-let test_compile (ctxt : test_ctxt) : unit =
+let test_compile (_ : test_ctxt) : unit =
 
   (* Run the compiler. *)
   let computation =
@@ -33,7 +34,7 @@ let test_compile (ctxt : test_ctxt) : unit =
     Data.Patch.assembly expected result
 
 (* Test that [Compiler.compile] handles no patch (BIL) in the KB. *)
-let test_compile_with_no_patch (ctxt : test_ctxt) : unit =
+let test_compile_with_no_patch (_ : test_ctxt) : unit =
 
   (* Run the compiler. *)
   let computation =
