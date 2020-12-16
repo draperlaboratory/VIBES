@@ -6,7 +6,7 @@ open !Core_kernel
 open Bap_main
 open Bap.Std
 open Bap_knowledge
-
+open Bap_vibes
 module KB = Knowledge
 module Cmd = Extension.Command
 module Typ = Extension.Type

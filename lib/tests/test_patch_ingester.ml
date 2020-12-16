@@ -1,14 +1,15 @@
 open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 module H = Helpers
 
-open OUnit2
 
 (* Test that [Patch_ingester.ingest] works as expected. *)
-let test_ingest (ctxt : test_ctxt) : unit =
+let test_ingest (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
@@ -31,7 +32,7 @@ let test_ingest (ctxt : test_ctxt) : unit =
     Data.Patch.bil expected result
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)
-let test_ingest_with_no_patch (ctxt : test_ctxt) : unit =
+let test_ingest_with_no_patch (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
@@ -47,7 +48,7 @@ let test_ingest_with_no_patch (ctxt : test_ctxt) : unit =
   H.assert_error ~printer:H.print_bil Data.Patch.bil expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
-let test_ingest_with_no_addr_size (ctxt : test_ctxt) : unit =
+let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =

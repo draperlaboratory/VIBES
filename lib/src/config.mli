@@ -1,7 +1,6 @@
 (* Configuration/parameters needed to run the VIBES pipeline. *)
 
 open !Core_kernel
-open Bap.Std
 open Monads.Std
 
 (* Encapsulate configuration errors. *)

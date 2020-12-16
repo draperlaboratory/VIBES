@@ -1,11 +1,12 @@
 open !Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_vibes
+open OUnit2
 
 module KB = Knowledge
 module H = Helpers
 
-open OUnit2
 
 (* A KB class to stash test results in. *)
 module Test_data = struct
@@ -19,7 +20,7 @@ module Test_data = struct
 end
 
 (* Test that [Verifier.verify] works as expected for Z3 [UNSAT]. *)
-let test_verify_unsat (ctxt : test_ctxt) : unit =
+let test_verify_unsat (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
   let computation =
@@ -54,7 +55,7 @@ let test_verify_unsat (ctxt : test_ctxt) : unit =
     Test_data.result expected result 
 
 (* Test that [Verifier.verify] works as expected for Z3 [SAT]. *)
-let test_verify_sat (ctxt : test_ctxt) : unit =
+let test_verify_sat (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
   let computation =
@@ -93,7 +94,7 @@ let test_verify_sat (ctxt : test_ctxt) : unit =
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without an original exe program. *)
-let test_verify_with_no_original_exe_prog (ctxt : test_ctxt) : unit =
+let test_verify_with_no_original_exe_prog (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
   let computation =
@@ -125,7 +126,7 @@ let test_verify_with_no_original_exe_prog (ctxt : test_ctxt) : unit =
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without an patched exe filepath. *)
-let test_verify_with_no_patched_exe (ctxt : test_ctxt) : unit =
+let test_verify_with_no_patched_exe (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
   let computation =
@@ -157,7 +158,7 @@ let test_verify_with_no_patched_exe (ctxt : test_ctxt) : unit =
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without a correctness property. *)
-let test_verify_with_no_property (ctxt : test_ctxt) : unit =
+let test_verify_with_no_property (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
   let computation =

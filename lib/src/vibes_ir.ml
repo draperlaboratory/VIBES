@@ -59,9 +59,9 @@ let union t1 t2 =
   let comp_pair = Tuple.T2.compare ~cmp1:compare_operand ~cmp2:compare_operand in
   {
     blks =
-      List.dedup_and_sort compare_blk (t1.blks @ t2.blks);
+      List.dedup_and_sort ~compare:compare_blk (t1.blks @ t2.blks);
     congruent =
-      List.dedup_and_sort comp_pair (t1.congruent @ t2.congruent)
+      List.dedup_and_sort ~compare:comp_pair (t1.congruent @ t2.congruent)
   }
 
 let add blk t =

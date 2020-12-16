@@ -13,6 +13,8 @@ run_tests:
     - cd cbat_tools/wp/lib/bap_wp
     - make
     - popd
+    # Install dependencies
+    - opam install -y ounit2 ppx_deriving_yojson
     # Run the VIBES tests.
     - bash -x bin/ci/run-tests.bash
     - echo "Done"

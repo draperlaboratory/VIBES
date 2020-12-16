@@ -1,34 +1,47 @@
-SOURCE = src
+LIB_DIR := lib
+PLUGIN_DIR := plugin
 
-.DEFAULT_GOAL = all
 
-.PHONY: all
-all: uninstall clean build install
+#####################################################
+# DEFAULT
+#####################################################
 
-.PHONY: build
-build: 
-	$(MAKE) -C $(SOURCE) $@
+.DEFAULT_GOAL := install
 
-.PHONY: install
-install:
-	$(MAKE) -C $(SOURCE) $@
+install: 
+	$(MAKE) library.install 
+	$(MAKE) plugin.install
 
-.PHONY: uninstall
-uninstall:
-	$(MAKE) -C $(SOURCE) $@
+uninstall: 
+	$(MAKE) plugin.uninstall
+	$(MAKE) library.uninstall
 
-.PHONY: clean
-clean:
-	$(MAKE) -C $(SOURCE) $@
 
-.PHONY: test
+#####################################################
+# LIBRARY
+#####################################################
+
+library.install:
+	$(MAKE) install -C $(LIB_DIR)
+
+library.uninstall:
+	$(MAKE) uninstall -C $(LIB_DIR)
+
+
+#####################################################
+# PLUGIN
+#####################################################
+
+plugin.install:
+	$(MAKE) install -C $(PLUGIN_DIR)
+
+plugin.uninstall:
+	$(MAKE) uninstall -C $(PLUGIN_DIR)
+
+
+#####################################################
+# TEST
+#####################################################
+
 test:
-	$(MAKE) -C $(SOURCE) $@
-
-.PHONY: build_tests
-build_tests:
-	$(MAKE) -C $(SOURCE) $@
-
-.PHONY: run_tests
-run_tests:
-	$(MAKE) -C $(SOURCE) $@
+	$(MAKE) test -C $(LIB_DIR)

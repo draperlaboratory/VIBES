@@ -1,29 +1,37 @@
 # VIBES
 
-This is the main external VIBES (DARPA AMP TA2) repository. It contains code,
-documentation, etc. regarding the VIBES tool.
+This is the main external VIBES (DARPA AMP TA2) repository.
+
+The VIBES tool is comprised of two components:
+
+* An OCaml library.
+* A command-line tool, which serves a front-end to the library. 
+
+The library is called `bap-vibes`. Its source code lives in [lib/](./lib). 
+The command-line tool is implemented as a BAP command, `bap vibes`. Its 
+source code lives in [plugin/](./plugin).
 
 
 ## Getting the code
 
-Clone the repo wherever you prefer to keep your projects:
+Clone this repo wherever you prefer to keep your projects, for example:
 
     cd ~/code
-    git clone https://github.com/draperlaboratory/VIBES-internal.git
+    git clone https://github.com/draperlaboratory/VIBES.git
 
-Go into the project root:
+Then `cd` into the project root:
 
-    cd VIBES-internal
+    cd VIBES
 
 
-## Getting a development environment locally
+## Getting a development environment
 
-Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and 
-`arm-linux-gnueabi-gcc`, for example on Ubuntu:
+Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
+`arm-linux-gnueabi-gcc`. For example, on Ubuntu:
 
     apt install -y binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
-If you don't have a `4.09.1` switch, create one. 
+If you don't have a `4.09.1` OCaml switch, create one.
 
 Install the latest (bleeding edge) version of BAP:
 
@@ -35,28 +43,35 @@ into the `wp/lib/bap_wp` folder, and install with `make`:
 
     make
 
-Install the remaining dependencies needed for VIBES:
+Then install the remaining dependencies needed for VIBES:
 
-    opam install ounit2
+    opam install ounit2 ppx_deriving_yojson
 
 
-## Building/installing/testing
+## Installing/uninstalling
 
-To clean, build, and install VIBES (from the project root):
+To install the tool (the library and the command-line front-end), `cd` into
+the root of the project:
+
+    cd VIBES
+
+Then run `make`:
 
     make
 
-To simply rebuild/reinstall (without first cleaning):
+To uninstall:
 
-    make install
+    make uninstall
 
-To clean:
-
-    make clean
-
-To run the tests:
+To run all tests:
 
     make test
+
+
+## Just the library
+
+If you want just the library (without the command-line front-end), follow
+the instructions in [lib/README.md](./lib/README.md).
 
 
 ## Usage
@@ -65,12 +80,12 @@ The basic form of the command is this:
 
     bap vibes /path/to/pre-patched/exe [PARAMS] [OPTIONS]
 
-This tells the VIBES tool to patch the EXE located on your system at 
+This tells the VIBES tool to patch the EXE located on your system at
 `/path/to/pre-patched/exe`.
 
 A number of PARAMS must be specified:
 
-* `--patch=NAME`: 
+* `--patch=NAME`:
   Specifies the name of a hand-written patch to apply to the EXE.
   Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
   The first patch returns 3, and the second returns 4.
@@ -111,6 +126,6 @@ Here is an example of invoking the command:
 
 This tells the VIBES tool to patch `resources/simple/main` with the
 hand-written patch named `ret-3`. The patch should be inserted starting at
-address `0x54` in `resources/simple/main`, and `8` bytes should be replaced. 
+address `0x54` in `resources/simple/main`, and `8` bytes should be replaced.
 The correctness properties to check is `true`. Finally, use verbose logging,
 so that you can see the progress.

@@ -1,7 +1,6 @@
 (* Implements {!Pipeline}. *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 

@@ -32,7 +32,7 @@ type arm_sem = {current_blk : IR.operation list; other_blks : IR.t} [@@deriving 
 
 let (@) s1 s2 =
   let { current_blk = blk1; other_blks = blks1} = s1 in
-  let { current_blk = blk2; other_blks = blks2} = s1 in
+  let { current_blk = blk2; other_blks = blks2} = s2 in
   {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
 
 let arm_sem_domain = KB.Domain.optional ~equal:equal_arm_sem "arm-sem"
@@ -56,7 +56,6 @@ let eff d =
 let instr i =
   eff {current_blk = [i]; other_blks = IR.empty}
 
-open KB.Let_syntax
 
 module ARM_Core : Theory.Core =
 struct
@@ -90,11 +89,11 @@ struct
     KB.return @@ KB.Value.put arm_abst_op (Theory.Value.empty sort)
       (Some (IR.Var (IR.simple_var v)))
 
-  let unk sort = assert false
+  let unk _sort = assert false
 
-  let let_ v e b = assert false
+  let let_ _v _e _b = assert false
 
-  let int sort (w : Theory.word) : 's Theory.bitv =
+  let int _sort (w : Theory.word) : 's Theory.bitv =
     let w = Bitvec.to_int32 w in
     KB.return @@
     KB.Value.put
@@ -115,11 +114,11 @@ struct
       instr @@ arm_goto w
     | _ -> failwith "jmp: unexpected operand"
 
-  let branch cond t_branch f_branch = assert false
+  let branch _cond _t_branch _f_branch = assert false
 
-  let repeat cond body = assert false
+  let repeat _cond _body = assert false
 
-  let perform sort = eff {current_blk = []; other_blks = IR.empty}
+  let perform _sort = eff {current_blk = []; other_blks = IR.empty}
 
 end
 
@@ -146,19 +145,19 @@ let bil_bitv : type a. (a, Bil.exp, unit) Theory.Parser.bitv_parser =
 
 let bil_bool : type a. (a, Bil.exp, unit) Theory.Parser.bool_parser =
   fun (module S) ->
-  fun s -> assert false
+  fun _ -> assert false
 
 let bil_mem : type a. (a, Bil.exp) Theory.Parser.mem_parser =
   fun (module S) ->
-  fun s -> assert false
+  fun _ -> assert false
 
 let bil_float : type a. (a, Bil.exp, unit) Theory.Parser.float_parser =
   fun (module S) ->
-  fun s -> assert false
+  fun _ -> assert false
 
 let bil_rmode : type a. (a, unit) Theory.Parser.rmode_parser =
   fun (module S) ->
-  fun s -> S.rne
+  fun _ -> S.rne
 
 let bil_to_arm : (Bil.exp,unit,Bil.stmt) Theory.Parser.t =
   {
@@ -197,7 +196,7 @@ let arm_op_pretty (t : IR.operation) : string =
     (t.operands |> List.hd_exn |> arm_operand_pretty)
 
 (* TODO: print the tid *)
-let rec arm_blk_pretty (t : IR.blk) : string list = List.map ~f:arm_op_pretty t.operations
+let arm_blk_pretty (t : IR.blk) : string list = List.map ~f:arm_op_pretty t.operations
 
 let arm_ir_pretty (t : IR.t) : string list =
   List.concat_map ~f:arm_blk_pretty t.blks
