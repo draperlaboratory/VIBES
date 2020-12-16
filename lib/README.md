@@ -2,18 +2,22 @@
 
 ## Prerequisites
 
-Before installing this library, go to [../README.md] and follow the
-instructions under the section titled _Getting a development environment_
+Before installing this library, follow the instructions under
+[Getting a development environment](#getting-a-development-environment)
 to make sure you have the correct dependencies installed on your system.
 
 
 ## Building, installing, and testing
 
-To clean and build the `bap-vibes` library in one go, `cd` into this directory
+To clean and build the `bap-vibes` library, `cd` into this directory
 and run `make`:
 
     cd <project-root>/lib
     make
+
+Or, to build it (without cleaning first):
+
+    make build
 
 To run the tests:
 

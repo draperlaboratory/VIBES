@@ -7,9 +7,9 @@ The VIBES tool is comprised of two components:
 * An OCaml library.
 * A command-line tool, which serves a front-end to the library. 
 
-The library is called `bap-vibes`. Its source code lives in (lib/)[./lib]. 
+The library is called `bap-vibes`. Its source code lives in [lib/](./lib). 
 The command-line tool is implemented as a BAP command, `bap vibes`. Its 
-source code lives in (plugin/)[./plugin].
+source code lives in [plugin/](./plugin).
 
 
 ## Getting the code
@@ -24,7 +24,7 @@ Then `cd` into the project root:
     cd VIBES
 
 
-## Getting a development environment locally
+## Getting a development environment
 
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
 `arm-linux-gnueabi-gcc`. For example, on Ubuntu:
