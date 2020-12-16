@@ -37,3 +37,11 @@ plugin.install:
 
 plugin.uninstall:
 	$(MAKE) uninstall -C $(PLUGIN_DIR)
+
+
+#####################################################
+# TEST
+#####################################################
+
+test:
+	$(MAKE) test -C $(LIB_DIR)

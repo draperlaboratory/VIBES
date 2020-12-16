@@ -63,6 +63,10 @@ To uninstall:
 
     make uninstall
 
+To run all tests:
+
+    make test
+
 
 ## Just the library
 
