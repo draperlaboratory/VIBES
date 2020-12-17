@@ -61,6 +61,8 @@ let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
     let* _ =
       v |> Option.map ~f:Arm_gen.ir
       |> Option.map ~f:Arm_gen.arm_ir_pretty
+      |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
+      |> Option.join (* And we squash the Options *)
       |> Data.Patch.set_assembly obj
     in
     KB.return obj

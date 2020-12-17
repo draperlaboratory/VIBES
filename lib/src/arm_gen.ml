@@ -32,28 +32,26 @@ let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
 
 let effect v = KB.Value.get arm_eff v
 
-(* Explicitly aliasing for clarity *)
-type arm_mem = arm_eff
 let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_eff_domain
 
 let (let=) v f = KB.(>>=) v
     (fun v ->
        match KB.Value.get arm_eff v with
-       | None -> assert false
+       | None -> Errors.fail Errors.Missing_property
        | Some v -> f v)
 
 let (let-) v f =
   KB.(>>=) v
     (fun v ->
       match KB.Value.get arm_pure v with
-      | None -> assert false
+      | None -> Errors.fail Errors.Missing_property
       | Some v -> f v)
 
 let (let/) v f =
   KB.(>>=) v
     (fun v ->
       match KB.Value.get arm_mem v with
-      | None -> assert false
+      | None -> Errors.fail Errors.Missing_property
       | Some v -> f v)
 
 let eff d =
@@ -62,7 +60,7 @@ let eff d =
       (Theory.Effect.empty Theory.Effect.Sort.bot)
       (Some d)
 
-type r32
+(* type r32 *)
 
 type 'a sort = 'a Theory.Bitv.t Theory.Value.sort
 
@@ -196,9 +194,9 @@ struct
     KB.return @@ KB.Value.put arm_pure (Theory.Value.empty sort)
       (Some (var v))
 
-  let unk _sort = assert false
+  let unk _sort = Errors.fail (Errors.Not_implemented "Arm_gen.unk")
 
-  let let_ _v _e _b = assert false
+  let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int sort (w : Theory.word) : 's Theory.bitv =
   (* This is incorrect: we're assuming every constant is exactly 32
@@ -225,9 +223,9 @@ struct
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
 
-  let branch _cond _t_branch _f_branch = assert false
+  let branch _cond _t_branch _f_branch = Errors.fail (Errors.Not_implemented "Arm_gen.branch")
 
-  let repeat _cond _body = assert false
+  let repeat _cond _body = Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
     let/ mem = mem in
@@ -243,6 +241,12 @@ struct
     memory @@ str mem value loc
 
   let perform _sort = eff {current_blk = []; other_blks = IR.empty}
+
+  (* FIXME: we currently ignore the sign bit and shift as unsigned *)
+  let shiftl _sign l r =
+    let- l = l in
+    let- r = r in
+    pure @@ shl l r
 
 end
 
@@ -298,30 +302,30 @@ let ir (t : arm_eff) : IR.t =
   assert (List.is_empty t.current_blk);
   t.other_blks
 
-let insn_pretty i =
+let insn_pretty i : (string, Errors.t) result =
   match i with
   | `MOVr
-  | `MOVi   -> "mov"
-  | `BX     -> "bx"
-  | `ADDrsi -> "add"
-  | `LSL    -> "lsl"
-  | `LDRrs  -> "ldr"
-  | `STRrs  -> "str"
-  | _       -> failwith "insn_pretty: instruction not supported"
+  | `MOVi   -> Ok "mov"
+  | `BX     -> Ok "bx"
+  | `ADDrsi -> Ok "add"
+  | `LSL    -> Ok "lsl"
+  | `LDRrs  -> Ok "ldr"
+  | `STRrs  -> Ok "str"
+  | _       -> Error (Errors.Not_implemented "insn_pretty: instruction not supported")
 
 type op_tag = Mem | Not_mem
 
 (* TODO: refactor this into insn_pretty? *)
-let tags_of_op i : op_tag list =
+let tags_of_op i : (op_tag list, Errors.t) result =
   match i with
-  | `MOVr -> [Not_mem]
-  | `MOVi -> [Not_mem]
-  | `BX -> [Not_mem]
-  | `ADDrsi -> [Not_mem; Not_mem]
-  | `LSL -> [Not_mem; Not_mem]
-  | `LDRrs -> [Mem]
-  | `STRrs -> [Mem]
-  | _ -> failwith "tags_of_op: instruction not supported"
+  | `MOVr   -> Ok [Not_mem]
+  | `MOVi   -> Ok [Not_mem]
+  | `BX     -> Ok [Not_mem]
+  | `ADDrsi -> Ok [Not_mem; Not_mem]
+  | `LSL    -> Ok [Not_mem; Not_mem]
+  | `LDRrs  -> Ok [Mem]
+  | `STRrs  -> Ok [Mem]
+  | _ -> Error (Errors.Not_implemented "tags_of_op: instruction not supported")
 
 
 let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
@@ -343,16 +347,21 @@ let arm_operands_pretty (tags : op_tag list) (l : IR.operand list) : string =
   String.concat ~sep:", "
     (List.map2_exn tags l ~f:(fun t o -> arm_operand_pretty ~tag:t o))
 
-let arm_op_pretty (t : IR.operation) : string =
+let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
-  Format.asprintf "%s %s, %s"
-    (* We just handle exactly one instruction *)
-    (insn_pretty op)
-    (t.lhs |> arm_operand_pretty)
-    (t.operands |> arm_operands_pretty (tags_of_op op))
+  let op_tags = tags_of_op op in
+  Result.(insn_pretty op >>= fun op ->
+          op_tags >>| fun op_tags ->
+          Format.asprintf "%s %s, %s"
+            (* We just handle exactly one instruction *)
+            op
+            (arm_operand_pretty t.lhs)
+            (arm_operands_pretty op_tags t.operands))
 
 (* TODO: print the tid *)
-let arm_blk_pretty (t : IR.blk) : string list = List.map ~f:arm_op_pretty t.operations
+let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
+  List.map ~f:arm_op_pretty t.operations |> Result.all
 
-let arm_ir_pretty (t : IR.t) : string list =
-  List.concat_map ~f:arm_blk_pretty t.blks
+let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
+  List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
+
