@@ -116,7 +116,7 @@ let jmp arg =
   let {op_val = arg_const; op_eff = arg_sem} = arg in
   let jmp =
     match arg_const with
-    | Const w -> IR.simple_op `BX arg_const []
+    | Const _ -> IR.simple_op `BX arg_const []
     | _ -> failwith "jmp: unexpected operand"
   in
   instr jmp arg_sem
@@ -200,7 +200,7 @@ struct
 
   let let_ _v _e _b = assert false
 
-  let int _sort (w : Theory.word) : 's Theory.bitv =
+  let int sort (w : Theory.word) : 's Theory.bitv =
   (* This is incorrect: we're assuming every constant is exactly 32
      bits. *)
     let w = Bitvec.to_int32 w in
