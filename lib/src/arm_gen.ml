@@ -84,6 +84,13 @@ let pure v =
       (Theory.Value.empty (s32 ()))
       (Some v)
 
+let bool b =
+  KB.return @@
+    KB.Value.put arm_pure
+      (* This means we only have 32 bit vectors as our values *)
+      (* TODO: extend this arbitrary sizes *)
+      (Theory.Value.empty Theory.Bool.t)
+      (Some b)
 
 module ARM_ops = struct
 
@@ -140,11 +147,22 @@ let binop o ty arg1 arg2 =
   let sem = {sem with current_blk = op::sem.current_blk} in
   {op_val = IR.Var res; op_eff = sem}
 
+(* TODO: handle non-register arguments? *)
 let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
 
+let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
 
-let shl arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
-
+let shr signed arg1 arg2 =
+  let b =
+    match signed.op_val with
+    | IR.Const w -> (Word.to_int_exn w) <> 0
+    (* Not sure what to do here *)
+    | _ -> assert false
+  in
+  if b then
+    binop `ASR (Imm 32) arg1 arg2
+  else
+    binop `LSR (Imm 32) arg1 arg2
 
 let ldr mem loc =
   (* Update the semantics of loc with those of mem *)
@@ -158,6 +176,12 @@ let str mem value loc =
   (* Again, a little cowboy instruction ordering *)
   let sem = loc_sem @ value_sem @ mem in
   {sem with current_blk = op::sem.current_blk}
+
+let (&&) a b = binop `ANDrsi (Imm 32) a b
+
+let (||) a b = binop `ORRrsi (Imm 32) a b
+
+let xor a b = binop `EORrsi (Imm 32) a b
 
 end
 
@@ -242,11 +266,42 @@ struct
 
   let perform _sort = eff {current_blk = []; other_blks = IR.empty}
 
-  (* FIXME: we currently ignore the sign bit and shift as unsigned *)
-  let shiftl _sign l r =
+  let shiftl sign l r =
+    let- sign = sign in
     let- l = l in
     let- r = r in
-    pure @@ shl l r
+    pure @@ shl sign l r
+
+  let shiftr sign l r =
+    let- sign = sign in
+    let- l = l in
+    let- r = r in
+    pure @@ shr sign l r
+
+  let and_ a b =
+    let- a = a in
+    let- b = b in
+    bool (a && b)
+
+  let or_ a b =
+    let- a = a in
+    let- b = b in
+    bool (a || b)
+
+  let logand a b =
+    let- a = a in
+    let- b = b in
+    pure (a && b)
+
+  let logor a b =
+    let- a = a in
+    let- b = b in
+    pure (a || b)
+
+  let logxor a b =
+    let- a = a in
+    let- b = b in
+    pure @@ xor a b
 
 end
 
@@ -309,9 +364,19 @@ let insn_pretty i : (string, Errors.t) result =
   | `BX     -> Ok "bx"
   | `ADDrsi -> Ok "add"
   | `LSL    -> Ok "lsl"
+  | `LSR    -> Ok "lsr"
+  | `ASR    -> Ok "asr"
+  | `ANDrsi -> Ok "and"
+  | `ORRrsi -> Ok "orr"
+  | `EORrsi -> Ok "eor"
   | `LDRrs  -> Ok "ldr"
   | `STRrs  -> Ok "str"
-  | _       -> Error (Errors.Not_implemented "insn_pretty: instruction not supported")
+  | i       ->
+     let to_string _ = "UNKNOWN" in
+     let msg = Format.asprintf "insn_pretty: instruction %s not supported"
+                 (to_string i)
+     in
+     Error (Errors.Not_implemented msg)
 
 type op_tag = Mem | Not_mem
 
@@ -325,7 +390,17 @@ let tags_of_op i : (op_tag list, Errors.t) result =
   | `LSL    -> Ok [Not_mem; Not_mem]
   | `LDRrs  -> Ok [Mem]
   | `STRrs  -> Ok [Mem]
-  | _ -> Error (Errors.Not_implemented "tags_of_op: instruction not supported")
+  | `LSR    -> Ok [Not_mem; Not_mem]
+  | `ASR    -> Ok [Not_mem; Not_mem]
+  | `ANDrsi -> Ok [Not_mem; Not_mem]
+  | `ORRrsi -> Ok [Not_mem; Not_mem]
+  | `EORrsi -> Ok [Not_mem; Not_mem]
+  | i       ->
+     let to_string _ = "UNKNOWN" in
+     let msg = Format.asprintf "tags_of_op: instruction %s not supported"
+                 (to_string i)
+     in
+     Error (Errors.Not_implemented msg)
 
 
 let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
