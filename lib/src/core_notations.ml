@@ -13,12 +13,18 @@ module Make (C : Core) = struct
   let (/) = sdiv
   let (mod) = smodulo
   let (&&) = and_
+  let (&) = logand
   let (||) = or_
-  let (!) = not
-  let (>>) = shiftr
-  let (<<) = shiftl
+  let (|$) = logor
+  let (~~) = not
+  (* Unsigned by default *)
+  let (>>) a b = shiftr b0 a b
+  let (<<) a b = shiftl b0 a b
   let (<) = slt
   let (<=) = sle
+  let (>) = sgt
+  let (>=) = sge
+  let (!=) = neq
 
   let data_body l =
     let empty = perform Effect.Sort.bot in
