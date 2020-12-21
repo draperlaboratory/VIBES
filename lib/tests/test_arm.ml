@@ -15,16 +15,14 @@ open Theory
 module Prog1 (S : Core) = struct
 
   open S
-
-  let ( := ) = set
-  let (+) = add
+  open Core_notations.Make(S)
 
   let v =
     let r0 = Var.define (Bitv.define 32) "r0" in
     let r1 = Var.define (Bitv.define 32) "r1" in
     let r2 = Var.define (Bitv.define 32) "r2" in
-    let data = r0 := var r1 + var r2 in
-    let control = perform (Effect.Sort.fall) in
+    let data = data_body [r0 := var r1 + var r2] in
+    let control = ctrl_body [] in
     let l = Bap.Std.Tid.create () in
     blk l data control
 
@@ -34,16 +32,14 @@ end
 module Prog2 (S : Core) = struct
 
   open S
-
-  let ( := ) = set
-  let (+) = add
+  open Core_notations.Make(S)
 
   let v =
     let r0 = Var.define (Bitv.define 32) "r0" in
     let r1 = Var.define (Bitv.define 32) "r1" in
     let r2 = Var.define (Bitv.define 32) "r2" in
-    let data = r0 := var r1 + (var r2 + var r0) in
-    let control = perform (Effect.Sort.fall) in
+    let data = data_body [r0 := var r1 + (var r2 + var r0)] in
+    let control = ctrl_body [] in
     let l = Bap.Std.Tid.create () in
     blk l data control
 
