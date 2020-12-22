@@ -9,7 +9,7 @@ type op_var = {
 
 let simple_var v = {id = v; temps = []; pre_assign = None}
 
-type operand = Var of op_var | Const of Word.t [@@deriving compare, equal]
+type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal]
 
 type shift = Arm_types.shift
 

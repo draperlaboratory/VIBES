@@ -41,7 +41,7 @@ type op_var = {
 
 val simple_var : var -> op_var
 
-type operand = Var of op_var | Const of word [@@deriving compare, equal]
+type operand = Var of op_var | Const of word | Label of tid [@@deriving compare, equal]
 
 (** An [operation] has an id
     an assigned lhs,

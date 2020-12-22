@@ -4,8 +4,6 @@ open Bap_core_theory
 
 module IR = Vibes_ir
 
-open KB.Let
-
 type arm_eff = {current_blk : IR.operation list; other_blks : IR.t} [@@deriving compare, equal]
 
 let empty_eff = {current_blk = []; other_blks = IR.empty}
@@ -37,21 +35,27 @@ let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_eff_domain
 let (let=) v f = KB.(>>=) v
     (fun v ->
        match KB.Value.get arm_eff v with
-       | None -> Errors.fail Errors.Missing_property
+       | None ->
+          let v_str = Format.asprintf "%a" KB.Value.pp v in
+          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
 let (let-) v f =
   KB.(>>=) v
     (fun v ->
       match KB.Value.get arm_pure v with
-      | None -> Errors.fail Errors.Missing_property
+      | None ->
+          let v_str = Format.asprintf "%a" KB.Value.pp v in
+          Errors.fail (Errors.Missing_semantics v_str)
       | Some v -> f v)
 
 let (let/) v f =
   KB.(>>=) v
     (fun v ->
       match KB.Value.get arm_mem v with
-      | None -> Errors.fail Errors.Missing_property
+      | None ->
+          let v_str = Format.asprintf "%a" KB.Value.pp v in
+          Errors.fail (Errors.Missing_semantics v_str)
       | Some v -> f v)
 
 let eff d =
@@ -114,7 +118,7 @@ let ( := ) x y = arm_mov x y
 
 (* TODO: only works for constants! *)
 let bx addr =
-  let i = IR.simple_op `BX (IR.Const addr) [] in
+  let i = IR.simple_op `BX (IR.Label addr) [] in
   instr i empty_eff
 
 let jmp arg =
@@ -208,6 +212,9 @@ struct
     let= data = data in
     let= ctrl = ctrl in
     let new_instrs = List.append data.current_blk ctrl.current_blk in
+    (* We add instructions by consing to the front of the list, so we
+       need to reverse before finalizing the block *)
+    let new_instrs = List.rev new_instrs in
     let new_blk = IR.simple_blk lab new_instrs in
     let all_blocks = IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
     eff {current_blk = []; other_blks = all_blocks}
@@ -222,15 +229,11 @@ struct
 
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
-  let int sort (w : Theory.word) : 's Theory.bitv =
+  let int _sort (w : Theory.word) : 's Theory.bitv =
   (* This is incorrect: we're assuming every constant is exactly 32
      bits. *)
     let w = Bitvec.to_int32 w in
-    KB.return @@
-    KB.Value.put
-      arm_pure
-      (Theory.Value.empty sort)
-      (Some (const (Word.of_int32 w)))
+    pure @@ const @@ Word.of_int32 ~width:32 w
 
   let add a b =
     let- a = a in
@@ -238,10 +241,7 @@ struct
     pure @@ a + b
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
-    let* conc_addr = KB.collect Theory.Label.addr lab in
-    let conc_addr = Option.value_exn conc_addr in
-    let conc_word = Word.create conc_addr 32 in
-    eff @@ bx conc_word
+    eff @@ bx lab
 
   let jmp addr =
     let- addr_bitv = addr in
@@ -302,6 +302,10 @@ struct
     let- a = a in
     let- b = b in
     pure @@ xor a b
+
+  let b0 = bool @@ const @@ Word.of_int ~width:32 0
+
+  let b1 = bool @@ const @@ Word.of_int ~width:32 1
 
 end
 
@@ -385,7 +389,7 @@ let tags_of_op i : (op_tag list, Errors.t) result =
   match i with
   | `MOVr   -> Ok [Not_mem]
   | `MOVi   -> Ok [Not_mem]
-  | `BX     -> Ok [Not_mem]
+  | `BX     -> Ok []
   | `ADDrsi -> Ok [Not_mem; Not_mem]
   | `LSL    -> Ok [Not_mem; Not_mem]
   | `LDRrs  -> Ok [Mem]
@@ -416,7 +420,8 @@ let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
      end
   | Const w ->
     (* A little calisthenics to get this to look nice *)
-    Format.asprintf "#%a" Word.pp_dec w
+     Format.asprintf "#%a" Word.pp_dec w
+  | Label l -> Tid.name l
 
 let arm_operands_pretty (tags : op_tag list) (l : IR.operand list) : string =
   String.concat ~sep:", "
@@ -427,15 +432,19 @@ let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op_tags = tags_of_op op in
   Result.(insn_pretty op >>= fun op ->
           op_tags >>| fun op_tags ->
-          Format.asprintf "%s %s, %s"
-            (* We just handle exactly one instruction *)
-            op
-            (arm_operand_pretty t.lhs)
-            (arm_operands_pretty op_tags t.operands))
+          if List.is_empty op_tags then
+            Format.asprintf "%s %s" op (arm_operand_pretty t.lhs)
+          else
+            Format.asprintf "%s %s, %s"
+              op
+              (arm_operand_pretty t.lhs)
+              (arm_operands_pretty op_tags t.operands))
 
 (* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
-  List.map ~f:arm_op_pretty t.operations |> Result.all
+  let insns = List.map ~f:arm_op_pretty t.operations |> Result.all in
+  let lab = Format.asprintf "%s:" (Tid.name t.id) in
+  Result.map insns ~f:(fun insns -> lab::insns)
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
   List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat

@@ -17,6 +17,7 @@ type t =
   | Missing_patch_point
   | Missing_patch_size
   | Missing_property
+  | Missing_semantics of string
   | Command_not_found of string
   | Exit_code of string
   | Unexpected_exit of string
