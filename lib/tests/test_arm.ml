@@ -189,35 +189,52 @@ let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in
-  let expected = Some expected in
+  let rexpected = List.map ~f:Str.regexp expected in
+  let rexpected = Some rexpected in
+  let cmp expected input =
+    begin
+      match input, expected with
+      | Some input, Some expected ->
+         let pairs = List.zip_exn expected input in
+         let matches = List.map pairs ~f:(fun (pat, str) -> Str.string_match pat str 0) in
+         List.for_all ~f:(fun b -> b) matches
+      | _ -> false
+    end
+  in
+  let print_regex_list_opt _ = H.print_string_list_opt (Some expected) in
   H.assert_property
-    ~cmp:(Option.equal (List.equal String.equal))
-    ~printer:H.print_string_list_opt
-    Data.Patch.assembly expected result
+    ~cmp:cmp
+    ~p_res:H.print_string_list_opt
+    ~p_expected:print_regex_list_opt
+    Data.Patch.assembly rexpected result
 
+(* FIXME: we currently don't check to see if the variable names are
+   consistent!  This can probably accomplished with judicious use of
+   "\\([-19]\\)" and Str.replace "\\1" or "\\2".  *)
 let test_ir1 ctxt =
-  test_ir ctxt Prog1_inst.prog ["@entry:"; "add #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog1_inst.prog ["@entry:"; "add #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir2 ctxt =
-  test_ir ctxt Prog2_inst.prog ["@entry:"; "add #1, v3, v1"; "add #2, v2, #1"; "mov v1, #2"]
+  test_ir ctxt Prog2_inst.prog
+    ["@entry:"; "add #[1-9], v3, v1"; "add #[1-9], v2, #[1-9]"; "mov v1, #[1-9]"]
 
 let test_ir3 ctxt =
-  test_ir ctxt Prog3_inst.prog ["@entry:"; "lsl #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog3_inst.prog ["@entry:"; "lsl #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir4 ctxt =
-  test_ir ctxt Prog4_inst.prog ["@entry:"; "lsr #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog4_inst.prog ["@entry:"; "lsr #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir5 ctxt =
-  test_ir ctxt Prog5_inst.prog ["@entry:"; "and #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog5_inst.prog ["@entry:"; "and #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir6 ctxt =
-  test_ir ctxt Prog6_inst.prog ["@entry:"; "orr #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog6_inst.prog ["@entry:"; "orr #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir7 ctxt =
-  test_ir ctxt Prog7_inst.prog ["@entry:"; "and #1, v2, v3"; "mov v1, #1"]
+  test_ir ctxt Prog7_inst.prog ["@entry:"; "and #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir8 ctxt =
-  test_ir ctxt Prog8_inst.prog ["@entry:"; "orr #2, v2, v3"; "mov v1, #2"]
+  test_ir ctxt Prog8_inst.prog ["@entry:"; "orr #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
 let test_ir9 ctxt =
   test_ir ctxt Prog9_inst.prog ["@entry:"; "bx @tgt"]

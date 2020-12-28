@@ -30,7 +30,7 @@ let test_compile (_ : test_ctxt) : unit =
   let expected = Some H.assembly in
   H.assert_property
     ~cmp:(Option.equal (List.equal String.equal))
-    ~printer:H.print_string_list_opt
+    ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
     Data.Patch.assembly expected result
 
 (* Test that [Compiler.compile] handles no patch (BIL) in the KB. *)
@@ -49,7 +49,7 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
   let expected = Some ["%00000001:"] in
   H.assert_property
     ~cmp:(Option.equal (List.equal String.equal))
-    ~printer:H.print_string_list_opt
+    ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
     Data.Patch.assembly expected result
 
 let suite = [
