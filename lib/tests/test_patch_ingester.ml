@@ -28,7 +28,9 @@ let test_ingest (_ : test_ctxt) : unit =
 
   (* The ingester should stash the patch (BIL) in the KB. *)
   let expected = Patches.Ret_3.bil 32 in
-  H.assert_property ~printer:H.print_bil ~cmp:(fun a b -> Bil.compare a b = 0)
+  H.assert_property
+    ~p_res:H.print_bil ~p_expected:H.print_bil
+    ~cmp:(fun a b -> Bil.compare a b = 0)
     Data.Patch.bil expected result
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)

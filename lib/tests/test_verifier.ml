@@ -51,8 +51,9 @@ let test_verify_unsat (_ : test_ctxt) : unit =
 
   (* It should be [Done]. *)
   let expected = "Done" in
-  H.assert_property ~cmp:String.equal ~printer:(Format.sprintf "%s") 
-    Test_data.result expected result 
+  H.assert_property ~cmp:String.equal
+    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
+    Test_data.result expected result
 
 (* Test that [Verifier.verify] works as expected for Z3 [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
@@ -90,7 +91,8 @@ let test_verify_sat (_ : test_ctxt) : unit =
      handle the [Again] case. So, this test checks "Done", but it should be
      changed to check for "Again" when we implement the [Again] case. *)
   let expected = "Done" in
-  H.assert_property ~cmp:String.equal ~printer:(Format.sprintf "%s")
+  H.assert_property ~cmp:String.equal
+    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without an original exe program. *)

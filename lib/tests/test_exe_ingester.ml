@@ -28,7 +28,8 @@ let test_ingest_addr_size (_ : test_ctxt) : unit =
 
   (* The ingester should stash the address size in the KB. *)
   let expected = Some 64 in
-  H.assert_property ~printer:H.print_int_opt ~cmp:(Option.equal (=))
+  H.assert_property
+    ~p_res:H.print_int_opt ~p_expected:H.print_int_opt ~cmp:(Option.equal (=))
     Data.Original_exe.addr_size expected result
 
 (* Test that [Exe_ingester.ingest] stashes the lifted program in the KB. *)
@@ -50,7 +51,8 @@ let test_ingest_prog (_ : test_ctxt) : unit =
 
   (* The ingester should stash the lifted program in the KB. *)
   let expected = Some H.prog in
-  H.assert_property ~printer:H.print_prog_opt ~cmp:(Option.equal Program.equal)
+  H.assert_property ~p_res:H.print_prog_opt ~p_expected:H.print_prog_opt
+    ~cmp:(Option.equal Program.equal)
     Data.Original_exe.prog expected result
 
 (* Test that [Exe_ingester.ingest] errors with no filepath in the KB. *)

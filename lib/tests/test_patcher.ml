@@ -32,7 +32,8 @@ let test_patch (_ : test_ctxt) : unit =
 
   (* The patcher should stash the patched exe's filepath in the KB. *)
   let expected = Some H.patched_exe in
-  H.assert_property ~cmp:(Option.equal String.equal) ~printer:H.print_opt 
+  H.assert_property ~cmp:(Option.equal String.equal)
+    ~p_res:H.print_opt ~p_expected:H.print_opt
     Data.Patched_exe.tmp_filepath expected result
 
 (* Test that [Patcher.patch] errors if there's no filepath to

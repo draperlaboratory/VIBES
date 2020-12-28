@@ -63,20 +63,20 @@ let obj () = KB.Object.create Data.cls
    of a [kb_run]. [~cmp] takes a comparison function, and [~printer] takes
    a custom printer for the value (it should return a string version of the
    value). *)
-let assert_property ~cmp ?printer
+let assert_property ~cmp ?p_res ?p_expected
     property expected result : unit =
   match result with
   | Ok (obj, _) ->
     begin
       let actual = KB.Value.get property obj in
       let msg =
-        match printer with
-        | Some p ->
+        match p_res, p_expected with
+        | Some p, Some p' ->
           begin
             Format.asprintf "@[<v 4>%s:@,@[%s@]@]@.@[<v 4>%s:@,@[%s@]@]"
-              "expected" (p expected) "but got" (p actual)
+              "expected" (p' expected) "but got" (p actual)
           end
-        | None ->
+        | _ ->
           Format.sprintf "Property did not have the expected value"
       in
       assert_bool msg (cmp expected actual)
