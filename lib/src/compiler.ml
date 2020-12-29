@@ -19,12 +19,9 @@ let create_assembly (bil : Bil.t) : string list KB.t =
         value_exn |>
         Arm_gen.ir |>
         Arm_gen.arm_ir_pretty) >>=
-    (fun assembly ->
-      begin
-        match assembly with
+    (function
         | Ok assembly -> KB.return assembly
-        | Error e -> Errors.fail e
-      end)
+        | Error e -> Errors.fail e)
 
 
 (* Converts the patch (as BIL) to assembly instructions. *)

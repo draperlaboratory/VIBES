@@ -67,15 +67,13 @@ let eff d =
       (Theory.Effect.empty Theory.Effect.Sort.bot)
       (Some d)
 
-(* type r32 *)
-
-type 'a sort = 'a Theory.Bitv.t Theory.Value.sort
+type 'a bitv_sort = 'a Theory.Bitv.t Theory.Value.sort
 
 (* We make this polymorphic, so that it can be instantiated in any
    setting, despite being a fixed given size. We add a [unit] argument
    to avoid the value restriction. *)
 (* TODO: fix this, so that s32 is of type r32 sort *)
-let s32 (_ : unit) : 'a sort = Theory.Bitv.define 32
+let s32 (_ : unit) : 'a bitv_sort = Theory.Bitv.define 32
 
 let memory m =
   KB.return @@
@@ -150,7 +148,6 @@ module ARM_ops = struct
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
-    (* We do instruction ordering, of sorts, here. *)
     let sem = arg1_sem @ arg2_sem in
     let sem = {sem with current_blk = op::sem.current_blk} in
     {op_val = IR.Var res; op_eff = sem}
@@ -164,7 +161,10 @@ module ARM_ops = struct
     let b =
       match signed.op_val with
       | IR.Const w -> (Word.to_int_exn w) <> 0
-      (* Not sure what to do here *)
+      (* FIXME: Not sure what to do here; generally shifts are done by
+         constant amounts, and at any rate it requires a bit of work
+         to implement in ARM. Most likely the right thing to do is
+         fail gracefully.  *)
       | _ -> assert false
     in
     if b then
