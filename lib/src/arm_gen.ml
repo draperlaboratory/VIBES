@@ -4,12 +4,15 @@ open Bap_core_theory
 
 module IR = Vibes_ir
 
-type arm_eff = {current_blk : IR.operation list; other_blks : IR.t} [@@deriving compare, equal]
+type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
+                 [@@deriving compare, equal]
 
 let empty_eff = {current_blk = []; other_blks = IR.empty}
 
-(* FIXME: if this is a constant, I'm pretty sure the op_eff field is always empty *)
-type arm_pure = {op_val : IR.operand; op_eff : arm_eff} [@@deriving compare, equal]
+(* FIXME: if this is a constant, I'm pretty sure the op_eff field is
+   always empty *)
+type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
+                  [@@deriving compare, equal]
 
 (* We use this domain both for ['a pure] and ['s bitv] *)
 let arm_pure_dom = KB.Domain.optional ~equal:equal_arm_pure "arm-pure"
@@ -98,94 +101,95 @@ let bool b =
 
 module ARM_ops = struct
 
-let instr i sem = {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
+  let instr i sem =
+    {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
 
-(* Some cowboy type checking here, to check which kind of mov to use.
-   FIXME: certainly doesn't work if variables are instantiated with
-   immediates! Can be fixed by having seperate Variable constructors
-   for registers and immediates. *)
-let arm_mov arg1 arg2 =
-  let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
-  let mov =
-    match arg1, arg2_var with
-    | IR.Var _, IR.Var _ -> IR.simple_op `MOVr arg1 [arg2_var]
-    | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
-    | _ -> failwith "arm_mov: unexpected arguments!"
-  in
-  instr mov arg2_sem
+  (* Some cowboy type checking here, to check which kind of mov to use.
+     FIXME: certainly doesn't work if variables are instantiated with
+     immediates! Can be fixed by having seperate Variable constructors
+     for registers and immediates. *)
+  let arm_mov arg1 arg2 =
+    let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
+    let mov =
+      match arg1, arg2_var with
+      | IR.Var _, IR.Var _ -> IR.simple_op `MOVr arg1 [arg2_var]
+      | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
+      | _ -> failwith "arm_mov: unexpected arguments!"
+    in
+    instr mov arg2_sem
 
-let ( := ) x y = arm_mov x y
+  let ( := ) x y = arm_mov x y
 
-(* TODO: only works for constants! *)
-let bx addr =
-  let i = IR.simple_op `BX (IR.Label addr) [] in
-  instr i empty_eff
+  (* TODO: only works for constants! *)
+  let bx addr =
+    let i = IR.simple_op `BX (IR.Label addr) [] in
+    instr i empty_eff
 
-let jmp arg =
-  let {op_val = arg_const; op_eff = arg_sem} = arg in
-  let jmp =
-    match arg_const with
-    | Const _ -> IR.simple_op `BX arg_const []
-    | _ -> failwith "jmp: unexpected operand"
-  in
-  instr jmp arg_sem
+  let jmp arg =
+    let {op_val = arg_const; op_eff = arg_sem} = arg in
+    let jmp =
+      match arg_const with
+      | Const _ -> IR.simple_op `BX arg_const []
+      | _ -> failwith "jmp: unexpected operand"
+    in
+    instr jmp arg_sem
 
-let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
+  let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
 
-let const c = {op_val = IR.Const c; op_eff = empty_eff}
+  let const c = {op_val = IR.Const c; op_eff = empty_eff}
 
-let uop o ty arg =
-  let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
-  let {op_val = arg_val; op_eff = arg_sem} = arg in
-  let op = IR.simple_op o (IR.Var res) [arg_val] in
-  let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
-  {op_val = IR.Var res; op_eff = sem}
+  let uop o ty arg =
+    let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+    let {op_val = arg_val; op_eff = arg_sem} = arg in
+    let op = IR.simple_op o (IR.Var res) [arg_val] in
+    let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
+    {op_val = IR.Var res; op_eff = sem}
 
-let binop o ty arg1 arg2 =
-  let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
-  let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
-  let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-  let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
-  (* We do instruction ordering, of sorts, here. *)
-  let sem = arg1_sem @ arg2_sem in
-  let sem = {sem with current_blk = op::sem.current_blk} in
-  {op_val = IR.Var res; op_eff = sem}
+  let binop o ty arg1 arg2 =
+    let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+    let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
+    let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
+    (* We do instruction ordering, of sorts, here. *)
+    let sem = arg1_sem @ arg2_sem in
+    let sem = {sem with current_blk = op::sem.current_blk} in
+    {op_val = IR.Var res; op_eff = sem}
 
-(* TODO: handle non-register arguments? *)
-let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
+  (* TODO: handle non-register arguments? *)
+  let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
 
-let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
+  let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
 
-let shr signed arg1 arg2 =
-  let b =
-    match signed.op_val with
-    | IR.Const w -> (Word.to_int_exn w) <> 0
-    (* Not sure what to do here *)
-    | _ -> assert false
-  in
-  if b then
-    binop `ASR (Imm 32) arg1 arg2
-  else
-    binop `LSR (Imm 32) arg1 arg2
+  let shr signed arg1 arg2 =
+    let b =
+      match signed.op_val with
+      | IR.Const w -> (Word.to_int_exn w) <> 0
+      (* Not sure what to do here *)
+      | _ -> assert false
+    in
+    if b then
+      binop `ASR (Imm 32) arg1 arg2
+    else
+      binop `LSR (Imm 32) arg1 arg2
 
-let ldr mem loc =
-  (* Update the semantics of loc with those of mem *)
-  let loc = {loc with op_eff = loc.op_eff @ mem} in
-  uop `LDRrs (Imm 32) loc
+  let ldr mem loc =
+    (* Update the semantics of loc with those of mem *)
+    let loc = {loc with op_eff = loc.op_eff @ mem} in
+    uop `LDRrs (Imm 32) loc
 
-let str mem value loc =
-  let {op_val = loc_val; op_eff = loc_sem} = loc in
-  let {op_val = value_val; op_eff = value_sem} = value in
-  let op = IR.simple_op `STRrs loc_val [value_val] in
-  (* Again, a little cowboy instruction ordering *)
-  let sem = loc_sem @ value_sem @ mem in
-  {sem with current_blk = op::sem.current_blk}
+  let str mem value loc =
+    let {op_val = loc_val; op_eff = loc_sem} = loc in
+    let {op_val = value_val; op_eff = value_sem} = value in
+    let op = IR.simple_op `STRrs loc_val [value_val] in
+    (* Again, a little cowboy instruction ordering *)
+    let sem = loc_sem @ value_sem @ mem in
+    {sem with current_blk = op::sem.current_blk}
 
-let (&&) a b = binop `ANDrsi (Imm 32) a b
+  let (&&) a b = binop `ANDrsi (Imm 32) a b
 
-let (||) a b = binop `ORRrsi (Imm 32) a b
+  let (||) a b = binop `ORRrsi (Imm 32) a b
 
-let xor a b = binop `EORrsi (Imm 32) a b
+  let xor a b = binop `EORrsi (Imm 32) a b
 
 end
 
@@ -216,7 +220,8 @@ struct
        need to reverse before finalizing the block *)
     let new_instrs = List.rev new_instrs in
     let new_blk = IR.simple_blk lab new_instrs in
-    let all_blocks = IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
+    let all_blocks =
+      IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
     eff {current_blk = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
@@ -247,9 +252,11 @@ struct
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
 
-  let branch _cond _t_branch _f_branch = Errors.fail (Errors.Not_implemented "Arm_gen.branch")
+  let branch _cond _t_branch _f_branch =
+    Errors.fail (Errors.Not_implemented "Arm_gen.branch")
 
-  let repeat _cond _body = Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
+  let repeat _cond _body =
+    Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
     let/ mem = mem in
@@ -356,7 +363,8 @@ let bil_to_arm : (Bil.exp,unit,Bil.stmt) Theory.Parser.t =
     rmode = bil_rmode
   }
 
-(* not sure what the right behavior is here... should we assume that a block is always created? *)
+(* FIXME: not sure what the right behavior is here... should we assume that a
+   block is always created? *)
 let ir (t : arm_eff) : IR.t =
   assert (List.is_empty t.current_blk);
   t.other_blks
@@ -377,8 +385,8 @@ let insn_pretty i : (string, Errors.t) result =
   | `STRrs  -> Ok "str"
   | i       ->
      let to_string _ = "UNKNOWN" in
-     let msg = Format.asprintf "insn_pretty: instruction %s not supported"
-                 (to_string i)
+     let msg =
+       Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
      in
      Error (Errors.Not_implemented msg)
 
@@ -448,4 +456,3 @@ let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
   List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
-
