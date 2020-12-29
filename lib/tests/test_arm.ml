@@ -209,8 +209,7 @@ let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
     Data.Patch.assembly rexpected result
 
 (* FIXME: we currently don't check to see if the variable names are
-   consistent!  This can probably accomplished with judicious use of
-   "\\([-19]\\)" and Str.replace "\\1" or "\\2".  *)
+   consistent! *)
 let test_ir1 ctxt =
   test_ir ctxt Prog1_inst.prog ["@entry:"; "add #[1-9], v2, v3"; "mov v1, #[1-9]"]
 
