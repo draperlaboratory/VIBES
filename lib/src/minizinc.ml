@@ -32,7 +32,7 @@ type mzn_params = {
   latency : unit; 
   (* width : int Var.Map.t; Vars in Bap have width. Unnecessary? *)
   preassign : string Var.Map.t;
-  operation_insns : (ARM.insn list) Tid.Map.t; 
+  operation_insns : (Vibes_ir.insn list) Tid.Map.t; 
   operand_operation : VIR.operation Var.Map.t;
   congruent : (VIR.op_var * VIR.op_var) list ;
   operands : Var.Set.t;
@@ -133,7 +133,7 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in 
   let insns = Tid.Map.data params.operation_insns |> List.concat_map 
-                ~f:(fun is -> List.map is ~f:(fun i -> ARM.sexp_of_insn i 
+                ~f:(fun is -> List.map is ~f:(fun i -> Vibes_ir.sexp_of_insn i 
                                                        |>  Ppx_sexp_conv_lib.Sexp.to_string))
               |> String.Set.of_list |> String.Set.to_list in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
@@ -173,7 +173,7 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
     congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
     operation_insns = List.map ~f:(fun o ->
         {set = Tid.Map.find_exn params.operation_insns o 
-               |> List.map ~f:(fun i -> ARM.sexp_of_insn i 
+               |> List.map ~f:(fun i -> Vibes_ir.sexp_of_insn i 
                                         |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum )
         }) operations;
     latency = List.map ~f:(fun _ -> 10) insns (* TODO *)
@@ -210,7 +210,7 @@ type sol_serial = {
 
 type sol = {
   reg : ARM.gpr_reg Var.Map.t;
-  insn : ARM.insn Tid.Map.t; 
+  insn : Vibes_ir.insn Tid.Map.t; 
   temp : Var.t Var.Map.t; 
   active : bool Tid.Map.t; 
   issue : int Tid.Map.t; 
@@ -231,7 +231,7 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
   {
     reg =  List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
     insn = List.map2_exn  
-        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> ARM.insn_of_sexp ))  
+        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Vibes_ir.insn_of_sexp ))  
         names.operations 
         (strip_enum s.insn) 
            |> Tid.Map.of_alist_exn;

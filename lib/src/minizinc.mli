@@ -57,7 +57,7 @@ val serialize_mzn_params : Vibes_ir.t -> mzn_params_serial * serialization_info
 
 type sol = {
   reg : ARM.gpr_reg Var.Map.t;
-  insn : ARM.insn Tid.Map.t; 
+  insn : Vibes_ir.insn Tid.Map.t; 
   temp : Var.t Var.Map.t; 
   active : bool Tid.Map.t; 
   issue : int Tid.Map.t; 

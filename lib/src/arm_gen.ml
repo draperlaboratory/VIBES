@@ -442,11 +442,11 @@ let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   Result.(insn_pretty op >>= fun op ->
           op_tags >>| fun op_tags ->
           if List.is_empty op_tags then
-            Format.asprintf "%s %s" op (arm_operand_pretty t.lhs)
+            Format.asprintf "%s %s" op (arm_operand_pretty (List.hd_exn t.lhs))
           else
             Format.asprintf "%s %s, %s"
               op
-              (arm_operand_pretty t.lhs)
+              (arm_operand_pretty (List.hd_exn t.lhs))
               (arm_operands_pretty op_tags t.operands))
 
 (* TODO: print the tid *)

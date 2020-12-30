@@ -17,23 +17,31 @@ let simple_var v = {
 
 type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal]
 
-type shift = Arm_types.shift
+type shift = [
+| `ASR
+| `LSL
+| `LSR
+| `ROR
+| `RRX
+] [@@deriving sexp, equal, compare]
 
-(* FIXME: Absolutely disgusting implementation, but it should be correct. *)
-let compare_shift (s1 : shift) (s2 : shift) = Int.compare (Obj.magic s1) (Obj.magic s2)
-
-let equal_shift (s1 : shift) (s2 : shift) = compare_shift s1 s2 = 0
 
 let op_var_exn (x : operand) : op_var = 
    match x with
    | Var o -> o
-   | Const _ -> failwith "Expected op_var"
+   | _ -> failwith "Expected op_var"
 
+type insn = [Arm_types.insn | shift] [@@deriving sexp]
+
+(* FIXME: Absolutely disgusting implementation, but it should be correct. *)
+let compare_insn (s1 : insn) (s2 : insn) = Int.compare (Obj.magic s1) (Obj.magic s2)
+
+let equal_insn (s1 : insn) (s2 : insn) = compare_insn s1 s2 = 0
 
 type operation = {
   id : Tid.t;
   lhs : operand list;
-  insns : [Arm_insn.t | shift] list;
+  insns : insn list;
   optional : bool;
   operands :  operand list;
 } [@@deriving compare, equal]
@@ -104,6 +112,7 @@ let var_operands (ops : operand list) : op_var list =
       match o with
       | Var v -> v :: acc
       | Const _ -> acc
+      | Label _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -130,6 +139,7 @@ module Blk = struct
     List.concat_map ~f:(fun op -> 
         match op with
         | Const _ -> []
+        | Label _ -> []
         | Var op -> op.temps) 
       (all_operands blk) |> Var.Set.of_list
 
@@ -151,7 +161,7 @@ module Blk = struct
 
   let all_operations (blk : blk) : operation list = blk.ins :: ( blk.outs :: blk.operations)
 
-  let operation_insn (blk : blk) : (ARM.insn list) Tid.Map.t = 
+  let operation_insn (blk : blk) : (insn list) Tid.Map.t = 
     List.fold ~init:Tid.Map.empty ~f:(fun acc o -> 
         Tid.Map.add_exn acc ~key:o.id ~data:o.insns
       ) (all_operations blk)
@@ -189,7 +199,8 @@ module Sub = struct
   let map_op_vars ~f (vir : t) : t = 
     let f2 o = match o with
       | Var o -> Var (f o)
-      | Const w -> Const w in 
+      | Const w -> Const w 
+      | Label l -> Label l in 
     let apply_to_op (o : operation) : operation = {
       id = o.id;
       lhs = List.map ~f:f2 o.lhs; 
@@ -238,7 +249,7 @@ module Sub = struct
         List.map ~f:(fun t -> (t, blk.id) ) (Blk.all_temps blk |> Var.Set.to_list)) 
       sub.blks |> Var.Map.of_alist_exn
 
-  let operation_insns (sub : t) : (ARM.insn list) Tid.Map.t = 
+  let operation_insns (sub : t) : (insn list) Tid.Map.t = 
     List.fold ~init:Tid.Map.empty ~f:(fun acc blk -> 
         tid_map_union_exn acc (Blk.operation_insn blk)
       ) sub.blks
@@ -261,9 +272,10 @@ let pretty_operand o =
                                           Ppx_sexp_conv_lib.Sexp.to_string) o.pre_assign) |> 
                  Option.value ~default:"N/A" )
   | Const(c) -> Word.to_string c
+  | Label(l) -> Tid.to_string l
 let pretty_operand_list l = List.map ~f:pretty_operand l |> String.concat ~sep:","
 let pretty_operation o = sprintf "\t\t[%s]  <- %s [%s]" (pretty_operand_list o.lhs) 
-    (String.concat (List.map ~f:(fun i -> ARM.sexp_of_insn i 
+    (String.concat (List.map ~f:(fun i -> sexp_of_insn i 
                                           |>  Ppx_sexp_conv_lib.Sexp.to_string) o.insns)) 
     (pretty_operand_list o.operands)
 let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tcode:\n%s" 

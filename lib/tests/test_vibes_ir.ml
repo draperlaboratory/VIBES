@@ -79,7 +79,7 @@ let test_temps1 _  =
 let test_operands1 _  =
   assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list operands1) (Vibes_ir.all_operands vir1)
 let test_op_insns1 _  =
-  assert_equal ~cmp:(Tid.Map.equal (List.equal Arm_insn.equal)) op_insns1 (Vibes_ir.operation_insns vir1)
+  assert_equal ~cmp:(Tid.Map.equal (List.equal Vibes_ir.equal_insn)) op_insns1 (Vibes_ir.operation_insns vir1)
 
 
 

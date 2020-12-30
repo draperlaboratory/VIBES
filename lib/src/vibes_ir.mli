@@ -46,6 +46,8 @@ val simple_var : var -> op_var
 
 type operand = Var of op_var | Const of word | Label of tid [@@deriving compare, equal]
 
+type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
+
 (** An [operation] has 
     an id
     an assigned lhs,
@@ -55,12 +57,12 @@ type operand = Var of op_var | Const of word | Label of tid [@@deriving compare,
 type operation = {
   id : tid;
   lhs : operand list;
-  insns : [Arm_insn.t | shift]  list;
+  insns : insn list;
   optional : bool;
   operands : operand list;
 } [@@deriving compare, equal]
 
-val simple_op : [ARM.insn | ARM.shift] -> operand -> operand list -> operation
+val simple_op : insn -> operand -> operand list -> operation
 
 (** A [vibes_blk] has an id,
     a set of operations,
@@ -117,7 +119,7 @@ val users_map : t -> (op_var list) Var.Map.t
     and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
-val operation_insns : t -> (ARM.insn list) Tid.Map.t
+val operation_insns : t -> insn list Tid.Map.t
 val operand_operation : t -> operation Var.Map.t
 val pretty_ir : t -> string
 
