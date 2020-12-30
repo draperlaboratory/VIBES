@@ -18,6 +18,7 @@ type t =
   | Missing_patch_point
   | Missing_patch_size
   | Missing_property
+  | Missing_semantics of string
   | Command_not_found of string
   | Exit_code of string
   | Unexpected_exit of string
@@ -44,11 +45,12 @@ let pp ppf (e : t) =
     | Missing_patch_point -> "No patch point was stashed in KB"
     | Missing_patch_size -> "No patch size was stashed in KB"
     | Missing_property -> "No correctness property was stashed in KB"
+    | Missing_semantics s -> Format.sprintf "Semantics for %s not found in KB" s
     | Command_not_found s -> s
     | Exit_code s -> s
     | Unexpected_exit s -> s
     | WP_result_unknown s -> s
-    | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n 
+    | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | Other s -> s
   in
   Format.fprintf ppf "@[%s@]@." msg

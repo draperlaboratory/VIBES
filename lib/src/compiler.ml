@@ -19,12 +19,10 @@ let create_assembly (bil : Bil.t) : string list KB.t =
         value_exn |>
         Arm_gen.ir |>
         Arm_gen.arm_ir_pretty) >>=
-    (fun assembly ->
-      let errors =
-        List.filter assembly ~f:(fun x -> String.is_substring x ~substring:"Not implemented") in
-      match List.length errors with
-      | 0 -> KB.return assembly
-      | _ -> Errors.fail (Errors.Not_implemented "We only handle int assignment"))
+    (function
+        | Ok assembly -> KB.return assembly
+        | Error e -> Errors.fail e)
+
 
 (* Converts the patch (as BIL) to assembly instructions. *)
 let compile (obj : Data.t) : unit KB.t =

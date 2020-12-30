@@ -9,12 +9,19 @@ type op_var = {
 
 let simple_var v = {id = v; temps = []; pre_assign = None}
 
-type operand = Var of op_var | Const of Word.t [@@deriving compare, equal]
+type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal]
+
+type shift = Arm_types.shift
+
+(* FIXME: Absolutely disgusting implementation, but it should be correct. *)
+let compare_shift (s1 : shift) (s2 : shift) = Int.compare (Obj.magic s1) (Obj.magic s2)
+
+let equal_shift (s1 : shift) (s2 : shift) = compare_shift s1 s2 = 0
 
 type operation = {
   id : Tid.t;
   lhs : operand;
-  insns : Arm_insn.t list;
+  insns : [Arm_insn.t | shift] list;
   optional : bool;
   operands :  operand list;
 } [@@deriving compare, equal]
