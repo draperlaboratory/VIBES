@@ -7,7 +7,7 @@
    Because the IR needs to be serialized to an external solver, many entities require ids.
 
    Unison makes the distinction between operands and temporaries.
-   An operand is a field of an operation. In other words operands belong to a single 
+   An operand is a field of an operation. In other words operands belong to a single
    operation.
    One operand may have multiple temporaries available
    from which to choose from. Temporaries do not belong to a single operation.
@@ -31,8 +31,8 @@
 open Bap.Std
 
 
-(* [operand]s have 
-      unique ids, 
+(** [operand]s have
+      unique ids,
       a list of potential temporaries that can be used to implement the operand and
       may be optionally pre-assigned to registers for calling conventions or other reasons
 *)
@@ -44,11 +44,13 @@ type op_var = {
 
 val simple_var : var -> op_var
 
-type operand = Var of op_var | Const of word | Label of tid [@@deriving compare, equal]
+type operand = Var of op_var
+             | Const of word
+             | Label of tid [@@deriving compare, equal]
 
 type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
-(** An [operation] has 
+(** An [operation] has
     an id
     an assigned lhs,
     a set of instructions to choose from,
@@ -82,9 +84,8 @@ type blk = {
     in default values for the other fields. *)
 val simple_blk : tid -> operation list -> blk
 
-(**
-   The [vibes_ir] type has a list of blocks and a set of operands which are congruent.
-*)
+(** The [vibes_ir] type has a list of blocks and a set of operands
+   which are congruent.  *)
 type t = {
   blks : blk list;
   congruent : (op_var * op_var) list
@@ -98,25 +99,26 @@ val add : blk -> t -> t
 
 
 val map_blks : f:(blk -> blk) -> t ->t
-val map_op_vars :  f:(op_var -> op_var) -> t -> t 
+val map_op_vars :  f:(op_var -> op_var) -> t -> t
 val map_operations : f:(operation -> operation) -> t -> t
 
 val operation_to_string : operation -> string
 val op_var_to_string : op_var -> string
 
-val all_temps : t -> Var.Set.t 
+val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
-(** [definer_map] takes a subroutine and builds a Map from all temporaries to the 
-    unique lhs operand where that temporary is defined. *)
+(** [definer_map] takes a subroutine and builds a Map from all
+   temporaries to the unique lhs operand where that temporary is
+   defined. *)
 val definer_map : t -> op_var Var.Map.t
 
-(** [users_map] takes a subroutine and builds a Map from all temporaries to the 
-    operands that may use that temporary. *)
+(** [users_map] takes a subroutine and builds a Map from all
+   temporaries to the operands that may use that temporary. *)
 val users_map : t -> (op_var list) Var.Map.t
 
-(** [temp_blk] builds a Map from temporaries to the unique block in which they are defined 
-    and used. *)
+(** [temp_blk] builds a Map from temporaries to the unique block in
+   which they are defined and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
 val operation_insns : t -> insn list Tid.Map.t
@@ -124,3 +126,7 @@ val operand_operation : t -> operation Var.Map.t
 val pretty_ir : t -> string
 
 val op_var_exn : operand -> op_var
+
+(** Populate the [pre_assign] field with [`R0] if it is not already
+   assigned. Useful for testing purposes. *)
+val dummy_reg_alloc : t -> t
