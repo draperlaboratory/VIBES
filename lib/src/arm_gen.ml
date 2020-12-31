@@ -390,25 +390,26 @@ let insn_pretty i : (string, Errors.t) result =
     in
     Error (Errors.Not_implemented msg)
 
-let arm_operand_pretty (o : IR.operand) : string =
+let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
-    ARM.sexp_of_gpr_reg (Option.value_exn v.pre_assign) |> Sexp.to_string
+    let error = Errors.Missing_semantics "operand.pre_assign field is empty in pretty printer" in 
+    Result.bind (Result.of_option v.pre_assign ~error:error) ~f:(fun reg ->
+        Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
   | Const w ->
     (* A little calisthenics to get this to look nice *)
-    Format.asprintf "#%a" Word.pp_dec w
-  | Label l -> Tid.name l
+    Result.return (Format.asprintf "#%a" Word.pp_dec w)
+  | Label l -> Result.return(Tid.name l)
 
-let arm_operands_pretty (l : IR.operand list) : string =
-  String.concat ~sep:", "
-    (List.map l ~f:(fun o -> arm_operand_pretty o))
+let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
+  Result.map ~f:(String.concat ~sep:", ") 
+    (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
   Result.(insn_pretty op >>= fun op ->
-          return (Format.asprintf "%s %s"
-                    op
-                    (arm_operands_pretty ((List.hd_exn t.lhs) :: t.operands))))
+          arm_operands_pretty ((List.hd_exn t.lhs) :: t.operands) >>= (fun operands -> 
+              return (Format.asprintf "%s %s" op operands)))
 
 (* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
