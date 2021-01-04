@@ -34,17 +34,34 @@ open Test_vibes_ir
 let sol1 : Minizinc.sol = {
   reg = Var.Map.of_alist_exn (List.zip_exn  temps1 [  `R0 ; `R0  ; `R0 ]) ;
   insn = Tid.Map.of_alist_exn (List.zip_exn   operations1   [ `MOVi ;`MOVi ;`MOVi ; `MOVi]);
-  temp = Var.Map.of_alist_exn (List.zip_exn   operands1   oprnd_temps1  ) ;
-  active = Tid.Map.of_alist_exn (List.zip_exn   operations1 [true; true ; true; true])   ;
-  issue  = Tid.Map.of_alist_exn (List.zip_exn operations1 [ 1;2;3;4] )   ;
+  temp = Var.Map.of_alist_exn (List.zip_exn  operands1  oprnd_temps1  ) ;
+  active = Tid.Map.of_alist_exn (List.zip_exn  operations1 [true; true ; true; true])   ;
+  issue  = Tid.Map.of_alist_exn (List.zip_exn operations1 [ 4;3;2;1] )   ; (* Just reverse ordered *)
 }
 
 let new_vir1 = Minizinc.apply_sol vir1 sol1
 
+(* This is a duplicate of an unexposed function in Vibes_ir *)
+let all_operands_helper (blk : blk) : operand list =
+  let operation_operands =
+    List.concat_map blk.operations
+      ~f:(fun operation ->
+          operation.lhs @ operation.operands)
+  in
+  blk.ins.lhs @ blk.outs.operands @ operation_operands
+
 let test_sol_apply_ex1 _ = 
-   assert_equal ~cmp:Var.Set.equal (all_temps vir1) (all_temps new_vir1);
-   assert_equal ~cmp:Var.Set.equal (all_operands vir1) (all_operands new_vir1);
-   ()
+  assert_equal ~cmp:Var.Set.equal (all_temps vir1) (all_temps new_vir1);
+  assert_equal ~cmp:Var.Set.equal (all_operands vir1) (all_operands new_vir1);
+  let blk1 = List.hd_exn vir1.blks in
+  let blk2 = List.hd_exn new_vir1.blks in
+  assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Tid.equal o1.id o2.id))  
+    blk1.operations (List.rev blk2.operations);
+  assert_bool "All registers assigned to R0" (List.for_all (all_operands_helper blk2)
+                                                ~f:(fun o -> match (op_var_exn o).pre_assign with
+                                                    | Some `R0 -> true
+                                                    | _ -> false    ));
+  ()
 
 
 
