@@ -7,6 +7,7 @@ open OUnit2
 module KB = Knowledge
 module H = Helpers
 
+let dummy_solver vir = KB.return vir
 
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
@@ -40,7 +41,7 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
   let computation =
     (* At the start, the KB is empty. No patch (BIL) is stashed in it. *)
     H.obj () >>= fun obj ->
-    Compiler.compile obj >>= fun _ ->
+    Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in

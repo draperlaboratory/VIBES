@@ -31,7 +31,11 @@ Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
 
     apt install -y binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
-If you don't have a `4.09.1` OCaml switch, create one.
+Install `minizinc`, for example if you use `snap`:
+
+    snap install minizinc --classic
+
+If you don't have a `4.09.1` OCaml switch, create one. 
 
 Install the latest (bleeding edge) version of BAP:
 

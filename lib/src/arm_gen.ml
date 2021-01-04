@@ -5,14 +5,14 @@ open Bap_core_theory
 module IR = Vibes_ir
 
 type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
-                 [@@deriving compare, equal]
+[@@deriving compare, equal]
 
 let empty_eff = {current_blk = []; other_blks = IR.empty}
 
 (* FIXME: if this is a constant, I'm pretty sure the op_eff field is
    always empty *)
 type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
-                  [@@deriving compare, equal]
+[@@deriving compare, equal]
 
 (* We use this domain both for ['a pure] and ['s bitv] *)
 let arm_pure_dom = KB.Domain.optional ~equal:equal_arm_pure "arm-pure"
@@ -39,33 +39,33 @@ let (let=) v f = KB.(>>=) v
     (fun v ->
        match KB.Value.get arm_eff v with
        | None ->
-          let v_str = Format.asprintf "%a" KB.Value.pp v in
-          Errors.fail (Errors.Missing_semantics v_str)
+         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
 let (let-) v f =
   KB.(>>=) v
     (fun v ->
-      match KB.Value.get arm_pure v with
-      | None ->
-          let v_str = Format.asprintf "%a" KB.Value.pp v in
-          Errors.fail (Errors.Missing_semantics v_str)
-      | Some v -> f v)
+       match KB.Value.get arm_pure v with
+       | None ->
+         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         Errors.fail (Errors.Missing_semantics v_str)
+       | Some v -> f v)
 
 let (let/) v f =
   KB.(>>=) v
     (fun v ->
-      match KB.Value.get arm_mem v with
-      | None ->
-          let v_str = Format.asprintf "%a" KB.Value.pp v in
-          Errors.fail (Errors.Missing_semantics v_str)
-      | Some v -> f v)
+       match KB.Value.get arm_mem v with
+       | None ->
+         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         Errors.fail (Errors.Missing_semantics v_str)
+       | Some v -> f v)
 
 let eff d =
   KB.return @@
-    KB.Value.put arm_eff
-      (Theory.Effect.empty Theory.Effect.Sort.bot)
-      (Some d)
+  KB.Value.put arm_eff
+    (Theory.Effect.empty Theory.Effect.Sort.bot)
+    (Some d)
 
 type 'a bitv_sort = 'a Theory.Bitv.t Theory.Value.sort
 
@@ -77,25 +77,25 @@ let s32 (_ : unit) : 'a bitv_sort = Theory.Bitv.define 32
 
 let memory m =
   KB.return @@
-    KB.Value.put arm_mem
-      (Theory.Value.empty (Theory.Mem.define (s32 ()) (s32 ())))
-  (Some m)
+  KB.Value.put arm_mem
+    (Theory.Value.empty (Theory.Mem.define (s32 ()) (s32 ())))
+    (Some m)
 
 let pure v =
   KB.return @@
-    KB.Value.put arm_pure
-      (* This means we only have 32 bit vectors as our values *)
-      (* TODO: extend this arbitrary sizes *)
-      (Theory.Value.empty (s32 ()))
-      (Some v)
+  KB.Value.put arm_pure
+    (* This means we only have 32 bit vectors as our values *)
+    (* TODO: extend this arbitrary sizes *)
+    (Theory.Value.empty (s32 ()))
+    (Some v)
 
 let bool b =
   KB.return @@
-    KB.Value.put arm_pure
-      (* This means we only have 32 bit vectors as our values *)
-      (* TODO: extend this arbitrary sizes *)
-      (Theory.Value.empty Theory.Bool.t)
-      (Some b)
+  KB.Value.put arm_pure
+    (* This means we only have 32 bit vectors as our values *)
+    (* TODO: extend this arbitrary sizes *)
+    (Theory.Value.empty Theory.Bool.t)
+    (Some b)
 
 module ARM_ops = struct
 
@@ -235,8 +235,8 @@ struct
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
-  (* This is incorrect: we're assuming every constant is exactly 32
-     bits. *)
+    (* This is incorrect: we're assuming every constant is exactly 32
+       bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w
 
@@ -384,69 +384,36 @@ let insn_pretty i : (string, Errors.t) result =
   | `LDRrs  -> Ok "ldr"
   | `STRrs  -> Ok "str"
   | i       ->
-     let to_string _ = "UNKNOWN" in
-     let msg =
-       Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
-     in
-     Error (Errors.Not_implemented msg)
+    let to_string _ = "UNKNOWN" in
+    let msg =
+      Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
+    in
+    Error (Errors.Not_implemented msg)
 
-type op_tag = Mem | Not_mem
-
-(* TODO: refactor this into insn_pretty? *)
-let tags_of_op i : (op_tag list, Errors.t) result =
-  match i with
-  | `MOVr   -> Ok [Not_mem]
-  | `MOVi   -> Ok [Not_mem]
-  | `BX     -> Ok []
-  | `ADDrsi -> Ok [Not_mem; Not_mem]
-  | `LSL    -> Ok [Not_mem; Not_mem]
-  | `LDRrs  -> Ok [Mem]
-  | `STRrs  -> Ok [Mem]
-  | `LSR    -> Ok [Not_mem; Not_mem]
-  | `ASR    -> Ok [Not_mem; Not_mem]
-  | `ANDrsi -> Ok [Not_mem; Not_mem]
-  | `ORRrsi -> Ok [Not_mem; Not_mem]
-  | `EORrsi -> Ok [Not_mem; Not_mem]
-  | i       ->
-     let to_string _ = "UNKNOWN" in
-     let msg = Format.asprintf "tags_of_op: instruction %s not supported"
-                 (to_string i)
-     in
-     Error (Errors.Not_implemented msg)
-
-
-let arm_operand_pretty ?tag:(tag = Not_mem) (o : IR.operand) : string =
+let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
-     let v = Var.to_string v.id in
-     begin
-       match tag with
-       | Mem ->
-          Format.asprintf "[%s]" v
-       | Not_mem ->
-          Format.asprintf "%s" v
-     end
+     let error =
+       Errors.Missing_semantics
+         "operand.pre_assign field is empty in pretty printer" in
+     Result.bind
+       (Result.of_option v.pre_assign ~error:error)
+       ~f:(fun reg ->
+         Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
   | Const w ->
     (* A little calisthenics to get this to look nice *)
-     Format.asprintf "#%a" Word.pp_dec w
-  | Label l -> Tid.name l
+    Result.return (Format.asprintf "#%a" Word.pp_dec w)
+  | Label l -> Result.return(Tid.name l)
 
-let arm_operands_pretty (tags : op_tag list) (l : IR.operand list) : string =
-  String.concat ~sep:", "
-    (List.map2_exn tags l ~f:(fun t o -> arm_operand_pretty ~tag:t o))
+let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
+  Result.map ~f:(String.concat ~sep:", ")
+    (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
-  let op_tags = tags_of_op op in
   Result.(insn_pretty op >>= fun op ->
-          op_tags >>| fun op_tags ->
-          if List.is_empty op_tags then
-            Format.asprintf "%s %s" op (arm_operand_pretty t.lhs)
-          else
-            Format.asprintf "%s %s, %s"
-              op
-              (arm_operand_pretty t.lhs)
-              (arm_operands_pretty op_tags t.operands))
+          arm_operands_pretty ((List.hd_exn t.lhs) :: t.operands) >>= (fun operands ->
+              return (Format.asprintf "%s %s" op operands)))
 
 (* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
