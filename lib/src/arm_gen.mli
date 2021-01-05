@@ -20,8 +20,8 @@ open Bap_core_theory
 
 (** The ARM implementation of Theory.Core.
 
-   It can be included to write Core terms and directly obtain a
-   [Vibes_ir] from it.  *)
+    It can be included to write Core terms and directly obtain a
+    [Vibes_ir] from it.  *)
 module ARM_Core : Theory.Core
 
 (** The abstract representation of [Theory.eff] terms. *)
@@ -29,9 +29,9 @@ type arm_eff
 
 (** Deprecated: Work directly with terms parametrized over S : Core *)
 module BilARM :
-  sig
-    val run : ('e, 'r, 's) Theory.Parser.t -> 's list -> unit Theory.eff
-  end
+sig
+  val run : ('e, 'r, 's) Theory.Parser.t -> 's list -> unit Theory.eff
+end
 
 (** Deprecated: Work directly with terms parametrized over S : Core *)
 val bil_to_arm : (Bil.exp, unit, Bil.stmt) Theory.Parser.t
@@ -40,7 +40,7 @@ val bil_to_arm : (Bil.exp, unit, Bil.stmt) Theory.Parser.t
 val effect : 'a Theory.effect -> arm_eff option
 
 (** Extracts the concrete [Vibes_ir] from the abstract [arm_eff]
-   representation. *)
+    representation. *)
 val ir : arm_eff -> Vibes_ir.t
 
 (** Pretty prints [ir] terms in a form suitable for assembly *)

@@ -85,7 +85,7 @@ type blk = {
 val simple_blk : tid -> operation list -> blk
 
 (** The [vibes_ir] type has a list of blocks and a set of operands
-   which are congruent.  *)
+    which are congruent.  *)
 type t = {
   blks : blk list;
   congruent : (op_var * op_var) list
@@ -109,16 +109,16 @@ val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
 (** [definer_map] takes a subroutine and builds a Map from all
-   temporaries to the unique lhs operand where that temporary is
-   defined. *)
+    temporaries to the unique lhs operand where that temporary is
+    defined. *)
 val definer_map : t -> op_var Var.Map.t
 
 (** [users_map] takes a subroutine and builds a Map from all
-   temporaries to the operands that may use that temporary. *)
+    temporaries to the operands that may use that temporary. *)
 val users_map : t -> (op_var list) Var.Map.t
 
 (** [temp_blk] builds a Map from temporaries to the unique block in
-   which they are defined and used. *)
+    which they are defined and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
 val operation_insns : t -> insn list Tid.Map.t
@@ -128,5 +128,5 @@ val pretty_ir : t -> string
 val op_var_exn : operand -> op_var
 
 (** Populate the [pre_assign] field with [`R0] if it is not already
-   assigned. Useful for testing purposes. *)
+    assigned. Useful for testing purposes. *)
 val dummy_reg_alloc : t -> t

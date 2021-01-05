@@ -4,7 +4,7 @@ open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 
-module KB = Knowledge 
+module KB = Knowledge
 
 (* Loads the BIL version of a patch. For now, we select from a hand-written
    set of patches defined in the {!Patches} module. *)

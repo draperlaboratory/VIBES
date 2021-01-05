@@ -14,15 +14,15 @@ module KB = Knowledge
 let create_assembly ?solver:(solver = Minizinc.run_minizinc) (bil : Bil.t) : string list KB.t =
   let value_exn x = Option.value_exn x in
   Arm_gen.BilARM.run Arm_gen.bil_to_arm bil >>|
-    (fun v -> v
-    |> Arm_gen.effect
-    |> value_exn
-    |> Arm_gen.ir) 
-    >>= solver 
-    >>| Arm_gen.arm_ir_pretty 
-    >>= (function
-        | Ok assembly -> KB.return assembly
-        | Error e -> Errors.fail e)
+  (fun v -> v |>
+            Arm_gen.effect |>
+            value_exn |>
+            Arm_gen.ir) >>=
+  solver  >>|
+  Arm_gen.arm_ir_pretty >>=
+  (function
+    | Ok assembly -> KB.return assembly
+    | Error e -> Errors.fail e)
 
 (* Converts the patch (as BIL) to assembly instructions. *)
 let compile ?solver:(solver = Minizinc.run_minizinc)(obj : Data.t) : unit KB.t =

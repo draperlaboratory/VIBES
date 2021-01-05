@@ -73,7 +73,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
 let suite = [
   "Test Patch_ingester.ingest" >:: test_ingest;
   "Test Patch_ingester.ingest: no patch" >::
-    test_ingest_with_no_patch;
+  test_ingest_with_no_patch;
   "Test Patch_ingester.ingest: no address size" >::
-    test_ingest_with_no_addr_size;
+  test_ingest_with_no_addr_size;
 ]

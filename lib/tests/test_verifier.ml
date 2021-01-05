@@ -16,7 +16,7 @@ module Test_data = struct
   let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
   let result : (cls, string) KB.slot =
     KB.Class.property ~package cls
-    "test-result-for-verifier" KB.Domain.string
+      "test-result-for-verifier" KB.Domain.string
 end
 
 (* Test that [Verifier.verify] works as expected for Z3 [UNSAT]. *)
@@ -196,9 +196,9 @@ let suite = [
   "Test Verifier.verify: UNSAT" >:: test_verify_unsat;
   "Test Verifier.verify: SAT" >:: test_verify_sat;
   "Test Verifier.verify: no lifted original exe" >::
-    test_verify_with_no_original_exe_prog;
+  test_verify_with_no_original_exe_prog;
   "Test Verifier.verify: no patched exe filepath" >::
-    test_verify_with_no_patched_exe;
+  test_verify_with_no_patched_exe;
   "Test Verifier.verify: no correctness property" >::
-    test_verify_with_no_property;
+  test_verify_with_no_property;
 ]

@@ -12,26 +12,26 @@ let run_process_exn (command : string) (args : string list) : unit KB.t =
     Unix.open_process_args command (Array.of_list (command :: args)) in
   let status = Unix.close_process (as_stdout, as_stdin) in
   match status with
-   | WEXITED 0 -> KB.return ()
-   | WEXITED 127 -> 
-     begin
-       let msg = Format.sprintf "'%s' not found in PATH" command in
-       Errors.fail (Errors.Command_not_found msg)
-     end
-   | WEXITED n -> 
-     begin
-       let msg = Format.sprintf "%s returned exit code: %d" command n in
-       Errors.fail (Errors.Exit_code msg)
-     end
-   | _ -> 
-     begin
-       let msg = 
-         Format.sprintf "%s exited with unknown return status" command in
-       Errors.fail (Errors.Unexpected_exit msg)
-     end
+  | WEXITED 0 -> KB.return ()
+  | WEXITED 127 ->
+    begin
+      let msg = Format.sprintf "'%s' not found in PATH" command in
+      Errors.fail (Errors.Command_not_found msg)
+    end
+  | WEXITED n ->
+    begin
+      let msg = Format.sprintf "%s returned exit code: %d" command n in
+      Errors.fail (Errors.Exit_code msg)
+    end
+  | _ ->
+    begin
+      let msg =
+        Format.sprintf "%s exited with unknown return status" command in
+      Errors.fail (Errors.Unexpected_exit msg)
+    end
 
 (* This function performs the actual patching of a binary. *)
-let patch_naive (original_exe_filename : string) (assembly : string list) 
+let patch_naive (original_exe_filename : string) (assembly : string list)
     (patch_point : Bitvec.t) : string KB.t =
 
   (* Write assembly to temporary file *)
@@ -41,7 +41,7 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
   (* run assembler *)
   let assembler = "/usr/bin/arm-linux-gnueabi-as" in
   let with_elf_filename = Stdlib.Filename.temp_file "vibes-assembly" ".o" in
-  run_process_exn 
+  run_process_exn
     assembler ["-o"; with_elf_filename ; asm_filename ] >>= fun () ->
 
   (* strip elf data *)
@@ -57,9 +57,9 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
   let orig_exe = In.read_all original_exe_filename in
   let patch_location = Bitvec.to_int64 patch_point in
   Out.with_file tmp_patched_exe_filename ~f:(fun file ->
-                Out.output_string file orig_exe;
-                Out.seek file patch_location;
-                Out.output_string file patch_exe);
+      Out.output_string file orig_exe;
+      Out.seek file patch_location;
+      Out.output_string file patch_exe);
 
   KB.return tmp_patched_exe_filename
 
@@ -79,9 +79,9 @@ let patch ?patcher:(patcher=patch_naive) (obj : Data.t) : unit KB.t =
     assembly patch_point >>= fun tmp_patched_exe_filename ->
 
   (* Report the results and stash the filepath in the KB. *)
-  Events.(send @@ 
-    Info (Core_kernel.sprintf "Temporary patched exe filepath: %s"
-            tmp_patched_exe_filename));
+  Events.(send @@
+          Info (Core_kernel.sprintf "Temporary patched exe filepath: %s"
+                  tmp_patched_exe_filename));
   Data.Patched_exe.set_tmp_filepath obj
     (Some tmp_patched_exe_filename) >>= fun _ ->
 

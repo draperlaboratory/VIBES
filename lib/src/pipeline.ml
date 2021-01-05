@@ -7,7 +7,7 @@ open Knowledge.Syntax
 module KB = Knowledge
 
 (* Fail if the count is more than max_tries. *)
-let halt_if_too_many (count : int) (max_tries : int option) : unit KB.t = 
+let halt_if_too_many (count : int) (max_tries : int option) : unit KB.t =
   match max_tries with
   | None -> KB.return ()
   | Some 0 -> KB.return ()
@@ -17,8 +17,8 @@ let halt_if_too_many (count : int) (max_tries : int option) : unit KB.t =
 
 (* The main CEGIS loop. This compiles the patch into assembly, splices the
    new code into the original exe, and then checks if the patched exe is
-   correct. If not, it repeats the process. *) 
-let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) 
+   correct. If not, it repeats the process. *)
+let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
     (obj : Data.t) : Data.t KB.t =
 
   Events.(send @@ Header "Starting CEGIS iteration");
@@ -34,7 +34,7 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
   Verifier.verify obj >>= fun next_step ->
   match next_step with
   | Verifier.Done -> KB.return obj
-  | Verifier.Again property -> 
+  | Verifier.Again property ->
     begin
       Data.fresh obj ~property >>= fun obj' ->
       cegis obj' ~count:(count + 1) ~max_tries
@@ -75,27 +75,27 @@ let run (config : Config.t) : (string, KB.Conflict.t) result =
       in
       match (original_exe_filepath, tmp_patched_exe_filepath) with
       | (Some orig_path, Some tmp_path) ->
-         let user_filepath : string option =
-           KB.Value.get Data.Patched_exe.filepath obj
-         in
-         let patched_exe_filepath : string =
-           Option.value user_filepath
-             ~default:(  (Filename.basename orig_path)
-                       ^ ".patched")
-         in
-         begin
-           Utils.cp tmp_path patched_exe_filepath;
-           Events.(send @@ 
-             Info (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
-           Ok patched_exe_filepath
-         end
+        let user_filepath : string option =
+          KB.Value.get Data.Patched_exe.filepath obj
+        in
+        let patched_exe_filepath : string =
+          Option.value user_filepath
+            ~default:(  (Filename.basename orig_path)
+                        ^ ".patched")
+        in
+        begin
+          Utils.cp tmp_path patched_exe_filepath;
+          Events.(send @@
+                  Info (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
+          Ok patched_exe_filepath
+        end
       | (None, _) ->
-         begin
+        begin
           let msg = "Missing filepath for the original exe" in
           let err = Errors.Problem (Errors.Other msg) in
           Events.(send @@ Info msg);
           Error err
-         end
+        end
       | (_, None) ->
         begin
           let msg = "No filepath for the temporary patched exe was computed" in
@@ -106,9 +106,9 @@ let run (config : Config.t) : (string, KB.Conflict.t) result =
     end
 
   (* Otherwise, error. *)
-  | Error e -> 
+  | Error e ->
     begin
       Events.(send @@ Info "An error occurred");
       Events.(send @@ Info (Format.asprintf "%a\n" KB.Conflict.pp e));
       Error e
-    end 
+    end

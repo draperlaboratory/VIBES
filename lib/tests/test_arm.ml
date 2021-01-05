@@ -196,9 +196,9 @@ let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
     begin
       match input, expected with
       | Some input, Some expected ->
-         let pairs = List.zip_exn expected input in
-         let matches = List.map pairs ~f:(fun (pat, str) -> Str.string_match pat str 0) in
-         List.for_all ~f:(fun b -> b) matches
+        let pairs = List.zip_exn expected input in
+        let matches = List.map pairs ~f:(fun (pat, str) -> Str.string_match pat str 0) in
+        List.for_all ~f:(fun b -> b) matches
       | _ -> false
     end
   in

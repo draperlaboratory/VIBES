@@ -1,9 +1,9 @@
 (* Verifies the patched executable.
 
    This module is responsible for comparing the patched executable (produced
-   by the {!Patcher}) against the original executable, to determine if the 
-   patched executable is correct. 
-   
+   by the {!Patcher}) against the original executable, to determine if the
+   patched executable is correct.
+
    This module checks correctness by using CBAT to confirm whether a
    correctness property specified by the user holds of the patched executable
    relative to the original executable. *)

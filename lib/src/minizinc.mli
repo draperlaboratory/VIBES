@@ -5,7 +5,7 @@ open Bap_knowledge
 module KB = Knowledge
 
 (**
-   [run_minzinc] encodes the VIR.t to a json file, calls minizinc, and interpets 
+   [run_minzinc] encodes the VIR.t to a json file, calls minizinc, and interpets
    the solution.
 *)
 
@@ -14,15 +14,15 @@ val run_minizinc : Vibes_ir.t -> Vibes_ir.t KB.t
 
 (* Exposed for unit testing. *)
 
-type 'a mznset = {set : 'a list}  [@@deriving yojson] 
-type ('a ,'b) mznmap = 'b list 
+type 'a mznset = {set : 'a list}  [@@deriving yojson]
+type ('a ,'b) mznmap = 'b list
 
-type mzn_enum = {e : string} [@@deriving yojson] 
+type mzn_enum = {e : string} [@@deriving yojson]
 type mzn_enum_def = mzn_enum mznset [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
-type operand = mzn_enum [@@deriving yojson] 
-type operation = mzn_enum [@@deriving yojson] 
-type block = mzn_enum [@@deriving yojson] 
-type temp = mzn_enum [@@deriving yojson] 
+type operand = mzn_enum [@@deriving yojson]
+type operation = mzn_enum [@@deriving yojson]
+type block = mzn_enum [@@deriving yojson]
+type temp = mzn_enum [@@deriving yojson]
 type insn = mzn_enum [@@deriving yojson]
 type reg = mzn_enum [@@deriving yojson]
 
@@ -57,10 +57,10 @@ val serialize_mzn_params : Vibes_ir.t -> mzn_params_serial * serialization_info
 
 type sol = {
   reg : ARM.gpr_reg Var.Map.t;
-  insn : Vibes_ir.insn Tid.Map.t; 
-  temp : Var.t Var.Map.t; 
-  active : bool Tid.Map.t; 
-  issue : int Tid.Map.t; 
+  insn : Vibes_ir.insn Tid.Map.t;
+  temp : Var.t Var.Map.t;
+  active : bool Tid.Map.t;
+  issue : int Tid.Map.t;
 }
 
 val apply_sol : Vibes_ir.t -> sol -> Vibes_ir.t

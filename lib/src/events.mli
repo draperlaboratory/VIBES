@@ -1,7 +1,7 @@
 (* An event stream for the VIBES pipeline.
 
    This module provides an event stream that modules in the VIBES pipeline
-   can send messages to, for logging/communication. 
+   can send messages to, for logging/communication.
 
    If the user has enabled verbose logging, the {!Verbose} module will
    subscribe to this stream, and report all events. *)

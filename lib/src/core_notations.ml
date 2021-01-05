@@ -46,7 +46,7 @@ module Make (C : Core) = struct
     List.fold ~init:empty ~f:seq l
 
   (** Sequences a list of control effects, ending them with a
-     fall-through *)
+      fall-through *)
   let ctrl_body (l : ctrl eff list) : ctrl eff =
     let empty = perform Effect.Sort.fall in
     List.fold ~init:empty ~f:seq l

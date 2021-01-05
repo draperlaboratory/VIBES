@@ -393,13 +393,13 @@ let insn_pretty i : (string, Errors.t) result =
 let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
-     let error =
-       Errors.Missing_semantics
-         "operand.pre_assign field is empty in pretty printer" in
-     Result.bind
-       (Result.of_option v.pre_assign ~error:error)
-       ~f:(fun reg ->
-         Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
+    let error =
+      Errors.Missing_semantics
+        "operand.pre_assign field is empty in pretty printer" in
+    Result.bind
+      (Result.of_option v.pre_assign ~error:error)
+      ~f:(fun reg ->
+          Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
   | Const w ->
     (* A little calisthenics to get this to look nice *)
     Result.return (Format.asprintf "#%a" Word.pp_dec w)

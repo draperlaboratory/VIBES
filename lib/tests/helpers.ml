@@ -83,8 +83,8 @@ let assert_property ~cmp ?p_res ?p_expected
     end
   | Error problem ->
     let msg = Format.asprintf
-      "@[<v 4>expected a value, but got an error:@,@[%a@]@]"
-      KB.Conflict.pp problem
+        "@[<v 4>expected a value, but got an error:@,@[%a@]@]"
+        KB.Conflict.pp problem
     in
     assert_bool msg false
 
@@ -120,10 +120,10 @@ let assert_error ?printer property expected result : unit =
   | Error problem ->
     begin
       let msg = Format.asprintf "@[<v 4>%s:@,@[%s@]@]@.@[<v 4>%s:@,@[%s@]@]"
-        "expected error"
-        (Format.asprintf "%a" KB.Conflict.pp expected)
-        "but got this error"
-        (Format.asprintf "%a" KB.Conflict.pp problem)
+          "expected error"
+          (Format.asprintf "%a" KB.Conflict.pp expected)
+          "but got this error"
+          (Format.asprintf "%a" KB.Conflict.pp problem)
       in
       assert_bool msg String.((KB.Conflict.to_string problem) = (KB.Conflict.to_string expected))
     end
@@ -159,10 +159,10 @@ let print_bil bil = Format.asprintf "%a" Bil.pp bil
 
 (* A verifier function for testing. It always returns unsat. *)
 let verify_unsat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
-    : Z3.Solver.status =
+  : Z3.Solver.status =
   Z3.Solver.UNSATISFIABLE
 
 (* A verifier function for testing. It always returns sat. *)
 let verify_sat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
-    : Z3.Solver.status =
+  : Z3.Solver.status =
   Z3.Solver.SATISFIABLE

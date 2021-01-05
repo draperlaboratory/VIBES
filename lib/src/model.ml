@@ -26,7 +26,7 @@ array[temp_t] of operand_t : definer; %map from temporary to operand that define
 array[temp_t] of set of operand_t : users; %map from temporary to operands that possibly use it
 array[temp_t] of block_t : temp_block; % map from temporary to block it lives in
 
-set of operation_t : copy; % is operation a copy operation 
+set of operation_t : copy; % is operation a copy operation
 % maybe this should be a mapping from operation_t to operation_class_t
 % copy, normal (linear), in, out, jmp
 array[temp_t] of int : width; % Atom width of temporary. Atoms are subpieces of registers. Maybe 8 bit.
@@ -113,9 +113,9 @@ constraint forall(t in temp_t)(
 %C1.1
 % no overlap constraint for live register usage
 % use cumulative?
-% use minizinc built-in diffn. 
+% use minizinc built-in diffn.
 % The original unison model uses many different options
-function array[int] of var int : block_array(array[temp_t] of var int : a, block_t : b) = 
+function array[int] of var int : block_array(array[temp_t] of var int : a, block_t : b) =
     [a[t] | t in temp_t where temp_block[t] = b ];
 
 % [diffn_nonstrict]  https://www.minizinc.org/doc-latest/en/lib-globals.html#packing-constraints
@@ -123,12 +123,12 @@ function array[int] of var int : block_array(array[temp_t] of var int : a, block
 % sizes ( dx [ i ], dy [ i ]), to be non-overlapping. Zero-width rectangles can be packed anywhere.
 
 % still need to include live[t] condition
-constraint forall(b in block_t)( 
+constraint forall(b in block_t)(
         diffn(block_array(reg,b),  % built in global minizinc constraint
-              block_array(start_cycle,b), 
+              block_array(start_cycle,b),
             %  block_array([width[t] * bool2int(live[t]) | t in temp_t ], b), % no this is bad
             block_array(width, b),
-              [end_cycle[t] - start_cycle[t] | t in temp_t]) 
+              [end_cycle[t] - start_cycle[t] | t in temp_t])
 );
 
 
@@ -144,7 +144,7 @@ constraint forall(p in operand_t) (
 /*
 constraint forall(p in operand_t where active[operand_operation[p]](
     reg[temp[p]] in class[]
-    
+
 )
 */
 
@@ -210,9 +210,9 @@ constraint forall (t in temp_t)(
 %C10 Then end cycle of a temporary is the last issue cycle of operations that use it.
 constraint forall (t in temp_t where card(users[t]) > 0 /\\ live[t])(
 
-   end_cycle[t] == max( 
+   end_cycle[t] == max(
       % [ start[t] + 10 ] ++  % a kludge to make minizinc not upset when users[t] is empty.
-       [ issue[operand_operation[p]]  | p in users[t] where temp[p] == t  ]  ) 
+       [ issue[operand_operation[p]]  | p in users[t] where temp[p] == t  ]  )
        % shouldn't this also be contingent on whether the user is active?
        % I suppose the temporary won't be live then.
 );

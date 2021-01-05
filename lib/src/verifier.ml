@@ -49,9 +49,9 @@ let check_naive (orig_prog : Program.t) (patch_prog : Program.t)
   let postconds, hyps =
     Compare.compare_subs_smtlib ~smtlib_hyp ~smtlib_post in
 
-  let precond, _env_1, _env_2 = Compare.compare_subs 
-    ~postconds:[postconds] ~hyps:[hyps]
-    ~original:(orig_func, env_1) ~modified:(patch_func, env_2) in
+  let precond, _env_1, _env_2 = Compare.compare_subs
+      ~postconds:[postconds] ~hyps:[hyps]
+      ~original:(orig_func, env_1) ~modified:(patch_func, env_2) in
 
   let solver = Z3.Solver.mk_solver z3_ctx None in
   Precondition.check solver z3_ctx precond
@@ -88,12 +88,12 @@ let verify
   match status with
   | Z3.Solver.UNSATISFIABLE ->
     Events.(send @@
-      Info "Weakest-precondition analysis returned: correct");
+            Info "Weakest-precondition analysis returned: correct");
     Events.(send @@ Info "The patched binary is correct");
     KB.return Done
   | Z3.Solver.SATISFIABLE ->
     Events.(send @@
-      Info "Weakest-precondition analysis returned: incorrect");
+            Info "Weakest-precondition analysis returned: incorrect");
     Events.(send @@ Info "The patched binary is not correct");
     Events.(send @@ Info "For now, we'll pretend it is and move on");
     KB.return Done

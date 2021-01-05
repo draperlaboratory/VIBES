@@ -10,34 +10,34 @@ module KB = Knowledge
 
 (* Optional string domain *)
 let string_domain : String.t option KB.Domain.t = KB.Domain.optional
-  ~equal:String.(=)
-  "string-domain"
+    ~equal:String.(=)
+    "string-domain"
 
 (* Optional int domain *)
 let int_domain : int option KB.Domain.t = KB.Domain.optional
-  ~equal:Int.(=)
-  "int-domain"
+    ~equal:Int.(=)
+    "int-domain"
 
 (* Optional bitvector domain *)
 let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
-  ~equal:Bitvec.equal
-  "bitvec-domain"
+    ~equal:Bitvec.equal
+    "bitvec-domain"
 
 (* Optional program domain *)
 let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
-  ~equal:Program.equal
-  "prog-domain"
+    ~equal:Program.equal
+    "prog-domain"
 
 (* Optional s-expression domain (for correctness properties) *)
 let property_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
-  ~equal:Sexp.equal
-  "property-domain"
+    ~equal:Sexp.equal
+    "property-domain"
 
 (* Optional string list domain (for assembly). But as per
    Ivan's suggestion, we'll probably make this a powerset domain. *)
-let assembly_domain : string list option KB.Domain.t = KB.Domain.optional 
-  ~equal:(fun x y -> List.equal String.equal x y) 
-  "assembly-domain"
+let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
+    ~equal:(fun x y -> List.equal String.equal x y)
+    "assembly-domain"
 
 (* General knowledge info for the package *)
 type cls = Data
@@ -55,7 +55,7 @@ module Patch = struct
   let bil : (cls, Bil.t) KB.slot =
     KB.Class.property ~package cls "patch-bil" Bil.domain
 
-  let assembly : (cls, string list option) KB.slot = 
+  let assembly : (cls, string list option) KB.slot =
     KB.Class.property ~package cls "patch-assembly" assembly_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
@@ -93,17 +93,17 @@ end
 (* Properties pertaining to the original executable *)
 module Original_exe = struct
 
-  let filepath : (cls, string option) KB.slot = 
-    KB.Class.property ~package cls "original-exe-filepath" 
-    string_domain
+  let filepath : (cls, string option) KB.slot =
+    KB.Class.property ~package cls "original-exe-filepath"
+      string_domain
 
   let prog : (cls, Program.t option) KB.slot =
     KB.Class.property ~package cls "original-exe-prog"
-    prog_domain
+      prog_domain
 
   let addr_size : (cls, int option) KB.slot =
     KB.Class.property ~package cls "original-exe-address-size"
-    int_domain
+      int_domain
 
   let set_filepath (obj : t) (data : string option) : unit KB.t =
     KB.provide filepath obj data
@@ -148,11 +148,11 @@ module Patched_exe = struct
 
   let filepath : (cls, string option) KB.slot =
     KB.Class.property ~package cls "patched-exe-filepath"
-    string_domain
+      string_domain
 
   let tmp_filepath : (cls, string option) KB.slot =
     KB.Class.property ~package cls "tmp-patched-exe-filepath"
-    string_domain
+      string_domain
 
   let patch_point : (cls, Bitvec.t option) KB.slot =
     KB.Class.property ~package cls "patch-point" bitvec_domain
@@ -231,7 +231,7 @@ module Verifier = struct
 end
 
 (* Create an object of this class. *)
-let create (config : Config.t) : t KB.t = 
+let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
   let patch = Config.patch config in
   let patch_point = Config.patch_point config in
@@ -266,5 +266,5 @@ let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   Patched_exe.set_patch_point obj' patch_point >>= fun _ ->
   Patched_exe.get_patch_size obj >>= fun patch_size ->
   Patched_exe.set_patch_size obj' patch_size >>= fun _ ->
-  Verifier.set_property obj' (Some property) >>= fun _ -> 
+  Verifier.set_property obj' (Some property) >>= fun _ ->
   KB.return obj'
