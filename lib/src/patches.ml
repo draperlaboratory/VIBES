@@ -15,8 +15,8 @@ module Ret_3 = struct
     let w = Word.of_int 3 ~width:bits in
     let three = Bil.int w in
     Bil.([
-      r0 := three;
-    ])
+        r0 := three;
+      ])
 
 end
 
@@ -29,15 +29,15 @@ module Ret_4 = struct
     let w = Word.of_int 4 ~width:bits in
     let four = Bil.int w in
     Bil.([
-      r0 := four;
-    ])
+        r0 := four;
+      ])
 
 end
 
 (* The names of the patches. *)
 let patches = Map.of_alist_exn (module String) [
-  "ret-3", Ret_3.bil;
-  "ret-4", Ret_4.bil; ]
+    "ret-3", Ret_3.bil;
+    "ret-4", Ret_4.bil; ]
 
 (* Helpers. *)
 let names = Map.keys patches

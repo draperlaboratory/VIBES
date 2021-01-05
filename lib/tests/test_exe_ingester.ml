@@ -76,5 +76,5 @@ let suite = [
   "Test Exe_ingester.ingest: stashes address size" >:: test_ingest_addr_size;
   "Test Exe_ingester.ingest: stashes lifted program" >:: test_ingest_prog;
   "Test Exe_ingester.ingest: no original exe filepath" >::
-    test_ingest_with_no_exe_filepath;
+  test_ingest_with_no_exe_filepath;
 ]

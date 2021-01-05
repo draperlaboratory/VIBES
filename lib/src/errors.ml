@@ -51,7 +51,7 @@ let pp ppf (e : t) =
     | Exit_code s -> s
     | Unexpected_exit s -> s
     | WP_result_unknown s -> s
-    | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n 
+    | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | Minizinc_deserialization s -> s
     | Other s -> s
   in

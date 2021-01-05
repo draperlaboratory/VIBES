@@ -4,7 +4,7 @@ open !Core_kernel
 
 (* For configuring a verbose log. *)
 module type Config = sig
-  val with_colors : bool 
+  val with_colors : bool
 end
 
 (* The verbose log writes to stderr. *)

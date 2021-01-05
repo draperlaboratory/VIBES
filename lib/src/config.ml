@@ -25,7 +25,7 @@ module Errors = struct
       | Invalid_hex desc -> desc
       | Invalid_property desc -> desc
     in
-  Format.fprintf ppf "@[%s@]" msg
+    Format.fprintf ppf "@[%s@]" msg
 
 end
 
@@ -57,27 +57,27 @@ let max_tries t : int option = t.max_tries
 (* For printing configuration. *)
 let pp (ppf : Format.formatter) t : unit =
   let info = String.concat ~sep:"\n" [
-    Printf.sprintf "Exe: %s" t.exe;
-    Printf.sprintf "Patch: %s" t.patch;
-    Printf.sprintf "Patch_point: %s" (Bitvec.to_string t.patch_point);
-    Printf.sprintf "Patch_size: %d" t.patch_size;
-    Printf.sprintf "Property: %s" (Sexp.to_string t.property);
-    Printf.sprintf "Output filepath: %s"
-      (Option.value t.patched_exe_filepath ~default:"none provided");
-    Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
-  ] in
+      Printf.sprintf "Exe: %s" t.exe;
+      Printf.sprintf "Patch: %s" t.patch;
+      Printf.sprintf "Patch_point: %s" (Bitvec.to_string t.patch_point);
+      Printf.sprintf "Patch_size: %d" t.patch_size;
+      Printf.sprintf "Property: %s" (Sexp.to_string t.property);
+      Printf.sprintf "Output filepath: %s"
+        (Option.value t.patched_exe_filepath ~default:"none provided");
+      Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
+    ] in
   Format.fprintf ppf "@[%s@]@." info
 
 (* Error if a string is empty. *)
-let is_not_empty (value : string) (e : Errors.t) 
-    : (string, error) Stdlib.result =
+let is_not_empty (value : string) (e : Errors.t)
+  : (string, error) Stdlib.result =
   match String.length value with
   | 0 -> Err.fail e
   | _ -> Err.return value
 
 (* Parse a hex string into a bitvector, or error. *)
 let validate_patch_point (value : string) : (Bitvec.t, error) Stdlib.result =
-  try 
+  try
     Err.return (Bitvec.of_string value)
   with Invalid_argument _ ->
     let msg = Format.sprintf "Invalid hex string: %s" value in
@@ -97,13 +97,13 @@ let create ~exe:(exe : string) ~patch:(patch : string)
     ~property:(property : string)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
-    : (t, error) result =
+  : (t, error) result =
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   is_not_empty patch Errors.Missing_patch >>= fun patch ->
   is_not_empty patch_point Errors.Missing_patch_point >>= fun patch_point ->
   is_not_empty property Errors.Missing_property >>= fun property ->
   validate_patch_point patch_point >>= fun patch_point ->
   validate_property property >>= fun property ->
-  let record = { exe; patch; patch_point; patch_size; property; 
-    patched_exe_filepath; max_tries } in
+  let record = { exe; patch; patch_point; patch_size; property;
+                 patched_exe_filepath; max_tries } in
   Ok record

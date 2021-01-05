@@ -26,7 +26,7 @@ let ingest ?loader:(loader=Exe_loader.load) (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Retreiving data from KB...");
   Data.Original_exe.get_filepath_exn obj >>= fun filepath ->
 
-  Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath)); 
+  Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
 
   (* Load the project and stash the program in the KB. *)
   loader filepath >>= fun project ->
