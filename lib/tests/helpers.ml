@@ -16,7 +16,7 @@ let empty_proj (filename : string) : (Project.t, Error.t) result =
   Project.create input
 
 (* Same as [empty_proj], but fail if loading errors. *)
-let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
+let proj_exn (proj : (Project.t, Error.t) result) : Project.t =
   match proj with
   | Ok p -> p
   | Error e ->
@@ -24,6 +24,15 @@ let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
       let msg = Printf.sprintf "Load error: %s" (Error.to_string_hum e) in
       failwith msg
     end
+
+(* Create a dummy project with an empty main subroutine *)
+let dummy_proj ?name:(name = "main") filename : (Project.t, Error.t) result =
+  let empty_proj = empty_proj filename in
+  let dummy_main = Sub.create ~name:name () in
+  let dummy_prog = Program.Builder.create () in
+  Program.Builder.add_sub dummy_prog dummy_main;
+  let dummy_prog = Program.Builder.result dummy_prog in
+  Result.map empty_proj ~f:(fun p -> Project.with_program p dummy_prog)
 
 (* Get an empty program that can be used in tests. *)
 let prog_exn (proj : (Project.t, Error.t) result) : Program.t =
@@ -37,10 +46,10 @@ let patch_point = Bitvec.of_string patch_point_str
 let patch_size = 16
 let property_str = "true"
 let property = Sexp.Atom property_str
-let assembly = ["00000001:"; "mov R0, #3"; "00000002:"]
+let assembly = ["@patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
-let proj = empty_proj original_exe
+let proj = dummy_proj original_exe
 let prog = prog_exn proj
 
 (* A BAP loader for testing. No disk I/O. Just wraps [proj] *)
@@ -158,21 +167,22 @@ let print_string_list_opt items =
   | None -> "None"
 
 (* Pretty print programs. *)
-let print_prog prog = Format.asprintf "%a" Program.pp prog
+let print_prog prog = Format.asprintf "%a" Bap.Std.Program.pp prog
 let print_prog_opt opt =
   match opt with
   | Some prog -> print_prog prog
   | None -> "None"
 
-(* Pretty print BIL. *)
-let print_bil bil = Format.asprintf "%a" Bil.pp bil
+(* Pretty print BIR. *)
+let print_bir (bir : Insn.t) =
+  Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
+let verify_unsat (_ : Sub.t) (_ : Sub.t) (_ : Sexp.t)
   : Z3.Solver.status =
   Z3.Solver.UNSATISFIABLE
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
+let verify_sat (_ : Sub.t) (_ : Sub.t) (_ : Sexp.t)
   : Z3.Solver.status =
   Z3.Solver.SATISFIABLE

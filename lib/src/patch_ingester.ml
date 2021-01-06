@@ -6,7 +6,7 @@ open Knowledge.Syntax
 
 module KB = Knowledge
 
-(* Loads the BIL version of a patch. For now, we select from a hand-written
+(* Loads the BIR version of a patch. For now, we select from a hand-written
    set of patches defined in the {!Patches} module. *)
 let ingest_one (addr_size : int) (n : int KB.t) (patch : Data.Patch.t)
     : int KB.t =
@@ -16,14 +16,15 @@ let ingest_one (addr_size : int) (n : int KB.t) (patch : Data.Patch.t)
   Events.(send @@ Info (Printf.sprintf "Selecting patch named: %s" name));
 
   (* Get the patch (as BIL). *)
-  Patches.get_BIL name addr_size >>= fun bil ->
+  Patches.get_bir name addr_size >>= fun bir ->
 
   (* Stash the BIL in the KB. *)
-  Data.Patch.set_bil patch bil >>= fun _ ->
+  Data.Patch.set_bir patch bir >>= fun () ->
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
-  Events.(send @@ Info (Bil.to_string bil));
+  let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
+  Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
   KB.return (patch_num+1)
 

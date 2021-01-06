@@ -16,6 +16,7 @@
  *
  *************************************************************)
 open Bap.Std
+open Bap_knowledge
 open Bap_core_theory
 
 (** The ARM implementation of Theory.Core.
@@ -26,6 +27,8 @@ module ARM_Core : Theory.Core
 
 (** The abstract representation of [Theory.eff] terms. *)
 type arm_eff
+
+val slot : (Theory.Effect.cls, arm_eff option) Knowledge.slot
 
 (** Deprecated: Work directly with terms parametrized over S : Core *)
 module BilARM :

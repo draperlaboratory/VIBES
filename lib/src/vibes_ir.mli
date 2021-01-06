@@ -40,13 +40,13 @@ type op_var = {
   id : var;
   temps : var list;
   pre_assign : ARM.gpr_reg option
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 val simple_var : var -> op_var
 
 type operand = Var of op_var
              | Const of word
-             | Label of tid [@@deriving compare, equal]
+             | Label of tid [@@deriving compare, equal, sexp]
 
 type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
@@ -62,7 +62,7 @@ type operation = {
   insns : insn list;
   optional : bool;
   operands : operand list;
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 val simple_op : insn -> operand -> operand list -> operation
 
@@ -78,7 +78,7 @@ type blk = {
   ins : operation;
   outs : operation;
   frequency : int
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 (** Create a block given a [tid] and a list of [operation]s, filling
     in default values for the other fields. *)
@@ -89,7 +89,7 @@ val simple_blk : tid -> operation list -> blk
 type t = {
   blks : blk list;
   congruent : (op_var * op_var) list
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 val empty : t
 

@@ -5,7 +5,7 @@ open Bap_core_theory
 module IR = Vibes_ir
 
 type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
-[@@deriving compare, equal]
+[@@deriving compare, equal, sexp]
 
 let empty_eff = {current_blk = []; other_blks = IR.empty}
 
@@ -27,7 +27,8 @@ let (@) s1 s2 =
   let { current_blk = blk2; other_blks = blks2} = s2 in
   {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
 
-let arm_eff_domain = KB.Domain.optional ~equal:equal_arm_eff "arm-eff"
+let arm_eff_domain =
+  KB.Domain.optional ~inspect:sexp_of_arm_eff ~equal:equal_arm_eff "arm-eff"
 
 let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
 
@@ -39,7 +40,7 @@ let (let=) v f = KB.(>>=) v
     (fun v ->
        match KB.Value.get arm_eff v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_eff: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -48,7 +49,7 @@ let (let-) v f =
     (fun v ->
        match KB.Value.get arm_pure v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_pure: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -57,7 +58,7 @@ let (let/) v f =
     (fun v ->
        match KB.Value.get arm_mem v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_mem: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -99,6 +100,21 @@ let bool b =
 
 module ARM_ops = struct
 
+  let freshen_operand o =
+    match o with
+    | IR.Var v ->
+      let fresh_v =
+        { v with
+          id =
+            Var.create
+              ~is_virtual:true
+              ~fresh:true
+              (Var.name v.id)
+              (Var.typ v.id)
+        } in
+      IR.Var fresh_v
+    | _ -> o
+
   let instr i sem =
     {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
 
@@ -108,9 +124,11 @@ module ARM_ops = struct
      for registers and immediates. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
+    let arg2_var = freshen_operand arg2_var in
     let mov =
       match arg1, arg2_var with
-      | IR.Var _, IR.Var _ -> IR.simple_op `MOVr arg1 [arg2_var]
+      | IR.Var _, IR.Var _ ->
+        IR.simple_op `MOVr arg1 [arg2_var]
       | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
       | _ -> failwith "arm_mov: unexpected arguments!"
     in
@@ -139,6 +157,7 @@ module ARM_ops = struct
   let uop o ty arg =
     let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
+    let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
     let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
     {op_val = IR.Var res; op_eff = sem}
@@ -147,6 +166,8 @@ module ARM_ops = struct
     let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let arg1_val = freshen_operand arg1_val in
+    let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @ arg2_sem in
     let sem = {sem with current_blk = op::sem.current_blk} in
@@ -154,6 +175,8 @@ module ARM_ops = struct
 
   (* TODO: handle non-register arguments? *)
   let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
+
+  let (-) arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
 
   let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
 
@@ -200,19 +223,34 @@ struct
   include ARM_ops
 
   let set v arg =
+    Events.(send @@ Info "calling set");
     let arg_v =
       let r_var = v |> Var.reify in
       IR.simple_var r_var
     in
-    let- arg = arg in
-    eff ((IR.Var arg_v) := arg)
+    KB.(
+      arg >>= fun arg ->
+      match Value.get arm_pure arg with
+      (* FIXME: freshen the lhs? *)
+      | Some arg -> eff ((IR.Var arg_v) := arg)
+      | None ->
+        begin
+          match Value.get arm_mem arg with
+          (* No need to explicitely assign here, we don't use the
+             "mem" variables when generating IR. *)
+          | Some arg -> eff arg
+          | None -> assert false
+        end)
+
 
   let seq s1 s2 =
+    Events.(send @@ Info "calling seq");
     let= s1 = s1 in
     let= s2 = s2 in
     eff @@ s1 @ s2
 
   let blk lab data ctrl =
+    Events.(send @@ Info "calling blk");
     let= data = data in
     let= ctrl = ctrl in
     let new_instrs = List.append data.current_blk ctrl.current_blk in
@@ -225,6 +263,7 @@ struct
     eff {current_blk = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
+    Events.(send @@ Info "calling var");
     let sort = Theory.Var.sort v in
     let v = reify_var v in
     KB.return @@ KB.Value.put arm_pure (Theory.Value.empty sort)
@@ -235,20 +274,30 @@ struct
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
-    (* This is incorrect: we're assuming every constant is exactly 32
+    Events.(send @@ Info "calling int");
+    (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w
 
   let add a b =
+    Events.(send @@ Info "calling add");
     let- a = a in
     let- b = b in
     pure @@ a + b
 
+  let sub a b =
+    Events.(send @@ Info "calling sub");
+    let- a = a in
+    let- b = b in
+    pure @@ a - b
+
   let goto (lab : tid) : Theory.ctrl Theory.eff =
+    Events.(send @@ Info "calling goto");
     eff @@ bx lab
 
   let jmp addr =
+    Events.(send @@ Info "calling jmp");
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
 
@@ -259,11 +308,13 @@ struct
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
+    Events.(send @@ Info "calling load");
     let/ mem = mem in
     let- loc = loc in
     pure @@ ldr mem loc
 
   let store mem loc value =
+    Events.(send @@ Info "calling store");
     let/ mem = mem in
     let- loc = loc in
     let- value = value in
@@ -271,41 +322,50 @@ struct
        first, and the location second *)
     memory @@ str mem value loc
 
-  let perform _sort = eff {current_blk = []; other_blks = IR.empty}
+  let perform _sort =
+    Events.(send @@ Info "calling perform");
+    eff {current_blk = []; other_blks = IR.empty}
 
   let shiftl sign l r =
+    Events.(send @@ Info "calling shiftl");
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shl sign l r
 
   let shiftr sign l r =
+    Events.(send @@ Info "calling shiftr");
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shr sign l r
 
   let and_ a b =
+    Events.(send @@ Info "calling and_");
     let- a = a in
     let- b = b in
     bool (a && b)
 
   let or_ a b =
+    Events.(send @@ Info "calling or_");
     let- a = a in
     let- b = b in
     bool (a || b)
 
   let logand a b =
+    Events.(send @@ Info "calling logand");
     let- a = a in
     let- b = b in
     pure (a && b)
 
   let logor a b =
+    Events.(send @@ Info "calling logor");
     let- a = a in
     let- b = b in
     pure (a || b)
 
   let logxor a b =
+    Events.(send @@ Info "calling logxor");
     let- a = a in
     let- b = b in
     pure @@ xor a b
@@ -327,31 +387,74 @@ let bil_stmt : type a. (a, Bil.exp, unit, Bil.stmt) Theory.Parser.stmt_parser =
 
 let bil_bitv : type a. (a, Bil.exp, unit) Theory.Parser.bitv_parser =
   fun (module S) ->
-  function Int w -> S.int (Word.to_bitvec w) (Word.bitwidth w)
-         | Var v ->
-           let sort = v |> Var.sort
-                      |> Theory.Bitv.refine
-                      |> Option.value ~default:(failwith "no sort!")
-           in
-           (* ??? that can't be right. *)
-           S.var (Var.to_string v) (Theory.Bitv.size sort)
-         | _ -> failwith "bil_bitv: not implemented"
+  let eval (e : exp) =
+    match e with
+    | Int w -> S.int (Word.to_bitvec w) (Word.bitwidth w)
+    | Var v ->
+      let sort =
+        Var.sort v |>
+        Theory.Bitv.refine |>
+        Option.value_exn ~message:"bil_bitv: no sort!"
+      in
+      S.var (Var.to_string v) (Theory.Bitv.size sort)
+    | BinOp (PLUS, e1, e2) -> S.add e1 e2
+    | BinOp (MINUS, e1, e2) -> S.sub e1 e2
+    | BinOp (TIMES, e1, e2) -> S.mul e1 e2
+    | BinOp (LSHIFT, e1, e2) -> S.lshift e1 e2
+    | BinOp (RSHIFT, e1, e2) -> S.rshift e1 e2
+    | BinOp (ARSHIFT, e1, e2) -> S.arshift e1 e2
+    | BinOp (AND, e1, e2) -> S.logand e1 e2
+    | BinOp (OR, e1, e2) -> S.logor e1 e2
+    | BinOp (XOR, e1, e2) -> S.logxor e1 e2
+    | UnOp (NEG, e) -> S.neg e
+    | UnOp (NOT, e) -> S.not e
+    | Load (mem, loc, _, _) -> S.load mem loc
+    | Ite (cond, left, right) -> S.ite cond left right
+    | e ->
+      let err = Format.asprintf "bil_bitv: %a not implemented!" Exp.pp e in
+      failwith err
+  in
+  eval
 
 let bil_bool : type a. (a, Bil.exp, unit) Theory.Parser.bool_parser =
   fun (module S) ->
-  fun _ -> assert false
+  let eval (e : exp) =
+    match e with
+    | Int w -> S.int (Word.to_bitvec w)
+    | Var v -> S.var (Var.to_string v)
+    | BinOp (EQ, e1, e2) -> S.eq e1 e2
+    | BinOp (NEQ, e1, e2) -> S.neq e1 e2
+    | BinOp (LT, e1, e2) -> S.lt e1 e2
+    | BinOp (LE, e1, e2) -> S.le e1 e2
+    | BinOp (SLT, e1, e2) -> S.slt e1 e2
+    | BinOp (SLE, e1, e2) -> S.sle e1 e2
+    | UnOp (NOT, e) -> S.not e
+    | Ite (cond, left, right) -> S.ite cond left right
+    | e ->
+      let err = Format.asprintf "bil_bool: %a not implemented!" Exp.pp e in
+      failwith err
+  in
+  eval
 
 let bil_mem : type a. (a, Bil.exp) Theory.Parser.mem_parser =
   fun (module S) ->
-  fun _ -> assert false
+  let eval (e : exp) =
+    match e with
+    | Var v -> S.var (Var.to_string v) 32 32
+    | Store (mem, loc, e, _, _) -> S.store mem loc e
+    | e ->
+      let err = Format.asprintf "bil_bool: %a not implemented!" Exp.pp e in
+      failwith err
+  in
+  eval
 
 let bil_float : type a. (a, Bil.exp, unit) Theory.Parser.float_parser =
   fun (module S) ->
-  fun _ -> assert false
+  fun _ -> failwith "bil_float: not implemented!"
 
 let bil_rmode : type a. (a, unit) Theory.Parser.rmode_parser =
   fun (module S) ->
-  fun _ -> S.rne
+  fun _ -> failwith "bil_rmode: not implemented!"
 
 let bil_to_arm : (Bil.exp,unit,Bil.stmt) Theory.Parser.t =
   {
@@ -375,6 +478,7 @@ let insn_pretty i : (string, Errors.t) result =
   | `MOVi   -> Ok "mov"
   | `BX     -> Ok "bx"
   | `ADDrsi -> Ok "add"
+  | `SUBrsi -> Ok "sub"
   | `LSL    -> Ok "lsl"
   | `LSR    -> Ok "lsr"
   | `ASR    -> Ok "asr"
@@ -384,12 +488,11 @@ let insn_pretty i : (string, Errors.t) result =
   | `LDRrs  -> Ok "ldr"
   | `STRrs  -> Ok "str"
   | i       ->
-    let to_string _ = "UNKNOWN" in
+    let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
     let msg =
       Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
     in
     Error (Errors.Not_implemented msg)
-
 
 (* We use this function when generating ARM, since the assembler
    doesn't like % in labels. *)
@@ -399,13 +502,13 @@ let tid_to_string (t : tid) : string =
 let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
-    let error =
-      Errors.Missing_semantics
-        "operand.pre_assign field is empty in pretty printer" in
-    Result.bind
-      (Result.of_option v.pre_assign ~error:error)
-      ~f:(fun reg ->
-          Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
+     let error =
+       Errors.Missing_semantics
+         "operand.pre_assign field is empty in pretty printer" in
+     Result.bind
+       (Result.of_option v.pre_assign ~error:error)
+       ~f:(fun reg ->
+         Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
   | Const w ->
     (* A little calisthenics to get this to look nice *)
     Result.return (Format.asprintf "#%a" Word.pp_dec w)
@@ -429,3 +532,15 @@ let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
   List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
+
+
+let slot = arm_eff
+
+let () =
+  Theory.declare
+    ~context:["vibes"]
+    ~package:"vibes"
+    ~name:"arm-gen"
+    ~desc:"This theory allows instantiating Program semantics into \
+          a Vibes_ir.t term, using Arm_gen.slot."
+  @@ KB.return (module ARM_Core : Theory.Core)
