@@ -2,6 +2,7 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_vibes
+open Bap_core_theory.Theory
 open OUnit2
 
 module KB = Knowledge
@@ -26,9 +27,9 @@ let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
     end
 
 (* Get an empty program that can be used in tests. *)
-let prog_exn (proj : (Project.t, Error.t) result) : Program.t =
+let prog_exn (proj : (Project.t, Error.t) result) : Bap.Std.Program.t =
   let p = proj_exn proj in
-  Project.program p
+  Bap.Std.Project.program p
 
 (* Some dummy values that can be used in tests. *)
 let patch = "ret-3"
@@ -148,21 +149,23 @@ let print_string_list_opt items =
   | None -> "None"
 
 (* Pretty print programs. *)
-let print_prog prog = Format.asprintf "%a" Program.pp prog
+let print_prog prog = Format.asprintf "%a" Bap.Std.Program.pp prog
 let print_prog_opt opt =
   match opt with
   | Some prog -> print_prog prog
   | None -> "None"
 
-(* Pretty print BIL. *)
-let print_bil bil = Format.asprintf "%a" Bil.pp bil
+(* Pretty print BIR. *)
+let print_bir (bir : Program.t) =
+  let bir = KB.Value.get Term.slot (KB.Value.get Semantics.slot bir) in
+  Format.asprintf "%a" Blk.pp_seq (Seq.of_list bir)
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
+let verify_unsat (_ : Sub.t) (_ : Sub.t) (_ : Sexp.t)
   : Z3.Solver.status =
   Z3.Solver.UNSATISFIABLE
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
+let verify_sat (_ : Sub.t) (_ : Sub.t) (_ : Sexp.t)
   : Z3.Solver.status =
   Z3.Solver.SATISFIABLE

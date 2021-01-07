@@ -16,7 +16,7 @@ module KB = Knowledge
 (* A [verifier] function takes two projects, the name of a function,
    and a correctness property, it verifies their correctness, and
    returns the resulting status. *)
-type verifier = Program.t -> Program.t -> string -> Sexp.t -> Z3.Solver.status
+type verifier = sub term -> sub term -> Sexp.t -> Z3.Solver.status
 
 (* Indicates whether the patching is done, or should be attempted again. *)
 type next_step = Done | Again of Sexp.t

@@ -1,4 +1,3 @@
-open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
@@ -24,14 +23,16 @@ let test_ingest (_ : test_ctxt) : unit =
     KB.return obj
 
   in
-  let result = KB.run Data.cls computation KB.empty in
+  let _result = KB.run Data.cls computation KB.empty in
 
-  (* The ingester should stash the patch (BIL) in the KB. *)
-  let expected = Patches.Ret_3.bil 32 in
-  H.assert_property
-    ~p_res:H.print_bil ~p_expected:H.print_bil
-    ~cmp:(fun a b -> Bil.compare a b = 0)
-    Data.Patch.bil expected result
+  (* The ingester should stash the patch (BIR) in the KB. *)
+  let _expected = Patches.Ret_3.prog 32 in
+
+  (* H.assert_property
+   *   ~p_res:H.print_bir ~p_expected:H.print_bir
+   *   ~cmp:Theory.Program.equal
+   *   Data.Patch.bir expected result *)
+  assert false
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)
 let test_ingest_with_no_patch (_ : test_ctxt) : unit =
@@ -47,7 +48,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
 
   (* The ingester should diverge with the appropriate error. *)
   let expected = Errors.Problem Errors.Missing_patch_name in
-  H.assert_error ~printer:H.print_bil Data.Patch.bil expected result
+  H.assert_error ~printer:H.print_bir Data.Patch.bir expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
 let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
@@ -68,7 +69,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
 
   (* The ingester should diverge with the appropriate error. *)
   let expected = Errors.Problem Errors.Missing_addr_size in
-  H.assert_error ~printer:H.print_bil Data.Patch.bil expected result
+  H.assert_error ~printer:H.print_bir Data.Patch.bir expected result
 
 let suite = [
   "Test Patch_ingester.ingest" >:: test_ingest;

@@ -12,21 +12,21 @@ open Vibes_ir
 
 
 
-let ex1 : Vibes_ir.t = Test_vibes_ir.vir1 
+let ex1 : Vibes_ir.t = Test_vibes_ir.vir1
 
 
 let (mzn_params1 , serial_info1) =  Minizinc.serialize_mzn_params ex1
 
 
-let test_serialize_ex1 _ = 
+let test_serialize_ex1 _ =
   assert_equal (List.length mzn_params1.temp_t.set) 3;
   assert_equal (List.length mzn_params1.operation_t.set) 4;
   assert_equal (List.length mzn_params1.block_t.set) 1;
   ()
 
-let test_definer_serialize_ex1 _ = assert_equal  ~cmp:(Var.Map.equal String.equal) 
-    ( Var.Map.map ~f:(fun o -> Var.to_string o.id) Test_vibes_ir.definer_map1) 
-    (List.zip_exn serial_info1.temps (List.map ~f:(fun e -> e.e) 
+let test_definer_serialize_ex1 _ = assert_equal  ~cmp:(Var.Map.equal String.equal)
+    ( Var.Map.map ~f:(fun o -> Var.to_string o.id) Test_vibes_ir.definer_map1)
+    (List.zip_exn serial_info1.temps (List.map ~f:(fun e -> e.e)
                                         mzn_params1.definer) |> Var.Map.of_alist_exn)
 
 open Test_vibes_ir
@@ -50,12 +50,12 @@ let all_operands_helper (blk : blk) : operand list =
   in
   blk.ins.lhs @ blk.outs.operands @ operation_operands
 
-let test_sol_apply_ex1 _ = 
+let test_sol_apply_ex1 _ =
   assert_equal ~cmp:Var.Set.equal (all_temps vir1) (all_temps new_vir1);
   assert_equal ~cmp:Var.Set.equal (all_operands vir1) (all_operands new_vir1);
   let blk1 = List.hd_exn vir1.blks in
   let blk2 = List.hd_exn new_vir1.blks in
-  assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Tid.equal o1.id o2.id))  
+  assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Tid.equal o1.id o2.id))
     blk1.operations (List.rev blk2.operations);
   assert_bool "All registers assigned to R0" (List.for_all (all_operands_helper blk2)
                                                 ~f:(fun o -> match (op_var_exn o).pre_assign with
@@ -65,17 +65,17 @@ let test_sol_apply_ex1 _ =
 
 
 
-let test_minizinc_ex1 _ =  
+let test_minizinc_ex1 _ =
   let computation =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Patches.get_BIL H.patch 32 >>= fun bil ->
-    Data.Patch.set_bil obj bil >>= fun _ ->
+    Patches.get_bir H.patch 32 >>= fun bil ->
+    Data.Patch.set_bir obj bil >>= fun _ ->
     (* Now run the compiler. *)
     Minizinc.run_minizinc ex1 >>= fun sol ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
       blk.operations in
-    assert_bool "Operations should be in order" 
+    assert_bool "Operations should be in order"
       (List.for_all2_exn ~f:(fun o1 o2 -> Tid.equal o1.id o2.id) (get_ops sol) (get_ops ex1));
     KB.return obj
   in

@@ -34,7 +34,7 @@ type mzn_params = {
   preassign : string Var.Map.t;
   operation_insns : (Vibes_ir.insn list) Tid.Map.t;
   operand_operation : VIR.operation Var.Map.t;
-  congruent : (VIR.op_var * VIR.op_var) list ;
+  congruent : (VIR.op_var * VIR.op_var) list;
   operands : Var.Set.t;
   temps : Var.Set.t
 }
@@ -55,8 +55,8 @@ let mzn_params_of_vibes_ir (sub : VIR.t) : mzn_params =
     latency = ();
     preassign = Var.Map.empty;
     operation_insns = VIR.operation_insns sub;
-    operand_operation =  VIR.operand_operation sub;
-    congruent =  sub.congruent;
+    operand_operation = VIR.operand_operation sub;
+    congruent = sub.congruent;
     temps = VIR.all_temps sub;
     operands = VIR.all_operands sub;
   }
@@ -148,20 +148,20 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
                                     ~f:(fun r -> ARM.sexp_of_gpr_reg r |> Sexp.to_string)
                                     ARM.all_of_gpr_reg);
     insn_t = mzn_enum_def_of_list insns;
-    temp_t =  mzn_enum_def_of_list temp_names;
-    operand_t =  mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
+    temp_t = mzn_enum_def_of_list temp_names;
+    operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Tid.to_string);
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
     class_t = {set = [{e = "unimplemented_class"}]};
     operand_operation = List.map ~f:(fun t -> Var.Map.find_exn params.operand_operation t
-                                              |> VIR.operation_to_string |> mzn_enum ) operands;
+                                              |> VIR.operation_to_string |> mzn_enum) operands;
     definer = List.map ~f:(fun t -> Var.Map.find_exn params.definer t |> VIR.op_var_to_string
                                     |> mzn_enum) temps;
     users = List.map ~f:(fun t -> match Var.Map.find params.users t with
         | None -> {set = []}
         | Some operands -> {
             set = List.map
-                ~f:(fun o -> VIR.op_var_to_string o |> mzn_enum) operands} )
+                ~f:(fun o -> VIR.op_var_to_string o |> mzn_enum) operands})
         temps;
     temp_block = List.map temps
         ~f:(fun t -> Var.Map.find_exn params.temp_block t |> Tid.to_string |> mzn_enum);
@@ -169,12 +169,12 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
                    List.map ~f:(fun o -> Tid.to_string o |> mzn_enum)
             };
     width = List.map ~f:width temps;
-    preassign = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
-    congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
+    preassign = List.map ~f:(fun _ -> {set = []}) operands; (* TODO *)
+    congruent = List.map ~f:(fun _ -> {set = []}) operands; (* TODO *)
     operation_insns = List.map ~f:(fun o ->
         {set = Tid.Map.find_exn params.operation_insns o
                |> List.map ~f:(fun i -> Vibes_ir.sexp_of_insn i
-                                        |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum )
+                                        |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum)
         }) operations;
     latency = List.map ~f:(fun _ -> 10) insns (* TODO *)
   },
@@ -187,7 +187,7 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
 
 (* [sol_serial] is a datatype for deserialization the minzinc variables via yojson *)
 type sol_serial = {
-  (* _objective : int ;  Optimization is currently not implemented *)
+  (* _objective : int;  Optimization is currently not implemented *)
   reg : (temp ,reg) mznmap;
   insn : (operation , insn) mznmap;
   temp : (operand, temp) mznmap;
@@ -229,14 +229,14 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
   let strip_enum (l : mzn_enum list) : string list = List.map ~f:(fun t -> t.e) l in
   let reg = List.map ~f:(fun r -> Sexp.of_string r.e |> ARM.gpr_reg_of_sexp) s.reg in
   {
-    reg =  List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
+    reg = List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
     insn = List.map2_exn
-        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Vibes_ir.insn_of_sexp ))
+        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Vibes_ir.insn_of_sexp))
         names.operations
         (strip_enum s.insn)
            |> Tid.Map.of_alist_exn;
     temp = List.map2_exn
-        ~f:(fun op temp -> (op , String.Map.find_exn names.temp_map temp ))
+        ~f:(fun op temp -> (op , String.Map.find_exn names.temp_map temp))
         names.operands
         (strip_enum s.temp)
            |> Var.Map.of_alist_exn;
@@ -251,28 +251,28 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
 let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
   (* Filter inactive operations, and sort operations by issue cycle *)
   let vir = VIR.map_blks vir ~f:(fun b ->
-      { id = b.id ;
-        operations = List.filter ~f:(fun o -> Tid.Map.find_exn sol.active o.id) b.operations |>
-                     List.sort ~compare:(fun o1 o2 -> compare_int (Tid.Map.find_exn sol.issue o1.id )
-                                            (Tid.Map.find_exn sol.issue o2.id ) )  ;
-        ins = b.ins ;
-        outs = b.outs ;
-        frequency = b.frequency }
+      { b with
+        operations =
+          List.filter b.operations
+            ~f:(fun o -> Tid.Map.find_exn sol.active o.id) |>
+          List.sort
+            ~compare:(fun o1 o2 -> compare_int
+                         (Tid.Map.find_exn sol.issue o1.id)
+                         (Tid.Map.find_exn sol.issue o2.id));
+      }
     ) in
   (* Put register and temporary selection into operands *)
   let vir = VIR.map_op_vars vir ~f:(fun o ->
       let temp = Var.Map.find_exn sol.temp o.id in
       let reg = Var.Map.find_exn sol.reg temp in
-      { id = o.id  ; temps = [temp] ; pre_assign = Some reg  } ) in
+      { id = o.id ; temps = [temp]; pre_assign = Some reg  }) in
   (*  Set instruction field of operation *)
   let vir = VIR.map_operations vir ~f:(fun o ->
       {
-        id = o.id;
-        lhs = o.lhs;
+        o with
         insns = [ Tid.Map.find_exn sol.insn o.id ];
-        optional =  not (Tid.Map.find_exn sol.active o.id);
-        operands = o.operands;
-      } ) in
+        optional = not (Tid.Map.find_exn sol.active o.id);
+      }) in
   vir
 
 let model = Model.model
@@ -291,11 +291,11 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
   let params, name_maps = serialize_mzn_params vir in
   Yojson.Safe.to_file params_filename (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
-                       "-o"; solution_filename ;
-                       "--output-objective" ;
-                       "-d" ; params_filename ;
+                       "-o"; solution_filename;
+                       "--output-objective";
+                       "-d"; params_filename;
                        "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
-                       "--search-complete-msg" ;"\"\"" ;
+                       "--search-complete-msg";"\"\"";
                        model_filename ] in
   Utils.run_process_exn "minizinc" minizinc_args >>= fun () ->
   let sol_serial = Yojson.Safe.from_file solution_filename |> sol_serial_of_yojson  in

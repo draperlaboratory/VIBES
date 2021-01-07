@@ -17,8 +17,8 @@ let test_compile (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Patches.get_BIL H.patch 32 >>= fun bil ->
-    Data.Patch.set_bil obj bil >>= fun _ ->
+    Patches.get_bir H.patch 32 >>= fun bir ->
+    Data.Patch.set_bir obj bir >>= fun _ ->
 
     (* Now run the compiler. *)
     Compiler.compile obj >>= fun _ ->

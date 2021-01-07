@@ -4,6 +4,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 open Knowledge.Syntax
 
 module KB = Knowledge
@@ -24,9 +25,14 @@ let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
     "bitvec-domain"
 
 (* Optional program domain *)
+(* FIXME: this is confusing, since there is a program class, which
+   also has an associated domain *)
 let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
     ~equal:Program.equal
     "prog-domain"
+
+(* The domain of BIR programs *)
+let bir_domain : Theory.Program.t KB.domain = Theory.Program.domain
 
 (* Optional s-expression domain (for correctness properties) *)
 let property_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
@@ -52,8 +58,8 @@ module Patch = struct
   let patch_name : (cls, string option) KB.slot =
     KB.Class.property ~package cls "patch-name" string_domain
 
-  let bil : (cls, Bil.t) KB.slot =
-    KB.Class.property ~package cls "patch-bil" Bil.domain
+  let bir : (cls, Theory.Program.t) KB.slot =
+    KB.Class.property ~package cls "patch-bir" bir_domain
 
   let assembly : (cls, string list option) KB.slot =
     KB.Class.property ~package cls "patch-assembly" assembly_domain
@@ -70,11 +76,11 @@ module Patch = struct
     | None -> Errors.fail Errors.Missing_patch_name
     | Some value -> KB.return value
 
-  let set_bil (obj : t) (data : Bil.t) : unit KB.t =
-    KB.provide bil obj data
+  let set_bir (obj : t) (data : Theory.Program.t) : unit KB.t =
+    KB.provide bir obj data
 
-  let get_bil (obj : t) : Bil.t KB.t =
-    KB.collect bil obj
+  let get_bir (obj : t) : Theory.Program.t KB.t =
+    KB.collect bir obj
 
   let set_assembly (obj : t) (data : string list option) : unit KB.t =
     KB.provide assembly obj data
@@ -252,8 +258,8 @@ let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   KB.Object.create cls >>= fun obj' ->
   Patch.get_patch_name obj >>= fun patch ->
   Patch.set_patch_name obj' patch >>= fun _ ->
-  Patch.get_bil obj >>= fun bil ->
-  Patch.set_bil obj' bil >>= fun _ ->
+  Patch.get_bir obj >>= fun bir ->
+  Patch.set_bir obj' bir >>= fun _ ->
   Original_exe.get_filepath obj >>= fun original_exe ->
   Original_exe.set_filepath obj' original_exe >>= fun _ ->
   Original_exe.get_prog obj >>= fun original_exe_prog ->

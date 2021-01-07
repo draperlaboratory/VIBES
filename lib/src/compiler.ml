@@ -1,9 +1,9 @@
 (* Implements {!Compiler}. *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_core_theory
 
 module KB = Knowledge
 
@@ -11,13 +11,13 @@ module KB = Knowledge
 (* Converts a list of BIL statements to a list of ARM assembly strings.
    This is just a dummy stand-in for now. It only handles a simple move
    instruction. *)
-let create_assembly ?solver:(solver = Minizinc.run_minizinc) (bil : Bil.t) : string list KB.t =
+let create_assembly ?solver:(solver = Minizinc.run_minizinc)
+    (bir : Theory.Program.t) : string list KB.t =
   let value_exn x = Option.value_exn x in
-  Arm_gen.BilARM.run Arm_gen.bil_to_arm bil >>|
-  (fun v -> v |>
-            Arm_gen.effect |>
-            value_exn |>
-            Arm_gen.ir) >>=
+  let sem = KB.Value.get Theory.Semantics.slot bir in
+  Arm_gen.effect sem |>
+  value_exn |>
+  Arm_gen.ir |>
   solver  >>|
   Arm_gen.arm_ir_pretty >>=
   (function
@@ -31,9 +31,9 @@ let compile ?solver:(solver = Minizinc.run_minizinc)(obj : Data.t) : unit KB.t =
 
   (* Retrieve the patch (BIL) from the KB, and convert it to assembly. *)
   Events.(send @@ Info "Retreiving data from KB...");
-  Data.Patch.get_bil obj >>= fun bil ->
+  Data.Patch.get_bir obj >>= fun bir ->
   Events.(send @@ Info "Translating patch BIL to assembly...");
-  create_assembly ~solver bil >>= fun assembly ->
+  create_assembly ~solver bir >>= fun assembly ->
 
   (* Stash the assembly in the KB. *)
   Data.Patch.set_assembly obj (Some assembly) >>= fun _ ->

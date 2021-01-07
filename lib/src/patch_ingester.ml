@@ -3,30 +3,34 @@
 open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_core_theory
 
 module KB = Knowledge
 
-(* Loads the BIL version of a patch. For now, we select from a hand-written
+(* Loads the BIR version of a patch. For now, we select from a hand-written
    set of patches defined in the {!Patches} module. *)
 let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patch ingester");
-  Events.(send @@ Info "Using hand-written BIL patches");
+  Events.(send @@ Info "Using hand-written BIR patches");
 
   (* Get the name of the patch we want to load. *)
   Events.(send @@ Info "Retreiving data from KB...");
   Data.Patch.get_patch_name_exn obj >>= fun name ->
   Events.(send @@ Info (Printf.sprintf "Selecting patch named: %s" name));
 
-  (* Get the patch (as BIL). *)
+  (* Get the patch (as BIR). *)
   Data.Original_exe.get_addr_size_exn obj >>= fun addr_size ->
-  Patches.get_BIL name addr_size >>= fun bil ->
+  Patches.get_bir name addr_size >>= fun bir ->
 
-  (* Stash the BIL in the KB. *)
-  Data.Patch.set_bil obj bil >>= fun _ ->
+  (* Stash the BIR in the KB. *)
+  Data.Patch.set_bir obj bir >>= fun _ ->
 
-  Events.(send @@ Info "Done. The patch has the following BIL:");
+  Events.(send @@ Info "Done. The patch has the following BIR:");
   Events.(send @@ Rule);
-  Events.(send @@ Info (Bil.to_string bil));
+  let bir = KB.Value.get Term.slot (KB.Value.get Theory.Semantics.slot bir) in
+  let bir_seq = Seq.of_list bir in
+  let bir_str = Format.asprintf "%a" Blk.pp_seq bir_seq in
+  Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
 
   KB.return ()
