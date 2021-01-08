@@ -47,7 +47,7 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The complier should produce an empty patch (no instructions, but a label). *)
-  let expected = Some ["%00000001:"] in
+  let expected = Some ["00000001:"] in
   H.assert_property
     ~cmp:(Option.equal (List.equal String.equal))
     ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
