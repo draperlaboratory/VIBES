@@ -390,6 +390,12 @@ let insn_pretty i : (string, Errors.t) result =
     in
     Error (Errors.Not_implemented msg)
 
+
+(* We use this function when generating ARM, since the assembler
+   doesn't like % in labels. *)
+let tid_to_string (t : tid) : string =
+  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%')
+
 let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
@@ -403,7 +409,7 @@ let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   | Const w ->
     (* A little calisthenics to get this to look nice *)
     Result.return (Format.asprintf "#%a" Word.pp_dec w)
-  | Label l -> Result.return(Tid.name l)
+  | Label l -> Result.return (tid_to_string l)
 
 let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
   Result.map ~f:(String.concat ~sep:", ")
@@ -418,7 +424,7 @@ let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
 (* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
   let insns = List.map ~f:arm_op_pretty t.operations |> Result.all in
-  let lab = Format.asprintf "%s:" (Tid.name t.id) in
+  let lab = Format.asprintf "%s:" (tid_to_string t.id) in
   Result.map insns ~f:(fun insns -> lab::insns)
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
