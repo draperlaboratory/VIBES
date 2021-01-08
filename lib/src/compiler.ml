@@ -3,6 +3,7 @@
 open !Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
+open Knowledge.Let
 open Bap_core_theory
 
 module KB = Knowledge
@@ -13,16 +14,16 @@ module KB = Knowledge
    instruction. *)
 let create_assembly ?solver:(solver = Minizinc.run_minizinc)
     (bir : Theory.Program.t) : string list KB.t =
-  let value_exn x = Option.value_exn x in
   let sem = KB.Value.get Theory.Semantics.slot bir in
-  Arm_gen.effect sem |>
-  value_exn |>
-  Arm_gen.ir |>
-  solver  >>|
-  Arm_gen.arm_ir_pretty >>=
-  (function
-    | Ok assembly -> KB.return assembly
-    | Error e -> Errors.fail e)
+  let arm_eff = Arm_gen.effect sem in
+  let err = Format.asprintf "semantics:%a%!" KB.Value.pp sem in
+  let arm_eff = Option.value_exn ~message:err arm_eff in
+  let ir = Arm_gen.ir arm_eff in
+  let* ir = solver ir in
+  let pretty_ir = Arm_gen.arm_ir_pretty ir in
+  match pretty_ir with
+  | Ok assembly -> KB.return assembly
+  | Error e -> Errors.fail e
 
 (* Converts the patch (as BIL) to assembly instructions. *)
 let compile ?solver:(solver = Minizinc.run_minizinc)(obj : Data.t) : unit KB.t =
