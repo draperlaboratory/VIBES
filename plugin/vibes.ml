@@ -20,29 +20,11 @@ module Cli = struct
   let name = "vibes"
   let doc = "Vibes is a CEGIS-driven binary patcher."
 
-  (* --patch=NAME, e.g., --patch=ret-3
-     Specify the NAME of the hand-written patch to use. *)
-  let patch_doc = Printf.sprintf 
-    "Name of predefined patch to select. Options: %s"
-    (String.concat ~sep:", " Patches.names)
-  let patch = Cmd.parameter Typ.string "patch"
-    ~doc:patch_doc
-
-  (* --patch-point=HEX, e.g., --patch-point=0x54
-     Specify the address in the executable to start patching at. *)
-  let patch_point = Cmd.parameter Typ.string "patch-point"
-    ~doc:"Address (in hex) at which to insert patch, e.g. 0x3fffffe0"
-
-  (* --patch-size=INT, e.g., --patch-size=8
-     Specify the number of bytes to overwrite with the patch. *)
-  let patch_size = Cmd.parameter Typ.int "patch-size"
-    ~doc:"Size of patch (number of bytes to replace), e.g. 16"
-
-  (* --property=SEXP, e.g., --property="(true)"
-     Specify the correctness property (as S-expression) that should
-     be used to verify the patched executable. *) 
-  let property = Cmd.parameter Typ.string "property"
-    ~doc:"A correctness property (as an S-expression)"
+  (* --config=FILEPATH  e.g.,  --config=patch.json
+     Specify the patch configuration file.
+   *)
+  let config_filepath = Cmd.parameter Typ.path "config"
+    ~doc:"Patch configuration file"
 
   (* [--output,-o]=FILEPATH  e.g., --output=main.patched
      Specify the output filepath for the patched binary. *)
@@ -73,14 +55,13 @@ module Cli = struct
 
   (* The grammar of the CLI. *)
   let grammar = Cmd.(args
-    $ patch $ patch_point $ patch_size $ property $ patched_exe_filepath
-    $ max_tries $ verbose $ no_colors $ exe)
+    $ config_filepath $ patched_exe_filepath $ verbose $ no_colors $ exe)
 
   (* The callback that BAP invokes when you call [bap vibes] from
      the command line. *)
-  let callback (patch : string) (patch_point : string) (patch_size : int)
-        (property : string) (patched_exe_filepath : string option)
-        (max_tries : int option) (verbose : bool) (no_colors : bool)
+  let callback (config_filepath : string)
+        (patched_exe_filepath : string option)
+        (verbose : bool) (no_colors : bool)
         (exe : string) (ctxt : ctxt)
       : (unit, error) result =
 
@@ -112,11 +93,10 @@ module Cli = struct
 
     (* Parse the command line arguments. *)
     let result =
-      Config.create ~exe ~patch ~patch_point ~patch_size ~property
-        ~patched_exe_filepath ~max_tries
+      Config.create ~exe ~config_filepath ~patched_exe_filepath
     in
     match result with
-    | Error e -> Error (Fail (Format.asprintf "%a" Config.Errors.pp e)) 
+    | Error e -> Error (Fail (Format.asprintf "%a" Config.Errors.pp e))
     | Ok config ->
       begin
 

@@ -16,10 +16,7 @@ patch: main main.patched
 
 main.patched:
 	bap vibes main \
-    --patch=ret-3 \
-    --patch-point=0x4ec \
-    --patch-size=8 \
-    --property="(true)" \
+    --config=config.json \
     -o main.patched \
     --verbose
 	chmod +x main.patched

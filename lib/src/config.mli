@@ -11,9 +11,11 @@ module Errors : sig
     | Missing_patch
     | Missing_patch_point
     | Missing_property
-    | Invalid_size of string
+    | Missing_size
+    | Config_not_parsed of string
     | Invalid_hex of string
     | Invalid_property of string
+    | Invalid_max_tries
 
   val pp : Format.formatter -> t -> unit
 
@@ -53,16 +55,10 @@ val max_tries : t -> int option
 (* [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
 
-(* [create ~exe ~patch ~patch_point ~patch_size ~property
-           ~patched_exe_filepath ~max_tries]
+(* [create ~exe ~config_filepath ~patched_exe_filepath]
    will create a configuration record, where:
    - [~exe] is the filepath to the original exe
-   - [~patch] is the name of the patch to use
-   - [~patch_point] (a hex string) is the address to start patching from
-   - [~patch_size] is the number of bytes to patch
-   - [~property] is the correctness property (to verify the patched exe)
-   - [~patched_exe_filepath] is the optional output location
-   - [~max_tries] is the number of CEGIS iterations to allow *)
-val create : exe:string -> patch:string -> patch_point:string ->
-  patch_size:int -> property:string -> patched_exe_filepath:string option ->
-  max_tries:int option -> (t, error) result
+   - [~config_filepath] is the filepath to the config json file
+   - [~patched_exe_filepath] is the optional output location *)
+val create : exe:string -> config_filepath:string ->
+  patched_exe_filepath:string option -> (t, error) result
