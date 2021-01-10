@@ -126,17 +126,21 @@ optional parameters.  It is a JSON file with a single top level object.
 
 The top-level object must include the following fields:
 
-* `"patch" : "NAME"` -
-  Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
-  The first patch returns 3, and the second returns 4.
-* `"patch-point" : "HEX"` -
-  Specifies the address in the EXE to start patching.  Must be a valid hex
-  number in a JSON string, e.g., `"0x54"`.
-* `"patch-size" : INT` -
-  Specifies the number of bytes to overwrite with the patch.
 * `"property" : "S-EXP"` -
   Specifies the correctness property (as an S-expression in a JSON string)
   that VIBES should use to verify the correctness of the patched EXE.
+* `"patches" : [PATCH-OBJECTS]"` -
+  Specifies the patches to apply as an array of patch fragment description
+  objects.  Each object in the array describes a change to a single contiguous
+  piece of assembly code.  The objects have three fields:
+  * `"patch-name" : "NAME"` -
+    Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
+    The first patch returns 3, and the second returns 4.
+  * `"patch-point" : "HEX"` -
+    Specifies the address in the EXE to start patching.  Must be a valid hex
+    number in a JSON string, e.g., `"0x54"`.
+  * `"patch-size" : INT` -
+    Specifies the number of bytes to overwrite with the patch.
 
 The top-level object may include the following optional field:
 
@@ -149,13 +153,16 @@ Here is an example of a valid configuration file, taken from the
 
 ```
 {
-  "patch" : "ret-3",
-  "patch-point" : "0x54",
-  "patch-size" : 8,
-  "property" : "(true)"
+  "property" : "(true)",
+  "patches" : [
+    {"patch" : "ret-3",
+     "patch-point" : "0x54",
+     "patch-size" : 8}
+  ]
 }
 ```
 
-This tells VIBES to use hand-written patch named `ret-3`. The patch should be
-inserted starting at address `0x54` in `resources/simple/main`, and `8` bytes
-should be replaced.  The correctness properties to check is `true`.
+This tells VIBES to use hand-written patch named `ret-3`. There is one patch,
+which should be inserted starting at address `0x54` in `resources/simple/main`,
+and `8` bytes should be replaced.  The correctness properties to check is
+`true`.

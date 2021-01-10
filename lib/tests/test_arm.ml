@@ -176,29 +176,30 @@ module Prog9_inst = Prog9(Arm_gen.ARM_Core)
 
 let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
   let computation =
-    let* obj = H.obj () in
     let* v = v in
     let v = Arm_gen.effect v in
-    let* _ =
+    let asm =
       v |> Option.map ~f:Arm_gen.ir
-      |> Option.map ~f:Vibes_ir.dummy_reg_alloc
-      |> Option.map ~f:Arm_gen.arm_ir_pretty
-      |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
-      |> Option.join (* And we squash the Options *)
-      |> Data.Patch.set_assembly obj
+        |> Option.map ~f:Vibes_ir.dummy_reg_alloc
+        |> Option.map ~f:Arm_gen.arm_ir_pretty
+        |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
+        |> Option.join (* And we squash the Options *)
     in
-    KB.return obj
+    let* patch = KB.Object.create Data.Patch.patch in
+    let* _ = Data.Patch.set_assembly patch asm in
+    KB.return patch
   in
-  let result = KB.run Data.cls computation KB.empty in
+  let result = KB.run Data.Patch.patch computation KB.empty in
   let rexpected = List.map ~f:Str.regexp expected in
   let rexpected = Some rexpected in
   let cmp expected input =
     begin
       match input, expected with
       | Some input, Some expected ->
-        let pairs = List.zip_exn expected input in
-        let matches = List.map pairs ~f:(fun (pat, str) -> Str.string_match pat str 0) in
-        List.for_all ~f:(fun b -> b) matches
+         let pairs = List.zip_exn expected input in
+         let matches = List.map pairs
+                         ~f:(fun (pat, str) -> Str.string_match pat str 0) in
+         List.for_all ~f:(fun b -> b) matches
       | _ -> false
     end
   in

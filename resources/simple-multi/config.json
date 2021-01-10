@@ -1,0 +1,11 @@
+{
+  "property" : "(true)",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-point" : "0x3d4",
+     "patch-size" : 8},
+    {"patch-name" : "ret-4",
+     "patch-point" : "0x3f0",
+     "patch-size" : 8}
+  ]
+}

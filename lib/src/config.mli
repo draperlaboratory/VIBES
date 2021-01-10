@@ -8,7 +8,8 @@ module Errors : sig
 
   type t =
     | Missing_exe
-    | Missing_patch
+    | Missing_patches
+    | Missing_patch_name
     | Missing_patch_point
     | Missing_property
     | Missing_size
@@ -27,19 +28,25 @@ type error = Errors.t Monad.Result.Make (Errors) (Monad.Ident).error
 (* A type to represent a configuration record. *)
 type t
 
+(* A type to represent individual patch fragments. *)
+type patch =
+  {
+    (* The name of the patch to use. *)
+    patch_name : string;
+
+    (* The address in the original exe to start patching from. *)
+    patch_point : Bitvec.t;
+
+    (* The number of bytes of code that the patch replaces or removes,
+       beginning at the patch_point *)
+    patch_size : int
+  }
+
 (* [exe config] returns the filepath of the original exe to patch. *)
 val exe : t -> string
 
-(* [patch config] returns the name of the patch to use. *)
-val patch : t -> string
-
-(* [patch_point config] returns the address in the original exe to start
-   patching from. *)
-val patch_point : t -> Bitvec.t
-
-(* [patch_size config] returns the number of bytes in the original exe
-   that need to be patched. *)
-val patch_size : t -> int
+(* [patch config] returns the list of patch fragments *)
+val patches : t -> patch list
 
 (* [property config] returns the correctness property to use to verify
    whether the patched exe is correct. *)

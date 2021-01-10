@@ -1,6 +1,8 @@
 {
-  "patch" : "ret-3",
-  "patch-point" : "0x4ec",
-  "patch-size" : 8,
-  "property" : "(true)"
+  "property" : "(true)",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-point" : "0x4ec",
+     "patch-size" : 8}
+  ]
 }

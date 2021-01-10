@@ -20,13 +20,15 @@ let test_patch (_ : test_ctxt) : unit =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
-    Data.Patched_exe.set_patch_point obj (Some H.patch_point) >>= fun _ ->
-    Data.Patch.set_assembly obj (Some H.assembly) >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
+    Data.Patch.set_assembly patch (Some H.assembly) >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.PatchSet.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
     Patcher.patch obj ~patcher:patcher >>= fun _ ->
     KB.return obj
-
   in
   let result = KB.run Data.cls computation KB.empty in
 
@@ -64,7 +66,9 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
        and no patch_point stashed in it. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
-
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patched_exe.set_patches obj
+      (Data.PatchSet.singleton patch) >>= fun _ ->
     (* Now run the patcher. *)
     Patcher.patch obj >>= fun _ ->
     KB.return obj
@@ -86,7 +90,10 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
     (* The KB starts with no assembly stashed in it. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
-    Data.Patched_exe.set_patch_point obj (Some H.patch_point) >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.PatchSet.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
     Patcher.patch obj >>= fun _ ->

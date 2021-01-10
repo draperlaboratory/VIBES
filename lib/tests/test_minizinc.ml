@@ -70,7 +70,10 @@ let test_minizinc_ex1 _ =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
     Patches.get_BIL H.patch 32 >>= fun bil ->
-    Data.Patch.set_bil obj bil >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_bil patch bil >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.PatchSet.singleton patch) >>= fun _ ->
     (* Now run the compiler. *)
     Minizinc.run_minizinc ex1 >>= fun sol ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
