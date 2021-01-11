@@ -1,6 +1,7 @@
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
+open Bap_core_theory
 open OUnit2
 
 module KB = Knowledge
@@ -23,16 +24,22 @@ let test_ingest (_ : test_ctxt) : unit =
     KB.return obj
 
   in
-  let _result = KB.run Data.cls computation KB.empty in
+  let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should stash the patch (BIR) in the KB. *)
-  let _expected = Patches.Ret_3.prog 32 in
+  let expected = Patches.Ret_3.prog 32 in
+  let expected = expected >>| fun p ->
+    KB.Value.put Theory.Semantics.slot Theory.Program.empty p in
+  let expected =
+    expected >>= fun _ -> KB.Object.create Theory.Program.cls in
+  let expected = KB.run Theory.Program.cls expected KB.empty in
+  let expected = Result.get_ok expected |> fst in
 
-  (* H.assert_property
-   *   ~p_res:H.print_bir ~p_expected:H.print_bir
-   *   ~cmp:Theory.Program.equal
-   *   Data.Patch.bir expected result *)
-  assert false
+  H.assert_property
+    ~p_res:H.print_bir ~p_expected:H.print_bir
+    ~cmp:Theory.Program.equal
+    Data.Patch.bir expected result
+
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)
 let test_ingest_with_no_patch (_ : test_ctxt) : unit =
