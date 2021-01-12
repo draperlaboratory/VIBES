@@ -72,12 +72,12 @@ let verify
   Data.Original_exe.get_prog_exn obj >>= fun orig_prog ->
   Data.Patched_exe.get_tmp_filepath_exn obj >>= fun patch_exe_filepath ->
   Events.(send @@ Info "Loading patched exe...");
+  Data.Verifier.get_property_exn obj >>= fun property ->
+
   loader patch_exe_filepath >>= fun patch_proj ->
   let patch_prog = Project.program patch_proj in
   let patch_sub = get_sub patch_prog func in
   let orig_sub =  get_sub orig_prog func in
-
-  Data.Verifier.get_property_exn obj >>= fun property ->
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
   let status = verifier orig_sub patch_sub property in

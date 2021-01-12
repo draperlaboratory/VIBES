@@ -2,7 +2,7 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_vibes
-open Bap_core_theory.Theory
+open Bap_core_theory
 open OUnit2
 
 module KB = Knowledge
@@ -17,7 +17,7 @@ let empty_proj (filename : string) : (Project.t, Error.t) result =
   Project.create input
 
 (* Same as [empty_proj], but fail if loading errors. *)
-let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
+let proj_exn (proj : (Project.t, Error.t) result) : Project.t =
   match proj with
   | Ok p -> p
   | Error e ->
@@ -26,10 +26,19 @@ let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
       failwith msg
     end
 
+(* Create a dummy project with an empty main subroutine *)
+let dummy_proj ?name:(name = "main") filename : (Project.t, Error.t) result =
+  let empty_proj = empty_proj filename in
+  let dummy_main = Sub.create ~name:name () in
+  let dummy_prog = Program.Builder.create () in
+  Program.Builder.add_sub dummy_prog dummy_main;
+  let dummy_prog = Program.Builder.result dummy_prog in
+  Result.map empty_proj ~f:(fun p -> Project.with_program p dummy_prog)
+
 (* Get an empty program that can be used in tests. *)
-let prog_exn (proj : (Project.t, Error.t) result) : Bap.Std.Program.t =
+let prog_exn (proj : (Project.t, Error.t) result) : Program.t =
   let p = proj_exn proj in
-  Bap.Std.Project.program p
+  Project.program p
 
 (* Some dummy values that can be used in tests. *)
 let patch = "ret-3"
@@ -41,7 +50,7 @@ let property = Sexp.Atom property_str
 let assembly = ["@patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
-let proj = empty_proj original_exe
+let proj = dummy_proj original_exe
 let prog = prog_exn proj
 
 (* A BAP loader for testing. No disk I/O. Just wraps [proj] *)
@@ -156,8 +165,8 @@ let print_prog_opt opt =
   | None -> "None"
 
 (* Pretty print BIR. *)
-let print_bir (bir : Program.t) =
-  let bir = KB.Value.get Term.slot (KB.Value.get Semantics.slot bir) in
+let print_bir (bir : Theory.Program.t) =
+  let bir = KB.Value.get Term.slot (KB.Value.get Theory.Semantics.slot bir) in
   Format.asprintf "%a" Blk.pp_seq (Seq.of_list bir)
 
 (* A verifier function for testing. It always returns unsat. *)
