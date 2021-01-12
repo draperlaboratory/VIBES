@@ -242,7 +242,7 @@ struct
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
     Events.(send @@ Info "calling int");
-    (* This is incorrect: we're assuming every constant is exactly 32
+    (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w

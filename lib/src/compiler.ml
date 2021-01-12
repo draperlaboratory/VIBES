@@ -17,9 +17,12 @@ let create_assembly ?solver:(solver = Minizinc.run_minizinc)
   let sem = KB.Value.get Theory.Semantics.slot bir in
   let arm_eff = Arm_gen.effect sem in
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp sem in
-  let arm_eff = Option.value_exn ~message:err arm_eff in
-  let ir = Arm_gen.ir arm_eff in
-  let* ir = solver ir in
+  (* Makes for a slightly clearer *)
+  let arm_eff = Result.of_option arm_eff
+      ~error:(Errors.Missing_semantics err) in
+  (* For some reason Either is more fully featured *)
+  let ir = Result.map ~f:Arm_gen.ir arm_eff |> Result.to_either in
+  let* ir = Either.value_map ~first:solver ~second:Errors.fail ir in
   let pretty_ir = Arm_gen.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return assembly
