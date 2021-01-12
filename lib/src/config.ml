@@ -108,7 +108,6 @@ let validate_patch_point (obj : Json.t) : (Bitvec.t, error) Stdlib.result =
      end
   | _ -> Err.fail Errors.Missing_patch_point
 
-
 (* Extract the patch size integer, or error. *)
 let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
   match Json.Util.member "patch-size" obj with
@@ -143,8 +142,8 @@ let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
 
 (* Construct a configuration record from the given parameters. *)
 let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
-    ~patched_exe_filepath:(patched_exe_filepath : string option)
-  : (t, error) result =
+      ~patched_exe_filepath:(patched_exe_filepath : string option)
+    : (t, error) result =
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   parse_json config_filepath >>= fun config_json ->
   validate_patch config_json >>= fun patch ->
