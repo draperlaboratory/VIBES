@@ -87,26 +87,16 @@ The basic form of the command is this:
 This tells the VIBES tool to patch the EXE located on your system at
 `/path/to/pre-patched/exe`.
 
-A number of PARAMS must be specified:
+There is one mandatory PARAM:
 
-* `--patch=NAME`:
-  Specifies the name of a hand-written patch to apply to the EXE.
-  Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
-  The first patch returns 3, and the second returns 4.
-* `--patch-point=HEX`:
-  Specifies the address in the EXE to start patching. Must be a valid hex
-  string, e.g., `0x54`.
-* `--patch-size=INT`:
-  Specifies the number of bytes to overwrite with the patch.
-* `--property=S-EXP`:
-  Specifies the correctness property (as an S-expression) that VIBES should
-  use to verify the correctness of the patched EXE.
+* `--config=PATH`:
+  Specifies the location of the configuration JSON file.  The format for this
+  file, which provides the details of the patch, is provided below.
 
 The following are optional parameters:
 
-* `--max-tries=INT`:
-  Specifies the number of times to let VIBES try patching. Leaving this
-  parameter unspecified or setting it to `0` tells VIBES to try forever.
+* `-o PATH`, `--output=PATH`:
+  The output location for the patched binary.
 * `--verbose`:
   If present, the VIBES tool will run with verbose logging. By default, it
   will log messages to `stderr` with TTY colors. You can turn the colors off
@@ -122,14 +112,50 @@ it will exit and print the error to `stderr`.
 Here is an example of invoking the command:
 
     bap vibes resources/simple/main \
-        --patch=ret-3 \
-        --patch-point=0x54 \
-        --patch-size=8 \
-        --property="(true)" \
+        --config resources/simple/config.json \
         --verbose
 
-This tells the VIBES tool to patch `resources/simple/main` with the
-hand-written patch named `ret-3`. The patch should be inserted starting at
-address `0x54` in `resources/simple/main`, and `8` bytes should be replaced.
-The correctness properties to check is `true`. Finally, use verbose logging,
-so that you can see the progress.
+This tells the VIBES tool to patch `resources/simple/main` with the patch
+information provided in the `resources/simple/config.json` file and to use
+verbose logging, so that you can see the progress.
+
+## Configuration file format
+
+The mandatory configuation file provides the details of the patch and several
+optional parameters.  It is a JSON file with a single top level object.
+
+The top-level object must include the following fields:
+
+* `"patch" : "NAME"` -
+  Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
+  The first patch returns 3, and the second returns 4.
+* `"patch-point" : "HEX"` -
+  Specifies the address in the EXE to start patching.  Must be a valid hex
+  number in a JSON string, e.g., `"0x54"`.
+* `"patch-size" : INT` -
+  Specifies the number of bytes to overwrite with the patch.
+* `"property" : "S-EXP"` -
+  Specifies the correctness property (as an S-expression in a JSON string)
+  that VIBES should use to verify the correctness of the patched EXE.
+
+The top-level object may include the following optional field:
+
+* `"max-tries" : INT` -
+  Specifies the number of times to let VIBES try patching. Leaving this
+  parameter unspecified or setting it to `0` tells VIBES to try forever.
+
+Here is an example of a valid configuration file, taken from the
+`resources/simple` example:
+
+```
+{
+  "patch" : "ret-3",
+  "patch-point" : "0x54",
+  "patch-size" : 8,
+  "property" : "(true)"
+}
+```
+
+This tells VIBES to use hand-written patch named `ret-3`. The patch should be
+inserted starting at address `0x54` in `resources/simple/main`, and `8` bytes
+should be replaced.  The correctness properties to check is `true`.

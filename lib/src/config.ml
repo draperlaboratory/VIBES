@@ -2,6 +2,7 @@
 
 open !Core_kernel
 open Monads.Std
+module Json = Yojson.Safe
 
 (* Encapsulate configuration errors. *)
 module Errors = struct
@@ -11,19 +12,29 @@ module Errors = struct
     | Missing_patch
     | Missing_patch_point
     | Missing_property
-    | Invalid_size of string
+    | Missing_size
+    | Config_not_parsed of string
     | Invalid_hex of string
     | Invalid_property of string
+    | Invalid_max_tries
 
   let pp (ppf : Format.formatter) t : unit =
     let msg = match t with
       | Missing_exe -> "missing the filepath of an executable"
-      | Missing_patch -> "missing a patch name"
-      | Missing_patch_point -> "missing a patch point"
-      | Missing_property -> "missing a correctness property"
-      | Invalid_size desc -> desc
+      | Missing_patch ->
+         "config json field \"patch\" must be a non-empty string"
+      | Missing_patch_point ->
+         "config json field \"patch-point\" must be a non-empty string"
+      | Missing_property ->
+         "config json field \"property\" must be a non-empty string"
+      | Missing_size ->
+         "config json field \"patch-size\" must be an integer"
+      | Config_not_parsed s ->
+         "error finding or parsing config JSON file: " ^ s
       | Invalid_hex desc -> desc
       | Invalid_property desc -> desc
+      | Invalid_max_tries ->
+         "optional config json field \"max-tries\" must be an integer"
     in
     Format.fprintf ppf "@[%s@]" msg
 
@@ -75,35 +86,71 @@ let is_not_empty (value : string) (e : Errors.t)
   | 0 -> Err.fail e
   | _ -> Err.return value
 
-(* Parse a hex string into a bitvector, or error. *)
-let validate_patch_point (value : string) : (Bitvec.t, error) Stdlib.result =
-  try
-    Err.return (Bitvec.of_string value)
-  with Invalid_argument _ ->
-    let msg = Format.sprintf "Invalid hex string: %s" value in
-    Err.fail (Errors.Invalid_hex msg)
+(* Extract the patch name and check it is non-empty string. *)
+let validate_patch (obj : Json.t) : (string, error) Stdlib.result =
+  match Json.Util.member "patch" obj with
+  | `String s ->
+     if String.length s = 0 then Err.fail Errors.Missing_patch
+     else Err.return s
+  | _ -> Err.fail Errors.Missing_patch
 
-(* Parse an string into an S-expression, or error. *)
-let validate_property (value : string) : (Sexp.t, error) Stdlib.result =
+(* Extract the patch point field and parse the hex string into a bitvector, or
+   error. *)
+let validate_patch_point (obj : Json.t) : (Bitvec.t, error) Stdlib.result =
+  match Json.Util.member "patch-point" obj with
+  | `String s ->
+     begin
+       try
+         Err.return (Bitvec.of_string s)
+       with Invalid_argument _ ->
+         let msg = Format.sprintf "Invalid hex string: %s" s in
+         Err.fail (Errors.Invalid_hex msg)
+     end
+  | _ -> Err.fail Errors.Missing_patch_point
+
+(* Extract the patch size integer, or error. *)
+let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
+  match Json.Util.member "patch-size" obj with
+  | `Int i -> Err.return i
+  | _ -> Err.fail Errors.Missing_size
+
+(* Extract the property field string and parse it into an S-expression, or
+   error. *)
+let validate_property (obj : Json.t) : (Sexp.t, error) Stdlib.result =
+  match Json.Util.member "property" obj with
+  | `String s ->
+     begin
+       try
+         Err.return (Sexp.of_string s)
+       with Failure _ ->
+         let msg = Format.sprintf "Invalid S-expression: %s" s in
+         Err.fail (Errors.Invalid_property msg)
+     end
+  | _ -> Err.fail Missing_property
+
+let validate_max_tries (obj : Json.t) : (int option, error) Stdlib.result =
+  match Json.Util.member "max-tries" obj with
+  | `Int i -> Err.return (Some i)
+  | `Null -> Err.return None
+  | _ -> Err.fail Invalid_max_tries
+
+(* Parse the user-provided JSON config file into a Yojson.Safe.t *)
+let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
   try
-    Err.return (Sexp.of_string value)
-  with Failure _ ->
-    let msg = Format.sprintf "Invalid S-expression: %s" value in
-    Err.fail (Errors.Invalid_property msg)
+    Err.return (Json.from_file config_filepath)
+  with e -> Err.fail (Errors.Config_not_parsed (Exn.to_string e))
 
 (* Construct a configuration record from the given parameters. *)
-let create ~exe:(exe : string) ~patch:(patch : string)
-    ~patch_point:(patch_point : string) ~patch_size:(patch_size : int)
-    ~property:(property : string)
-    ~patched_exe_filepath:(patched_exe_filepath : string option)
-    ~max_tries:(max_tries : int option)
-  : (t, error) result =
+let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
+      ~patched_exe_filepath:(patched_exe_filepath : string option)
+    : (t, error) result =
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
-  is_not_empty patch Errors.Missing_patch >>= fun patch ->
-  is_not_empty patch_point Errors.Missing_patch_point >>= fun patch_point ->
-  is_not_empty property Errors.Missing_property >>= fun property ->
-  validate_patch_point patch_point >>= fun patch_point ->
-  validate_property property >>= fun property ->
+  parse_json config_filepath >>= fun config_json ->
+  validate_patch config_json >>= fun patch ->
+  validate_patch_point config_json >>= fun patch_point ->
+  validate_patch_size config_json >>= fun patch_size ->
+  validate_property config_json >>= fun property ->
+  validate_max_tries config_json >>= fun max_tries ->
   let record = { exe; patch; patch_point; patch_size; property;
                  patched_exe_filepath; max_tries } in
   Ok record
