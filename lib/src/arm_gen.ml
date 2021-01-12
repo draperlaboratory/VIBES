@@ -498,3 +498,14 @@ let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
   List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
+
+
+let slot = arm_eff
+
+let () =
+  Theory.declare
+    ~package:"vibes"
+    ~name:"arm-gen"
+    ~desc:"This theory allows instantiating Program semantics into \
+          a Vibes_ir.t term, using Arm_gen.slot."
+  @@ KB.return (module ARM_Core : Theory.Core)
