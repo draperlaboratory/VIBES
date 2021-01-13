@@ -5,7 +5,7 @@ type op_var = {
   id : Var.t;
   temps : Var.t list;
   pre_assign : ARM.gpr_reg option
-} [@@deriving compare]
+} [@@deriving compare, sexp]
 
 let equal_op_var x y = [%equal: Var.t] x.id y.id
 
@@ -15,7 +15,7 @@ let simple_var v = {
   pre_assign = None
 }
 
-type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal]
+type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal, sexp]
 
 type shift = [
   | `ASR
@@ -44,7 +44,7 @@ type operation = {
   insns : insn list;
   optional : bool;
   operands :  operand list;
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 let simple_op opcode arg args =
   let tid = Tid.create () in
@@ -70,7 +70,7 @@ type blk = {
   ins : operation;
   outs : operation;
   frequency : int
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 
 let simple_blk tid ops =
@@ -87,7 +87,7 @@ let simple_blk tid ops =
 type t = {
   blks : blk list;
   congruent : (op_var * op_var) list
-} [@@deriving compare, equal]
+} [@@deriving compare, equal, sexp]
 
 let empty = {blks = []; congruent = []}
 

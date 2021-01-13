@@ -5,7 +5,7 @@ open Bap_core_theory
 module IR = Vibes_ir
 
 type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
-[@@deriving compare, equal]
+[@@deriving compare, equal, sexp]
 
 let empty_eff = {current_blk = []; other_blks = IR.empty}
 
@@ -27,7 +27,8 @@ let (@) s1 s2 =
   let { current_blk = blk2; other_blks = blks2} = s2 in
   {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
 
-let arm_eff_domain = KB.Domain.optional ~equal:equal_arm_eff "arm-eff"
+let arm_eff_domain =
+  KB.Domain.optional ~inspect:sexp_of_arm_eff ~equal:equal_arm_eff "arm-eff"
 
 let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
 

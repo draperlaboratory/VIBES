@@ -14,7 +14,9 @@ module Ret_3 = struct
   open Theory
 
   let prog (bits : int) : unit eff =
-    Theory.instance () >>=
+    Theory.instance
+      ~context:["bap"]
+      ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
     let open Core in
@@ -40,7 +42,9 @@ module Ret_4 = struct
   open Theory
 
   let prog (bits : int) : unit eff =
-    Theory.instance () >>=
+    Theory.instance
+      ~context:["bap"]
+      ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
     let open Core in
@@ -65,7 +69,9 @@ module Test = struct
   open Theory
 
   let prog (bits : int) : unit eff =
-    Theory.instance () >>=
+    Theory.instance
+      ~context:["bap"]
+      ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
     let open Core in
