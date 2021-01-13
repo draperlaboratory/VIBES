@@ -25,8 +25,6 @@ let test_ingest (_ : test_ctxt) : unit =
     Patch_ingester.ingest obj >>= fun () ->
     Data.Patch.get_bir obj >>= fun bir ->
     expected >>= fun expected ->
-    Printf.printf "\n\n\n%s\n\n\n%!" (Insn.bil bir |> Bil.to_string);
-    Printf.printf "\n\n\n%s\n\n\n%!" (Insn.bil expected |> Bil.to_string);
     let err =
       Format.asprintf "Expected %a but got %a"
         Insn.pp_adt expected Insn.pp_adt bir
