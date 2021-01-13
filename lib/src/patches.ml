@@ -1,20 +1,25 @@
 (* This module contains some hand-written patches (for initial demos). *)
 
 open !Core_kernel
+open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
+open Knowledge.Syntax
 
 module KB = Knowledge
-open KB.Let
 
 (* Some BIR that returns 3. *)
-module FRet_3 (S : Theory.Core) = struct
+module Ret_3 = struct
 
   open Theory
-  open S
-  open Core_notations.Make(S)
 
   let prog (bits : int) : unit eff =
+    Theory.instance () >>=
+    Theory.require >>=
+    fun (module Core) ->
+    let open Core in
+    let open Core_notations.Make(Core) in
+
     let word_t = Bitv.define bits in
     let r0 = Var.define word_t "R0" in
     let three = int word_t Bitvec.M32.(!!3) in
@@ -30,13 +35,17 @@ module FRet_3 (S : Theory.Core) = struct
 end
 
 (* Some BIL that returns 4. *)
-module FRet_4 (S : Theory.Core) = struct
+module Ret_4 = struct
 
   open Theory
-  open S
-  open Core_notations.Make(S)
 
   let prog (bits : int) : unit eff =
+    Theory.instance () >>=
+    Theory.require >>=
+    fun (module Core) ->
+    let open Core in
+    let open Core_notations.Make(Core) in
+
     let word_t = Bitv.define bits in
     let r0 = Var.define word_t "R0" in
     let four = int word_t Bitvec.M32.(!!4) in
@@ -51,13 +60,17 @@ module FRet_4 (S : Theory.Core) = struct
 
 end
 
-module FTest (S : Theory.Core) = struct
+module Test = struct
 
   open Theory
-  open S
-  open Core_notations.Make(S)
 
   let prog (bits : int) : unit eff =
+    Theory.instance () >>=
+    Theory.require >>=
+    fun (module Core) ->
+    let open Core in
+    let open Core_notations.Make(Core) in
+
     let word_t = Bitv.define bits in
     let v1 = Var.define word_t "v1" in
     let v2 = Var.define word_t "v2" in
@@ -80,11 +93,6 @@ end
 
 module ARM = Arm_gen.ARM_Core
 
-module Ret_3 = FRet_3(ARM)
-
-module Ret_4 = FRet_4(ARM)
-
-module Test = FTest(ARM)
 
 (* The names of the patches. *)
 let patches =
@@ -101,7 +109,6 @@ let names = Map.keys patches
 let is_patch (name : string) : bool = List.mem names name ~equal:String.equal
 
 (* [get_bir "ret-3" 32] returns the [Ret_3.bil] BIL, with 32-bit words. *)
-let get_bir (name : string) (bits : int) : Theory.Program.t KB.t =
+let get_bir (name : string) (bits : int) : Insn.t KB.t =
   let patch = Map.find_exn patches name in
-  let+ bir = patch bits in
-  KB.Value.put Theory.Semantics.slot Theory.Program.empty bir
+  patch bits

@@ -43,12 +43,12 @@ module Make (C : Core) = struct
   (** Sequences a list of data effects *)
   let data_body (l : data eff list) : data eff =
     let empty = perform Effect.Sort.bot in
-    List.fold ~init:empty ~f:seq l
+    List.fold_right ~init:empty ~f:seq l
 
   (** Sequences a list of control effects, ending them with a
       fall-through *)
   let ctrl_body (l : ctrl eff list) : ctrl eff =
     let empty = perform Effect.Sort.fall in
-    List.fold ~init:empty ~f:seq l
+    List.fold_right ~init:empty ~f:seq l
 
 end

@@ -2,7 +2,6 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_vibes
-open Bap_core_theory
 open OUnit2
 
 module KB = Knowledge
@@ -165,9 +164,8 @@ let print_prog_opt opt =
   | None -> "None"
 
 (* Pretty print BIR. *)
-let print_bir (bir : Theory.Program.t) =
-  let bir = KB.Value.get Term.slot (KB.Value.get Theory.Semantics.slot bir) in
-  Format.asprintf "%a" Blk.pp_seq (Seq.of_list bir)
+let print_bir (bir : Insn.t) =
+  Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
 let verify_unsat (_ : Sub.t) (_ : Sub.t) (_ : Sexp.t)

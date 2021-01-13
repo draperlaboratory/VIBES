@@ -2,21 +2,20 @@
 
 open !Core_kernel
 open Bap_knowledge
+open Bap.Std
 open Knowledge.Syntax
 open Knowledge.Let
-open Bap_core_theory
 
 module KB = Knowledge
 
 
-(* Converts a list of BIL statements to a list of ARM assembly strings.
+(* Converts a list of BIR statements to a list of ARM assembly strings.
    This is just a dummy stand-in for now. It only handles a simple move
    instruction. *)
 let create_assembly ?solver:(solver = Minizinc.run_minizinc)
-    (bir : Theory.Program.t) : string list KB.t =
-  let sem = KB.Value.get Theory.Semantics.slot bir in
-  let arm_eff = Arm_gen.effect sem in
-  let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp sem in
+    (bir : Insn.t) : string list KB.t =
+  let arm_eff = Arm_gen.effect bir in
+  let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
   (* Makes for a slightly clearer *)
   let arm_eff = Result.of_option arm_eff
       ~error:(Errors.Missing_semantics err) in
@@ -28,15 +27,15 @@ let create_assembly ?solver:(solver = Minizinc.run_minizinc)
   | Ok assembly -> KB.return assembly
   | Error e -> Errors.fail e
 
-(* Converts the patch (as BIL) to assembly instructions. *)
+(* Converts the patch (as BIR) to assembly instructions. *)
 let compile ?solver:(solver = Minizinc.run_minizinc)(obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting compiler");
   Events.(send @@ Info "This stage is currently a naive stand-in");
 
-  (* Retrieve the patch (BIL) from the KB, and convert it to assembly. *)
+  (* Retrieve the patch (BIR) from the KB, and convert it to assembly. *)
   Events.(send @@ Info "Retreiving data from KB...");
   Data.Patch.get_bir obj >>= fun bir ->
-  Events.(send @@ Info "Translating patch BIL to assembly...");
+  Events.(send @@ Info "Translating patch BIR to assembly...");
   create_assembly ~solver bir >>= fun assembly ->
 
   (* Stash the assembly in the KB. *)

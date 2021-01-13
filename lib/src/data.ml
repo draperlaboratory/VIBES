@@ -32,7 +32,7 @@ let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
     "prog-domain"
 
 (* The domain of BIR programs *)
-let bir_domain : Theory.Program.t KB.domain = Theory.Program.domain
+let bir_domain : Insn.t KB.domain = Theory.Semantics.domain
 
 (* Optional s-expression domain (for correctness properties) *)
 let property_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
@@ -58,7 +58,7 @@ module Patch = struct
   let patch_name : (cls, string option) KB.slot =
     KB.Class.property ~package cls "patch-name" string_domain
 
-  let bir : (cls, Theory.Program.t) KB.slot =
+  let bir : (cls, Insn.t) KB.slot =
     KB.Class.property ~package cls "patch-bir" bir_domain
 
   let assembly : (cls, string list option) KB.slot =
@@ -76,10 +76,10 @@ module Patch = struct
     | None -> Errors.fail Errors.Missing_patch_name
     | Some value -> KB.return value
 
-  let set_bir (obj : t) (data : Theory.Program.t) : unit KB.t =
+  let set_bir (obj : t) (data : Insn.t) : unit KB.t =
     KB.provide bir obj data
 
-  let get_bir (obj : t) : Theory.Program.t KB.t =
+  let get_bir (obj : t) : Insn.t KB.t =
     KB.collect bir obj
 
   let set_assembly (obj : t) (data : string list option) : unit KB.t =

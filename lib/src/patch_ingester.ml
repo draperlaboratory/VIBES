@@ -3,7 +3,6 @@
 open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
-open Bap_core_theory
 
 module KB = Knowledge
 
@@ -27,9 +26,7 @@ let ingest (obj : Data.t) : unit KB.t =
 
   Events.(send @@ Info "Done. The patch has the following BIR:");
   Events.(send @@ Rule);
-  let bir = KB.Value.get Term.slot (KB.Value.get Theory.Semantics.slot bir) in
-  let bir_seq = Seq.of_list bir in
-  let bir_str = Format.asprintf "%a" Blk.pp_seq bir_seq in
+  let bir_str = Format.asprintf "%a" Insn.pp_adt bir in
   Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
 

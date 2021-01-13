@@ -1,7 +1,7 @@
+open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
-open Bap_core_theory
 open OUnit2
 
 module KB = Knowledge
@@ -11,34 +11,31 @@ module H = Helpers
 (* Test that [Patch_ingester.ingest] works as expected. *)
 let test_ingest (_ : test_ctxt) : unit =
 
+  let expected = Patches.Ret_3.prog 32 in
+
   (* Run the ingester. *)
   let computation =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_addr_size obj (Some 32) >>= fun _ ->
-    Data.Patch.set_patch_name obj (Some H.patch) >>= fun _ ->
+    Data.Original_exe.set_addr_size obj (Some 32) >>= fun () ->
+    Data.Patch.set_patch_name obj (Some H.patch) >>= fun () ->
 
     (* Now run the ingester. *)
-    Patch_ingester.ingest obj >>= fun _ ->
+    Patch_ingester.ingest obj >>= fun () ->
+    Data.Patch.get_bir obj >>= fun bir ->
+    expected >>= fun expected ->
+    Printf.printf "\n\n\n%s\n\n\n%!" (Insn.bil bir |> Bil.to_string);
+    Printf.printf "\n\n\n%s\n\n\n%!" (Insn.bil expected |> Bil.to_string);
+    let err =
+      Format.asprintf "Expected %a but got %a"
+        Insn.pp_adt expected Insn.pp_adt bir
+    in
+    assert_bool err (Insn.equal expected bir);
     KB.return obj
 
   in
-  let result = KB.run Data.cls computation KB.empty in
-
-  (* The ingester should stash the patch (BIR) in the KB. *)
-  let expected = Patches.Ret_3.prog 32 in
-  let expected = expected >>| fun p ->
-    KB.Value.put Theory.Semantics.slot Theory.Program.empty p in
-  let expected =
-    expected >>= fun _ -> KB.Object.create Theory.Program.cls in
-  let expected = KB.run Theory.Program.cls expected KB.empty in
-  let expected = Result.get_ok expected |> fst in
-
-  H.assert_property
-    ~p_res:H.print_bir ~p_expected:H.print_bir
-    ~cmp:Theory.Program.equal
-    Data.Patch.bir expected result
+  ignore @@ KB.run Data.cls computation KB.empty
 
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)
