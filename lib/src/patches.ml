@@ -15,7 +15,7 @@ module Ret_3 = struct
 
   let prog (bits : int) : unit eff =
     Theory.instance
-      ~context:["bap"]
+      ~context:["vibes"]
       ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
@@ -43,7 +43,7 @@ module Ret_4 = struct
 
   let prog (bits : int) : unit eff =
     Theory.instance
-      ~context:["bap"]
+      ~context:["vibes"]
       ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
@@ -70,7 +70,7 @@ module Test = struct
 
   let prog (bits : int) : unit eff =
     Theory.instance
-      ~context:["bap"]
+      ~context:["vibes"]
       ~requires:["bil"; "vibes:arm-gen"] () >>=
     Theory.require >>=
     fun (module Core) ->
