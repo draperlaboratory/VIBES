@@ -63,6 +63,21 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
 
   KB.return tmp_patched_exe_filename
 
+(* Applies a single patch to an exe, producing an update exe. *)
+let patch_one (patcher : string -> string list -> Bitvec.t -> string KB.t)
+      (count_name : (int*string) KB.t) (patch : Data.Patch.t)
+    : (int*string) KB.t =
+  count_name >>= fun (n,orig) ->
+  Events.(send @@ Info (Printf.sprintf "\nApplying patch %d to %s..."
+                          n orig));
+  Data.Patch.get_patch_point_exn patch >>= fun patch_point ->
+  Data.Patch.get_assembly_exn patch >>= fun assembly ->
+  patcher orig assembly patch_point >>= fun patched_loc ->
+  Events.(send @@ Info
+    (Printf.sprintf "Patch %d applied. Temporary patched exe filepath: %s"
+       n patched_loc));
+  KB.return (n+1,patched_loc)
+
 (* Patches the original exe, to produce a patched exe. *)
 let patch ?patcher:(patcher=patch_naive) (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patcher");
@@ -71,17 +86,12 @@ let patch ?patcher:(patcher=patch_naive) (obj : Data.t) : unit KB.t =
      of bytes to overwrite), and get the patch assembly. *)
   Events.(send @@ Info "Retrieving data from KB...");
   Data.Original_exe.get_filepath_exn obj >>= fun original_exe_filename ->
-  Data.Patched_exe.get_patch_point_exn obj >>= fun patch_point ->
-  Data.Patch.get_assembly_exn obj >>= fun assembly ->
+  Data.Patched_exe.get_patches obj >>= fun patches ->
+  Data.Patch_set.fold patches
+    ~init:(KB.return (1,original_exe_filename))
+    ~f:(patch_one patcher)>>= fun (_,tmp_patched_exe_filename) ->
 
-  (* Do the patch, using the specified patcher. *)
-  patcher original_exe_filename
-    assembly patch_point >>= fun tmp_patched_exe_filename ->
-
-  (* Report the results and stash the filepath in the KB. *)
-  Events.(send @@
-          Info (Core_kernel.sprintf "Temporary patched exe filepath: %s"
-                  tmp_patched_exe_filename));
+  (* Stash the filepath in the KB. *)
   Data.Patched_exe.set_tmp_filepath obj
     (Some tmp_patched_exe_filename) >>= fun _ ->
 

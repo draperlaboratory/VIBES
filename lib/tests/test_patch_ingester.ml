@@ -17,15 +17,21 @@ let test_ingest (_ : test_ctxt) : unit =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_addr_size obj (Some 32) >>= fun _ ->
-    Data.Patch.set_patch_name obj (Some H.patch) >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the ingester. *)
     Patch_ingester.ingest obj >>= fun _ ->
-    KB.return obj
+    Data.Patched_exe.get_patches obj >>= fun patches ->
+    match Data.Patch_set.to_list patches with
+    | [] -> assert_failure "Result patch missing."
+    | (p :: []) -> KB.return p
+    | _ -> assert_failure "Multiple patches returned when one expected."
 
   in
-  let result = KB.run Data.cls computation KB.empty in
-
+  let result = KB.run Data.Patch.patch computation KB.empty in
   (* The ingester should stash the patch (BIL) in the KB. *)
   let expected = Patches.Ret_3.bil 32 in
   H.assert_property
@@ -38,8 +44,12 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
-    (* Don't set up the KB. Leave it empty. *)
     H.obj () >>= fun obj ->
+    Data.Original_exe.set_addr_size obj (Some 32) >>= fun () ->
+    (* Create a patch but don't fill its properties. *)
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patched_exe.set_patches obj
+      (Data.Patch_set.singleton patch) >>= fun _ ->
     Patch_ingester.ingest obj >>= fun _ ->
     KB.return obj
   in
@@ -47,7 +57,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
 
   (* The ingester should diverge with the appropriate error. *)
   let expected = Errors.Problem Errors.Missing_patch_name in
-  H.assert_error ~printer:H.print_bil Data.Patch.bil expected result
+  H.assert_error Data.Patched_exe.patches expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
 let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
@@ -55,9 +65,12 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
   (* Run the ingester. *)
   let computation =
 
-    (* Add a patch name, but no address size, to the KB. *)
+    (* Add a patch with a name, but no address size, to the KB. *)
     H.obj () >>= fun obj ->
-    Data.Patch.set_patch_name obj (Some H.patch) >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the ingester. *)
     Patch_ingester.ingest obj >>= fun _ ->
@@ -68,7 +81,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
 
   (* The ingester should diverge with the appropriate error. *)
   let expected = Errors.Problem Errors.Missing_addr_size in
-  H.assert_error ~printer:H.print_bil Data.Patch.bil expected result
+  H.assert_error Data.Patched_exe.patches expected result
 
 let suite = [
   "Test Patch_ingester.ingest" >:: test_ingest;

@@ -57,6 +57,21 @@ let loader (_ : string) : Project.t KB.t =
 (* A helper to create a [Data] object that can be used in tests. *)
 let obj () = KB.Object.create Data.cls
 
+
+(* After a [KB.run] computation, extract a given property from the returned
+   object for further processing.  Fail if the KB computation failed. *)
+let extract_property (property : ('k, 'a) KB.slot)
+      (result : (('k, 's) KB.cls KB.value * KB.state, KB.conflict) result) 
+    : 'a =
+  match result with
+  | Ok (value, _) -> KB.Value.get property value
+  | Error problem ->
+    let msg = Format.asprintf
+        "@[<v 4>expected a value, but got an error:@,@[%a@]@]"
+        KB.Conflict.pp problem
+    in
+    assert_failure msg
+
 (* After a [kb_run] computation, assert that a property of the returned [obj]
    has a particular value. [property] is the property you want to check,
    [expected] is the value you expect it to have, and [result] is the result
@@ -65,28 +80,19 @@ let obj () = KB.Object.create Data.cls
    value). *)
 let assert_property ~cmp ?p_res ?p_expected
     property expected result : unit =
-  match result with
-  | Ok (obj, _) ->
-    begin
-      let actual = KB.Value.get property obj in
-      let msg =
-        match p_res, p_expected with
-        | Some p, Some p' ->
-          begin
-            Format.asprintf "@[<v 4>%s:@,@[%s@]@]@.@[<v 4>%s:@,@[%s@]@]"
-              "expected" (p' expected) "but got" (p actual)
-          end
-        | _ ->
-          Format.sprintf "Property did not have the expected value"
-      in
-      assert_bool msg (cmp expected actual)
-    end
-  | Error problem ->
-    let msg = Format.asprintf
-        "@[<v 4>expected a value, but got an error:@,@[%a@]@]"
-        KB.Conflict.pp problem
-    in
-    assert_bool msg false
+  let actual = extract_property property result in
+  let msg =
+    match p_res, p_expected with
+    | Some p, Some p' ->
+      begin
+        Format.asprintf "@[<v 4>%s:@,@[%s@]@]@.@[<v 4>%s:@,@[%s@]@]"
+          "expected" (p' expected) "but got" (p actual)
+      end
+    | _ ->
+      Format.sprintf "Property did not have the expected value"
+  in
+  assert_bool msg (cmp expected actual)
+
 
 (* After a [kb_run] computation, assert that the comutation diverged with
    a particular error. [property] is the property you want to check,
@@ -141,10 +147,14 @@ let print_int_opt opt =
   | Some x -> Printf.sprintf "Some %d" x
   | None -> "None"
 
+(* Print a list of strings, with newlines between elements *)
+let print_string_list items =
+  Printf.sprintf "[%s]" (String.concat ~sep:"\n" items)
+
 (* Similar to [print_opt], but for optional string lists. *)
 let print_string_list_opt items =
   match items with
-  | Some xs -> Printf.sprintf "Some [%s]" (String.concat ~sep:"\n" xs)
+  | Some xs -> Printf.sprintf "Some %s" (print_string_list xs)
   | None -> "None"
 
 (* Pretty print programs. *)
