@@ -330,8 +330,8 @@ let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tcode:\n%s"
     (Tid.to_string b.id)
     (pretty_operation b.ins)
     (pretty_operation b.outs)
-    (List.fold b.operations ~init:""
-       ~f:(fun acc o -> acc ^ pretty_operation o ^ "\n"))
+    (List.fold_right b.operations ~init:""
+       ~f:(fun o acc -> acc ^ pretty_operation o ^ "\n"))
 
 let pretty_ir (vir : t) : string =
   List.fold vir.blks ~init:"" ~f:(fun acc b -> acc ^ (pretty_blk b) ^ "\n\n")

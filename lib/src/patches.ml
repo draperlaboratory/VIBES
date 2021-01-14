@@ -85,7 +85,7 @@ module Test = struct
     let int i = int word_t Bitvec.M32.(!!i) in
     let data = data_body
         [
-          v1 := int 3;
+          v1 := int 3 + int 4;
           v2 := int 4;
           v3 := (var v1 + int 1) - var v2;
           v4 := (var v3 + int 1) << int 2;

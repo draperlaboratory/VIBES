@@ -100,6 +100,21 @@ let bool b =
 
 module ARM_ops = struct
 
+  let freshen_operand o =
+    match o with
+    | IR.Var v ->
+      let fresh_v =
+        { v with
+          id =
+            Var.create
+              ~is_virtual:true
+              ~fresh:true
+              (Var.name v.id)
+              (Var.typ v.id)
+        } in
+      IR.Var fresh_v
+    | _ -> o
+
   let instr i sem =
     {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
 
@@ -109,9 +124,11 @@ module ARM_ops = struct
      for registers and immediates. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
+    let arg2_var = freshen_operand arg2_var in
     let mov =
       match arg1, arg2_var with
-      | IR.Var _, IR.Var _ -> IR.simple_op `MOVr arg1 [arg2_var]
+      | IR.Var _, IR.Var _ ->
+        IR.simple_op `MOVr arg1 [arg2_var]
       | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
       | _ -> failwith "arm_mov: unexpected arguments!"
     in
@@ -140,6 +157,7 @@ module ARM_ops = struct
   let uop o ty arg =
     let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
+    let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
     let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
     {op_val = IR.Var res; op_eff = sem}
@@ -148,6 +166,8 @@ module ARM_ops = struct
     let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let arg1_val = freshen_operand arg1_val in
+    let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @ arg2_sem in
     let sem = {sem with current_blk = op::sem.current_blk} in
@@ -208,8 +228,20 @@ struct
       let r_var = v |> Var.reify in
       IR.simple_var r_var
     in
-    let- arg = arg in
-    eff ((IR.Var arg_v) := arg)
+    KB.(
+      arg >>= fun arg ->
+      match Value.get arm_pure arg with
+      (* FIXME: freshen the lhs? *)
+      | Some arg -> eff ((IR.Var arg_v) := arg)
+      | None ->
+        begin
+          match Value.get arm_mem arg with
+          (* No need to explicitely assign here, we don't use the
+             "mem" variables when generating IR. *)
+          | Some arg -> eff arg
+          | None -> assert false
+        end)
+
 
   let seq s1 s2 =
     Events.(send @@ Info "calling seq");
@@ -505,6 +537,7 @@ let slot = arm_eff
 
 let () =
   Theory.declare
+    ~context:["vibes"]
     ~package:"vibes"
     ~name:"arm-gen"
     ~desc:"This theory allows instantiating Program semantics into \
