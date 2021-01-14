@@ -183,14 +183,14 @@ module Original_exe = struct
 end
 
 (* Sets of patches *)
-module PatchSet = Set.Make (Patch)
+module Patch_set = Set.Make (Patch)
 
 (* Properties pertaining to the patched executable *)
 module Patched_exe = struct
-  let patch_domain : PatchSet.t KB.domain =
-    KB.Domain.flat ~empty:PatchSet.empty ~equal:PatchSet.equal "patches"
+  let patch_domain : Patch_set.t KB.domain =
+    KB.Domain.flat ~empty:Patch_set.empty ~equal:Patch_set.equal "patches"
 
-  let patches : (cls, PatchSet.t) KB.slot =
+  let patches : (cls, Patch_set.t) KB.slot =
     KB.Class.property ~package cls "patches" patch_domain
 
   let filepath : (cls, string option) KB.slot =
@@ -201,10 +201,10 @@ module Patched_exe = struct
     KB.Class.property ~package cls "tmp-patched-exe-filepath"
       string_domain
 
-  let set_patches (obj : t) (data : PatchSet.t) : unit KB.t =
+  let set_patches (obj : t) (data : Patch_set.t) : unit KB.t =
     KB.provide patches obj data
 
-  let get_patches (obj : t) : (PatchSet.t) KB.t =
+  let get_patches (obj : t) : (Patch_set.t) KB.t =
     KB.collect patches obj
 
   let set_filepath (obj : t) (data : string option) : unit KB.t =
@@ -254,7 +254,7 @@ module Verifier = struct
 end
 
 (* Create an object of this class. *)
-let create_patches (ps : Config.patch list) : PatchSet.t KB.t =
+let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
     Patch.set_patch_name obj (Some p.patch_name) >>= fun () ->
@@ -262,7 +262,7 @@ let create_patches (ps : Config.patch list) : PatchSet.t KB.t =
     Patch.set_patch_size obj (Some p.patch_size) >>= fun () ->
     KB.return obj
   in
-  KB.all (List.map ~f:create_patch ps) >>| PatchSet.of_list
+  KB.all (List.map ~f:create_patch ps) >>| Patch_set.of_list
 
 let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
@@ -278,7 +278,7 @@ let create (config : Config.t) : t KB.t =
   KB.return obj
 
 (* Create a fresh version of an object. *)
-let fresh_patches (patches : PatchSet.t) : PatchSet.t KB.t =
+let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
   let fresh_patch (patch : Patch.t) : Patch.t KB.t =
     Patch.get_patch_name patch >>= fun name ->
     Patch.get_patch_point patch >>= fun point ->
@@ -291,8 +291,8 @@ let fresh_patches (patches : PatchSet.t) : PatchSet.t KB.t =
     Patch.set_bil patch' bil >>= fun () ->
     KB.return patch'
   in
-  KB.all (List.map ~f:fresh_patch (PatchSet.to_list patches)) >>=
-    fun ps' -> KB.return (PatchSet.of_list ps')
+  KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=
+    fun ps' -> KB.return (Patch_set.of_list ps')
 
 let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   KB.Object.create cls >>= fun obj' ->

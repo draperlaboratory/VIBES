@@ -24,7 +24,7 @@ let test_patch (_ : test_ctxt) : unit =
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patch.set_assembly patch (Some H.assembly) >>= fun _ ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
     Patcher.patch obj ~patcher:patcher >>= fun _ ->
@@ -68,7 +68,7 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
     (* Now run the patcher. *)
     Patcher.patch obj >>= fun _ ->
     KB.return obj
@@ -93,7 +93,7 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
     Patcher.patch obj >>= fun _ ->

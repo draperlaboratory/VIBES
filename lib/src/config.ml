@@ -68,7 +68,7 @@ type patch =
 (* The configuration for a run of the VIBES pipeline. *)
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
-  patches : patch list; (* The name of the patch to use. *)
+  patches : patch list; (* The list of patches to apply. *)
   property : Sexp.t; (* Correctness property. *)
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)

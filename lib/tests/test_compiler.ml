@@ -20,12 +20,12 @@ let test_compile (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_bil patch bil >>= fun _ ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the compiler. *)
     Compiler.compile obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
-    match Data.PatchSet.to_list patches with
+    match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
     | (p :: []) -> KB.return p
     | _ -> assert_failure "Multiple patches returned when one expected."
@@ -48,10 +48,10 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
     Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
-    match Data.PatchSet.to_list patches with
+    match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
     | (p :: []) -> KB.return p
     | _ -> assert_failure "Multiple patches returned when one expected."

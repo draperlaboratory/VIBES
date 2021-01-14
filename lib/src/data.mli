@@ -90,17 +90,17 @@ module Original_exe : sig
 end
 
 (* Sets of patches *)
-module PatchSet : Set.S with type Elt.t = Patch.t
+module Patch_set : Set.S with type Elt.t = Patch.t
 
 (* Properties pertaining to the patched executable *)
 module Patched_exe : sig
 
-  val patches : (cls, PatchSet.t) KB.slot
+  val patches : (cls, Patch_set.t) KB.slot
   val filepath : (cls, string option) KB.slot
   val tmp_filepath : (cls, string option) KB.slot
 
-  val set_patches : t -> PatchSet.t -> unit KB.t
-  val get_patches : t -> PatchSet.t KB.t
+  val set_patches : t -> Patch_set.t -> unit KB.t
+  val get_patches : t -> Patch_set.t KB.t
 
   val set_filepath : t -> string option -> unit KB.t
   val get_filepath : t -> string option KB.t

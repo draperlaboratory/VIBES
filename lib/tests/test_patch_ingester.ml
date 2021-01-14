@@ -20,12 +20,12 @@ let test_ingest (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the ingester. *)
     Patch_ingester.ingest obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
-    match Data.PatchSet.to_list patches with
+    match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
     | (p :: []) -> KB.return p
     | _ -> assert_failure "Multiple patches returned when one expected."
@@ -49,7 +49,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
     (* Create a patch but don't fill its properties. *)
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
     Patch_ingester.ingest obj >>= fun _ ->
     KB.return obj
   in
@@ -70,7 +70,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
     Data.Patched_exe.set_patches obj
-      (Data.PatchSet.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the ingester. *)
     Patch_ingester.ingest obj >>= fun _ ->

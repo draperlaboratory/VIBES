@@ -35,8 +35,8 @@ let ingest (obj : Data.t) : unit KB.t =
   Data.Original_exe.get_addr_size_exn obj >>= fun addr_size ->
   Data.Patched_exe.get_patches obj >>= fun patches ->
   Events.(send @@ Info (Printf.sprintf "There are %d patches"
-                          (Data.PatchSet.length patches)));
-  Data.PatchSet.fold patches ~init:(KB.return 1)
+                          (Data.Patch_set.length patches)));
+  Data.Patch_set.fold patches ~init:(KB.return 1)
     ~f:(ingest_one addr_size) >>= fun _ ->
 
   Events.(send @@ Info "Patch ingest complete");
