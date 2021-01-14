@@ -23,14 +23,16 @@ let test_ingest (_ : test_ctxt) : unit =
     Data.Patch.get_bir obj >>= fun bir ->
     Patches.Ret_3.prog 32 >>= fun expected ->
     let open Bap.Std in
+    let expected = KB.Value.get Bil.slot expected in
+    let bil = KB.Value.get Bil.slot bir in
     let err =
       Format.asprintf "Expected %a but got %a"
-        Bil.pp (KB.Value.get Bil.slot expected)
-        Bil.pp (KB.Value.get Bil.slot bir)
+        Bil.pp expected
+        Bil.pp bil
     in
     (* FIXME: test something here: maybe have a better notion of
        semantic equality on the arm-eff domain? *)
-    assert_bool err true;
+    assert_bool err (Bil.compare expected bil = 0);
     KB.return obj
 
   in
