@@ -24,9 +24,9 @@ let ingest (obj : Data.t) : unit KB.t =
   (* Stash the BIR in the KB. *)
   Data.Patch.set_bir obj bir >>= fun _ ->
 
-  Events.(send @@ Info "Done. The patch has the following BIR:");
+  Events.(send @@ Info "Done. The patch has the following BIL:");
   Events.(send @@ Rule);
-  let bir_str = Format.asprintf "%a" Insn.pp_adt bir in
+  let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
   Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
 
