@@ -488,7 +488,7 @@ let insn_pretty i : (string, Errors.t) result =
   | `LDRrs  -> Ok "ldr"
   | `STRrs  -> Ok "str"
   | i       ->
-    let to_string _ = "UNKNOWN" in
+    let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
     let msg =
       Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
     in
