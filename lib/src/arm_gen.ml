@@ -478,6 +478,7 @@ let insn_pretty i : (string, Errors.t) result =
   | `MOVi   -> Ok "mov"
   | `BX     -> Ok "bx"
   | `ADDrsi -> Ok "add"
+  | `SUBrsi -> Ok "sub"
   | `LSL    -> Ok "lsl"
   | `LSR    -> Ok "lsr"
   | `ASR    -> Ok "asr"
