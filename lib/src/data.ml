@@ -254,11 +254,7 @@ module Verifier = struct
 end
 
 (* Create an object of this class. *)
-<<<<<<< HEAD
 let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
-=======
-let create_patches (ps : Config.patch list) : PatchSet.t KB.t =
->>>>>>> 2a432ac... This adds support for multiple patch fragments
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
     Patch.set_patch_name obj (Some p.patch_name) >>= fun () ->
@@ -266,11 +262,7 @@ let create_patches (ps : Config.patch list) : PatchSet.t KB.t =
     Patch.set_patch_size obj (Some p.patch_size) >>= fun () ->
     KB.return obj
   in
-<<<<<<< HEAD
   KB.all (List.map ~f:create_patch ps) >>| Patch_set.of_list
-=======
-  KB.all (List.map ~f:create_patch ps) >>| PatchSet.of_list
->>>>>>> 2a432ac... This adds support for multiple patch fragments
 
 let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
@@ -286,11 +278,7 @@ let create (config : Config.t) : t KB.t =
   KB.return obj
 
 (* Create a fresh version of an object. *)
-<<<<<<< HEAD
 let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
-=======
-let fresh_patches (patches : PatchSet.t) : PatchSet.t KB.t =
->>>>>>> 2a432ac... This adds support for multiple patch fragments
   let fresh_patch (patch : Patch.t) : Patch.t KB.t =
     Patch.get_patch_name patch >>= fun name ->
     Patch.get_patch_point patch >>= fun point ->
@@ -303,13 +291,8 @@ let fresh_patches (patches : PatchSet.t) : PatchSet.t KB.t =
     Patch.set_bil patch' bil >>= fun () ->
     KB.return patch'
   in
-<<<<<<< HEAD
   KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=
     fun ps' -> KB.return (Patch_set.of_list ps')
-=======
-  KB.all (List.map ~f:fresh_patch (PatchSet.to_list patches)) >>=
-    fun ps' -> KB.return (PatchSet.of_list ps')
->>>>>>> 2a432ac... This adds support for multiple patch fragments
 
 let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   KB.Object.create cls >>= fun obj' ->

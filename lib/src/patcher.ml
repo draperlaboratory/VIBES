@@ -40,23 +40,23 @@ let binary_of_asm (assembly : string list) : (string, Errors.t) Result.t =
   let assembler = "/usr/bin/arm-linux-gnueabi-as" in
   let with_elf_filename = Stdlib.Filename.temp_file "vibes-assembly" ".o" in
   Result.bind (run_process assembler ["-o"; with_elf_filename ; asm_filename ]) (fun _ -> 
-  (* strip elf data *)
-  let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy" in
-  let raw_bin_filename = Stdlib.Filename.temp_file "vibes-assembly" ".bin" in
-  let objcopy_args = ["-O"; "binary"; with_elf_filename; raw_bin_filename ] in
-  Result.bind (run_process objcopy objcopy_args) (fun _ ->
-  let patch_exe = In.read_all raw_bin_filename in
-  Ok patch_exe
-  ))
+      (* strip elf data *)
+      let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy" in
+      let raw_bin_filename = Stdlib.Filename.temp_file "vibes-assembly" ".bin" in
+      let objcopy_args = ["-O"; "binary"; with_elf_filename; raw_bin_filename ] in
+      Result.bind (run_process objcopy objcopy_args) (fun _ ->
+          let patch_exe = In.read_all raw_bin_filename in
+          Ok patch_exe
+        ))
 
 (* [relative_jmp] produces binary for an unconditional relative jump *)
 let relative_jmp (rel_jmp : int) : (string, Errors.t) Result.t = 
-    let branch_relative = 
-   [  "_start:";
-      Printf.sprintf "b (_start + (%d))" rel_jmp; (* relative direct jump in arm *)
-      "" ] 
-      in
-   binary_of_asm branch_relative
+  let branch_relative = 
+    [  "_start:";
+       Printf.sprintf "b (_start + (%d))" rel_jmp; (* relative direct jump in arm *)
+       "" ] 
+  in
+  binary_of_asm branch_relative
 
 (** [lift_kb] lifts the Result monad to the KB monad *)
 let lift_kb (x : ('a, Errors.t) Result.t) : 'a KB.t =
@@ -68,14 +68,14 @@ let patch_file (original_exe_filename : string) (patches : (int64 * string) list
   let tmp_patched_exe_filename =
     Stdlib.Filename.temp_file "vibes-assembly" ".patched" in
   let orig_exe = In.read_all original_exe_filename in
-    Out.with_file tmp_patched_exe_filename ~f:(fun file ->
-            Out.output_string file orig_exe;
-            Core_kernel.List.iter patches ~f:(
-                fun (loc, patch) -> 
-                Out.seek file loc;
-                Out.output_string file patch
-            ));
-    tmp_patched_exe_filename
+  Out.with_file tmp_patched_exe_filename ~f:(fun file ->
+      Out.output_string file orig_exe;
+      Core_kernel.List.iter patches ~f:(
+        fun (loc, patch) -> 
+          Out.seek file loc;
+          Out.output_string file patch
+      ));
+  tmp_patched_exe_filename
 
 
 (* TODO: Surely there must be a better way *)
@@ -92,32 +92,32 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
     (patch_point : Bitvec.t) (target_size : int): string KB.t =
   (* Read in original binary and patch  *)
   lift_kb (binary_of_asm assembly) >>= (fun patch_exe -> 
-  let patch_point = Bitvec.to_int64 patch_point in
-  let patch_size = String.length patch_exe in
-  let patches : ((int64 * string) list, Errors.t) Result.t = 
-  if (patch_size > target_size) 
-  then  begin
-        let dummy_addr = match !dummy_addr_ref with
+      let patch_point = Bitvec.to_int64 patch_point in
+      let patch_size = String.length patch_exe in
+      let patches : ((int64 * string) list, Errors.t) Result.t = 
+        if (patch_size > target_size) 
+        then  begin
+          let dummy_addr = match !dummy_addr_ref with
             | None -> find_dummy_region original_exe_filename
             | Some a -> a 
-        in
-        dummy_addr_ref := Some (dummy_addr + patch_size + 4);
-        let jmp_val = (Int64.to_int patch_point) + target_size - (dummy_addr + patch_size) + 4 in
-        Result.bind (relative_jmp jmp_val) (fun rel_jmp_exe -> 
-        let patch_exe = patch_exe ^ rel_jmp_exe in
-        Result.bind (relative_jmp (dummy_addr - (Int64.to_int patch_point))) (fun jmp_to_patch -> 
-        Ok [ (Int64.of_int dummy_addr , patch_exe ) ;  (patch_point, jmp_to_patch) ]))
+          in
+          dummy_addr_ref := Some (dummy_addr + patch_size + 4);
+          let jmp_val = (Int64.to_int patch_point) + target_size - (dummy_addr + patch_size) + 4 in
+          Result.bind (relative_jmp jmp_val) (fun rel_jmp_exe -> 
+              let patch_exe = patch_exe ^ rel_jmp_exe in
+              Result.bind (relative_jmp (dummy_addr - (Int64.to_int patch_point))) (fun jmp_to_patch -> 
+                  Ok [ (Int64.of_int dummy_addr , patch_exe ) ;  (patch_point, jmp_to_patch) ]))
         end
-  else Ok [ patch_point , patch_exe ] 
-  in
-  let patches = Result.get_ok patches in
-  KB.return (patch_file original_exe_filename patches))
+        else Ok [ patch_point , patch_exe ] 
+      in
+      let patches = Result.get_ok patches in
+      KB.return (patch_file original_exe_filename patches))
 
 
 (* Applies a single patch to an exe, producing an update exe. *)
-let patch_one (patcher : string -> string list -> Bitvec.t -> string KB.t)
-      (count_name : (int*string) KB.t) (patch : Data.Patch.t)
-    : (int*string) KB.t =
+let patch_one (patcher : string -> string list -> Bitvec.t -> int -> string KB.t)
+    (count_name : (int*string) KB.t) (patch : Data.Patch.t)
+  : (int*string) KB.t =
   count_name >>= fun (n,orig) ->
   Events.(send @@ Info (Printf.sprintf "\nApplying patch %d to %s..."
                           n orig));
@@ -126,8 +126,8 @@ let patch_one (patcher : string -> string list -> Bitvec.t -> string KB.t)
   Data.Patch.get_assembly_exn patch >>= fun assembly ->
   patcher orig assembly patch_point patch_size >>= fun patched_loc ->
   Events.(send @@ Info
-    (Printf.sprintf "Patch %d applied. Temporary patched exe filepath: %s"
-       n patched_loc));
+            (Printf.sprintf "Patch %d applied. Temporary patched exe filepath: %s"
+               n patched_loc));
   KB.return (n+1,patched_loc)
 
 (* Patches the original exe, to produce a patched exe. *)
