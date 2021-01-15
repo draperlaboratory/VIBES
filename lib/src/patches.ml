@@ -97,6 +97,41 @@ module Test = struct
 
 end
 
+module Patch1 = struct
+
+  open Theory
+
+  let prog (bits : int) : unit eff =
+    Theory.instance
+      ~context:["vibes"]
+      ~requires:["bil"; "vibes:arm-gen"] () >>=
+    Theory.require >>=
+    fun (module Core) ->
+    let open Core in
+    let open Core_notations.Make(Core) in
+
+    let word_t = Bitv.define bits in
+    let mem_t = Theory.Mem.define word_t word_t in
+    let var_on_stack = Var.define word_t "var_on_stack" in
+    let temp = Var.define word_t "temp" in
+    let addr = Var.define word_t "addr" in
+    let int i = int word_t Bitvec.M32.(!!i) in
+    let mem = Var.define mem_t "mem" in
+    let data = data_body
+        [
+          temp := load (var mem) (var var_on_stack + int (-6));
+        ]
+    in
+    let ctrl = ctrl_body
+        [
+          branch (var temp == int 0) (jmp (var addr)) (perform Effect.Sort.fall);
+        ]
+    in
+    let l = Bap.Std.Tid.for_name "patch" in
+    blk l data ctrl
+
+end
+
 module ARM = Arm_gen.ARM_Core
 
 
@@ -107,6 +142,7 @@ let patches =
       "ret-3", Ret_3.prog;
       "ret-4", Ret_4.prog;
       "test", Test.prog;
+      "patch-1", Patch1.prog;
     ]
 
 (* Helpers. *)

@@ -39,6 +39,7 @@ module Make (C : Core) = struct
   let (>) = sgt
   let (>=) = sge
   let (!=) = neq
+  let (==) = eq
 
   (** Sequences a list of data effects *)
   let data_body (l : data eff list) : data eff =
