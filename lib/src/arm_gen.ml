@@ -12,13 +12,16 @@ let empty_eff = {current_blk = []; other_blks = IR.empty}
 (* FIXME: if this is a constant, I'm pretty sure the op_eff field is
    always empty *)
 type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
-[@@deriving compare, equal]
+[@@deriving compare, equal, sexp]
 
 (* We use this domain both for ['a pure] and ['s bitv] *)
-let arm_pure_dom = KB.Domain.optional ~equal:equal_arm_pure "arm-pure"
+let arm_pure_domain =
+  KB.Domain.optional
+    ~inspect:sexp_of_arm_pure
+    ~equal:equal_arm_pure "arm-pure"
 
 let arm_pure =
-  KB.Class.property Theory.Value.cls "arm-pure" arm_pure_dom
+  KB.Class.property Theory.Value.cls "arm-pure" arm_pure_domain
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
@@ -28,13 +31,16 @@ let (@) s1 s2 =
   {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
 
 let arm_eff_domain =
-  KB.Domain.optional ~inspect:sexp_of_arm_eff ~equal:equal_arm_eff "arm-eff"
+  KB.Domain.optional
+    ~inspect:sexp_of_arm_eff
+    ~equal:equal_arm_eff
+    "arm-eff"
 
 let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
 
 let effect v = KB.Value.get arm_eff v
 
-let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_eff_domain
+let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_pure_domain
 
 let (let=) v f = KB.(>>=) v
     (fun v ->
@@ -197,16 +203,18 @@ module ARM_ops = struct
 
   let ldr mem loc =
     (* Update the semantics of loc with those of mem *)
-    let loc = {loc with op_eff = loc.op_eff @ mem} in
+    let loc = {loc with op_eff = loc.op_eff @ mem.op_eff} in
     uop `LDRrs (Imm 32) loc
 
   let str mem value loc =
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
+    let {op_val = mem_val; op_eff = mem_sem} = mem in
     let op = IR.simple_op `STRrs loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
-    let sem = loc_sem @ value_sem @ mem in
-    {sem with current_blk = op::sem.current_blk}
+    let sem = loc_sem @ value_sem @ mem_sem in
+    let sem = {sem with current_blk = op::sem.current_blk} in
+    {op_val = mem_val; op_eff = sem}
 
   let (&&) a b = binop `ANDrsi (Imm 32) a b
 
@@ -238,7 +246,7 @@ struct
           match Value.get arm_mem arg with
           (* No need to explicitely assign here, we don't use the
              "mem" variables when generating IR. *)
-          | Some arg -> eff arg
+          | Some arg -> eff arg.op_eff
           | None -> assert false
         end)
 
@@ -266,7 +274,12 @@ struct
     Events.(send @@ Info "calling var");
     let sort = Theory.Var.sort v in
     let v = reify_var v in
-    KB.return @@ KB.Value.put arm_pure (Theory.Value.empty sort)
+    let slot =
+      match Theory.Value.Sort.forget sort |> Theory.Mem.refine with
+      | None -> arm_pure
+      | Some _ -> arm_mem
+    in
+    KB.return @@ KB.Value.put slot (Theory.Value.empty sort)
       (Some (var v))
 
   let unk _sort = Errors.fail (Errors.Not_implemented "Arm_gen.unk")
