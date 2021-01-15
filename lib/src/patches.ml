@@ -114,7 +114,7 @@ module Patch1 = struct
     let mem_t = Theory.Mem.define word_t word_t in
     let var_on_stack = Var.define word_t "var_on_stack" in
     let temp = Var.define word_t "temp" in
-    let addr = Var.define word_t "addr" in
+    (* let addr = Var.define word_t "addr" in *)
     let int i = int word_t Bitvec.M32.(!!i) in
     let mem = Var.define mem_t "mem" in
     let data = data_body
@@ -124,7 +124,7 @@ module Patch1 = struct
     in
     let ctrl = ctrl_body
         [
-          branch (var temp == int 0) (jmp (var addr)) (perform Effect.Sort.fall);
+          branch (var temp == int 0) (jmp (int 42)) (perform Effect.Sort.fall);
         ]
     in
     let l = Bap.Std.Tid.for_name "patch" in

@@ -46,7 +46,8 @@ val simple_var : var -> op_var
 
 type operand = Var of op_var
              | Const of word
-             | Label of tid [@@deriving compare, equal, sexp]
+             | Label of tid
+             | Cond of ARM.cond [@@deriving compare, equal, sexp]
 
 type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
@@ -98,12 +99,13 @@ val union : t -> t -> t
 val add : blk -> t -> t
 
 
-val map_blks : f:(blk -> blk) -> t ->t
+val map_blks : f:(blk -> blk) -> t -> t
 val map_op_vars :  f:(op_var -> op_var) -> t -> t
 val map_operations : f:(operation -> operation) -> t -> t
 
 val operation_to_string : operation -> string
 val op_var_to_string : op_var -> string
+val cond_to_string : ARM.cond -> string
 
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t

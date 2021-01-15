@@ -15,7 +15,15 @@ let simple_var v = {
   pre_assign = None
 }
 
-type operand = Var of op_var | Const of Word.t | Label of Tid.t [@@deriving compare, equal, sexp]
+type cond = ARM.cond [@@deriving compare, sexp]
+
+let equal_cond a b = compare_cond a b = 0
+
+type operand =
+    Var of op_var
+  | Const of Word.t
+  | Label of Tid.t
+  | Cond of cond [@@deriving compare, equal, sexp]
 
 type shift = [
   | `ASR
@@ -111,8 +119,7 @@ let var_operands (ops : operand list) : op_var list =
   List.fold ~f:(fun acc o ->
       match o with
       | Var v -> v :: acc
-      | Const _ -> acc
-      | Label _ -> acc
+      | Const _ | Label _ | Cond _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -145,8 +152,7 @@ module Blk = struct
     List.concat_map (all_operands blk)
       ~f:(fun op ->
           match op with
-          | Const _ -> []
-          | Label _ -> []
+          | Const _ | Label _ | Cond _ -> []
           | Var op -> op.temps) |>
     Var.Set.of_list
 
@@ -229,8 +235,8 @@ let map_operations ~f (vir : t) : t =
 let map_op_vars ~f (vir : t) : t =
   let f2 o = match o with
     | Var o -> Var (f o)
-    | Const w -> Const w
-    | Label l -> Label l in
+    | o -> o
+  in
   let apply_to_op (o : operation) : operation =
     {
       o with
@@ -302,6 +308,18 @@ let operand_operation (sub : t) : operation Var.Map.t =
     ~f:(fun acc blk ->
         var_map_union_exn acc (Blk.operand_operation blk))
 
+
+let cond_to_string c =
+  match c with
+  | `EQ -> "eq"
+  | `GE -> "ge"
+  | `GT -> "gt"
+  | `LS -> "gs"
+  | `LT -> "lt"
+  | `LE -> "le"
+  | _ -> failwith @@
+    "cond_to_string: Unsupported operation " ^ (sexp_of_cond c |> Sexp.to_string)
+
 let pretty_operand o =
   match o with
   | Var(o) ->
@@ -313,8 +331,9 @@ let pretty_operand o =
               ARM.sexp_of_gpr_reg r |>
               Ppx_sexp_conv_lib.Sexp.to_string) o.pre_assign) |>
        Option.value ~default:"N/A")
-  | Const(c) -> Word.to_string c
-  | Label(l) -> Tid.to_string l
+  | Const c -> Word.to_string c
+  | Label l -> Tid.to_string l
+  | Cond c -> cond_to_string c
 
 let pretty_operand_list l =
   List.map ~f:pretty_operand l |> String.concat ~sep:","
@@ -330,8 +349,8 @@ let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tcode:\n%s"
     (Tid.to_string b.id)
     (pretty_operation b.ins)
     (pretty_operation b.outs)
-    (List.fold_right b.operations ~init:""
-       ~f:(fun o acc -> acc ^ pretty_operation o ^ "\n"))
+    (List.fold b.operations ~init:""
+       ~f:(fun acc o -> acc ^ pretty_operation o ^ "\n"))
 
 let pretty_ir (vir : t) : string =
   List.fold vir.blks ~init:"" ~f:(fun acc b -> acc ^ (pretty_blk b) ^ "\n\n")

@@ -25,7 +25,7 @@ let arm_pure =
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
-let (@) s1 s2 =
+let (@.) s1 s2 =
   let { current_blk = blk1; other_blks = blks1} = s1 in
   let { current_blk = blk2; other_blks = blks2} = s2 in
   {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
@@ -151,8 +151,13 @@ module ARM_ops = struct
     let {op_val = arg_const; op_eff = arg_sem} = arg in
     let jmp =
       match arg_const with
-      | Const _ -> IR.simple_op `BX arg_const []
-      | _ -> failwith "jmp: unexpected operand"
+      | Const _ | Label _ -> IR.simple_op `BX arg_const []
+      | _ ->
+        let err = Format.asprintf "%s"
+            (IR.sexp_of_operand arg_const |>
+             Sexp.to_string)
+        in
+        failwith @@ "jmp: unexpected operand " ^ err
     in
     instr jmp arg_sem
 
@@ -175,7 +180,7 @@ module ARM_ops = struct
     let arg1_val = freshen_operand arg1_val in
     let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
-    let sem = arg1_sem @ arg2_sem in
+    let sem = arg1_sem @. arg2_sem in
     let sem = {sem with current_blk = op::sem.current_blk} in
     {op_val = IR.Var res; op_eff = sem}
 
@@ -203,7 +208,7 @@ module ARM_ops = struct
 
   let ldr mem loc =
     (* Update the semantics of loc with those of mem *)
-    let loc = {loc with op_eff = loc.op_eff @ mem.op_eff} in
+    let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
     uop `LDRrs (Imm 32) loc
 
   let str mem value loc =
@@ -212,7 +217,7 @@ module ARM_ops = struct
     let {op_val = mem_val; op_eff = mem_sem} = mem in
     let op = IR.simple_op `STRrs loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
-    let sem = loc_sem @ value_sem @ mem_sem in
+    let sem = loc_sem @. value_sem @. mem_sem in
     let sem = {sem with current_blk = op::sem.current_blk} in
     {op_val = mem_val; op_eff = sem}
 
@@ -221,6 +226,39 @@ module ARM_ops = struct
   let (||) a b = binop `ORRrsi (Imm 32) a b
 
   let xor a b = binop `EORrsi (Imm 32) a b
+
+  (* Generally, boolean operations will be handled by a normal (word
+     size) value, with value 0 if false and non-zero if true. It will
+     be the job of branching operations to call [cmp ? ?] and check
+     the appropriate flags. *)
+  let equals arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
+
+  (* Intuitively we want to generate:
+
+     ..cond.. //fills variable [cond_val]
+     CMP cond_val 0
+     BEQ
+     ..branch1... //this should just be a single jump instruction
+     ..branch2... //same, but less important
+
+  *)
+  let beq cond branch1 branch2 =
+    let {op_val = cond_val; op_eff = cond_eff} = cond in
+    (* the order of operations here is actually important! *)
+    let cond_val = freshen_operand cond_val in
+    let cmp = IR.simple_op `CMPrsi cond_val [Const (Word.of_int ~width:32 0)] in
+    let beq = IR.simple_op `Bcc (Cond `EQ) [] in
+    let {current_blk = blk1; other_blks = blks1} = branch1 in
+    let {current_blk = blk2; other_blks = blks2} = branch2 in
+    {
+      current_blk =
+          blk2 @
+          blk1 @
+          beq::cmp::
+          cond_eff.current_blk;
+      other_blks = IR.union blks1 @@ IR.union blks2 cond_eff.other_blks
+    }
+
 
 end
 
@@ -255,13 +293,13 @@ struct
     Events.(send @@ Info "calling seq");
     let= s1 = s1 in
     let= s2 = s2 in
-    eff @@ s1 @ s2
+    eff @@ s1 @. s2
 
   let blk lab data ctrl =
     Events.(send @@ Info "calling blk");
     let= data = data in
     let= ctrl = ctrl in
-    let new_instrs = List.append data.current_blk ctrl.current_blk in
+    let new_instrs = ctrl.current_blk @ data.current_blk in
     (* We add instructions by consing to the front of the list, so we
        need to reverse before finalizing the block *)
     let new_instrs = List.rev new_instrs in
@@ -313,9 +351,6 @@ struct
     Events.(send @@ Info "calling jmp");
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
-
-  let branch _cond _t_branch _f_branch =
-    Errors.fail (Errors.Not_implemented "Arm_gen.branch")
 
   let repeat _cond _body =
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
@@ -383,9 +418,21 @@ struct
     let- b = b in
     pure @@ xor a b
 
+  let eq a b =
+    Events.(send @@ Info "calling eq");
+    let- a = a in
+    let- b = b in
+    bool @@ equals a b
+
   let b0 = bool @@ const @@ Word.of_int ~width:32 0
 
   let b1 = bool @@ const @@ Word.of_int ~width:32 1
+
+  let branch cond branch1 branch2 =
+    let- cond = cond in
+    let= branch1 = branch1 in
+    let= branch2 = branch2 in
+    eff @@ beq cond branch1 branch2
 
 end
 
@@ -431,11 +478,12 @@ let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
      Result.bind
        (Result.of_option v.pre_assign ~error:error)
        ~f:(fun reg ->
-         Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
+         Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
   | Const w ->
     (* A little calisthenics to get this to look nice *)
-    Result.return (Format.asprintf "#%a" Word.pp_dec w)
-  | Label l -> Result.return (tid_to_string l)
+    Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+  | Label l -> Result.return @@ tid_to_string l
+  | Cond c -> Result.return @@ IR.cond_to_string c
 
 let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
   Result.map ~f:(String.concat ~sep:", ")
