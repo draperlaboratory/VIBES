@@ -15,7 +15,6 @@
  *
  *
  *************************************************************)
-open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 
@@ -29,15 +28,6 @@ module ARM_Core : Theory.Core
 type arm_eff
 
 val slot : (Theory.Effect.cls, arm_eff option) Knowledge.slot
-
-(** Deprecated: Work directly with terms parametrized over S : Core *)
-module BilARM :
-sig
-  val run : ('e, 'r, 's) Theory.Parser.t -> 's list -> unit Theory.eff
-end
-
-(** Deprecated: Work directly with terms parametrized over S : Core *)
-val bil_to_arm : (Bil.exp, unit, Bil.stmt) Theory.Parser.t
 
 (** Extracts the ARM semantics from a given KB effect value *)
 val effect : 'a Theory.effect -> arm_eff option
