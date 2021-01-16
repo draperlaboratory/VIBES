@@ -144,7 +144,7 @@ module ARM_ops = struct
 
   (* TODO: only works for constants! *)
   let bx addr =
-    let i = IR.simple_op `BX (IR.Label addr) [] in
+    let i = IR.simple_op `BX Void [IR.Label addr] in
     instr i empty_eff
 
   let jmp arg =
@@ -246,8 +246,8 @@ module ARM_ops = struct
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
     let cond_val = freshen_operand cond_val in
-    let cmp = IR.simple_op `CMPrsi cond_val [Const (Word.of_int ~width:32 0)] in
-    let beq = IR.simple_op `Bcc (Cond `EQ) [] in
+    let cmp = IR.simple_op `CMPrsi Void [cond_val; Const (Word.of_int ~width:32 0)] in
+    let beq = IR.simple_op `Bcc Void [Cond `EQ] in
     let {current_blk = blk1; other_blks = blks1} = branch1 in
     let {current_blk = blk2; other_blks = blks2} = branch2 in
     {
@@ -436,11 +436,43 @@ struct
 
 end
 
+let add_in_vars_blk (b : IR.blk) : IR.blk =
+  let ops = b.operations in
+  let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
+  let collect_vars_op_list l =
+    List.fold l ~init:Var.Set.empty
+      ~f:(fun set o ->
+          match o with
+          | IR.Var v -> add_list set v.temps
+          | _ -> set)
+  in
+  (* Simultaneously collect defined and undefined vars *)
+  let _, undefined =
+    List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
+      ~f:(fun (defined, undefined) o ->
+          let undef = collect_vars_op_list o.operands in
+          let undef = Var.Set.diff defined undef in
+          let def = collect_vars_op_list o.lhs in
+          Var.Set.union defined def, Var.Set.union undefined undef)
+  in
+  let ins = Var.Set.fold undefined ~init:[]
+      ~f:(fun ins v -> IR.Var (IR.simple_var v)::ins)
+  in
+  (* We add dummy operation `HINT and lhs Void *)
+  let ins = IR.simple_op `HINT IR.Void ins in
+  {b with ins = ins}
+
+(* Collect all the variables appearing on rhs that are not defined by
+   an rhs before-hand. *)
+let add_in_vars (t : IR.t) : IR.t =
+  { t with blks = List.map ~f:add_in_vars_blk t.blks }
+
 (* FIXME: not sure what the right behavior is here... should we assume that a
    block is always created? *)
 let ir (t : arm_eff) : IR.t =
   assert (List.is_empty t.current_blk);
-  t.other_blks
+  let blks = t.other_blks in
+  add_in_vars blks
 
 let insn_pretty i : (string, Errors.t) result =
   match i with
@@ -474,7 +506,7 @@ let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   | Var v ->
      let error =
        Errors.Missing_semantics
-         "operand.pre_assign field is empty in pretty printer" in
+         "arm_operand_pretty: operand.pre_assign field is empty" in
      Result.bind
        (Result.of_option v.pre_assign ~error:error)
        ~f:(fun reg ->
@@ -484,15 +516,23 @@ let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
     Result.return @@ Format.asprintf "#%a" Word.pp_dec w
   | Label l -> Result.return @@ tid_to_string l
   | Cond c -> Result.return @@ IR.cond_to_string c
+  | Void -> Result.return ""
 
-let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
-  Result.map ~f:(String.concat ~sep:", ")
-    (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
+let arm_operands_pretty (hd : IR.operand) (l : IR.operand list)
+  : (string, Errors.t) result =
+  (* Don't print the head of the operand if it's void. *)
+  let l =
+    match hd with
+    | Void -> l
+    | _ -> hd::l
+  in
+    Result.map ~f:(String.concat ~sep:", ")
+      (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
   Result.(insn_pretty op >>= fun op ->
-          arm_operands_pretty ((List.hd_exn t.lhs) :: t.operands) >>= (fun operands ->
+          arm_operands_pretty (List.hd_exn t.lhs) t.operands >>= (fun operands ->
               return (Format.asprintf "%s %s" op operands)))
 
 (* TODO: print the tid *)

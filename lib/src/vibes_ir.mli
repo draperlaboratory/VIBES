@@ -47,7 +47,8 @@ val simple_var : var -> op_var
 type operand = Var of op_var
              | Const of word
              | Label of tid
-             | Cond of ARM.cond [@@deriving compare, equal, sexp]
+             | Cond of ARM.cond
+             | Void [@@deriving compare, equal, sexp]
 
 type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
