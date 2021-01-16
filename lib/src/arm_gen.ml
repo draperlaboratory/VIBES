@@ -142,16 +142,16 @@ module ARM_ops = struct
 
   let ( := ) x y = arm_mov x y
 
-  (* TODO: only works for constants! *)
-  let bx addr =
-    let i = IR.simple_op `BX Void [IR.Label addr] in
+  let b addr =
+    let i = IR.simple_op `Bcc Void [IR.Label addr] in
     instr i empty_eff
 
+  (* TODO: only works for registers? *)
   let jmp arg =
     let {op_val = arg_const; op_eff = arg_sem} = arg in
     let jmp =
       match arg_const with
-      | Const _ | Label _ -> IR.simple_op `BX arg_const []
+      | Var _ | Label _ -> IR.simple_op `BX Void [arg_const]
       | _ ->
         let err = Format.asprintf "%s"
             (IR.sexp_of_operand arg_const |>
@@ -345,7 +345,7 @@ struct
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
     Events.(send @@ Info "calling goto");
-    eff @@ bx lab
+    eff @@ b lab
 
   let jmp addr =
     Events.(send @@ Info "calling jmp");
@@ -489,6 +489,8 @@ let insn_pretty i : (string, Errors.t) result =
   | `EORrsi -> Ok "eor"
   | `LDRrs  -> Ok "ldr"
   | `STRrs  -> Ok "str"
+  | `Bcc    -> Ok "bcc"
+  | `CMPrsi -> Ok "cmp"
   | i       ->
     let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
     let msg =
@@ -497,9 +499,9 @@ let insn_pretty i : (string, Errors.t) result =
     Error (Errors.Not_implemented msg)
 
 (* We use this function when generating ARM, since the assembler
-   doesn't like % in labels. *)
+   doesn't like % or @ in labels. *)
 let tid_to_string (t : tid) : string =
-  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%')
+  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
 let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   match o with

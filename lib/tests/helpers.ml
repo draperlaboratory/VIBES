@@ -46,7 +46,7 @@ let patch_point = Bitvec.of_string patch_point_str
 let patch_size = 16
 let property_str = "true"
 let property = Sexp.Atom property_str
-let assembly = ["@patch:"; "mov R0, #3"]
+let assembly = ["patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
 let proj = dummy_proj original_exe
@@ -70,7 +70,7 @@ let obj () = KB.Object.create Data.cls
 (* After a [KB.run] computation, extract a given property from the returned
    object for further processing.  Fail if the KB computation failed. *)
 let extract_property (property : ('k, 'a) KB.slot)
-      (result : (('k, 's) KB.cls KB.value * KB.state, KB.conflict) result) 
+      (result : (('k, 's) KB.cls KB.value * KB.state, KB.conflict) result)
     : 'a =
   match result with
   | Ok (value, _) -> KB.Value.get property value

@@ -12,7 +12,7 @@ module KB = Knowledge
 (* Converts a list of BIR statements to a list of ARM assembly strings.
    This is just a dummy stand-in for now. It only handles a simple move
    instruction. *)
-let create_assembly ?solver:(solver = Minizinc.run_minizinc)
+let create_assembly (solver : Vibes_ir.t -> Vibes_ir.t KB.t)
     (bir : Insn.t) : string list KB.t =
   let arm_eff = Arm_gen.effect bir in
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
@@ -31,20 +31,23 @@ let create_assembly ?solver:(solver = Minizinc.run_minizinc)
 (* Compile one patch from BIL to assembly *)
 let compile_one (solver : Vibes_ir.t -> Vibes_ir.t KB.t)
       (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
-    count >>= fun n ->
-    Events.(send @@ Info (  "Translating patch " ^ string_of_int n
-                          ^ " BIL to assembly..."));
-    Events.(send @@ Rule);
-    Data.Patch.get_bir patch >>= fun bir ->
-    create_assembly ~solver bir >>= fun assembly ->
+  count >>= fun n ->
+  let info_str =
+    Format.asprintf "Translating patch %s BIR to assembly..."
+      (string_of_int n)
+  in
+  Events.(send @@ Info info_str);
+  Events.(send @@ Rule);
+  Data.Patch.get_bir patch >>= fun bir ->
+  create_assembly solver bir >>= fun assembly ->
 
-    (* Stash the assembly in the KB. *)
-    Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
-    Events.(send @@ Info "The patch has the following assembly:\n");
-    Events.(send @@ Info (String.concat ~sep:"\n" assembly));
-    Events.(send @@ Rule);
+  (* Stash the assembly in the KB. *)
+  Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
+  Events.(send @@ Info "The patch has the following assembly:\n");
+  Events.(send @@ Info (String.concat ~sep:"\n" assembly));
+  Events.(send @@ Rule);
 
-    KB.return (n+1)
+  KB.return (n+1)
 
 
 (* Converts the patch (as BIR) to assembly instructions. *)

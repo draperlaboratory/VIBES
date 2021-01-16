@@ -26,7 +26,7 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
   halt_if_too_many count max_tries >>= fun _ ->
 
   (* Do the patch. *)
-  Compiler.compile obj >>= fun _ ->
+  Compiler.compile ~solver:(fun ir -> Vibes_ir.dummy_reg_alloc ir |> KB.return) obj >>= fun _ ->
   Patcher.patch obj >>= fun _ ->
 
   (* If the patched exe is correct, we're done. Otherwise, create a new

@@ -312,6 +312,7 @@ let operand_operation (sub : t) : operation Var.Map.t =
 
 let cond_to_string c =
   match c with
+  | `AL -> "al"
   | `EQ -> "eq"
   | `GE -> "ge"
   | `GT -> "gt"
