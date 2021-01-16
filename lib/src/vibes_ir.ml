@@ -282,6 +282,13 @@ let all_operands (sub : t) : Var.Set.t =
   List.map ~f:(fun (o : op_var) -> o.id) |>
   Var.Set.of_list
 
+let preassign_map (sub : t) : (ARM.gpr_reg option) Var.Map.t =
+  List.concat_map sub.blks ~f:Blk.all_operands |>
+  var_operands |>
+  List.map ~f:(fun op -> (op.id, op.pre_assign))
+  |> Var.Map.of_alist_exn
+
+
 let definer_map (sub : t) : op_var Var.Map.t =
   List.fold sub.blks
     ~init:Var.Map.empty

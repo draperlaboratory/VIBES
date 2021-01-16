@@ -112,6 +112,10 @@ val cond_to_string : ARM.cond -> string
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
+(** [preassign_map] builds a total dictionary from op_var ids to
+    pre assigned registers *)
+val preassign_map : t -> (ARM.gpr_reg option) Var.Map.t
+
 (** [definer_map] takes a subroutine and builds a Map from all
     temporaries to the unique lhs operand where that temporary is
     defined. *)
