@@ -31,7 +31,7 @@ type mzn_params = {
   temp_block : tid Var.Map.t;
   latency : unit;
   (* width : int Var.Map.t; Vars in Bap have width. Unnecessary? *)
-  preassign : string Var.Map.t;
+  preassign : ARM.gpr_reg option Var.Map.t;
   operation_insns : (Vibes_ir.insn list) Tid.Map.t;
   operand_operation : VIR.operation Var.Map.t;
   congruent : (VIR.op_var * VIR.op_var) list;
@@ -53,7 +53,7 @@ let mzn_params_of_vibes_ir (sub : VIR.t) : mzn_params =
     users = VIR.users_map sub;
     temp_block = VIR.temp_blk sub;
     latency = ();
-    preassign = Var.Map.empty;
+    preassign = VIR.preassign_map sub;
     operation_insns = VIR.operation_insns sub;
     operand_operation = VIR.operand_operation sub;
     congruent = sub.congruent;
@@ -169,8 +169,12 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
                    List.map ~f:(fun o -> Tid.to_string o |> mzn_enum)
             };
     width = List.map ~f:width temps;
-    preassign = List.map ~f:(fun _ -> {set = []}) operands; (* TODO *)
-    congruent = List.map ~f:(fun _ -> {set = []}) operands; (* TODO *)
+    preassign = List.map operands
+        ~f:(fun op ->
+            Option.value_map ~default:{set = []}
+              ~f:(fun r -> {set = [ARM.sexp_of_gpr_reg r |> Sexp.to_string |> mzn_enum]})
+              (Var.Map.find_exn params.preassign op)) ;
+    congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
     operation_insns = List.map ~f:(fun o ->
         {set = Tid.Map.find_exn params.operation_insns o
                |> List.map ~f:(fun i -> Vibes_ir.sexp_of_insn i
@@ -307,6 +311,3 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
   let vir' = apply_sol vir sol in
   Events.(send @@ Info (sprintf "Solved VIR: %s\n" (VIR.pretty_ir vir')));
   KB.return vir'
-
-
-
