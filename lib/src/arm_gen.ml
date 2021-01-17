@@ -451,15 +451,22 @@ let add_in_vars_blk (b : IR.blk) : IR.blk =
     List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
       ~f:(fun (defined, undefined) o ->
           let undef = collect_vars_op_list o.operands in
-          let undef = Var.Set.diff defined undef in
+          let undef = Var.Set.diff undef defined in
           let def = collect_vars_op_list o.lhs in
           Var.Set.union defined def, Var.Set.union undefined undef)
   in
   let ins = Var.Set.fold undefined ~init:[]
       ~f:(fun ins v -> IR.Var (IR.simple_var v)::ins)
   in
-  (* We add dummy operation `HINT and lhs Void *)
-  let ins = IR.simple_op `HINT IR.Void ins in
+  (* We add dummy operation with no instructions and as lhs all the
+     [ins] variables *)
+  let ins = {
+    IR.id = Tid.create ();
+    IR.lhs = ins;
+    IR.insns = [];
+    IR.optional = false;
+    IR.operands = [];
+  } in
   {b with ins = ins}
 
 (* Collect all the variables appearing on rhs that are not defined by
