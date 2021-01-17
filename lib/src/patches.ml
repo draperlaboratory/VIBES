@@ -112,14 +112,14 @@ module Patch1 = struct
 
     let word_t = Bitv.define bits in
     let mem_t = Theory.Mem.define word_t word_t in
-    (* let var_on_stack = Var.define word_t "var_on_stack" in *)
+    let var_on_stack = Var.define word_t "var_on_stack" in
     let temp = Var.define word_t "temp" in
     let addr = Tid.for_name "some_label" in
     let int i = int word_t Bitvec.M32.(!!i) in
     let mem = Var.define mem_t "mem" in
     let data = data_body
         [
-          temp := load (var mem) ((* var var_on_stack + *) int (-6));
+          temp := load (var mem) (var var_on_stack + int (-6));
         ]
     in
     let ctrl = ctrl_body

@@ -503,16 +503,22 @@ let insn_pretty i : (string, Errors.t) result =
 let tid_to_string (t : tid) : string =
   Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
-let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
+let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
      let error =
        Errors.Missing_semantics
          "arm_operand_pretty: operand.pre_assign field is empty" in
-     Result.bind
-       (Result.of_option v.pre_assign ~error:error)
-       ~f:(fun reg ->
-         Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
+     let res =
+       Result.bind
+         (Result.of_option v.pre_assign ~error:error)
+         ~f:(fun reg ->
+             Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
+     in
+     if is_loc then
+       Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
+     else
+       res
   | Const w ->
     (* A little calisthenics to get this to look nice *)
     Result.return @@ Format.asprintf "#%a" Word.pp_dec w
@@ -520,7 +526,15 @@ let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
   | Cond c -> Result.return @@ IR.cond_to_string c
   | Void -> Result.return ""
 
-let arm_operands_pretty (hd : IR.operand) (l : IR.operand list)
+
+(* FIXME: Absolute hack *)
+let mk_loc_list (op : string) (args : 'a list) : bool list =
+  if String.(op = "ldr") then
+    [false; true]
+  else
+    List.init (List.length args) ~f:(fun _ -> false)
+
+let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
   : (string, Errors.t) result =
   (* Don't print the head of the operand if it's void. *)
   let l =
@@ -528,16 +542,19 @@ let arm_operands_pretty (hd : IR.operand) (l : IR.operand list)
     | Void -> l
     | _ -> hd::l
   in
+  let is_loc_list = mk_loc_list op l in
+  let l = List.zip_exn is_loc_list l in
     Result.map ~f:(String.concat ~sep:", ")
-      (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
+      (Result.all (List.map l ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o)))
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
   Result.(insn_pretty op >>= fun op ->
-          arm_operands_pretty (List.hd_exn t.lhs) t.operands >>= (fun operands ->
+          arm_operands_pretty op
+            (List.hd_exn t.lhs)
+            t.operands >>= (fun operands ->
               return (Format.asprintf "%s %s" op operands)))
 
-(* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
   let insns = List.map ~f:arm_op_pretty t.operations |> Result.all in
   let lab = Format.asprintf "%s:" (tid_to_string t.id) in
