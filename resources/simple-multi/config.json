@@ -2,9 +2,15 @@
   "property" : "(true)",
   "patches" : [
     {"patch-name" : "ret-3",
+     "patch-code" : "(var-decls R0)
+                     (set R0 3)
+                     fallthrough",
      "patch-point" : "0x3d4",
      "patch-size" : 8},
     {"patch-name" : "ret-4",
+     "patch-code" : "(var-decls R0)
+                     (set R0 3)
+                     fallthrough",
      "patch-point" : "0x3f0",
      "patch-size" : 8}
   ]

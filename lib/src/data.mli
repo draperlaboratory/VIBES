@@ -44,6 +44,7 @@ module Patch : sig
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
+  val patch_code : (patch_cls, string option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
@@ -52,6 +53,10 @@ module Patch : sig
   val set_patch_name : t -> string option -> unit KB.t
   val get_patch_name : t -> string option KB.t
   val get_patch_name_exn : t -> string KB.t
+
+  val set_patch_code : t -> string option -> unit KB.t
+  val get_patch_code : t -> string option KB.t
+  val get_patch_code_exn : t -> string KB.t
 
   val set_patch_point : t -> Bitvec.t option -> unit KB.t
   val get_patch_point : t -> Bitvec.t option KB.t

@@ -67,6 +67,9 @@ module Patch = struct
   let patch_name : (patch_cls, string option) KB.slot =
     KB.Class.property ~package patch "patch-name" string_domain
 
+  let patch_code : (patch_cls, string option) KB.slot =
+    KB.Class.property ~package patch "patch-code" string_domain
+
   let bir : (patch_cls, Insn.t) KB.slot =
     KB.Class.property ~package patch "patch-bir" bir_domain
 
@@ -89,6 +92,18 @@ module Patch = struct
     get_patch_name obj >>= fun result ->
     match result with
     | None -> Errors.fail Errors.Missing_patch_name
+    | Some value -> KB.return value
+
+  let set_patch_code (obj : t) (data : string option) : unit KB.t =
+    KB.provide patch_code obj data
+
+  let get_patch_code (obj : t) : string option KB.t =
+    KB.collect patch_code obj
+
+  let get_patch_code_exn (obj : t) : string KB.t =
+    get_patch_code obj >>= fun result ->
+    match result with
+    | None -> Errors.fail Errors.Missing_patch_code
     | Some value -> KB.return value
 
   let set_patch_point (obj : t) (data : Bitvec.t option) : unit KB.t =
@@ -264,6 +279,7 @@ let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
     Patch.set_patch_name obj (Some p.patch_name) >>= fun () ->
+    Patch.set_patch_code obj (Some p.patch_code) >>= fun () ->
     Patch.set_patch_point obj (Some p.patch_point) >>= fun () ->
     Patch.set_patch_size obj (Some p.patch_size) >>= fun () ->
     KB.return obj
@@ -287,6 +303,7 @@ let create (config : Config.t) : t KB.t =
 let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
   let fresh_patch (patch : Patch.t) : Patch.t KB.t =
     Patch.get_patch_name patch >>= fun name ->
+    Patch.get_patch_code patch >>= fun code ->
     Patch.get_patch_point patch >>= fun point ->
     Patch.get_patch_size patch >>= fun size ->
     Patch.get_bir patch >>= fun bir ->
