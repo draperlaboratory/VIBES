@@ -11,6 +11,7 @@ module Errors = struct
     | Missing_exe
     | Missing_patches
     | Missing_patch_name
+    | Missing_patch_code
     | Missing_patch_point
     | Missing_property
     | Missing_size
@@ -27,6 +28,9 @@ module Errors = struct
       | Missing_patch_name ->
            "each patch in the config json \"patches\" list must have a "
          ^ "\"patch-name\" field containing a non-empty string"
+      | Missing_patch_code ->
+           "each patch in the config json \"patches\" list must have a "
+         ^ "\"patch-code\" field containing a non-empty string"
       | Missing_patch_point ->
            "each patch in the config json \"patches\" list must have a "
          ^ "\"patch-point\" field containing a non-empty string"
@@ -57,6 +61,9 @@ type patch =
     (* The name of the patch to use. *)
     patch_name : string;
 
+    (* An s-expression version of the patch's core theory code *)
+    patch_code : string;
+
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
 
@@ -85,6 +92,7 @@ let max_tries t : int option = t.max_tries
 let patch_to_string (p : patch) : string =
   String.concat ~sep:"\n" [
       Printf.sprintf "  {Patch_name: %s" p.patch_name;
+      Printf.sprintf "   Patch_code: %s" p.patch_code;
       Printf.sprintf "   Patch_point: %s" (Bitvec.to_string p.patch_point);
       Printf.sprintf "   Patch_size: %d}" p.patch_size;
     ]
@@ -118,6 +126,14 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
      else Err.return s
   | _ -> Err.fail Errors.Missing_patch_name
 
+(* Extract the patch name and check it is non-empty string. *)
+let validate_patch_code (obj : Json.t) : (string, error) Stdlib.result =
+  match Json.Util.member "patch-code" obj with
+  | `String s ->
+     if String.length s = 0 then Err.fail Errors.Missing_patch_code
+     else Err.return s
+  | _ -> Err.fail Errors.Missing_patch_code
+
 (* Extract the patch point field and parse the hex string into a bitvector, or
    error. *)
 let validate_patch_point (obj : Json.t) : (Bitvec.t, error) Stdlib.result =
@@ -141,9 +157,10 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t) : (patch, error) Stdlib.result =
   validate_patch_name obj >>= fun patch_name ->
+  validate_patch_code obj >>= fun patch_code ->
   validate_patch_point obj >>= fun patch_point ->
   validate_patch_size obj >>= fun patch_size ->
-  Err.return { patch_name; patch_point; patch_size }
+  Err.return { patch_name; patch_code; patch_point; patch_size }
 
 (* Extract and validate the patch fragment list, or error. *)
 let validate_patches (obj : Json.t) : (patch list, error) Stdlib.result =

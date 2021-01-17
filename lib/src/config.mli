@@ -10,6 +10,7 @@ module Errors : sig
     | Missing_exe
     | Missing_patches
     | Missing_patch_name
+    | Missing_patch_code
     | Missing_patch_point
     | Missing_property
     | Missing_size
@@ -33,6 +34,9 @@ type patch =
   {
     (* The name of the patch to use. *)
     patch_name : string;
+
+    (* An s-expression version of the patch's core theory code *)
+    patch_code : string;
 
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
