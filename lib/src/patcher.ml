@@ -102,7 +102,7 @@ let patch_naive (original_exe_filename : string) (assembly : string list)
             | Some a -> a 
           in
           dummy_addr_ref := Some (dummy_addr + patch_size + 4);
-          let jmp_val = (Int64.to_int patch_point) + target_size - (dummy_addr + patch_size) + 4 in
+          let jmp_val = (Int64.to_int patch_point) + target_size - (dummy_addr + patch_size) in
           Result.bind (relative_jmp jmp_val) (fun rel_jmp_exe -> 
               let patch_exe = patch_exe ^ rel_jmp_exe in
               Result.bind (relative_jmp (dummy_addr - (Int64.to_int patch_point))) (fun jmp_to_patch -> 
