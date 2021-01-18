@@ -43,12 +43,15 @@ let new_vir1 = Minizinc.apply_sol vir1 sol1
 
 (* This is a duplicate of an unexposed function in Vibes_ir *)
 let all_operands_helper (blk : blk) : operand list =
-  let operation_operands =
-    List.concat_map blk.operations
+  let operation_operands op_list =
+    List.concat_map op_list
       ~f:(fun operation ->
           operation.lhs @ operation.operands)
   in
-  blk.ins.lhs @ blk.outs.operands @ operation_operands
+  blk.ins.lhs @
+  blk.outs.operands @
+  (operation_operands blk.data) @
+  (operation_operands blk.ctrl)
 
 let test_sol_apply_ex1 _ =
   assert_equal ~cmp:Var.Set.equal (all_temps vir1) (all_temps new_vir1);
@@ -56,7 +59,7 @@ let test_sol_apply_ex1 _ =
   let blk1 = List.hd_exn vir1.blks in
   let blk2 = List.hd_exn new_vir1.blks in
   assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Tid.equal o1.id o2.id))
-    blk1.operations (List.rev blk2.operations);
+    blk1.data (List.rev blk2.data);
   assert_bool "All registers assigned to R0"
     (List.for_all (all_operands_helper blk2)
        ~f:(fun o -> match (op_var_exn o).pre_assign with
@@ -78,7 +81,7 @@ let test_minizinc_ex1 _ =
     (* Now run the compiler. *)
     Minizinc.run_minizinc ex1 >>= fun sol ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
-      blk.operations in
+      blk.data in
     assert_bool "Operations should be in order"
       (List.for_all2_exn ~f:(fun o1 o2 -> Tid.equal o1.id o2.id) (get_ops sol) (get_ops ex1));
     KB.return obj
