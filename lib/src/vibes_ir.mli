@@ -76,7 +76,8 @@ val simple_op : insn -> operand -> operand list -> operation
 *)
 type blk = {
   id : tid;
-  operations : operation list;
+  data : operation list;
+  ctrl : operation list;
   ins : operation;
   outs : operation;
   frequency : int
@@ -84,7 +85,7 @@ type blk = {
 
 (** Create a block given a [tid] and a list of [operation]s, filling
     in default values for the other fields. *)
-val simple_blk : tid -> operation list -> blk
+val simple_blk : tid -> data:(operation list) -> ctrl:(operation list) -> blk
 
 (** The [vibes_ir] type has a list of blocks and a set of operands
     which are congruent.  *)
@@ -101,7 +102,7 @@ val add : blk -> t -> t
 
 
 val map_blks : f:(blk -> blk) -> t -> t
-val map_op_vars :  f:(op_var -> op_var) -> t -> t
+val map_op_vars : f:(op_var -> op_var) -> t -> t
 val map_operations : f:(operation -> operation) -> t -> t
 
 val operation_to_string : operation -> string
