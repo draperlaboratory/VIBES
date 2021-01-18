@@ -77,9 +77,14 @@ module CoreParser (Core : Theory.Core) = struct
          | Some v -> KB.return (var v)
          | None ->
             let* i : int =
-              try KB.return (Scanf.sscanf s "%d" (fun x -> x))
-              with Scanf.Scan_failure _ ->
-                Errors.fail (named_err st.nm ("contains invalid value " ^ s))
+              (* try to parse as hex *)
+              try KB.return (Scanf.sscanf s "0x%x" (fun x -> x))
+              with _ ->
+                (* try to parse as decimal *)
+                try KB.return (Scanf.sscanf s "%d" (fun x -> x))
+                with _ ->
+                  (* neither worked *)
+                  Errors.fail (named_err st.nm ("contains invalid value " ^ s))
             in
             KB.return (int st.word_t Bitvec.M32.(!!i))
        end
@@ -152,6 +157,13 @@ module CoreParser (Core : Theory.Core) = struct
     | Sexp.List (Sexp.Atom "goto" :: _) ->
        Errors.fail (named_err st.nm
                       ("contains a goto without exactly one atomic argument: "
+                       ^ Sexp.to_string c))
+    | Sexp.List [Sexp.Atom "jmp"; dest] ->
+       let* dest = parse_pure st dest in
+       KB.return (jmp dest)
+    | Sexp.List (Sexp.Atom "jmp" :: _) ->
+       Errors.fail (named_err st.nm
+                      ("contains a jmp without exactly one atomic argument: "
                        ^ Sexp.to_string c))
     | _ ->
        Errors.fail (named_err st.nm
