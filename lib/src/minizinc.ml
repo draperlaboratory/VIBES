@@ -252,8 +252,8 @@ let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
   (* Filter inactive operations, and sort operations by issue cycle *)
   let vir = VIR.map_blks vir ~f:(fun b ->
       { b with
-        operations =
-          List.filter b.operations
+        data =
+          List.filter b.data
             ~f:(fun o -> Tid.Map.find_exn sol.active o.id) |>
           List.sort
             ~compare:(fun o1 o2 -> compare_int
@@ -305,7 +305,7 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
 
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in
-  Events.(send @@ Info (sprintf "Solved VIR: %s\n" (VIR.pretty_ir vir)));
+  Events.(send @@ Info (sprintf "Solved VIR: %s\n" (VIR.pretty_ir vir')));
   KB.return vir'
 
 

@@ -75,17 +75,19 @@ let mk_empty_operation () =
 
 type blk = {
   id : Tid.t;
-  operations : operation list;
+  data : operation list;
+  ctrl : operation list;
   ins : operation;
   outs : operation;
   frequency : int
 } [@@deriving compare, equal, sexp]
 
 
-let simple_blk tid ops =
+let simple_blk tid ~data ~ctrl =
   {
     id = tid;
-    operations = ops;
+    data= data;
+    ctrl = ctrl;
     (* Probably we should just add every variable in ops here *)
     ins = mk_empty_operation ();
     outs = mk_empty_operation ();
@@ -126,28 +128,28 @@ let var_operands (ops : operand list) : op_var list =
 module Blk = struct
 
   let all_operands (blk : blk) : operand list =
-    let operation_operands =
-      List.concat_map blk.operations
+    let operation_operands op_list =
+      List.concat_map op_list
         ~f:(fun operation ->
             operation.lhs @ operation.operands)
     in
-    blk.ins.lhs @ blk.outs.operands @ operation_operands
+    blk.ins.lhs @ blk.outs.operands @ (operation_operands blk.data) @ (operation_operands blk.ctrl) 
 
   let all_rhs_operands (blk : blk) : operand list =
-    let operation_operands =
-      List.concat_map blk.operations
+    let operation_operands op_list =
+      List.concat_map op_list
         ~f:(fun operation ->
             operation.operands)
     in
-    blk.ins.operands @ blk.outs.operands @ operation_operands
+    blk.ins.operands @ blk.outs.operands @ (operation_operands blk.data) @ (operation_operands blk.ctrl)
 
   let all_lhs_operands (blk : blk) : operand list =
-    let operation_operands =
-      List.concat_map blk.operations
+    let operation_operands op_list =
+      List.concat_map op_list
         ~f:(fun operation ->
             operation.lhs)
     in
-    blk.ins.lhs @ blk.outs.lhs @ operation_operands
+    blk.ins.lhs @ blk.outs.lhs @ (operation_operands blk.data) @ (operation_operands blk.ctrl)
 
   let all_temps (blk : blk) : Var.Set.t =
     List.concat_map (all_operands blk)
@@ -180,7 +182,7 @@ module Blk = struct
             )
         )
 
-  let all_operations (blk : blk) : operation list = blk.ins :: ( blk.outs :: blk.operations)
+  let all_operations (blk : blk) : operation list = blk.ins :: ( blk.outs :: (blk.data @ blk.ctrl))
 
   let operation_insn (blk : blk) : (insn list) Tid.Map.t =
     List.fold ~init:Tid.Map.empty ~f:(fun acc o ->
@@ -228,7 +230,8 @@ let map_operations ~f (vir : t) : t =
   map_blks vir
     ~f:(fun b ->
         { id = b.id;
-          operations = List.map ~f b.operations;
+          data = List.map ~f b.data;
+          ctrl = List.map ~f b.ctrl;
           ins = f b.ins;
           outs = f b.outs;
           frequency = b.frequency })
@@ -251,7 +254,8 @@ let map_op_vars ~f (vir : t) : t =
         ~f:(fun b ->
             {
               b with
-              operations = List.map ~f:apply_to_op b.operations;
+              data = List.map ~f:apply_to_op b.data;
+              ctrl = List.map ~f:apply_to_op b.ctrl;
               ins = apply_to_op b.ins;
               outs = apply_to_op b.outs;
             }
@@ -348,11 +352,13 @@ let pretty_operation o =
           ~f:(fun i -> sexp_of_insn i |> Ppx_sexp_conv_lib.Sexp.to_string)))
     (pretty_operand_list o.operands)
 
-let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tcode:\n%s"
+let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\nctrl: \n%s"
     (Tid.to_string b.id)
     (pretty_operation b.ins)
     (pretty_operation b.outs)
-    (List.fold b.operations ~init:""
+    (List.fold b.data ~init:""
+       ~f:(fun acc o -> acc ^ pretty_operation o ^ "\n"))
+    (List.fold b.ctrl ~init:""
        ~f:(fun acc o -> acc ^ pretty_operation o ^ "\n"))
 
 let pretty_ir (vir : t) : string =
