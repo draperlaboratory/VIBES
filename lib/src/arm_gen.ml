@@ -4,10 +4,13 @@ open Bap_core_theory
 
 module IR = Vibes_ir
 
-type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
+type arm_eff = {
+  current_data : IR.operation list;
+  current_ctrl : IR.operation list;
+  other_blks : IR.t}
 [@@deriving compare, equal, sexp]
 
-let empty_eff = {current_blk = []; other_blks = IR.empty}
+let empty_eff = {current_data = []; current_ctrl = []; other_blks = IR.empty}
 
 (* FIXME: if this is a constant, I'm pretty sure the op_eff field is
    always empty *)
@@ -26,9 +29,13 @@ let arm_pure =
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
 let (@.) s1 s2 =
-  let { current_blk = blk1; other_blks = blks1} = s1 in
-  let { current_blk = blk2; other_blks = blks2} = s2 in
-  {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
+  let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
+  let { current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = s2 in
+  {
+    current_data = data1 @ data2;
+    current_ctrl = ctrl1 @ ctrl2;
+    other_blks = IR.union blks1 blks2
+  }
 
 let arm_eff_domain =
   KB.Domain.optional
@@ -121,8 +128,12 @@ module ARM_ops = struct
       IR.Var fresh_v
     | _ -> o
 
+  (* defaults to data instructions, since they are way more common *)
   let instr i sem =
-    {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
+    {sem with current_data = i::sem.current_data}
+
+  let control j sem =
+    {sem with current_ctrl = j::sem.current_ctrl}
 
   (* Some cowboy type checking here, to check which kind of mov to use.
      FIXME: certainly doesn't work if variables are instantiated with
@@ -144,7 +155,7 @@ module ARM_ops = struct
 
   let b addr =
     let i = IR.simple_op `Bcc Void [IR.Label addr] in
-    instr i empty_eff
+    control i empty_eff
 
   (* TODO: only works for registers? *)
   let jmp arg =
@@ -170,7 +181,7 @@ module ARM_ops = struct
     let {op_val = arg_val; op_eff = arg_sem} = arg in
     let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
-    let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
+    let sem = {arg_sem with current_ctrl = op::arg_sem.current_ctrl} in
     {op_val = IR.Var res; op_eff = sem}
 
   let binop o ty arg1 arg2 =
@@ -181,7 +192,7 @@ module ARM_ops = struct
     let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
-    let sem = {sem with current_blk = op::sem.current_blk} in
+    let sem = {sem with current_data = op::sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
 
   (* TODO: handle non-register arguments? *)
@@ -218,7 +229,7 @@ module ARM_ops = struct
     let op = IR.simple_op `STRrs loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
     let sem = loc_sem @. value_sem @. mem_sem in
-    let sem = {sem with current_blk = op::sem.current_blk} in
+    let sem = {sem with current_data = op::sem.current_data} in
     {op_val = mem_val; op_eff = sem}
 
   let (&&) a b = binop `ANDrsi (Imm 32) a b
@@ -246,16 +257,16 @@ module ARM_ops = struct
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
     let cond_val = freshen_operand cond_val in
-    let cmp = IR.simple_op `CMPrsi Void [cond_val; Const (Word.of_int ~width:32 0)] in
+    let cmp = IR.simple_op `CMPrsi Void
+        [cond_val; Const (Word.of_int ~width:32 0)] in
     let beq = IR.simple_op `Bcc Void [Cond `EQ] in
-    let {current_blk = blk1; other_blks = blks1} = branch1 in
-    let {current_blk = blk2; other_blks = blks2} = branch2 in
+    let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
+    let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
+    (* FIXME: how do we handle data flow in branches? *)
+    assert (Core_kernel.(List.is_empty data1 && List.is_empty data2));
     {
-      current_blk =
-          blk2 @
-          blk1 @
-          beq::cmp::
-          cond_eff.current_blk;
+      current_data = cmp::cond_eff.current_data;
+      current_ctrl = beq::ctrl1@ctrl2;
       other_blks = IR.union blks1 @@ IR.union blks2 cond_eff.other_blks
     }
 
@@ -295,18 +306,20 @@ struct
     let= s2 = s2 in
     eff @@ s1 @. s2
 
+  (* Both [data] and [ctrl] effects can have both kinds of effects,
+     AFAIKT, so we treat them identically. *)
   let blk lab data ctrl =
     Events.(send @@ Info "calling blk");
     let= data = data in
     let= ctrl = ctrl in
-    let new_instrs = ctrl.current_blk @ data.current_blk in
+    let new_data = ctrl.current_data @ data.current_data |> List.rev in
+    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl |> List.rev in
     (* We add instructions by consing to the front of the list, so we
        need to reverse before finalizing the block *)
-    let new_instrs = List.rev new_instrs in
-    let new_blk = IR.simple_blk lab new_instrs in
+    let new_blk = IR.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
     let all_blocks =
       IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
-    eff {current_blk = []; other_blks = all_blocks}
+    eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
     Events.(send @@ Info "calling var");
@@ -372,7 +385,7 @@ struct
 
   let perform _sort =
     Events.(send @@ Info "calling perform");
-    eff {current_blk = []; other_blks = IR.empty}
+    eff empty_eff
 
   let shiftl sign l r =
     Events.(send @@ Info "calling shiftl");
@@ -437,7 +450,9 @@ struct
 end
 
 let add_in_vars_blk (b : IR.blk) : IR.blk =
-  let ops = b.operations in
+  (* We only grab data here, since control effects don't influence
+     dependencies. *)
+  let ops = b.data in
   let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
   let collect_vars_op_list l =
     List.fold l ~init:Var.Set.empty
@@ -477,7 +492,8 @@ let add_in_vars (t : IR.t) : IR.t =
 (* FIXME: not sure what the right behavior is here... should we assume that a
    block is always created? *)
 let ir (t : arm_eff) : IR.t =
-  assert (List.is_empty t.current_blk);
+  assert Core_kernel.(List.is_empty t.current_data
+                      && List.is_empty t.current_ctrl);
   let blks = t.other_blks in
   add_in_vars blks
 
@@ -563,7 +579,8 @@ let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
               return (Format.asprintf "%s %s" op operands)))
 
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
-  let insns = List.map ~f:arm_op_pretty t.operations |> Result.all in
+  let all_ops = t.data @ t.ctrl in
+  let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
   let lab = Format.asprintf "%s:" (tid_to_string t.id) in
   Result.map insns ~f:(fun insns -> lab::insns)
 
