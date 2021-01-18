@@ -162,7 +162,10 @@ module ARM_ops = struct
     let {op_val = arg_const; op_eff = arg_sem} = arg in
     let jmp =
       match arg_const with
-      | Var _ | Label _ -> IR.simple_op `BX Void [arg_const]
+      | Const _ | Var _ ->
+        let pc = Var.create "PC" (Imm 32) in
+        let pc = IR.Var (IR.simple_var pc) in
+        IR.simple_op `MOVi pc [arg_const]
       | _ ->
         let err = Format.asprintf "%s"
             (IR.sexp_of_operand arg_const |>
@@ -170,7 +173,8 @@ module ARM_ops = struct
         in
         failwith @@ "jmp: unexpected operand " ^ err
     in
-    instr jmp arg_sem
+    control jmp arg_sem
+
 
   let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
 

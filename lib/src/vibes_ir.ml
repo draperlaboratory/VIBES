@@ -13,7 +13,10 @@ let simple_var v =
   let pre_assign =
     if String.(Var.name v = "FP") then
       Some `R11
-    else None
+    else if String.(Var.name v = "PC") then
+      Some `PC
+    else
+      None
   in
   {
     id = Var.create ~fresh:true "operand" (Var.typ v);
