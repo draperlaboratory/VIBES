@@ -310,6 +310,7 @@ let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
     KB.Object.create Patch.patch >>= fun patch' ->
     Patch.set_patch_name patch' name >>= fun () ->
     Patch.set_patch_point patch' point >>= fun () ->
+    Patch.set_patch_code patch' code >>= fun () ->
     Patch.set_patch_size patch' size >>= fun () ->
     Patch.set_bir patch' bir >>= fun () ->
     KB.return patch'

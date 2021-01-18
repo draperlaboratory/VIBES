@@ -133,7 +133,10 @@ module Blk = struct
         ~f:(fun operation ->
             operation.lhs @ operation.operands)
     in
-    blk.ins.lhs @ blk.outs.operands @ (operation_operands blk.data) @ (operation_operands blk.ctrl) 
+    blk.ins.lhs @
+    blk.outs.operands @
+    (operation_operands blk.data) @
+    (operation_operands blk.ctrl)
 
   let all_rhs_operands (blk : blk) : operand list =
     let operation_operands op_list =
@@ -141,7 +144,10 @@ module Blk = struct
         ~f:(fun operation ->
             operation.operands)
     in
-    blk.ins.operands @ blk.outs.operands @ (operation_operands blk.data) @ (operation_operands blk.ctrl)
+    blk.ins.operands @
+    blk.outs.operands @
+    (operation_operands blk.data) @
+    (operation_operands blk.ctrl)
 
   let all_lhs_operands (blk : blk) : operand list =
     let operation_operands op_list =
@@ -182,7 +188,8 @@ module Blk = struct
             )
         )
 
-  let all_operations (blk : blk) : operation list = blk.ins :: ( blk.outs :: (blk.data @ blk.ctrl))
+  let all_operations (blk : blk) : operation list =
+    blk.ins :: ( blk.outs :: (blk.data @ blk.ctrl))
 
   let operation_insn (blk : blk) : (insn list) Tid.Map.t =
     List.fold ~init:Tid.Map.empty ~f:(fun acc o ->
@@ -352,7 +359,7 @@ let pretty_operation o =
           ~f:(fun i -> sexp_of_insn i |> Ppx_sexp_conv_lib.Sexp.to_string)))
     (pretty_operand_list o.operands)
 
-let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\nctrl: \n%s"
+let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\n\tctrl: \n%s"
     (Tid.to_string b.id)
     (pretty_operation b.ins)
     (pretty_operation b.outs)
@@ -363,6 +370,8 @@ let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\nct
 
 let pretty_ir (vir : t) : string =
   List.fold vir.blks ~init:"" ~f:(fun acc b -> acc ^ (pretty_blk b) ^ "\n\n")
+
+let to_string t = pretty_ir t
 
 let dummy_reg_alloc t =
   map_op_vars t
