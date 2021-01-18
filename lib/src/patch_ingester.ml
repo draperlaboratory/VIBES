@@ -35,10 +35,7 @@ module CoreParser (Core : Theory.Core) = struct
         : vvar M.t KB.t =
     (* These are vars that the user need not declare explicitly, and are
        handled specially later in the pipeline.  *)
-    let default_vars : (string * vvar) list =
-      [("FP", Var.define word_t "var_on_stack");
-       ("temp", Var.define word_t "temp");
-      ]
+    let default_vars : (string * vvar) list = []
     in
     let* var_sexps : Sexp.t list =
       match ds with
