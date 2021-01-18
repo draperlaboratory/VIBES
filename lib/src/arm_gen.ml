@@ -181,7 +181,7 @@ module ARM_ops = struct
     let {op_val = arg_val; op_eff = arg_sem} = arg in
     let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
-    let sem = {arg_sem with current_ctrl = op::arg_sem.current_ctrl} in
+    let sem = {arg_sem with current_data = op::arg_sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
 
   let binop o ty arg1 arg2 =
@@ -307,15 +307,17 @@ struct
     eff @@ s1 @. s2
 
   (* Both [data] and [ctrl] effects can have both kinds of effects,
-     AFAIKT, so we treat them identically. *)
+     AFAIKT, so we treat them (almost) identically. *)
   let blk lab data ctrl =
     Events.(send @@ Info "calling blk");
     let= data = data in
     let= ctrl = ctrl in
-    let new_data = ctrl.current_data @ data.current_data |> List.rev in
-    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl |> List.rev in
     (* We add instructions by consing to the front of the list, so we
-       need to reverse before finalizing the block *)
+       need to reverse before finalizing the block. *)
+    let new_data = ctrl.current_data @ data.current_data |> List.rev in
+    (* FIXME: currently we generate ctrl in the correct order, since
+       there are rougly only 2 or 3 instructions. Is this corect? *)
+    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
     let new_blk = IR.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
     let all_blocks =
       IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in

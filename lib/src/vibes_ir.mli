@@ -128,6 +128,8 @@ val temp_blk : t -> Tid.t Var.Map.t
 val operation_insns : t -> insn list Tid.Map.t
 val operand_operation : t -> operation Var.Map.t
 val pretty_ir : t -> string
+(* Alias of pretty_ir *)
+val to_string : t -> string
 
 val op_var_exn : operand -> op_var
 
