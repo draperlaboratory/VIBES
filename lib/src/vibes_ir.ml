@@ -9,11 +9,17 @@ type op_var = {
 
 let equal_op_var x y = [%equal: Var.t] x.id y.id
 
-let simple_var v = {
-  id = Var.create ~fresh:true "operand" (Var.typ v);
-  temps = [v];
-  pre_assign = None
-}
+let simple_var v =
+  let pre_assign =
+    if String.(Var.name v = "FP") then
+      Some `R11
+    else None
+  in
+  {
+    id = Var.create ~fresh:true "operand" (Var.typ v);
+    temps = [v];
+    pre_assign = pre_assign
+  }
 
 type cond = ARM.cond [@@deriving compare, sexp]
 
