@@ -113,6 +113,10 @@ let bool b =
 
 module ARM_ops = struct
 
+  let create_temp ty =
+    Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
+    IR.simple_var
+
   let freshen_operand o =
     match o with
     | IR.Var v ->
@@ -159,21 +163,50 @@ module ARM_ops = struct
 
   (* TODO: only works for registers? *)
   let jmp arg =
-    let {op_val = arg_const; op_eff = arg_sem} = arg in
-    let jmp =
-      match arg_const with
-      | Const _ | Var _ ->
-        let pc = Var.create "PC" (Imm 32) in
-        let pc = IR.Var (IR.simple_var pc) in
-        IR.simple_op `MOVi pc [arg_const]
+    let {op_val = arg_tgt; op_eff = arg_sem} = arg in
+    let pc = Var.create "PC" (Imm 32) in
+    let pc = IR.Var (IR.simple_var pc) in
+    let jmp_data, jmp_ctrl =
+      match arg_tgt with
+      | Var _ ->
+        [], IR.simple_op `MOVr pc [arg_tgt]
+      | Const w ->
+        (* Here we need to load the word by chunks, as it musth be
+           less than 16 bits wide. *)
+        let high_bits = Word.extract ~hi:31 ~lo:16 w in
+        let low_bits = Word.extract ~hi:15 ~lo:0 w in
+        begin
+          match Or_error.both high_bits low_bits with
+          (* FIXME: handle this more gracefully *)
+          | Error err -> Error.raise err
+          | Ok (highs, lows) ->
+            let tmp1 = create_temp (Imm 32) |> IR.Var in
+            let write_high = IR.simple_op `MOVi16 tmp1 [Const highs] in
+            let tmp2 = create_temp (Imm 32) |> IR.Var in
+            let tmp1 = freshen_operand tmp1 in
+            let sixteen = Word.of_int ~width:32 16 in
+            let shift_high = IR.simple_op `LSL tmp2 [tmp1; Const sixteen] in
+            let tmp3 = create_temp (Imm 32) |> IR.Var in
+            let write_low = IR.simple_op `MOVi16 tmp3 [Const lows] in
+            let tmp2 = freshen_operand tmp2 in
+            let tmp3 = freshen_operand tmp3 in
+            let tmp4 = create_temp (Imm 32) |> IR.Var in
+            let make_const = IR.simple_op `EORrr tmp4 [tmp2; tmp3] in
+            let tmp4 = freshen_operand tmp4 in
+            [make_const; write_low; shift_high; write_high], IR.simple_op `MOVr pc [tmp4]
+        end
       | _ ->
         let err = Format.asprintf "%s"
-            (IR.sexp_of_operand arg_const |>
+            (IR.sexp_of_operand arg_tgt |>
              Sexp.to_string)
         in
         failwith @@ "jmp: unexpected operand " ^ err
     in
-    control jmp arg_sem
+    {
+      arg_sem with
+      current_data = jmp_data @ arg_sem.current_data;
+      current_ctrl = jmp_ctrl::arg_sem.current_ctrl
+    }
 
 
   let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
@@ -267,10 +300,10 @@ module ARM_ops = struct
     let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
     let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
     (* FIXME: how do we handle data flow in branches? *)
-    assert (Core_kernel.(List.is_empty data1 && List.is_empty data2));
+    (* assert (Core_kernel.(List.is_empty data1 && List.is_empty data2)); *)
     {
-      current_data = cmp::cond_eff.current_data;
-      current_ctrl = beq::ctrl1@ctrl2;
+      current_data = cmp :: data1 @ data2 @ cond_eff.current_data;
+      current_ctrl = beq :: ctrl1 @ ctrl2;
       other_blks = IR.union blks1 @@ IR.union blks2 cond_eff.other_blks
     }
 
@@ -506,20 +539,23 @@ let ir (t : arm_eff) : IR.t =
 let insn_pretty i : (string, Errors.t) result =
   match i with
   | `MOVr
-  | `MOVi   -> Ok "mov"
-  | `BX     -> Ok "bx"
-  | `ADDrsi -> Ok "add"
-  | `SUBrsi -> Ok "sub"
-  | `LSL    -> Ok "lsl"
-  | `LSR    -> Ok "lsr"
-  | `ASR    -> Ok "asr"
-  | `ANDrsi -> Ok "and"
-  | `ORRrsi -> Ok "orr"
-  | `EORrsi -> Ok "eor"
-  | `LDRrs  -> Ok "ldr"
-  | `STRrs  -> Ok "str"
-  | `Bcc    -> Ok "bcc"
-  | `CMPrsi -> Ok "cmp"
+  | `MOVi    -> Ok "mov"
+  | `MOVi16  -> Ok "movw"
+  | `MOVTi16 -> Ok "movt"
+  | `BX      -> Ok "bx"
+  | `ADDrsi  -> Ok "add"
+  | `SUBrsi  -> Ok "sub"
+  | `LSL     -> Ok "lsl"
+  | `LSR     -> Ok "lsr"
+  | `ASR     -> Ok "asr"
+  | `ANDrsi  -> Ok "and"
+  | `ORRrsi  -> Ok "orr"
+  | `EORrsi  -> Ok "eor"
+  | `EORrr   -> Ok "eor"
+  | `LDRrs   -> Ok "ldr"
+  | `STRrs   -> Ok "str"
+  | `Bcc     -> Ok "bcc"
+  | `CMPrsi  -> Ok "cmp"
   | i       ->
     let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
     let msg =
