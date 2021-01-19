@@ -271,12 +271,12 @@ let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
       let reg = Var.Map.find_exn sol.reg temp in
       { id = o.id ; temps = [temp]; pre_assign = Some reg  }) in
   (*  Set instruction field of operation *)
-  let vir = VIR.map_operations vir ~f:(fun o ->
-      {
-        o with
-        insns = [ Tid.Map.find_exn sol.insn o.id ];
-        optional = not (Tid.Map.find_exn sol.active o.id);
-      }) in
+  (* let vir = VIR.map_operations vir ~f:(fun o ->
+   *     {
+   *       o with
+   *       insns = [ Tid.Map.find_exn sol.insn o.id ];
+   *       optional = not (Tid.Map.find_exn sol.active o.id);
+   *     }) in *)
   vir
 
 let model = Model.model

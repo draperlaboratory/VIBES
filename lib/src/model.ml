@@ -128,7 +128,7 @@ constraint forall(b in block_t)(
               block_array(start_cycle,b),
             %  block_array([width[t] * bool2int(live[t]) | t in temp_t ], b), % no this is bad
             block_array(width, b),
-              [end_cycle[t] - start_cycle[t] | t in temp_t])
+              [end_cycle[t] - start_cycle[t] | t in temp_t where temp_block[t] = b])
 );
 
 

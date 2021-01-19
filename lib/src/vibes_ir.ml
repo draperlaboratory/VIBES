@@ -349,6 +349,7 @@ let cond_to_string c =
   match c with
   | `AL -> "b"
   | `EQ -> "beq"
+  | `NE -> "bne"
   | `GE -> "bge"
   | `GT -> "bgt"
   | `LS -> "bgs"
