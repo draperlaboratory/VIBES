@@ -602,7 +602,7 @@ let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) resu
   | Offset c ->
     (* Special printing of offsets to jump back from patched locations *)
     Result.return @@
-    Format.asprintf "(. - relative_patch_placement + %d)" (Word.to_int_exn c)
+    Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
 
 
 
