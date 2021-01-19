@@ -30,6 +30,7 @@ let test_verify_unsat (_ : test_ctxt) : unit =
     Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
     Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
     Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
+    Data.Verifier.set_func obj (Some "main") >>= fun _ ->
 
     (* Now run the verifier. Stash the result in [Test_data.result]. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
@@ -66,6 +67,7 @@ let test_verify_sat (_ : test_ctxt) : unit =
     Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
     Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
     Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
+    Data.Verifier.set_func obj (Some "main") >>= fun _ ->
 
     (* Now run the verifier. Stash the result in [Test_data.result]. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
@@ -90,9 +92,8 @@ let test_verify_sat (_ : test_ctxt) : unit =
      the [Verifier] returns [Done], because we have not implemented how to
      handle the [Again] case. So, this test checks "Done", but it should be
      changed to check for "Again" when we implement the [Again] case. *)
-  let expected = "Done" in
-  H.assert_property ~cmp:String.equal
-    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
+  let expected = Errors.Problem (Errors.Other "Halting for now.") in
+  H.assert_error ~printer:(fun s -> s)
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without an original exe program. *)
