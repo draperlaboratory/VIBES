@@ -117,9 +117,9 @@ module ARM_ops = struct
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
     IR.simple_var
 
-  let create_temp' reg =
-    let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
-    IR.given_var v reg
+  (* let create_temp' reg =
+   *   let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
+   *   IR.given_var v reg *)
 
   let freshen_operand o =
     match o with
@@ -165,7 +165,6 @@ module ARM_ops = struct
     let i = IR.simple_op `Bcc (Cond `AL) [IR.Label addr] in
     control i empty_eff
 
-  (* TODO: only works for registers? *)
   let jmp arg =
     let {op_val = arg_tgt; op_eff = arg_sem} = arg in
     let pc = Var.create "PC" (Imm 32) in
@@ -175,30 +174,31 @@ module ARM_ops = struct
       | Var _ ->
         [], IR.simple_op `MOVr pc [arg_tgt]
       | Const w ->
-        (* Here we need to load the word by chunks, as it musth be
-           less than 16 bits wide. *)
-        let high_bits = Word.extract ~hi:31 ~lo:16 w in
-        let low_bits = Word.extract ~hi:15 ~lo:0 w in
-        begin
-          match Or_error.both high_bits low_bits with
-          (* FIXME: handle this more gracefully *)
-          | Error err -> Error.raise err
-          | Ok (highs, lows) ->
-            let tmp1 = create_temp' `R6 |> IR.Var in
-            let write_high = IR.simple_op `MOVi16 tmp1 [Const highs] in
-            let tmp2 = create_temp' `R6 |> IR.Var in
-            let tmp1 = freshen_operand tmp1 in
-            let sixteen = Word.of_int ~width:32 16 in
-            let shift_high = IR.simple_op `LSL tmp2 [tmp1; Const sixteen] in
-            let tmp3 = create_temp' `R7 |> IR.Var in
-            let write_low = IR.simple_op `MOVi16 tmp3 [Const lows] in
-            let tmp2 = freshen_operand tmp2 in
-            let tmp3 = freshen_operand tmp3 in
-            let tmp4 = create_temp' `R6 |> IR.Var in
-            let make_const = IR.simple_op `EORrr tmp4 [tmp2; tmp3] in
-            let tmp4 = freshen_operand tmp4 in
-            [make_const; write_low; shift_high; write_high], IR.simple_op `MOVr pc [tmp4]
-        end
+        [], IR.simple_op `Bcc (Cond `AL) [Offset w]
+        (* (\* Here we need to load the word by chunks, as it musth be
+         *    less than 16 bits wide. *\)
+         * let high_bits = Word.extract ~hi:31 ~lo:16 w in
+         * let low_bits = Word.extract ~hi:15 ~lo:0 w in
+         * begin
+         *   match Or_error.both high_bits low_bits with
+         *   (\* FIXME: handle this more gracefully *\)
+         *   | Error err -> Error.raise err
+         *   | Ok (highs, lows) ->
+         *     let tmp1 = create_temp' `R6 |> IR.Var in
+         *     let write_high = IR.simple_op `MOVi16 tmp1 [Const highs] in
+         *     let tmp2 = create_temp' `R6 |> IR.Var in
+         *     let tmp1 = freshen_operand tmp1 in
+         *     let sixteen = Word.of_int ~width:32 16 in
+         *     let shift_high = IR.simple_op `LSL tmp2 [tmp1; Const sixteen] in
+         *     let tmp3 = create_temp' `R7 |> IR.Var in
+         *     let write_low = IR.simple_op `MOVi16 tmp3 [Const lows] in
+         *     let tmp2 = freshen_operand tmp2 in
+         *     let tmp3 = freshen_operand tmp3 in
+         *     let tmp4 = create_temp' `R6 |> IR.Var in
+         *     let make_const = IR.simple_op `EORrr tmp4 [tmp2; tmp3] in
+         *     let tmp4 = freshen_operand tmp4 in
+         *     [make_const; write_low; shift_high; write_high], IR.simple_op `MOVr pc [tmp4]
+         * end *)
       | _ ->
         let err = Format.asprintf "%s"
             (IR.sexp_of_operand arg_tgt |>
@@ -599,6 +599,11 @@ let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) resu
   | Label l -> Result.return @@ tid_to_string l
   | Cond c -> Result.return @@ IR.cond_to_string c
   | Void -> Result.return ""
+  | Offset c ->
+    (* Special printing of offsets to jump back from patched locations *)
+    Result.return @@
+    Format.asprintf "(. - relative_patch_placement + %d)" (Word.to_int_exn c)
+
 
 
 (* FIXME: Absolute hack *)

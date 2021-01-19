@@ -41,7 +41,8 @@ type operand =
   | Const of Word.t
   | Label of Tid.t
   | Cond of cond
-  | Void [@@deriving compare, equal, sexp]
+  | Void
+  | Offset of Word.t [@@deriving compare, equal, sexp]
 
 type shift = [
   | `ASR
@@ -139,7 +140,7 @@ let var_operands (ops : operand list) : op_var list =
   List.fold ~f:(fun acc o ->
       match o with
       | Var v -> v :: acc
-      | Const _ | Label _ | Cond _ | Void -> acc
+      | Const _ | Label _ | Cond _ | Void | Offset _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -178,7 +179,7 @@ module Blk = struct
     List.concat_map (all_operands blk)
       ~f:(fun op ->
           match op with
-          | Const _ | Label _ | Cond _ | Void -> []
+          | Const _ | Label _ | Cond _ | Void | Offset _ -> []
           | Var op -> op.temps) |>
     Var.Set.of_list
 
@@ -373,6 +374,7 @@ let pretty_operand o =
   | Label l -> Tid.to_string l
   | Cond c -> cond_to_string c
   | Void -> ""
+  | Offset c -> Format.asprintf "Offset(%d)" (Word.to_int_exn c)
 
 let pretty_operand_list l =
   List.map ~f:pretty_operand l |> String.concat ~sep:","
