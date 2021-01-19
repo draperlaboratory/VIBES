@@ -121,6 +121,9 @@ module Verifier : sig
   val set_property : t -> Sexp.t option -> unit KB.t
   val get_property : t -> Sexp.t option KB.t
   val get_property_exn : t -> Sexp.t KB.t
+  val set_func : t -> string option -> unit KB.t
+  val get_func : t -> string option KB.t
+  val get_func_exn : t -> string KB.t
 end
 
 val create : Config.t -> t KB.t

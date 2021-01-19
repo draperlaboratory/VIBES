@@ -80,12 +80,11 @@ let verify
     Seq.find_exn ~f:(fun s -> String.(Sub.name s = name)) subs
   in
 
-  let func = "main" in
-
   Data.Original_exe.get_prog_exn obj >>= fun orig_prog ->
   Data.Patched_exe.get_tmp_filepath_exn obj >>= fun patch_exe_filepath ->
   Events.(send @@ Info "Loading patched exe...");
   Data.Verifier.get_property_exn obj >>= fun property ->
+  Data.Verifier.get_func_exn obj >>= fun func ->
 
   loader patch_exe_filepath >>= fun patch_proj ->
   let patch_prog = Project.program patch_proj in

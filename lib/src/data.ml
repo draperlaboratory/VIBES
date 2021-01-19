@@ -260,6 +260,9 @@ module Verifier = struct
   let property : (cls, Sexp.t option) KB.slot =
     KB.Class.property ~package cls "property" property_domain
 
+  let func : (cls, string option) KB.slot =
+    KB.Class.property ~package cls "func" string_domain
+
   let set_property (obj : t) (data : Sexp.t option) : unit KB.t =
     KB.provide property obj data
 
@@ -270,6 +273,18 @@ module Verifier = struct
     get_property obj >>= fun result ->
     match result with
     | None -> Errors.fail Errors.Missing_property
+    | Some value -> KB.return value
+
+  let set_func (obj : t) (data : string option) : unit KB.t =
+    KB.provide func obj data
+
+  let get_func (obj : t) : string option KB.t =
+    KB.collect func obj
+
+  let get_func_exn (obj : t) : string KB.t =
+    get_func obj >>= fun result ->
+    match result with
+    | None -> Errors.fail Errors.Missing_func
     | Some value -> KB.return value
 
 end
@@ -289,6 +304,7 @@ let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
 let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
   let patch_list = Config.patches config in
+  let func = Config.func config in
   let property = Config.property config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   create_patches patch_list >>= fun patches ->
@@ -296,6 +312,7 @@ let create (config : Config.t) : t KB.t =
   Original_exe.set_filepath obj (Some exe) >>= fun () ->
   Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
   Patched_exe.set_patches obj patches >>= fun () ->
+  Verifier.set_func obj (Some func) >>= fun () ->
   Verifier.set_property obj (Some property) >>= fun () ->
   KB.return obj
 
@@ -331,5 +348,7 @@ let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   Patched_exe.set_patches obj patches' >>= fun () ->
   Patched_exe.get_filepath obj >>= fun patched_exe ->
   Patched_exe.set_filepath obj patched_exe >>= fun () ->
+  Verifier.get_func obj >>= fun func ->
+  Verifier.set_func obj func >>= fun () ->
   Verifier.set_property obj' (Some property) >>= fun () ->
   KB.return obj'

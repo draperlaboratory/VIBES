@@ -17,6 +17,7 @@ type t =
   | Missing_tmp_patched_exe_filepath
   | Missing_patch_point
   | Missing_patch_size
+  | Missing_func
   | Missing_property
   | Missing_semantics of string
   | Command_not_found of string

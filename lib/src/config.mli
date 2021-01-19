@@ -12,6 +12,7 @@ module Errors : sig
     | Missing_patch_name
     | Missing_patch_code
     | Missing_patch_point
+    | Missing_func
     | Missing_property
     | Missing_size
     | Config_not_parsed of string
@@ -51,6 +52,9 @@ val exe : t -> string
 
 (* [patch config] returns the list of patch fragments *)
 val patches : t -> patch list
+
+(* [func config] returns the name of the function to verify. *)
+val func : t -> string
 
 (* [property config] returns the correctness property to use to verify
    whether the patched exe is correct. *)
