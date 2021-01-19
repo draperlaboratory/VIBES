@@ -238,7 +238,7 @@ let test_ir8 ctxt =
   test_ir ctxt Prog8_inst.prog ["entry:"; "orr R0, R0, R0"; "mov R0, R0"]
 
 let test_ir9 ctxt =
-  test_ir ctxt Prog9_inst.prog ["entry:"; "bcc tgt"]
+  test_ir ctxt Prog9_inst.prog ["entry:"; " b tgt"]
 
 let suite =
   [

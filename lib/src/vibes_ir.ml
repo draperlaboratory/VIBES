@@ -347,13 +347,13 @@ let operand_operation (sub : t) : operation Var.Map.t =
 
 let cond_to_string c =
   match c with
-  | `AL -> "al"
-  | `EQ -> "eq"
-  | `GE -> "ge"
-  | `GT -> "gt"
-  | `LS -> "gs"
-  | `LT -> "lt"
-  | `LE -> "le"
+  | `AL -> "b"
+  | `EQ -> "beq"
+  | `GE -> "bge"
+  | `GT -> "bgt"
+  | `LS -> "bgs"
+  | `LT -> "blt"
+  | `LE -> "ble"
   | _ -> failwith @@
     "cond_to_string: Unsupported operation " ^ (sexp_of_cond c |> Sexp.to_string)
 
