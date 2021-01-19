@@ -1,6 +1,6 @@
 {
   "func": "main",
-  "property" : "(true)",
+  "property" : "(assert true)",
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "(var-decls R0)

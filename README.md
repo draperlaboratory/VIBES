@@ -153,7 +153,7 @@ Here is an example of a valid configuration file, taken from the
 
 ```
 {
-  "property" : "(true)",
+  "property" : "(assert true)",
   "patches" : [
     {"patch" : "ret-3",
      "patch-point" : "0x54",
@@ -165,4 +165,4 @@ Here is an example of a valid configuration file, taken from the
 This tells VIBES to use hand-written patch named `ret-3`. There is one patch,
 which should be inserted starting at address `0x54` in `resources/simple/main`,
 and `8` bytes should be replaced.  The correctness properties to check is
-`true`.
+`(assert true)`.
