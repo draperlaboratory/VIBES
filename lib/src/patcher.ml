@@ -87,28 +87,46 @@ let find_dummy_region (filename : string) : int =
 
 let dummy_addr_ref : (int option) ref = ref None
 
+
+
 (* This function performs the actual patching of a binary. *)
 let patch_naive (original_exe_filename : string) (assembly : string list)
     (patch_point : Bitvec.t) (target_size : int): string KB.t =
+  let (let*) x f = Result.bind x f in
+  let patch_point = Bitvec.to_int64 patch_point in
+  
+  (* Initially let's assume the patch placement is the patch point *)
+  let patch_relative (pr : int) : string = Printf.sprintf ".equiv relative_patch_placement, %d\n" pr in
+  let test_assembly = (patch_relative 0) :: assembly in
+
   (* Read in original binary and patch  *)
-  lift_kb (binary_of_asm assembly) >>= (fun patch_exe -> 
-      let patch_point = Bitvec.to_int64 patch_point in
-      let patch_size = String.length patch_exe in
+  lift_kb (binary_of_asm test_assembly) >>= (fun test_patch_exe -> 
+      let patch_size = String.length test_patch_exe in
       let patches : ((int64 * string) list, Errors.t) Result.t = 
-        if (patch_size > target_size) 
+        if (patch_size > target_size) (* If patch doesn't fit *)
         then  begin
+          (* look up dummy address or compute it *)
           let dummy_addr = match !dummy_addr_ref with
             | None -> find_dummy_region original_exe_filename
-            | Some a -> a 
+            | Some a -> a
           in
+          (* Increment dummy_address for next time to avoid patch overlap *)
           dummy_addr_ref := Some (dummy_addr + patch_size + 4);
+          
+          (* Calculate patch placement relative to patch point and recompile patch *)
+          let patch_relative_location = dummy_addr - (Int64.to_int patch_point) in
+          let assembly = (patch_relative patch_relative_location) :: assembly in
+          let* patch_exe = binary_of_asm assembly in
+
           let jmp_val = (Int64.to_int patch_point) + target_size - (dummy_addr + patch_size) in
-          Result.bind (relative_jmp jmp_val) (fun rel_jmp_exe -> 
-              let patch_exe = patch_exe ^ rel_jmp_exe in
-              Result.bind (relative_jmp (dummy_addr - (Int64.to_int patch_point))) (fun jmp_to_patch -> 
-                  Ok [ (Int64.of_int dummy_addr , patch_exe ) ;  (patch_point, jmp_to_patch) ]))
+          let* rel_jmp_exe = relative_jmp jmp_val in
+          
+          let patch_exe = patch_exe ^ rel_jmp_exe in
+          let* jmp_to_patch = relative_jmp (dummy_addr - (Int64.to_int patch_point)) in
+          
+          Ok [ (Int64.of_int dummy_addr , patch_exe ) ;  (patch_point, jmp_to_patch) ]
         end
-        else Ok [ patch_point , patch_exe ] 
+        else Ok [ patch_point , test_patch_exe ] 
       in
       let patches = Result.get_ok patches in
       KB.return (patch_file original_exe_filename patches))
