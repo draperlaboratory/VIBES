@@ -11,12 +11,25 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_wp
+
 module KB = Knowledge
+
+(* A [result] record that a [verifier] function can return. *)
+type result = {
+  status : Z3.Solver.status;
+  solver : Z3.Solver.solver;
+  precond : Constraint.t;
+  orig_env : Environment.t;
+  patch_env : Environment.t;
+  orig_sub : Sub.t;
+  patch_sub : Sub.t;
+}
 
 (* A [verifier] function takes two projects, the name of a function,
    and a correctness property, it verifies their correctness, and
-   returns the resulting status. *)
-type verifier = sub term -> sub term -> Sexp.t -> Z3.Solver.status
+   returns the [result]. *)
+type verifier = sub term -> sub term -> Sexp.t -> result
 
 (* Indicates whether the patching is done, or should be attempted again. *)
 type next_step = Done | Again of Sexp.t

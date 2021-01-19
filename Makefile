@@ -9,7 +9,8 @@ PLUGIN_DIR := plugin
 .DEFAULT_GOAL := install
 
 install: 
-	$(MAKE) library.install 
+	$(MAKE) library.install
+	$(MAKE) clean -C $(PLUGIN_DIR)
 	$(MAKE) plugin.install
 
 uninstall: 

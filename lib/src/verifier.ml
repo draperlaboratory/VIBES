@@ -8,8 +8,19 @@ open Bap_wp
 
 module KB = Knowledge
 
+(* A result record that a verifier can return. *)
+type result = {
+  status : Z3.Solver.status;
+  solver : Z3.Solver.solver;
+  precond : Constraint.t;
+  orig_env : Environment.t;
+  patch_env : Environment.t;
+  orig_sub : Sub.t;
+  patch_sub : Sub.t;
+}
+
 (* The type for a verifier used by the [verify] function. *)
-type verifier = Sub.t -> Sub.t -> Sexp.t -> Z3.Solver.status
+type verifier = Sub.t -> Sub.t -> Sexp.t -> result
 
 (* The next step the CEGIS loop should take. *)
 type next_step =
@@ -19,7 +30,7 @@ type next_step =
 (* A dummy/naive verifier. It verifies the trivial postcondition,
    and so always returns UNSAT, meaning the patched program is correct. *)
 let check_naive (orig_sub : Sub.t) (patch_sub : Sub.t)
-    (property : Sexp.t) : Z3.Solver.status =
+    (property : Sexp.t) : result =
 
   let z3_ctx = Environment.mk_ctx () in
   let var_gen = Environment.mk_var_gen () in
@@ -43,7 +54,9 @@ let check_naive (orig_sub : Sub.t) (patch_sub : Sub.t)
       ~original:(orig_sub, env_1) ~modified:(patch_sub, env_2) in
 
   let solver = Z3.Solver.mk_solver z3_ctx None in
-  Precondition.check solver z3_ctx precond
+  let status = Precondition.check solver z3_ctx precond in
+  { status ; solver ; precond ; orig_env = _env_1 ; patch_env = _env_2 ;
+    orig_sub ; patch_sub }
 
 (* Verifies the correctness of the patched exe relative to the original exe.
    Takes a [loader] and a [verifier], which it uses to load the exes and
@@ -80,9 +93,13 @@ let verify
   let orig_sub =  get_sub orig_prog func in
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
-  let status = verifier orig_sub patch_sub property in
+  let result = verifier orig_sub patch_sub property in
+  Output.print_result result.solver result.status result.precond
+    ~show:[]
+    ~orig:(result.orig_env, result.orig_sub)
+    ~modif:(result.patch_env, result.patch_sub);
 
-  match status with
+  match result.status with
   | Z3.Solver.UNSATISFIABLE ->
     Events.(send @@
             Info "Weakest-precondition analysis returned: correct");
@@ -92,8 +109,10 @@ let verify
     Events.(send @@
             Info "Weakest-precondition analysis returned: incorrect");
     Events.(send @@ Info "The patched binary is not correct");
-    Events.(send @@ Info "For now, we'll pretend it is and move on");
-    KB.return Done
+    (* We will just fail for now, but in the future we will return [Again]
+       and let the CEGIS loop try again. *)
+    let msg = "Halting for now." in
+    Errors.fail (Errors.Other msg)
   | Z3.Solver.UNKNOWN ->
     let msg = "Weakest-precondition analysis returned: unknown" in
     Events.(send @@ Info msg);
