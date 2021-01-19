@@ -161,8 +161,8 @@ module ARM_ops = struct
 
   let ( := ) x y = arm_mov x y
 
-  let b addr =
-    let i = IR.simple_op `Bcc Void [IR.Label addr] in
+  let b_instr addr =
+    let i = IR.simple_op `Bcc (Cond `AL) [IR.Label addr] in
     control i empty_eff
 
   (* TODO: only works for registers? *)
@@ -300,15 +300,20 @@ module ARM_ops = struct
     let cond_val = freshen_operand cond_val in
     let cmp = IR.simple_op `CMPrsi Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
-    let beq = IR.simple_op `Bcc Void [Cond `EQ] in
     let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
     let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
-    (* FIXME: how do we handle data flow in branches? *)
-    (* assert (Core_kernel.(List.is_empty data1 && List.is_empty data2)); *)
+    let tid1 = Tid.for_name "true_branch" in
+    let tid2 = Tid.for_name "false_branch" in
+    let blk1 = IR.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
+    let blk2 = IR.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
+    let beq = IR.simple_op `Bcc (Cond `EQ) [Label tid1; Label tid2] in
+    let blks = cond_eff.other_blks in
+    let blks = IR.union blks1 @@ IR.union blks2 blks in
+    let blks = IR.add blk1 @@ IR.add blk2 blks in
     {
-      current_data = cmp :: data1 @ data2 @ cond_eff.current_data;
-      current_ctrl = beq :: ctrl1 @ ctrl2;
-      other_blks = IR.union blks1 @@ IR.union blks2 cond_eff.other_blks
+      current_data = cmp :: cond_eff.current_data;
+      current_ctrl = [beq];
+      other_blks = blks
     }
 
 
@@ -321,7 +326,7 @@ struct
   include ARM_ops
 
   let set v arg =
-    Events.(send @@ Info "calling set");
+    (* Events.(send @@ Info "calling set"); *)
     let arg_v =
       let r_var = v |> Var.reify in
       IR.simple_var r_var
@@ -342,7 +347,7 @@ struct
 
 
   let seq s1 s2 =
-    Events.(send @@ Info "calling seq");
+    (* Events.(send @@ Info "calling seq"); *)
     let= s1 = s1 in
     let= s2 = s2 in
     eff @@ s1 @. s2
@@ -350,7 +355,7 @@ struct
   (* Both [data] and [ctrl] effects can have both kinds of effects,
      AFAIKT, so we treat them (almost) identically. *)
   let blk lab data ctrl =
-    Events.(send @@ Info "calling blk");
+    (* Events.(send @@ Info "calling blk"); *)
     let= data = data in
     let= ctrl = ctrl in
     (* We add instructions by consing to the front of the list, so we
@@ -365,7 +370,7 @@ struct
     eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
-    Events.(send @@ Info "calling var");
+    (* Events.(send @@ Info "calling var"); *)
     let sort = Theory.Var.sort v in
     let v = reify_var v in
     let slot =
@@ -381,30 +386,30 @@ struct
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
-    Events.(send @@ Info "calling int");
+    (* Events.(send @@ Info "calling int"); *)
     (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w
 
   let add a b =
-    Events.(send @@ Info "calling add");
+    (* Events.(send @@ Info "calling add"); *)
     let- a = a in
     let- b = b in
     pure @@ a + b
 
   let sub a b =
-    Events.(send @@ Info "calling sub");
+    (* Events.(send @@ Info "calling sub"); *)
     let- a = a in
     let- b = b in
     pure @@ a - b
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
-    Events.(send @@ Info "calling goto");
-    eff @@ b lab
+    (* Events.(send @@ Info "calling goto"); *)
+    eff @@ b_instr lab
 
   let jmp addr =
-    Events.(send @@ Info "calling jmp");
+    (* Events.(send @@ Info "calling jmp"); *)
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
 
@@ -412,13 +417,13 @@ struct
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
-    Events.(send @@ Info "calling load");
+    (* Events.(send @@ Info "calling load"); *)
     let/ mem = mem in
     let- loc = loc in
     pure @@ ldr mem loc
 
   let store mem loc value =
-    Events.(send @@ Info "calling store");
+    (* Events.(send @@ Info "calling store"); *)
     let/ mem = mem in
     let- loc = loc in
     let- value = value in
@@ -427,55 +432,55 @@ struct
     memory @@ str mem value loc
 
   let perform _sort =
-    Events.(send @@ Info "calling perform");
+    (* Events.(send @@ Info "calling perform"); *)
     eff empty_eff
 
   let shiftl sign l r =
-    Events.(send @@ Info "calling shiftl");
+    (* Events.(send @@ Info "calling shiftl"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shl sign l r
 
   let shiftr sign l r =
-    Events.(send @@ Info "calling shiftr");
+    (* Events.(send @@ Info "calling shiftr"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shr sign l r
 
   let and_ a b =
-    Events.(send @@ Info "calling and_");
+    (* Events.(send @@ Info "calling and_"); *)
     let- a = a in
     let- b = b in
     bool (a && b)
 
   let or_ a b =
-    Events.(send @@ Info "calling or_");
+    (* Events.(send @@ Info "calling or_"); *)
     let- a = a in
     let- b = b in
     bool (a || b)
 
   let logand a b =
-    Events.(send @@ Info "calling logand");
+    (* Events.(send @@ Info "calling logand"); *)
     let- a = a in
     let- b = b in
     pure (a && b)
 
   let logor a b =
-    Events.(send @@ Info "calling logor");
+    (* Events.(send @@ Info "calling logor"); *)
     let- a = a in
     let- b = b in
     pure (a || b)
 
   let logxor a b =
-    Events.(send @@ Info "calling logxor");
+    (* Events.(send @@ Info "calling logxor"); *)
     let- a = a in
     let- b = b in
     pure @@ xor a b
 
   let eq a b =
-    Events.(send @@ Info "calling eq");
+    (* Events.(send @@ Info "calling eq"); *)
     let- a = a in
     let- b = b in
     bool @@ equals a b
@@ -558,7 +563,7 @@ let insn_pretty i : (string, Errors.t) result =
   | `EORrr   -> Ok "eor"
   | `LDRrs   -> Ok "ldr"
   | `STRrs   -> Ok "str"
-  | `Bcc     -> Ok "bcc"
+  | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
   | `CMPrsi  -> Ok "cmp"
   | i       ->
     let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
@@ -613,8 +618,26 @@ let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
   in
   let is_loc_list = mk_loc_list op l in
   let l = List.zip_exn is_loc_list l in
-    Result.map ~f:(String.concat ~sep:", ")
-      (Result.all (List.map l ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o)))
+  let all_str =
+    List.map l
+      ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o) |>
+    Result.all
+  in
+  let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
+  (* FIXME: pure hack: drop the first comma if the first argument is a
+     Cond. *)
+  let all_str =
+    begin
+      match l with
+      | (_, IR.Cond _) :: _ ->
+        Result.map all_str ~f:(fun all_str ->
+        let hd = List.hd_exn all_str in
+        let tl = List.tl_exn @@ List.tl_exn all_str in
+        hd::" "::tl)
+      | _ -> all_str
+    end
+  in
+  Result.map ~f:String.concat all_str
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in

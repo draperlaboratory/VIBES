@@ -281,6 +281,17 @@ let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
 
 let model = Model.model
 
+(* FIXME: this belongs in Vibes_ir *)
+let delete_empty_blocks vir =
+  let open VIR in
+  let blks = vir.blks in
+  let blks = List.fold blks ~init:[]
+      ~f:(fun acc b ->
+          if (List.is_empty b.data && List.is_empty b.ctrl) then acc else b::acc
+        )
+  in
+  {vir with blks = blks}
+
 let run_minizinc (vir : VIR.t) : VIR.t KB.t =
   let model_filename =
     Stdlib.Filename.temp_file "vibes-model" ".mzn" in
@@ -292,7 +303,8 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
     ~f:(fun out -> Out_channel.fprintf out "%s\r\n" model);
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filename));
   Events.(send @@ Info (sprintf "Orig VIR: %s\n" (VIR.pretty_ir vir)));
-  let params, name_maps = serialize_mzn_params vir in
+  let vir_clean = delete_empty_blocks vir in
+  let params, name_maps = serialize_mzn_params vir_clean in
   Yojson.Safe.to_file params_filename (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filename;
