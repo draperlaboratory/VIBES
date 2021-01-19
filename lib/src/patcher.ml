@@ -80,7 +80,7 @@ let patch_file (original_exe_filename : string) (patches : (int64 * string) list
 
 (* TODO: Surely there must be a better way *)
 let find_dummy_region (filename : string) : int =
-  let command = Printf.sprintf  "objdump %s -dF | grep vibes_dummy | grep -oP \"(?<=File Offset: 0x)(\\d+)\"" filename in
+  let command = Printf.sprintf  "objdump %s -dF | grep vibes_dummy | grep -oP \"(?<=File Offset: 0x)([0-9a-fA-F]+)\"" filename in
   let in_channel = Unix.open_process_in command in
   let addr_string = input_line in_channel in 
   Scanf.sscanf addr_string "%x" (fun i -> i)
