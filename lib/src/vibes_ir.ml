@@ -24,6 +24,14 @@ let simple_var v =
     pre_assign = pre_assign
   }
 
+let given_var v reg =
+  {
+   id = Var.create ~fresh:true "operand" (Var.typ v);
+    temps = [v];
+    pre_assign = Some reg
+  }
+
+
 type cond = ARM.cond [@@deriving compare, sexp]
 
 let equal_cond a b = compare_cond a b = 0

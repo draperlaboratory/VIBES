@@ -44,6 +44,8 @@ type op_var = {
 
 val simple_var : var -> op_var
 
+val given_var : var -> ARM.gpr_reg -> op_var
+
 type operand = Var of op_var
              | Const of word
              | Label of tid
