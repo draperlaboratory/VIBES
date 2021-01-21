@@ -126,9 +126,11 @@ optional parameters.  It is a JSON file with a single top level object.
 
 The top-level object must include the following fields:
 
+* `"func" : "NAME"` - 
+  Specifies the name of the function you want to verify.
 * `"property" : "S-EXP"` -
   Specifies the correctness property (as an S-expression in a JSON string)
-  that VIBES should use to verify the correctness of the patched EXE.
+  that VIBES should use to verify the correctness of FUNC in the patched exe.
 * `"patches" : [PATCH-OBJECTS]"` -
   Specifies the patches to apply as an array of patch fragment description
   objects.  Each object in the array describes a change to a single contiguous
@@ -153,6 +155,7 @@ Here is an example of a valid configuration file, taken from the
 
 ```
 {
+  "func": "main",
   "property" : "(assert true)",
   "patches" : [
     {"patch" : "ret-3",
@@ -164,5 +167,5 @@ Here is an example of a valid configuration file, taken from the
 
 This tells VIBES to use hand-written patch named `ret-3`. There is one patch,
 which should be inserted starting at address `0x54` in `resources/simple/main`,
-and `8` bytes should be replaced.  The correctness properties to check is
-`(assert true)`.
+and `8` bytes should be replaced.  The correctness property to use to check 
+the function `main` is `(assert true)`.

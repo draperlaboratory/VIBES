@@ -46,6 +46,7 @@ let patch_point = Bitvec.of_string patch_point_str
 let patch_size = 16
 let property_str = "true"
 let property = Sexp.Atom property_str
+let func = "main"
 let assembly = ["patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
@@ -62,10 +63,8 @@ let loader (_ : string) : Project.t KB.t =
       Errors.fail (Errors.Failed_to_load_proj msg)
     end
 
-
 (* A helper to create a [Data] object that can be used in tests. *)
 let obj () = KB.Object.create Data.cls
-
 
 (* After a [KB.run] computation, extract a given property from the returned
    object for further processing.  Fail if the KB computation failed. *)
@@ -101,7 +100,6 @@ let assert_property ~cmp ?p_res ?p_expected
       Format.sprintf "Property did not have the expected value"
   in
   assert_bool msg (cmp expected actual)
-
 
 (* After a [kb_run] computation, assert that the comutation diverged with
    a particular error. [property] is the property you want to check,
@@ -140,7 +138,9 @@ let assert_error ?printer property expected result : unit =
           "but got this error"
           (Format.asprintf "%a" KB.Conflict.pp problem)
       in
-      assert_bool msg String.((KB.Conflict.to_string problem) = (KB.Conflict.to_string expected))
+      assert_bool msg String.(
+        (KB.Conflict.to_string problem) = (KB.Conflict.to_string expected)
+      )
     end
 
 (* A printer for optional string values, to be used as a printer
@@ -216,3 +216,6 @@ let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
     orig_sub = orig;
     patch_sub = patch;
   }
+
+(* A verifier printer function for testing. It does nothing. *)
+let verifier_printer (_ : Verifier.result) : unit = ()

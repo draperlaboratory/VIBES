@@ -7,7 +7,6 @@ open OUnit2
 module KB = Knowledge
 module H = Helpers
 
-
 (* A KB class to stash test results in. *)
 module Test_data = struct
   type cls = Test_data
@@ -19,7 +18,7 @@ module Test_data = struct
       "test-result-for-verifier" KB.Domain.string
 end
 
-(* Test that [Verifier.verify] works as expected for Z3 [UNSAT]. *)
+(* Test that [Verifier.verify] works as expected when [UNSAT]. *)
 let test_verify_unsat (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
@@ -30,12 +29,12 @@ let test_verify_unsat (_ : test_ctxt) : unit =
     Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
     Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
     Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
-    Data.Verifier.set_func obj (Some "main") >>= fun _ ->
+    Data.Verifier.set_func obj (Some H.func) >>= fun _ ->
 
     (* Now run the verifier. Stash the result in [Test_data.result]. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj
-      ~loader:H.loader ~verifier:H.verify_unsat >>= fun result ->
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_unsat
+      ~printer:H.verifier_printer >>= fun result ->
     match result with
     | Verifier.Done ->
       begin
@@ -56,7 +55,7 @@ let test_verify_unsat (_ : test_ctxt) : unit =
     ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
     Test_data.result expected result
 
-(* Test that [Verifier.verify] works as expected for Z3 [SAT]. *)
+(* Test that [Verifier.verify] works as expected when [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
 
   (* Run the verifier. *)
@@ -71,8 +70,8 @@ let test_verify_sat (_ : test_ctxt) : unit =
 
     (* Now run the verifier. Stash the result in [Test_data.result]. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj
-      ~loader:H.loader ~verifier:H.verify_sat >>= fun result ->
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
+      ~printer:H.verifier_printer >>= fun result ->
     match result with
     | Verifier.Done ->
       begin
@@ -89,9 +88,7 @@ let test_verify_sat (_ : test_ctxt) : unit =
 
   (* NOTE: If Z3 returns [UNSAT], then the [Verifier] should return [Again]
      to indicate that the CEGIS loop needs to try again. For now, though,
-     the [Verifier] returns [Done], because we have not implemented how to
-     handle the [Again] case. So, this test checks "Done", but it should be
-     changed to check for "Again" when we implement the [Again] case. *)
+     the [Verifier] just halts with an error. *)
   let expected = Errors.Problem (Errors.Other "Halting for now.") in
   H.assert_error ~printer:(fun s -> s)
     Test_data.result expected result
@@ -107,18 +104,9 @@ let test_verify_with_no_original_exe_prog (_ : test_ctxt) : unit =
 
     (* Run the verifier. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj >>= fun result ->
-    match result with
-    | Verifier.Done ->
-      begin
-        KB.provide Test_data.result test_data "Done" >>= fun _ ->
-        KB.return test_data
-      end
-    | Verifier.Again _ ->
-      begin
-        KB.provide Test_data.result test_data "Again" >>= fun _ ->
-        KB.return test_data
-      end
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
+      ~printer:H.verifier_printer >>= fun _ ->
+    KB.return test_data
 
   in
   let result = KB.run Test_data.cls computation KB.empty in
@@ -140,18 +128,10 @@ let test_verify_with_no_patched_exe (_ : test_ctxt) : unit =
 
     (* Now run the verifier. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj >>= fun result ->
-    match result with
-    | Verifier.Done ->
-      begin
-        KB.provide Test_data.result test_data "Done" >>= fun _ ->
-        KB.return test_data
-      end
-    | Verifier.Again _ ->
-      begin
-        KB.provide Test_data.result test_data "Again" >>= fun _ ->
-        KB.return test_data
-      end
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
+      ~printer:H.verifier_printer >>= fun _ ->
+    KB.return test_data
+    
   in
   let result = KB.run Test_data.cls computation KB.empty in
 
@@ -173,23 +153,41 @@ let test_verify_with_no_property (_ : test_ctxt) : unit =
 
     (* Now run the verifier. *)
     KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj >>= fun result ->
-    match result with
-    | Verifier.Done ->
-      begin
-        KB.provide Test_data.result test_data "Done" >>= fun _ ->
-        KB.return test_data
-      end
-    | Verifier.Again _ ->
-      begin
-        KB.provide Test_data.result test_data "Again" >>= fun _ ->
-        KB.return test_data
-      end
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
+      ~printer:H.verifier_printer  >>= fun _ ->
+    KB.return test_data
+
   in
   let result = KB.run Test_data.cls computation KB.empty in
 
   (* The computation should diverge with the appropriate error. *)
   let expected = Errors.Problem Errors.Missing_property in
+  H.assert_error ~printer:(Format.sprintf "%s")
+    Test_data.result expected result
+
+(* Test that [Verifier.verify] errors without a function to verify. *)
+let test_verify_with_no_func (_ : test_ctxt) : unit =
+
+  (* Run the verifier. *)
+  let computation =
+
+    (* Setup KB with no func. *)
+    H.obj () >>= fun obj ->
+    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
+    Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
+    Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
+
+    (* Now run the verifier. *)
+    KB.Object.create Test_data.cls >>= fun test_data ->
+    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
+      ~printer:H.verifier_printer  >>= fun _ ->
+    KB.return test_data
+
+  in
+  let result = KB.run Test_data.cls computation KB.empty in
+
+  (* The computation should diverge with the appropriate error. *)
+  let expected = Errors.Problem Errors.Missing_func in
   H.assert_error ~printer:(Format.sprintf "%s")
     Test_data.result expected result
 
@@ -202,4 +200,6 @@ let suite = [
   test_verify_with_no_patched_exe;
   "Test Verifier.verify: no correctness property" >::
   test_verify_with_no_property;
+  "Test Verifier.verify: no func" >::
+  test_verify_with_no_func;
 ]
