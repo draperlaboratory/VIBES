@@ -22,14 +22,17 @@ type result = {
 (* The type for a verifier used by the [verify] function. *)
 type verifier = Sub.t -> Sub.t -> Sexp.t -> result
 
+(* The type for a printer used by the [printer] function. *)
+type printer = result -> unit
+
 (* The next step the CEGIS loop should take. *)
 type next_step =
   | Done
   | Again of Sexp.t
 
-(* A dummy/naive verifier. It verifies the trivial postcondition,
-   and so always returns UNSAT, meaning the patched program is correct. *)
-let check_naive (orig_sub : Sub.t) (patch_sub : Sub.t)
+(* A verifier that uses CBAT's WP library to verify the correctness
+   property of the specified function in the original/patched executables. *)
+let wp_verifier (orig_sub : Sub.t) (patch_sub : Sub.t)
     (property : Sexp.t) : result =
 
   let z3_ctx = Environment.mk_ctx () in
@@ -58,6 +61,15 @@ let check_naive (orig_sub : Sub.t) (patch_sub : Sub.t)
   { status ; solver ; precond ; orig_env = _env_1 ; patch_env = _env_2 ;
     orig_sub ; patch_sub }
 
+(* Prints the output of a verification. *)
+let naive_printer (r : result) : unit =
+  (* TO DO: Maybe use other functions from the [Output] module to get strings
+     so we can push this data to our Events channel instead of stdout. *)
+  Output.print_result r.solver r.status r.precond
+    ~show:[]
+    ~orig:(r.orig_env, r.orig_sub)
+    ~modif:(r.patch_env, r.patch_sub)
+
 (* Verifies the correctness of the patched exe relative to the original exe.
    Takes a [loader] and a [verifier], which it uses to load the exes and
    to verify their correctness.
@@ -71,7 +83,8 @@ let check_naive (orig_sub : Sub.t) (patch_sub : Sub.t)
              and the CEGIS loop should try again with the provided
              correctness property. *)
 let verify
-    ?loader:(loader=Exe_loader.load) ?verifier:(verifier=check_naive)
+    ?loader:(loader=Exe_loader.load) ?verifier:(verifier=wp_verifier)
+    ?printer:(printer=naive_printer)
     (obj : Data.t) : next_step KB.t =
   Events.(send @@ Header "Starting Verifier");
 
@@ -93,10 +106,7 @@ let verify
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
   let result = verifier orig_sub patch_sub property in
-  Output.print_result result.solver result.status result.precond
-    ~show:[]
-    ~orig:(result.orig_env, result.orig_sub)
-    ~modif:(result.patch_env, result.patch_sub);
+  printer result;
 
   match result.status with
   | Z3.Solver.UNSATISFIABLE ->

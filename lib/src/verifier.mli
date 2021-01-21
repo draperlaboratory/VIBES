@@ -31,13 +31,17 @@ type result = {
    returns the [result]. *)
 type verifier = sub term -> sub term -> Sexp.t -> result
 
+(* A [printer] function takes a [result] and prints it. *)
+type printer = result -> unit
+
 (* Indicates whether the patching is done, or should be attempted again. *)
 type next_step = Done | Again of Sexp.t
 
-(* [verify obj ~loader ~verifier] uses the specified [~loader] and [~verifier]
-   to load the exes and verify whether the patched executable associated with
-   [obj] is correct. If so, this function returns [Done]. If not, it returns
-   [Again property], to indicate that the VIBES pipeline/CEGIS loop should
-   try again with the new correctness [property]. *)
+(* [verify obj ~loader ~verifier ~printer] uses the specified [~loader] and
+   [~verifier] to load the exes and verify whether the patched executable
+   associated with [obj] is correct. If so, this function returns [Done]. 
+   If not, it returns [Again property], to indicate that the VIBES 
+   pipeline/CEGIS loop should try again with the new correctness [property].
+   It uses the [~printer] to print the output of the [~verifier]. *)
 val verify : ?loader:(Exe_ingester.loader) -> ?verifier:(verifier) ->
-  Data.t -> next_step KB.t
+  ?printer:(printer) -> Data.t -> next_step KB.t
