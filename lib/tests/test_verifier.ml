@@ -131,7 +131,6 @@ let test_verify_with_no_patched_exe (_ : test_ctxt) : unit =
     Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
       ~printer:H.verifier_printer >>= fun _ ->
     KB.return test_data
-    
   in
   let result = KB.run Test_data.cls computation KB.empty in
 

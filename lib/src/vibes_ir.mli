@@ -1,41 +1,43 @@
-(*
-   This IR is intended for the eventual serialization of parameters to a constraint model
-   that solves a joint instruction scheduling and register allocation problem in the style
-   of Unison. It is modeled roughly after the Unison IR as described in chapter 5 of
-   the Unison manual.
+(* This IR is intended for the eventual serialization of parameters to
+   a constraint model that solves a joint instruction scheduling and
+   register allocation problem in the style of Unison. It is modeled
+   roughly after the Unison IR as described in chapter 5 of the Unison
+   manual.
 
-   Because the IR needs to be serialized to an external solver, many entities require ids.
+   Because the IR needs to be serialized to an external solver, many
+   entities require ids.
 
-   Unison makes the distinction between operands and temporaries.
-   An operand is a field of an operation. In other words operands belong to a single
-   operation.
-   One operand may have multiple temporaries available
-   from which to choose from. Temporaries do not belong to a single operation.
-   This conceptual separation opens up enough space to model
-   spilling registers and live range splitting.
-   An operand may be preassigned to a particular register.
+   Unison makes the distinction between operands and temporaries.  An
+   operand is a field of an operation. In other words operands belong
+   to a single operation.  One operand may have multiple temporaries
+   available from which to choose from. Temporaries do not belong to a
+   single operation.  This conceptual separation opens up enough space
+   to model spilling registers and live range splitting.  An operand
+   may be preassigned to a particular register.
 
-   Unison also makes a distinction between an operation and an instruction.
-   An operation may be implemented via different instructions.
-   Instructions correspond typically to assembly instructions like mov.
+   Unison also makes a distinction between an operation and an
+   instruction.  An operation may be implemented via different
+   instructions.  Instructions correspond typically to assembly
+   instructions like mov.
 
-   It is intended that this IR be put into linear SSA form. In linear SSA
-   temporaries are uniquely assigned and belong uniquely to a single block.
-   Temporaries that persist across blocks are recorded as congruent in the [vibes_ir] type.
-   This can be achived by namespacing variables by the block they belong to.
-   The purpose of the linear SSA is to help the constraint satisfaction problem conceptually
-   decompose into coupled block level constraint satisfaction problems.
+   It is intended that this IR be put into linear SSA form. In linear
+   SSA temporaries are uniquely assigned and belong uniquely to a
+   single block.  Temporaries that persist across blocks are recorded
+   as congruent in the [vibes_ir] type.  This can be achived by
+   namespacing variables by the block they belong to.  The purpose of
+   the linear SSA is to help the constraint satisfaction problem
+   conceptually decompose into coupled block level constraint
+   satisfaction problems.
 
 *)
 
 open Bap.Std
 
 
-(** [operand]s have
-      unique ids,
-      a list of potential temporaries that can be used to implement the operand and
-      may be optionally pre-assigned to registers for calling conventions or other reasons
-*)
+(** [operand]s have unique ids, a list of potential temporaries that
+   can be used to implement the operand and may be optionally
+   pre-assigned to registers for calling conventions or other reasons
+   *)
 type op_var = {
   id : var;
   temps : var list;

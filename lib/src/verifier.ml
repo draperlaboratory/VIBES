@@ -52,14 +52,15 @@ let wp_verifier (orig_sub : Sub.t) (patch_sub : Sub.t)
   let postconds, hyps =
     Compare.compare_subs_smtlib ~smtlib_hyp ~smtlib_post in
 
-  let precond, _env_1, _env_2 = Compare.compare_subs
+  let precond, env_1, env_2 = Compare.compare_subs
       ~postconds:[postconds] ~hyps:[hyps]
       ~original:(orig_sub, env_1) ~modified:(patch_sub, env_2) in
 
   let solver = Z3.Solver.mk_solver z3_ctx None in
   let status = Precondition.check solver z3_ctx precond in
-  { status ; solver ; precond ; orig_env = _env_1 ; patch_env = _env_2 ;
-    orig_sub ; patch_sub }
+  { status; solver; precond;
+    orig_env = env_1; patch_env = env_2;
+    orig_sub; patch_sub }
 
 (* Prints the output of a verification. *)
 let naive_printer (r : result) : unit =
@@ -83,7 +84,8 @@ let naive_printer (r : result) : unit =
              and the CEGIS loop should try again with the provided
              correctness property. *)
 let verify
-    ?loader:(loader=Exe_loader.load) ?verifier:(verifier=wp_verifier)
+    ?loader:(loader=Exe_loader.load)
+    ?verifier:(verifier=wp_verifier)
     ?printer:(printer=naive_printer)
     (obj : Data.t) : next_step KB.t =
   Events.(send @@ Header "Starting Verifier");
