@@ -1,4 +1,4 @@
-LIB_DIR := lib
+LIB_DIR := bap-vibes
 PLUGIN_DIR := plugin
 
 

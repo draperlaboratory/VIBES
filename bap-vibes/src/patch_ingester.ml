@@ -244,4 +244,3 @@ let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Patch ingest complete");
   Events.(send @@ Rule);
   KB.return ()
-
