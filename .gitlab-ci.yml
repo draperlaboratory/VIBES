@@ -6,6 +6,8 @@ run_tests:
   tags:
     # Tag this so docker CI runners pick it up.
     - docker
+  variables:
+    VIBES_MODEL: "./resources/model.mzn"
   script:
     # Install bap_wp.
     - pushd ~
