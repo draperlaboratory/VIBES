@@ -9,7 +9,7 @@ type patch =
     patch_name : string;
 
     (* An s-expression version of the patch's core theory code *)
-    patch_code : string;
+    patch_code : Sexp.t list;
 
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
@@ -31,7 +31,7 @@ type t = {
 
 (* Patch accessors. *)
 let patch_name (p : patch) : string = p.patch_name
-let patch_code (p : patch) : string = p.patch_code
+let patch_code (p : patch) : Sexp.t list = p.patch_code
 let patch_point (p : patch) : Bitvec.t = p.patch_point 
 let patch_size (p : patch) : int = p.patch_size
 
@@ -45,9 +45,11 @@ let max_tries t : int option = t.max_tries
 
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
+  let code =
+    String.concat ~sep:"\n" (List.map p.patch_code ~f:Sexp.to_string) in
   String.concat ~sep:"\n" [
       Printf.sprintf "  {Patch_name: %s" p.patch_name;
-      Printf.sprintf "   Patch_code: %s" p.patch_code;
+      Printf.sprintf "   Patch_code: %s" code;
       Printf.sprintf "   Patch_point: %s" (Bitvec.to_string p.patch_point);
       Printf.sprintf "   Patch_size: %d}" p.patch_size;
     ]
@@ -71,7 +73,8 @@ let pp (ppf : Format.formatter) t : unit =
 
 (* Create a patch record. *)
 let create_patch ~patch_name:(patch_name : string)
-    ~patch_code:(patch_code : string) ~patch_point:(patch_point : Bitvec.t)
+    ~patch_code:(patch_code : Sexp.t list)
+    ~patch_point:(patch_point : Bitvec.t)
     ~patch_size:(patch_size : int) : patch =
   { patch_name; patch_code; patch_point; patch_size }
 
