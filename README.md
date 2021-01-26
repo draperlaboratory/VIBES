@@ -63,6 +63,10 @@ Then run `make`:
 
     make
 
+Set the `VIBES_MODEL` environment variable to point to the model.mzn file
+
+    export VIBES_MODEL=$(pwd)/resources/model.mzn
+
 To uninstall:
 
     make uninstall

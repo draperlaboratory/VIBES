@@ -28,6 +28,7 @@ type t =
   | WP_result_unknown of string
   | Max_tries of int
   | Minizinc_deserialization of string
+  | Vibes_model_env_var_not_set
   | Other of string
 
 (* A pretty-printer for these errors. *)
@@ -59,6 +60,7 @@ let pp ppf (e : t) =
     | WP_result_unknown s -> s
     | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | Minizinc_deserialization s -> s
+    | Vibes_model_env_var_not_set -> "VIBES_MODEL environment variable not set to location of model.mzn"
     | Other s -> s
   in
   Format.fprintf ppf "@[%s@]@." msg
