@@ -12,8 +12,6 @@ type arm_eff = {
 
 let empty_eff = {current_data = []; current_ctrl = []; other_blks = IR.empty}
 
-(* FIXME: if this is a constant, I'm pretty sure the op_eff field is
-   always empty *)
 type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
 [@@deriving compare, equal, sexp]
 
@@ -128,10 +126,10 @@ module ARM_ops = struct
   let control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
-  (* Some cowboy type checking here, to check which kind of mov to use.
-     FIXME: certainly doesn't work if variables are instantiated with
-     immediates! Can be fixed by having seperate Variable constructors
-     for registers and immediates. *)
+  (* Some cowboy type checking here, to check which kind of mov to
+     use. Currently doesn't work if variables are instantiated
+     with spilled registers! Can be fixed by having seperate Variable
+     constructors for spilled and non-spilled registers. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     let mov =
@@ -193,7 +191,6 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
 
-  (* TODO: handle non-register arguments? *)
   let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
 
   let (-) arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
@@ -208,7 +205,7 @@ module ARM_ops = struct
          constant amounts, and at any rate it requires a bit of work
          to implement in ARM. Most likely the right thing to do is
          fail gracefully.  *)
-      | _ -> assert false
+      | _ -> failwith "Arm_gen.shr: arg2 non-constant"
     in
     if b then
       binop `ASR (Imm 32) arg1 arg2
@@ -282,7 +279,6 @@ struct
   include ARM_ops
 
   let set v arg =
-    (* Events.(send @@ Info "calling set"); *)
     let arg_v =
       let r_var = v |> Var.reify in
       IR.simple_var r_var
@@ -290,7 +286,6 @@ struct
     KB.(
       arg >>= fun arg ->
       match Value.get arm_pure arg with
-      (* FIXME: freshen the lhs? *)
       | Some arg -> eff ((IR.Var arg_v) := arg)
       | None ->
         begin
@@ -303,7 +298,6 @@ struct
 
 
   let seq s1 s2 =
-    (* Events.(send @@ Info "calling seq"); *)
     let= s1 = s1 in
     let= s2 = s2 in
     eff @@ s1 @. s2
@@ -311,14 +305,13 @@ struct
   (* Both [data] and [ctrl] effects can have both kinds of effects,
      AFAIKT, so we treat them (almost) identically. *)
   let blk lab data ctrl =
-    (* Events.(send @@ Info "calling blk"); *)
     let= data = data in
     let= ctrl = ctrl in
     (* We add instructions by consing to the front of the list, so we
        need to reverse before finalizing the block. *)
     let new_data = ctrl.current_data @ data.current_data |> List.rev in
-    (* FIXME: currently we generate ctrl in the correct order, since
-       there are rougly only 2 or 3 instructions. Is this corect? *)
+    (* Currently we generate ctrl in the correct order, since
+       there are rougly only 2 or 3 instructions. *)
     let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
     let new_blk = IR.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
     let all_blocks =
@@ -326,7 +319,6 @@ struct
     eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
-    (* Events.(send @@ Info "calling var"); *)
     let sort = Theory.Var.sort v in
     let v = reify_var v in
     let slot =
@@ -342,30 +334,25 @@ struct
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
-    (* Events.(send @@ Info "calling int"); *)
     (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w
 
   let add a b =
-    (* Events.(send @@ Info "calling add"); *)
     let- a = a in
     let- b = b in
     pure @@ a + b
 
   let sub a b =
-    (* Events.(send @@ Info "calling sub"); *)
     let- a = a in
     let- b = b in
     pure @@ a - b
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
-    (* Events.(send @@ Info "calling goto"); *)
     eff @@ b_instr lab
 
   let jmp addr =
-    (* Events.(send @@ Info "calling jmp"); *)
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
 
@@ -373,13 +360,11 @@ struct
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
-    (* Events.(send @@ Info "calling load"); *)
     let/ mem = mem in
     let- loc = loc in
     pure @@ ldr mem loc
 
   let store mem loc value =
-    (* Events.(send @@ Info "calling store"); *)
     let/ mem = mem in
     let- loc = loc in
     let- value = value in
@@ -388,55 +373,46 @@ struct
     memory @@ str mem value loc
 
   let perform _sort =
-    (* Events.(send @@ Info "calling perform"); *)
     eff empty_eff
 
   let shiftl sign l r =
-    (* Events.(send @@ Info "calling shiftl"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shl sign l r
 
   let shiftr sign l r =
-    (* Events.(send @@ Info "calling shiftr"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shr sign l r
 
   let and_ a b =
-    (* Events.(send @@ Info "calling and_"); *)
     let- a = a in
     let- b = b in
     bool (a && b)
 
   let or_ a b =
-    (* Events.(send @@ Info "calling or_"); *)
     let- a = a in
     let- b = b in
     bool (a || b)
 
   let logand a b =
-    (* Events.(send @@ Info "calling logand"); *)
     let- a = a in
     let- b = b in
     pure (a && b)
 
   let logor a b =
-    (* Events.(send @@ Info "calling logor"); *)
     let- a = a in
     let- b = b in
     pure (a || b)
 
   let logxor a b =
-    (* Events.(send @@ Info "calling logxor"); *)
     let- a = a in
     let- b = b in
     pure @@ xor a b
 
   let eq a b =
-    (* Events.(send @@ Info "calling eq"); *)
     let- a = a in
     let- b = b in
     bool @@ equals a b
@@ -493,8 +469,7 @@ let add_in_vars_blk (b : IR.blk) : IR.blk =
 let add_in_vars (t : IR.t) : IR.t =
   { t with blks = List.map ~f:add_in_vars_blk t.blks }
 
-(* FIXME: not sure what the right behavior is here... should we assume that a
-   block is always created? *)
+(* We assume that a block is always created *)
 let ir (t : arm_eff) : IR.t =
   assert Core_kernel.(List.is_empty t.current_data
                       && List.is_empty t.current_ctrl);
@@ -564,7 +539,6 @@ module Pretty = struct
       Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
 
 
-
   (* FIXME: Absolute hack *)
   let mk_loc_list (op : string) (args : 'a list) : bool list =
     if String.(op = "ldr") then
@@ -588,7 +562,7 @@ module Pretty = struct
       Result.all
     in
     let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
-    (* FIXME: pure hack: drop the first comma if the first argument is a
+    (* FIXME: Pure hack: drop the first comma if the first argument is a
        Cond. *)
     let all_str =
       begin
