@@ -501,122 +501,126 @@ let ir (t : arm_eff) : IR.t =
   let blks = t.other_blks in
   add_in_vars blks
 
-let insn_pretty i : (string, Errors.t) result =
-  match i with
-  | `MOVr
-  | `MOVi    -> Ok "mov"
-  | `MOVi16  -> Ok "movw"
-  | `MOVTi16 -> Ok "movt"
-  | `BX      -> Ok "bx"
-  | `ADDrsi  -> Ok "add"
-  | `SUBrsi  -> Ok "sub"
-  | `LSL     -> Ok "lsl"
-  | `LSR     -> Ok "lsr"
-  | `ASR     -> Ok "asr"
-  | `ANDrsi  -> Ok "and"
-  | `ORRrsi  -> Ok "orr"
-  | `EORrsi  -> Ok "eor"
-  | `EORrr   -> Ok "eor"
-  | `LDRrs   -> Ok "ldr"
-  | `STRrs   -> Ok "str"
-  | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
-  | `CMPrsi  -> Ok "cmp"
-  | i       ->
-    let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
-    let msg =
-      Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
+
+module Pretty = struct
+
+  let insn_pretty i : (string, Errors.t) result =
+    match i with
+    | `MOVr
+    | `MOVi    -> Ok "mov"
+    | `MOVi16  -> Ok "movw"
+    | `MOVTi16 -> Ok "movt"
+    | `BX      -> Ok "bx"
+    | `ADDrsi  -> Ok "add"
+    | `SUBrsi  -> Ok "sub"
+    | `LSL     -> Ok "lsl"
+    | `LSR     -> Ok "lsr"
+    | `ASR     -> Ok "asr"
+    | `ANDrsi  -> Ok "and"
+    | `ORRrsi  -> Ok "orr"
+    | `EORrsi  -> Ok "eor"
+    | `EORrr   -> Ok "eor"
+    | `LDRrs   -> Ok "ldr"
+    | `STRrs   -> Ok "str"
+    | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
+    | `CMPrsi  -> Ok "cmp"
+    | i       ->
+      let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
+      let msg =
+        Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
+      in
+      Error (Errors.Not_implemented msg)
+
+  (* We use this function when generating ARM, since the assembler
+     doesn't like % or @ in labels. *)
+  let tid_to_string (t : tid) : string =
+    Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
+
+  let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) result =
+    match o with
+    | Var v ->
+      let error =
+        Errors.Missing_semantics
+          "arm_operand_pretty: operand.pre_assign field is empty" in
+      let res =
+        Result.bind
+          (Result.of_option v.pre_assign ~error:error)
+          ~f:(fun reg ->
+              Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
+      in
+      if is_loc then
+        Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
+      else
+        res
+    | Const w ->
+      (* A little calisthenics to get this to look nice *)
+      Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+    | Label l -> Result.return @@ tid_to_string l
+    | Cond c -> Result.return @@ IR.cond_to_string c
+    | Void -> Result.return ""
+    | Offset c ->
+      (* Special printing of offsets to jump back from patched locations *)
+      Result.return @@
+      Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
+
+
+
+  (* FIXME: Absolute hack *)
+  let mk_loc_list (op : string) (args : 'a list) : bool list =
+    if String.(op = "ldr") then
+      [false; true]
+    else
+      List.init (List.length args) ~f:(fun _ -> false)
+
+  let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
+    : (string, Errors.t) result =
+    (* Don't print the head of the operand if it's void. *)
+    let l =
+      match hd with
+      | Void -> l
+      | _ -> hd::l
     in
-    Error (Errors.Not_implemented msg)
+    let is_loc_list = mk_loc_list op l in
+    let l = List.zip_exn is_loc_list l in
+    let all_str =
+      List.map l
+        ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o) |>
+      Result.all
+    in
+    let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
+    (* FIXME: pure hack: drop the first comma if the first argument is a
+       Cond. *)
+    let all_str =
+      begin
+        match l with
+        | (_, IR.Cond _) :: _ ->
+          Result.map all_str ~f:(fun all_str ->
+              let hd = List.hd_exn all_str in
+              let tl = List.tl_exn @@ List.tl_exn all_str in
+              hd::" "::tl)
+        | _ -> all_str
+      end
+    in
+    Result.map ~f:String.concat all_str
 
-(* We use this function when generating ARM, since the assembler
-   doesn't like % or @ in labels. *)
-let tid_to_string (t : tid) : string =
-  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
+  let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
+    let op = List.hd_exn t.insns in
+    Result.(insn_pretty op >>= fun op ->
+            arm_operands_pretty op
+              (List.hd_exn t.lhs)
+              t.operands >>= (fun operands ->
+                  return (Format.asprintf "%s %s" op operands)))
 
-let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) result =
-  match o with
-  | Var v ->
-     let error =
-       Errors.Missing_semantics
-         "arm_operand_pretty: operand.pre_assign field is empty" in
-     let res =
-       Result.bind
-         (Result.of_option v.pre_assign ~error:error)
-         ~f:(fun reg ->
-             Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
-     in
-     if is_loc then
-       Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
-     else
-       res
-  | Const w ->
-    (* A little calisthenics to get this to look nice *)
-    Result.return @@ Format.asprintf "#%a" Word.pp_dec w
-  | Label l -> Result.return @@ tid_to_string l
-  | Cond c -> Result.return @@ IR.cond_to_string c
-  | Void -> Result.return ""
-  | Offset c ->
-    (* Special printing of offsets to jump back from patched locations *)
-    Result.return @@
-    Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
+  let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
+    let all_ops = t.data @ t.ctrl in
+    let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
+    let lab = Format.asprintf "%s:" (tid_to_string t.id) in
+    Result.map insns ~f:(fun insns -> lab::insns)
 
+  let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
+    List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
 
-
-(* FIXME: Absolute hack *)
-let mk_loc_list (op : string) (args : 'a list) : bool list =
-  if String.(op = "ldr") then
-    [false; true]
-  else
-    List.init (List.length args) ~f:(fun _ -> false)
-
-let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
-  : (string, Errors.t) result =
-  (* Don't print the head of the operand if it's void. *)
-  let l =
-    match hd with
-    | Void -> l
-    | _ -> hd::l
-  in
-  let is_loc_list = mk_loc_list op l in
-  let l = List.zip_exn is_loc_list l in
-  let all_str =
-    List.map l
-      ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o) |>
-    Result.all
-  in
-  let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
-  (* FIXME: pure hack: drop the first comma if the first argument is a
-     Cond. *)
-  let all_str =
-    begin
-      match l with
-      | (_, IR.Cond _) :: _ ->
-        Result.map all_str ~f:(fun all_str ->
-        let hd = List.hd_exn all_str in
-        let tl = List.tl_exn @@ List.tl_exn all_str in
-        hd::" "::tl)
-      | _ -> all_str
-    end
-  in
-  Result.map ~f:String.concat all_str
-
-let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
-  let op = List.hd_exn t.insns in
-  Result.(insn_pretty op >>= fun op ->
-          arm_operands_pretty op
-            (List.hd_exn t.lhs)
-            t.operands >>= (fun operands ->
-              return (Format.asprintf "%s %s" op operands)))
-
-let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
-  let all_ops = t.data @ t.ctrl in
-  let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
-  let lab = Format.asprintf "%s:" (tid_to_string t.id) in
-  Result.map insns ~f:(fun insns -> lab::insns)
-
-let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
-  List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
-
+end
 
 let slot = arm_eff
 

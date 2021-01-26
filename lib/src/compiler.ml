@@ -22,7 +22,7 @@ let create_assembly (solver : Vibes_ir.t -> Vibes_ir.t KB.t)
   (* For some reason Either is more fully featured *)
   let ir = Result.map ~f:Arm_gen.ir arm_eff |> Result.to_either in
   let* ir = Either.value_map ~first:solver ~second:Errors.fail ir in
-  let pretty_ir = Arm_gen.arm_ir_pretty ir in
+  let pretty_ir = Arm_gen.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return assembly
   | Error e -> Errors.fail e

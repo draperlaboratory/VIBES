@@ -36,5 +36,8 @@ val effect : 'a Theory.effect -> arm_eff option
     representation. *)
 val ir : arm_eff -> Vibes_ir.t
 
-(** Pretty prints [ir] terms in a form suitable for assembly *)
-val arm_ir_pretty : Vibes_ir.t -> (string list, Errors.t) result
+module Pretty :
+sig
+  (** Pretty prints [ir] terms in a form suitable for assembly *)
+  val arm_ir_pretty : Vibes_ir.t -> (string list, Errors.t) result
+end
