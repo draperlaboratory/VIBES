@@ -27,7 +27,8 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
      else Err.return s
   | _ -> Err.fail Errors.Missing_patch_name
 
-(* Extract the patch name and check it is non-empty string. *)
+(* Extract the patch code, check it's a non-empty string, and parse
+   into a [Sexp.t list] (it should be a valid S-expression). *)
 let validate_patch_code (nm : string) (obj : Json.t)
     : (Sexp.t list, error) Stdlib.result =
   match Json.Util.member "patch-code" obj with
@@ -107,6 +108,7 @@ let validate_property (obj : Json.t) : (Sexp.t, error) Stdlib.result =
      end
   | _ -> Err.fail Missing_property
 
+(* Extract the max-tries value, and make sure it's an [int] (if provided). *)
 let validate_max_tries (obj : Json.t) : (int option, error) Stdlib.result =
   match Json.Util.member "max-tries" obj with
   | `Int i -> Err.return (Some i)
