@@ -7,29 +7,29 @@ open Knowledge.Syntax
 open Knowledge.Let
 
 module KB = Knowledge
-
+module Arm = Arm_selector
 
 (* Converts a list of BIR statements to a list of ARM assembly strings.
    This is just a dummy stand-in for now. It only handles a simple move
    instruction. *)
-let create_assembly (solver : Vibes_ir.t -> Vibes_ir.t KB.t)
+let create_assembly (solver : Ir.t -> Ir.t KB.t)
     (bir : Insn.t) : string list KB.t =
-  let arm_eff = Arm_gen.effect bir in
+  let arm_eff = Arm.effect bir in
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
   (* Makes for a slightly clearer *)
   let arm_eff = Result.of_option arm_eff
       ~error:(Errors.Missing_semantics err) in
   (* For some reason Either is more fully featured *)
-  let ir = Result.map ~f:Arm_gen.ir arm_eff |> Result.to_either in
+  let ir = Result.map ~f:Arm.ir arm_eff |> Result.to_either in
   let* ir = Either.value_map ~first:solver ~second:Errors.fail ir in
-  let pretty_ir = Arm_gen.Pretty.arm_ir_pretty ir in
+  let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return assembly
   | Error e -> Errors.fail e
 
 
 (* Compile one patch from BIL to assembly *)
-let compile_one (solver : Vibes_ir.t -> Vibes_ir.t KB.t)
+let compile_one (solver : Ir.t -> Ir.t KB.t)
       (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
   let info_str =

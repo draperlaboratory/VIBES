@@ -156,32 +156,34 @@ module Prog9 (S : Core) = struct
 
 end
 
-module Prog1_inst = Prog1(Arm_gen.ARM_Core)
+module Arm = Arm_selector
 
-module Prog2_inst = Prog2(Arm_gen.ARM_Core)
+module Prog1_inst = Prog1(Arm.ARM_Core)
 
-module Prog3_inst = Prog3(Arm_gen.ARM_Core)
+module Prog2_inst = Prog2(Arm.ARM_Core)
 
-module Prog4_inst = Prog4(Arm_gen.ARM_Core)
+module Prog3_inst = Prog3(Arm.ARM_Core)
 
-module Prog5_inst = Prog5(Arm_gen.ARM_Core)
+module Prog4_inst = Prog4(Arm.ARM_Core)
 
-module Prog6_inst = Prog6(Arm_gen.ARM_Core)
+module Prog5_inst = Prog5(Arm.ARM_Core)
 
-module Prog7_inst = Prog7(Arm_gen.ARM_Core)
+module Prog6_inst = Prog6(Arm.ARM_Core)
 
-module Prog8_inst = Prog8(Arm_gen.ARM_Core)
+module Prog7_inst = Prog7(Arm.ARM_Core)
 
-module Prog9_inst = Prog9(Arm_gen.ARM_Core)
+module Prog8_inst = Prog8(Arm.ARM_Core)
+
+module Prog9_inst = Prog9(Arm.ARM_Core)
 
 let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
   let computation =
     let* v = v in
-    let v = Arm_gen.effect v in
+    let v = Arm.effect v in
     let asm =
-      v |> Option.map ~f:Arm_gen.ir
-        |> Option.map ~f:Vibes_ir.dummy_reg_alloc
-        |> Option.map ~f:Arm_gen.Pretty.arm_ir_pretty
+      v |> Option.map ~f:Arm.ir
+        |> Option.map ~f:Ir.dummy_reg_alloc
+        |> Option.map ~f:Arm.Pretty.arm_ir_pretty
         |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
         |> Option.join (* And we squash the Options *)
     in
@@ -242,13 +244,13 @@ let test_ir9 ctxt =
 
 let suite =
   [
-    "Test Arm_gen.ir 1" >:: test_ir1;
-    "Test Arm_gen.ir 2" >:: test_ir2;
-    "Test Arm_gen.ir 3" >:: test_ir3;
-    "Test Arm_gen.ir 4" >:: test_ir4;
-    "Test Arm_gen.ir 5" >:: test_ir5;
-    "Test Arm_gen.ir 6" >:: test_ir6;
-    "Test Arm_gen.ir 7" >:: test_ir7;
-    "Test Arm_gen.ir 8" >:: test_ir8;
-    "Test Arm_gen.ir 9" >:: test_ir9;
+    "Test Arm.ir 1" >:: test_ir1;
+    "Test Arm.ir 2" >:: test_ir2;
+    "Test Arm.ir 3" >:: test_ir3;
+    "Test Arm.ir 4" >:: test_ir4;
+    "Test Arm.ir 5" >:: test_ir5;
+    "Test Arm.ir 6" >:: test_ir6;
+    "Test Arm.ir 7" >:: test_ir7;
+    "Test Arm.ir 8" >:: test_ir8;
+    "Test Arm.ir 9" >:: test_ir9;
   ]

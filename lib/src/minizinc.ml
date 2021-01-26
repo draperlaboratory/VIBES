@@ -1,8 +1,6 @@
 open Bap.Std
 open Core_kernel
 
-module VIR = Vibes_ir
-
 open Bap_knowledge
 module KB = Knowledge
 open Knowledge.Syntax
@@ -26,39 +24,39 @@ open Knowledge.Syntax
 
 type mzn_params = {
   copy : Tid.Set.t;
-  definer : VIR.op_var Var.Map.t;
-  users : (VIR.op_var list) Var.Map.t;
+  definer : Ir.op_var Var.Map.t;
+  users : (Ir.op_var list) Var.Map.t;
   temp_block : tid Var.Map.t;
   latency : unit;
   (* width : int Var.Map.t; Vars in Bap have width. Unnecessary? *)
   preassign : ARM.gpr_reg option Var.Map.t;
-  operation_insns : (Vibes_ir.insn list) Tid.Map.t;
-  operand_operation : VIR.operation Var.Map.t;
-  congruent : (VIR.op_var * VIR.op_var) list;
+  operation_insns : (Ir.insn list) Tid.Map.t;
+  operand_operation : Ir.operation Var.Map.t;
+  congruent : (Ir.op_var * Ir.op_var) list;
   operands : Var.Set.t;
   temps : Var.Set.t
 }
 
-(** [mzn_params_of_vibes_ir] converts a VIR.t subroutine into the intermediate data
+(** [mzn_params_of_vibes_ir] converts a Ir.t subroutine into the intermediate data
     structure mzn_params
     TODO Unimplemented:
        * No copy instructions
        * Latency
        * Preassignment
 *)
-let mzn_params_of_vibes_ir (sub : VIR.t) : mzn_params =
+let mzn_params_of_vibes_ir (sub : Ir.t) : mzn_params =
   {
     copy = Tid.Set.empty;
-    definer = VIR.definer_map sub;
-    users = VIR.users_map sub;
-    temp_block = VIR.temp_blk sub;
+    definer = Ir.definer_map sub;
+    users = Ir.users_map sub;
+    temp_block = Ir.temp_blk sub;
     latency = ();
-    preassign = VIR.preassign_map sub;
-    operation_insns = VIR.operation_insns sub;
-    operand_operation = VIR.operand_operation sub;
+    preassign = Ir.preassign_map sub;
+    operation_insns = Ir.operation_insns sub;
+    operand_operation = Ir.operand_operation sub;
     congruent = sub.congruent;
-    temps = VIR.all_temps sub;
-    operands = VIR.all_operands sub;
+    temps = Ir.all_temps sub;
+    operands = Ir.all_operands sub;
   }
 
 
@@ -128,12 +126,12 @@ type serialization_info = {
        Implement latency
 
 *)
-let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_info =
+let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
   let insns = Tid.Map.data params.operation_insns |> List.concat_map
-                ~f:(fun is -> List.map is ~f:(fun i -> Vibes_ir.sexp_of_insn i
+                ~f:(fun is -> List.map is ~f:(fun i -> Ir.sexp_of_insn i
                                                        |>  Ppx_sexp_conv_lib.Sexp.to_string))
               |> String.Set.of_list |> String.Set.to_list in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
@@ -154,14 +152,14 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
     class_t = {set = [{e = "unimplemented_class"}]};
     operand_operation = List.map ~f:(fun t -> Var.Map.find_exn params.operand_operation t
-                                              |> VIR.operation_to_string |> mzn_enum) operands;
-    definer = List.map ~f:(fun t -> Var.Map.find_exn params.definer t |> VIR.op_var_to_string
+                                              |> Ir.operation_to_string |> mzn_enum) operands;
+    definer = List.map ~f:(fun t -> Var.Map.find_exn params.definer t |> Ir.op_var_to_string
                                     |> mzn_enum) temps;
     users = List.map ~f:(fun t -> match Var.Map.find params.users t with
         | None -> {set = []}
         | Some operands -> {
             set = List.map
-                ~f:(fun o -> VIR.op_var_to_string o |> mzn_enum) operands})
+                ~f:(fun o -> Ir.op_var_to_string o |> mzn_enum) operands})
         temps;
     temp_block = List.map temps
         ~f:(fun t -> Var.Map.find_exn params.temp_block t |> Tid.to_string |> mzn_enum);
@@ -177,7 +175,7 @@ let serialize_mzn_params (vir : Vibes_ir.t) : mzn_params_serial * serialization_
     congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
     operation_insns = List.map ~f:(fun o ->
         {set = Tid.Map.find_exn params.operation_insns o
-               |> List.map ~f:(fun i -> Vibes_ir.sexp_of_insn i
+               |> List.map ~f:(fun i -> Ir.sexp_of_insn i
                                         |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum)
         }) operations;
     latency = List.map ~f:(fun _ -> 10) insns (* TODO *)
@@ -214,7 +212,7 @@ type sol_serial = {
 
 type sol = {
   reg : ARM.gpr_reg Var.Map.t;
-  insn : Vibes_ir.insn Tid.Map.t;
+  insn : Ir.insn Tid.Map.t;
   temp : Var.t Var.Map.t;
   active : bool Tid.Map.t;
   issue : int Tid.Map.t;
@@ -235,7 +233,7 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
   {
     reg = List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
     insn = List.map2_exn
-        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Vibes_ir.insn_of_sexp))
+        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Ir.insn_of_sexp))
         names.operations
         (strip_enum s.insn)
            |> Tid.Map.of_alist_exn;
@@ -248,13 +246,13 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
     issue = List.zip_exn names.operations s.issue |> Tid.Map.of_alist_exn
   }
 
-(** [apply_sol] takes a [sol] and applies it to a [VIR.t].
-    The resulting [VIR.t] has it's registers in the preassign field,
+(** [apply_sol] takes a [sol] and applies it to a [Ir.t].
+    The resulting [Ir.t] has it's registers in the preassign field,
     a single temporary in the temps field, and has operations scheduled *)
 
-let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
+let apply_sol (vir : Ir.t) (sol : sol) : Ir.t =
   (* Filter inactive operations, and sort operations by issue cycle *)
-  let vir = VIR.map_blks vir ~f:(fun b ->
+  let vir = Ir.map_blks vir ~f:(fun b ->
       { b with
         data =
           List.filter b.data
@@ -266,12 +264,12 @@ let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
       }
     ) in
   (* Put register and temporary selection into operands *)
-  let vir = VIR.map_op_vars vir ~f:(fun o ->
+  let vir = Ir.map_op_vars vir ~f:(fun o ->
       let temp = Var.Map.find_exn sol.temp o.id in
       let reg = Var.Map.find_exn sol.reg temp in
       { id = o.id ; temps = [temp]; pre_assign = Some reg  }) in
   (*  Set instruction field of operation *)
-  (* let vir = VIR.map_operations vir ~f:(fun o ->
+  (* let vir = Ir.map_operations vir ~f:(fun o ->
    *     {
    *       o with
    *       insns = [ Tid.Map.find_exn sol.insn o.id ];
@@ -281,9 +279,9 @@ let apply_sol (vir : VIR.t) (sol : sol) : VIR.t =
 
 let model = Model.model
 
-(* FIXME: this belongs in Vibes_ir *)
+(* FIXME: this belongs in Ir *)
 let delete_empty_blocks vir =
-  let open VIR in
+  let open Ir in
   let blks = vir.blks in
   let blks = List.fold blks ~init:[]
       ~f:(fun acc b ->
@@ -292,7 +290,7 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
-let run_minizinc (vir : VIR.t) : VIR.t KB.t =
+let run_minizinc (vir : Ir.t) : Ir.t KB.t =
   let model_filename =
     Stdlib.Filename.temp_file "vibes-model" ".mzn" in
   let params_filename =
@@ -302,7 +300,7 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
   Out_channel.with_file model_filename
     ~f:(fun out -> Out_channel.fprintf out "%s\r\n" model);
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filename));
-  Events.(send @@ Info (sprintf "Orig VIR: %s\n" (VIR.pretty_ir vir)));
+  Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
   let params, name_maps = serialize_mzn_params vir_clean in
   Yojson.Safe.to_file params_filename (mzn_params_serial_to_yojson params);
@@ -321,5 +319,5 @@ let run_minizinc (vir : VIR.t) : VIR.t KB.t =
 
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in
-  Events.(send @@ Info (sprintf "Solved VIR: %s\n" (VIR.pretty_ir vir')));
+  Events.(send @@ Info (sprintf "Solved Ir: %s\n" (Ir.pretty_ir vir')));
   KB.return vir'

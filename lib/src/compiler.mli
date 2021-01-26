@@ -9,4 +9,4 @@ module KB = Knowledge
 
 (* [compile obj] converts the patch (which is BIL) associated with the
    provided [obj] into assembly. *)
-val compile : ?solver:(Vibes_ir.t -> Vibes_ir.t KB.t) -> Data.t -> unit KB.t
+val compile : ?solver:(Ir.t -> Ir.t KB.t) -> Data.t -> unit KB.t

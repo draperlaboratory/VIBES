@@ -7,12 +7,12 @@ module KB = Knowledge
 module H = Helpers
 open Knowledge.Syntax
 
-open Vibes_ir
+open Ir
 
 
 
 
-let ex1 : Vibes_ir.t = Test_vibes_ir.vir1
+let ex1 : Ir.t = Test_vibes_ir.vir1
 
 
 let (mzn_params1 , serial_info1) =  Minizinc.serialize_mzn_params ex1

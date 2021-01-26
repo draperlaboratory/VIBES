@@ -2,13 +2,14 @@
  *
  * This module contains the Core implementation for the ARM
  * backend. This mostly involves giving a semantics to every
- * Core expression in terms of the [Vibes_ir.t] type.
+ * Core expression in terms of the [Vibes_ir.t] type, with
+ * instructions specialized to ARM.
  *
  * This can be used to generate a [Vibes_ir.t] implementation
  * for anything representable in BAP Core term, e.g. BIL.
  *
- *
- *
+ * Effectively, this is what in a traditional compiler, is
+ * instruction selection.
  *
  *
  *
@@ -34,10 +35,10 @@ val effect : 'a Theory.effect -> arm_eff option
 
 (** Extracts the concrete [Vibes_ir] from the abstract [arm_eff]
     representation. *)
-val ir : arm_eff -> Vibes_ir.t
+val ir : arm_eff -> Ir.t
 
 module Pretty :
 sig
   (** Pretty prints [ir] terms in a form suitable for assembly *)
-  val arm_ir_pretty : Vibes_ir.t -> (string list, Errors.t) result
+  val arm_ir_pretty : Ir.t -> (string list, Errors.t) result
 end
