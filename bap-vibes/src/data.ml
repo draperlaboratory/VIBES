@@ -293,10 +293,10 @@ end
 let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
-    Patch.set_patch_name obj (Some p.patch_name) >>= fun () ->
-    Patch.set_patch_code obj (Some p.patch_code) >>= fun () ->
-    Patch.set_patch_point obj (Some p.patch_point) >>= fun () ->
-    Patch.set_patch_size obj (Some p.patch_size) >>= fun () ->
+    Patch.set_patch_name obj (Some (Config.patch_name p)) >>= fun () ->
+    Patch.set_patch_code obj (Some (Config.patch_code p)) >>= fun () ->
+    Patch.set_patch_point obj (Some (Config.patch_point p)) >>= fun () ->
+    Patch.set_patch_size obj (Some (Config.patch_size p)) >>= fun () ->
     KB.return obj
   in
   KB.all (List.map ~f:create_patch ps) >>| Patch_set.of_list
