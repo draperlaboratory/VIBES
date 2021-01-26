@@ -58,7 +58,7 @@ type operand = Var of op_var
 type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
 (** An [operation] has
-    an id
+    a *unique* id
     an assigned lhs,
     a set of instructions to choose from,
     a flag of whether the operation is optional,

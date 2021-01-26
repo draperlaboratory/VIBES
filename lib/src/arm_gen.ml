@@ -121,21 +121,6 @@ module ARM_ops = struct
    *   let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
    *   IR.given_var v reg *)
 
-  let freshen_operand o =
-    match o with
-    | IR.Var v ->
-      let fresh_v =
-        { v with
-          id =
-            Var.create
-              ~is_virtual:true
-              ~fresh:true
-              (Var.name v.id)
-              (Var.typ v.id)
-        } in
-      IR.Var fresh_v
-    | _ -> o
-
   (* defaults to data instructions, since they are way more common *)
   let instr i sem =
     {sem with current_data = i::sem.current_data}
@@ -149,7 +134,6 @@ module ARM_ops = struct
      for registers and immediates. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
-    let arg2_var = freshen_operand arg2_var in
     let mov =
       match arg1, arg2_var with
       | IR.Var _, IR.Var _ ->
@@ -175,30 +159,6 @@ module ARM_ops = struct
         [], IR.simple_op `MOVr pc [arg_tgt]
       | Const w ->
         [], IR.simple_op `Bcc (Cond `AL) [Offset w]
-        (* (\* Here we need to load the word by chunks, as it musth be
-         *    less than 16 bits wide. *\)
-         * let high_bits = Word.extract ~hi:31 ~lo:16 w in
-         * let low_bits = Word.extract ~hi:15 ~lo:0 w in
-         * begin
-         *   match Or_error.both high_bits low_bits with
-         *   (\* FIXME: handle this more gracefully *\)
-         *   | Error err -> Error.raise err
-         *   | Ok (highs, lows) ->
-         *     let tmp1 = create_temp' `R6 |> IR.Var in
-         *     let write_high = IR.simple_op `MOVi16 tmp1 [Const highs] in
-         *     let tmp2 = create_temp' `R6 |> IR.Var in
-         *     let tmp1 = freshen_operand tmp1 in
-         *     let sixteen = Word.of_int ~width:32 16 in
-         *     let shift_high = IR.simple_op `LSL tmp2 [tmp1; Const sixteen] in
-         *     let tmp3 = create_temp' `R7 |> IR.Var in
-         *     let write_low = IR.simple_op `MOVi16 tmp3 [Const lows] in
-         *     let tmp2 = freshen_operand tmp2 in
-         *     let tmp3 = freshen_operand tmp3 in
-         *     let tmp4 = create_temp' `R6 |> IR.Var in
-         *     let make_const = IR.simple_op `EORrr tmp4 [tmp2; tmp3] in
-         *     let tmp4 = freshen_operand tmp4 in
-         *     [make_const; write_low; shift_high; write_high], IR.simple_op `MOVr pc [tmp4]
-         * end *)
       | _ ->
         let err = Format.asprintf "%s"
             (IR.sexp_of_operand arg_tgt |>
@@ -220,7 +180,6 @@ module ARM_ops = struct
   let uop o ty arg =
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
-    let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
     let sem = {arg_sem with current_data = op::arg_sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
@@ -229,8 +188,6 @@ module ARM_ops = struct
     let res = create_temp ty in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-    let arg1_val = freshen_operand arg1_val in
-    let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
     let sem = {sem with current_data = op::sem.current_data} in
@@ -297,7 +254,6 @@ module ARM_ops = struct
   let beq cond branch1 branch2 =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
-    let cond_val = freshen_operand cond_val in
     let cmp = IR.simple_op `CMPrsi Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
     let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in

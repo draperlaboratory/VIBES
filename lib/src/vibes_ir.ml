@@ -31,7 +31,6 @@ let given_var v reg =
     pre_assign = Some reg
   }
 
-
 type cond = ARM.cond [@@deriving compare, sexp]
 
 let equal_cond a b = compare_cond a b = 0
@@ -51,6 +50,22 @@ type shift = [
   | `ROR
   | `RRX
 ] [@@deriving sexp, equal, compare]
+
+
+let freshen_operand o =
+  match o with
+  | Var v ->
+    let fresh_v =
+      { v with
+        id =
+          Var.create
+            ~is_virtual:true
+            ~fresh:true
+            (Var.name v.id)
+            (Var.typ v.id)
+      } in
+    Var fresh_v
+  | _ -> o
 
 
 let op_var_exn (x : operand) : op_var =
@@ -79,7 +94,8 @@ let simple_op opcode arg args =
     lhs = [arg];
     insns = [opcode];
     optional = false;
-    operands = args;
+    (* Operands need to have unique ids *)
+    operands = List.map ~f:freshen_operand args;
   }
 
 let mk_empty_operation () =
