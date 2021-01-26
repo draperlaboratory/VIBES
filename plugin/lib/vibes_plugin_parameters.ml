@@ -1,10 +1,11 @@
-(* Implements {!Errors}. *)
+(* Implements {!Vibes_plugin_parameters}. *)
 
 open !Core_kernel
 open Monads.Std
 
 module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
+module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
 module Err = Monad.Result.Make (Errors) (Monad.Ident)
