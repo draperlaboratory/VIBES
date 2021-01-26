@@ -34,10 +34,15 @@ let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
 (* The domain of BIR programs *)
 let bir_domain : Insn.t KB.domain = Theory.Semantics.domain
 
-(* Optional s-expression domain (for correctness properties) *)
-let property_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
+(* Optional s-expression domain (e.g., for correctness properties) *)
+let sexp_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
     ~equal:Sexp.equal
-    "property-domain"
+    "sexp-domain"
+
+(* Optional s-expression list domain (e.g., for patch code) *)
+let sexp_list_domain : Sexp.t list option KB.Domain.t = KB.Domain.optional
+    ~equal:(fun x y -> List.equal Sexp.equal x y)
+    "sexp-list-domain"
 
 (* Optional string list domain (for assembly). But as per
    Ivan's suggestion, we'll probably make this a powerset domain. *)
@@ -61,14 +66,15 @@ module Patch = struct
   type patch_cls
   let patch : (patch_cls, unit) KB.cls =
     KB.Class.declare ~package "patch" ()
+
   (* This provides equality / comparisons for objects of this class *)
   include (val KB.Object.derive patch)
 
   let patch_name : (patch_cls, string option) KB.slot =
     KB.Class.property ~package patch "patch-name" string_domain
 
-  let patch_code : (patch_cls, string option) KB.slot =
-    KB.Class.property ~package patch "patch-code" string_domain
+  let patch_code : (patch_cls, Sexp.t list option) KB.slot =
+    KB.Class.property ~package patch "patch-code" sexp_list_domain
 
   let bir : (patch_cls, Insn.t) KB.slot =
     KB.Class.property ~package patch "patch-bir" bir_domain
@@ -94,13 +100,13 @@ module Patch = struct
     | None -> Errors.fail Errors.Missing_patch_name
     | Some value -> KB.return value
 
-  let set_patch_code (obj : t) (data : string option) : unit KB.t =
+  let set_patch_code (obj : t) (data : Sexp.t list option) : unit KB.t =
     KB.provide patch_code obj data
 
-  let get_patch_code (obj : t) : string option KB.t =
+  let get_patch_code (obj : t) : Sexp.t list option KB.t =
     KB.collect patch_code obj
 
-  let get_patch_code_exn (obj : t) : string KB.t =
+  let get_patch_code_exn (obj : t) : Sexp.t list KB.t =
     get_patch_code obj >>= fun result ->
     match result with
     | None -> Errors.fail Errors.Missing_patch_code
@@ -208,6 +214,7 @@ module Patch_set = Set.Make (Patch)
 
 (* Properties pertaining to the patched executable *)
 module Patched_exe = struct
+
   let patch_domain : Patch_set.t KB.domain =
     KB.Domain.flat ~empty:Patch_set.empty ~equal:Patch_set.equal "patches"
 
@@ -258,7 +265,7 @@ end
 module Verifier = struct
 
   let property : (cls, Sexp.t option) KB.slot =
-    KB.Class.property ~package cls "property" property_domain
+    KB.Class.property ~package cls "property" sexp_domain
 
   let func : (cls, string option) KB.slot =
     KB.Class.property ~package cls "func" string_domain

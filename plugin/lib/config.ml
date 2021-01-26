@@ -27,11 +27,21 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
   | _ -> Err.fail Errors.Missing_patch_name
 
 (* Extract the patch name and check it is non-empty string. *)
-let validate_patch_code (obj : Json.t) : (string, error) Stdlib.result =
+let validate_patch_code (nm : string) (obj : Json.t)
+    : (Sexp.t list, error) Stdlib.result =
   match Json.Util.member "patch-code" obj with
   | `String s ->
+    begin
      if String.length s = 0 then Err.fail Errors.Missing_patch_code
-     else Err.return s
+     else 
+       begin
+         try Err.return (Sexp.scan_sexps (Lexing.from_string s))
+         with _ -> 
+           let msg =
+             "Code for patch '" ^ nm ^ "' is not a valid S-expression" in
+           Err.fail (Errors.Invalid_patch_code msg)
+       end
+    end
   | _ -> Err.fail Errors.Missing_patch_code
 
 (* Extract the patch point field and parse the hex string into a bitvector, or
@@ -58,7 +68,7 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
 let validate_patch (obj : Json.t) 
     : (Vibes_config.patch, error) Stdlib.result =
   validate_patch_name obj >>= fun patch_name ->
-  validate_patch_code obj >>= fun patch_code ->
+  validate_patch_code patch_name obj >>= fun patch_code ->
   validate_patch_point obj >>= fun patch_point ->
   validate_patch_size obj >>= fun patch_size ->
   let p = Vibes_config.create_patch

@@ -14,6 +14,7 @@ type t =
   | Config_not_parsed of string
   | Invalid_hex of string
   | Invalid_property of string
+  | Invalid_patch_code of string
   | Invalid_max_tries
 
 val pp : Format.formatter -> t -> unit

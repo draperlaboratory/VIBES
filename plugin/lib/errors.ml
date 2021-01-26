@@ -12,6 +12,7 @@ type t =
   | Config_not_parsed of string
   | Invalid_hex of string
   | Invalid_property of string
+  | Invalid_patch_code of string
   | Invalid_max_tries
 
 let pp (ppf : Format.formatter) t : unit =
@@ -39,6 +40,7 @@ let pp (ppf : Format.formatter) t : unit =
         "error finding or parsing config JSON file: " ^ s
     | Invalid_hex desc -> desc
     | Invalid_property desc -> desc
+    | Invalid_patch_code desc -> desc
     | Invalid_max_tries ->
         "optional config json field \"max-tries\" must be an integer"
   in

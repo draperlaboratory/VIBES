@@ -12,7 +12,7 @@ type t
 val patch_name : patch -> string
 
 (* [patch_code p] returns the patch code for the patch [p]. *)
-val patch_code : patch -> string
+val patch_code : patch -> Sexp.t list
 
 (* [patch_point p] returns the address to start patching for the patch [p]. *)
 val patch_point : patch -> Bitvec.t
@@ -49,7 +49,7 @@ val pp : Format.formatter -> t -> unit
    - [~patch_code] is the code of the patch
    - [~patch_point] is the addres in the original exe to start patching at
    - [~patch_size] is the number of bytes to replace in the original exe *)
-val create_patch : patch_name:string -> patch_code:string ->
+val create_patch : patch_name:string -> patch_code:Sexp.t list ->
   patch_point:Bitvec.t -> patch_size:int -> patch
 
 (* [create ~exe ~config_filepath ~patched_exe_filepath]
