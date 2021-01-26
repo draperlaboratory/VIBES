@@ -1,6 +1,7 @@
 (* Errors for the plugin. 
 
-   Mostly these are configuration errors. *)
+   Mostly these are errors that arise when parsing the CLI arguments and
+   configuration file provided by the user. *)
 
 type t =
   | Missing_exe

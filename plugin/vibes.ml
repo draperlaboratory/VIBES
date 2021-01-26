@@ -93,10 +93,10 @@ module Cli = struct
 
     (* Parse the command line arguments. *)
     let result =
-      Config.create ~exe ~config_filepath ~patched_exe_filepath
+      Vibes_plugin_parameters.create ~exe ~config_filepath ~patched_exe_filepath
     in
     match result with
-    | Error e -> Error (Fail (Format.asprintf "%a" Errors.pp e))
+    | Error e -> Error (Fail (Format.asprintf "%a" Vibes_plugin_errors.pp e))
     | Ok config ->
       begin
 
