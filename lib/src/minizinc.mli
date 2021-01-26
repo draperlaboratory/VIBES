@@ -9,7 +9,7 @@ module KB = Knowledge
    the solution.
 *)
 
-val run_minizinc : Vibes_ir.t -> Vibes_ir.t KB.t
+val run_minizinc : Ir.t -> Ir.t KB.t
 
 
 (**/**)
@@ -54,14 +54,14 @@ type serialization_info = {
   operands : Var.t list;
 }
 
-val serialize_mzn_params : Vibes_ir.t -> mzn_params_serial * serialization_info
+val serialize_mzn_params : Ir.t -> mzn_params_serial * serialization_info
 
 type sol = {
   reg : ARM.gpr_reg Var.Map.t;
-  insn : Vibes_ir.insn Tid.Map.t;
+  insn : Ir.insn Tid.Map.t;
   temp : Var.t Var.Map.t;
   active : bool Tid.Map.t;
   issue : int Tid.Map.t;
 }
 
-val apply_sol : Vibes_ir.t -> sol -> Vibes_ir.t
+val apply_sol : Ir.t -> sol -> Ir.t

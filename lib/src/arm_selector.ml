@@ -2,17 +2,15 @@ open !Core_kernel
 open Bap.Std
 open Bap_core_theory
 
-module IR = Vibes_ir
-
 type arm_eff = {
-  current_data : IR.operation list;
-  current_ctrl : IR.operation list;
-  other_blks : IR.t}
+  current_data : Ir.operation list;
+  current_ctrl : Ir.operation list;
+  other_blks : Ir.t}
 [@@deriving compare, equal, sexp]
 
-let empty_eff = {current_data = []; current_ctrl = []; other_blks = IR.empty}
+let empty_eff = {current_data = []; current_ctrl = []; other_blks = Ir.empty}
 
-type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
+type arm_pure = {op_val : Ir.operand; op_eff : arm_eff}
 [@@deriving compare, equal, sexp]
 
 (* We use this domain both for ['a pure] and ['s bitv] *)
@@ -32,7 +30,7 @@ let (@.) s1 s2 =
   {
     current_data = data1 @ data2;
     current_ctrl = ctrl1 @ ctrl2;
-    other_blks = IR.union blks1 blks2
+    other_blks = Ir.union blks1 blks2
   }
 
 let arm_eff_domain =
@@ -113,11 +111,11 @@ module ARM_ops = struct
 
   let create_temp ty =
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
-    IR.simple_var
+    Ir.simple_var
 
   (* let create_temp' reg =
    *   let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
-   *   IR.given_var v reg *)
+   *   Ir.given_var v reg *)
 
   (* defaults to data instructions, since they are way more common *)
   let instr i sem =
@@ -134,9 +132,9 @@ module ARM_ops = struct
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     let mov =
       match arg1, arg2_var with
-      | IR.Var _, IR.Var _ ->
-        IR.simple_op `MOVr arg1 [arg2_var]
-      | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
+      | Ir.Var _, Ir.Var _ ->
+        Ir.simple_op `MOVr arg1 [arg2_var]
+      | Ir.Var _, Ir.Const _ -> Ir.simple_op `MOVi arg1 [arg2_var]
       | _ -> failwith "arm_mov: unexpected arguments!"
     in
     instr mov arg2_sem
@@ -144,22 +142,22 @@ module ARM_ops = struct
   let ( := ) x y = arm_mov x y
 
   let b_instr addr =
-    let i = IR.simple_op `Bcc (Cond `AL) [IR.Label addr] in
+    let i = Ir.simple_op `Bcc (Cond `AL) [Ir.Label addr] in
     control i empty_eff
 
   let jmp arg =
     let {op_val = arg_tgt; op_eff = arg_sem} = arg in
     let pc = Var.create "PC" (Imm 32) in
-    let pc = IR.Var (IR.simple_var pc) in
+    let pc = Ir.Var (Ir.simple_var pc) in
     let jmp_data, jmp_ctrl =
       match arg_tgt with
       | Var _ ->
-        [], IR.simple_op `MOVr pc [arg_tgt]
+        [], Ir.simple_op `MOVr pc [arg_tgt]
       | Const w ->
-        [], IR.simple_op `Bcc (Cond `AL) [Offset w]
+        [], Ir.simple_op `Bcc (Cond `AL) [Offset w]
       | _ ->
         let err = Format.asprintf "%s"
-            (IR.sexp_of_operand arg_tgt |>
+            (Ir.sexp_of_operand arg_tgt |>
              Sexp.to_string)
         in
         failwith @@ "jmp: unexpected operand " ^ err
@@ -171,25 +169,25 @@ module ARM_ops = struct
     }
 
 
-  let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
+  let var v = {op_val = Ir.Var (Ir.simple_var v); op_eff = empty_eff}
 
-  let const c = {op_val = IR.Const c; op_eff = empty_eff}
+  let const c = {op_val = Ir.Const c; op_eff = empty_eff}
 
   let uop o ty arg =
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
-    let op = IR.simple_op o (IR.Var res) [arg_val] in
+    let op = Ir.simple_op o (Ir.Var res) [arg_val] in
     let sem = {arg_sem with current_data = op::arg_sem.current_data} in
-    {op_val = IR.Var res; op_eff = sem}
+    {op_val = Ir.Var res; op_eff = sem}
 
   let binop o ty arg1 arg2 =
     let res = create_temp ty in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-    let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
+    let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
     let sem = {sem with current_data = op::sem.current_data} in
-    {op_val = IR.Var res; op_eff = sem}
+    {op_val = Ir.Var res; op_eff = sem}
 
   let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
 
@@ -200,7 +198,7 @@ module ARM_ops = struct
   let shr signed arg1 arg2 =
     let b =
       match signed.op_val with
-      | IR.Const w -> (Word.to_int_exn w) <> 0
+      | Ir.Const w -> (Word.to_int_exn w) <> 0
       (* FIXME: Not sure what to do here; generally shifts are done by
          constant amounts, and at any rate it requires a bit of work
          to implement in ARM. Most likely the right thing to do is
@@ -221,7 +219,7 @@ module ARM_ops = struct
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
-    let op = IR.simple_op `STRrs loc_val [value_val] in
+    let op = Ir.simple_op `STRrs loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
     let sem = loc_sem @. value_sem @. mem_sem in
     let sem = {sem with current_data = op::sem.current_data} in
@@ -251,18 +249,18 @@ module ARM_ops = struct
   let beq cond branch1 branch2 =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
-    let cmp = IR.simple_op `CMPrsi Void
+    let cmp = Ir.simple_op `CMPrsi Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
     let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
     let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
     let tid1 = Tid.for_name "true_branch" in
     let tid2 = Tid.for_name "false_branch" in
-    let blk1 = IR.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
-    let blk2 = IR.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
-    let beq = IR.simple_op `Bcc (Cond `NE) [Label tid2] in
+    let blk1 = Ir.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
+    let blk2 = Ir.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
+    let beq = Ir.simple_op `Bcc (Cond `NE) [Label tid2] in
     let blks = cond_eff.other_blks in
-    let blks = IR.union blks1 @@ IR.union blks2 blks in
-    let blks = IR.add blk1 @@ IR.add blk2 blks in
+    let blks = Ir.union blks1 @@ Ir.union blks2 blks in
+    let blks = Ir.add blk1 @@ Ir.add blk2 blks in
     {
       current_data = cmp :: cond_eff.current_data;
       current_ctrl = [beq];
@@ -281,17 +279,17 @@ struct
   let set v arg =
     let arg_v =
       let r_var = v |> Var.reify in
-      IR.simple_var r_var
+      Ir.simple_var r_var
     in
     KB.(
       arg >>= fun arg ->
       match Value.get arm_pure arg with
-      | Some arg -> eff ((IR.Var arg_v) := arg)
+      | Some arg -> eff ((Ir.Var arg_v) := arg)
       | None ->
         begin
           match Value.get arm_mem arg with
           (* No need to explicitely assign here, we don't use the
-             "mem" variables when generating IR. *)
+             "mem" variables when generating Ir. *)
           | Some arg -> eff arg.op_eff
           | None -> assert false
         end)
@@ -313,9 +311,9 @@ struct
     (* Currently we generate ctrl in the correct order, since
        there are rougly only 2 or 3 instructions. *)
     let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
-    let new_blk = IR.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
+    let new_blk = Ir.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
     let all_blocks =
-      IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
+      Ir.add new_blk @@ Ir.union data.other_blks ctrl.other_blks in
     eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
@@ -429,7 +427,7 @@ struct
 
 end
 
-let add_in_vars_blk (b : IR.blk) : IR.blk =
+let add_in_vars_blk (b : Ir.blk) : Ir.blk =
   (* We only grab data here, since control effects don't influence
      dependencies. *)
   let ops = b.data in
@@ -438,7 +436,7 @@ let add_in_vars_blk (b : IR.blk) : IR.blk =
     List.fold l ~init:Var.Set.empty
       ~f:(fun set o ->
           match o with
-          | IR.Var v -> add_list set v.temps
+          | Ir.Var v -> add_list set v.temps
           | _ -> set)
   in
   (* Simultaneously collect defined and undefined vars *)
@@ -451,26 +449,26 @@ let add_in_vars_blk (b : IR.blk) : IR.blk =
           Var.Set.union defined def, Var.Set.union undefined undef)
   in
   let ins = Var.Set.fold undefined ~init:[]
-      ~f:(fun ins v -> IR.Var (IR.simple_var v)::ins)
+      ~f:(fun ins v -> Ir.Var (Ir.simple_var v)::ins)
   in
   (* We add dummy operation with no instructions and as lhs all the
      [ins] variables *)
   let ins = {
-    IR.id = Tid.create ();
-    IR.lhs = ins;
-    IR.insns = [];
-    IR.optional = false;
-    IR.operands = [];
+    Ir.id = Tid.create ();
+    Ir.lhs = ins;
+    Ir.insns = [];
+    Ir.optional = false;
+    Ir.operands = [];
   } in
   {b with ins = ins}
 
 (* Collect all the variables appearing on rhs that are not defined by
    an rhs before-hand. *)
-let add_in_vars (t : IR.t) : IR.t =
+let add_in_vars (t : Ir.t) : Ir.t =
   { t with blks = List.map ~f:add_in_vars_blk t.blks }
 
 (* We assume that a block is always created *)
-let ir (t : arm_eff) : IR.t =
+let ir (t : arm_eff) : Ir.t =
   assert Core_kernel.(List.is_empty t.current_data
                       && List.is_empty t.current_ctrl);
   let blks = t.other_blks in
@@ -500,7 +498,7 @@ module Pretty = struct
     | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
     | `CMPrsi  -> Ok "cmp"
     | i       ->
-      let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
+      let to_string i = Ir.sexp_of_insn i |> Sexp.to_string in
       let msg =
         Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
       in
@@ -511,7 +509,7 @@ module Pretty = struct
   let tid_to_string (t : tid) : string =
     Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
-  let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) result =
+  let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand) : (string, Errors.t) result =
     match o with
     | Var v ->
       let error =
@@ -531,7 +529,7 @@ module Pretty = struct
       (* A little calisthenics to get this to look nice *)
       Result.return @@ Format.asprintf "#%a" Word.pp_dec w
     | Label l -> Result.return @@ tid_to_string l
-    | Cond c -> Result.return @@ IR.cond_to_string c
+    | Cond c -> Result.return @@ Ir.cond_to_string c
     | Void -> Result.return ""
     | Offset c ->
       (* Special printing of offsets to jump back from patched locations *)
@@ -546,7 +544,7 @@ module Pretty = struct
     else
       List.init (List.length args) ~f:(fun _ -> false)
 
-  let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
+  let arm_operands_pretty (op : string) (hd : Ir.operand) (l : Ir.operand list)
     : (string, Errors.t) result =
     (* Don't print the head of the operand if it's void. *)
     let l =
@@ -567,7 +565,7 @@ module Pretty = struct
     let all_str =
       begin
         match l with
-        | (_, IR.Cond _) :: _ ->
+        | (_, Ir.Cond _) :: _ ->
           Result.map all_str ~f:(fun all_str ->
               let hd = List.hd_exn all_str in
               let tl = List.tl_exn @@ List.tl_exn all_str in
@@ -577,7 +575,7 @@ module Pretty = struct
     in
     Result.map ~f:String.concat all_str
 
-  let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
+  let arm_op_pretty (t : Ir.operation) : (string, Errors.t) result =
     let op = List.hd_exn t.insns in
     Result.(insn_pretty op >>= fun op ->
             arm_operands_pretty op
@@ -585,13 +583,13 @@ module Pretty = struct
               t.operands >>= (fun operands ->
                   return (Format.asprintf "%s %s" op operands)))
 
-  let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
+  let arm_blk_pretty (t : Ir.blk) : (string list, Errors.t) result =
     let all_ops = t.data @ t.ctrl in
     let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
     let lab = Format.asprintf "%s:" (tid_to_string t.id) in
     Result.map insns ~f:(fun insns -> lab::insns)
 
-  let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
+  let arm_ir_pretty (t : Ir.t) : (string list, Errors.t) result =
     List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
 
 end

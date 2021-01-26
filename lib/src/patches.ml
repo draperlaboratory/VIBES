@@ -132,7 +132,7 @@ module Patch1 = struct
 
 end
 
-module ARM = Arm_gen.ARM_Core
+module ARM = Arm_selector.ARM_Core
 
 
 (* The names of the patches. *)

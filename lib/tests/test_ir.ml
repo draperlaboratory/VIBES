@@ -7,7 +7,7 @@ module KB = Knowledge
 module H = Helpers
 
 
-open Vibes_ir
+open Ir
 
 
 
@@ -56,7 +56,7 @@ let vir1,
   let op1 = (t2 := `MOVi) [t1] in
   let op2 = (t3 := `MOVi) [t2] in
   let ops = [op1; op2] in
-  let blk1 : Vibes_ir.blk =
+  let blk1 : Ir.blk =
     {
       id = Tid.create ();
       data = ops;
@@ -92,22 +92,22 @@ let vir1,
 let equal_gpr_reg r1 r2 = ARM.compare_gpr_reg r1 r2 = 0
 
 let test_definer1 _  =
-  assert_equal ~cmp:(Var.Map.equal equal_op_var) definer_map1 (Vibes_ir.definer_map vir1)
+  assert_equal ~cmp:(Var.Map.equal equal_op_var) definer_map1 (Ir.definer_map vir1)
 let test_user1 _  =
-  assert_equal ~cmp:(Var.Map.equal (List.equal equal_op_var)) user_map1 (Vibes_ir.users_map vir1)
+  assert_equal ~cmp:(Var.Map.equal (List.equal equal_op_var)) user_map1 (Ir.users_map vir1)
 let test_temps1 _  =
-  assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list temps1) (Vibes_ir.all_temps vir1)
+  assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list temps1) (Ir.all_temps vir1)
 let test_operands1 _  =
-  assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list operands1) (Vibes_ir.all_operands vir1)
+  assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list operands1) (Ir.all_operands vir1)
 let test_op_insns1 _  =
-  assert_equal ~cmp:(Tid.Map.equal (List.equal Vibes_ir.equal_insn)) op_insns1 (Vibes_ir.operation_insns vir1)
+  assert_equal ~cmp:(Tid.Map.equal (List.equal Ir.equal_insn)) op_insns1 (Ir.operation_insns vir1)
 let test_dummy_reg_alloc _ =
-  let ir_alloc = Vibes_ir.dummy_reg_alloc vir1 in
+  let ir_alloc = Ir.dummy_reg_alloc vir1 in
   let all_operations = ir_alloc.blks |> List.concat_map
                          ~f:(fun b -> b.ins :: b.outs :: b.data @ b.ctrl)
   in
   let all_operands = all_operations |> List.concat_map ~f:(fun o -> o.lhs @ o.operands) in
-  let all_op_vars = List.map ~f:Vibes_ir.op_var_exn all_operands in
+  let all_op_vars = List.map ~f:Ir.op_var_exn all_operands in
   let all_regs = List.map all_op_vars ~f:(fun o -> o.pre_assign) |> List.filter_opt in
   assert_equal ~cmp:(List.equal equal_gpr_reg) [`R0; `R0; `R0; `R0; `R0; `R0]
     ~printer:(List.to_string ~f:(fun r -> r|> ARM.sexp_of_gpr_reg |> Sexp.to_string))
