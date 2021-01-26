@@ -1,7 +1,11 @@
 {
-  "property" : "(true)",
+  "func": "main",
+  "property" : "(assert true)",
   "patches" : [
     {"patch-name" : "ret-3",
+     "patch-code" : "(var-decls R0)
+                     (set R0 3)
+                     fallthrough",
      "patch-point" : "0x4ec",
      "patch-size" : 8}
   ]

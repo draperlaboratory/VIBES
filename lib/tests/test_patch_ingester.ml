@@ -1,4 +1,3 @@
-open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
@@ -27,17 +26,23 @@ let test_ingest (_ : test_ctxt) : unit =
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
-    | (p :: []) -> KB.return p
+    | (p :: []) ->
+      Data.Patch.get_bir p >>= fun bir ->
+      Patches.Ret_3.prog 32 >>= fun expected ->
+      let open Bap.Std in
+      let expected = KB.Value.get Bil.slot expected in
+      let bil = KB.Value.get Bil.slot bir in
+      let err =
+        Format.asprintf "Expected %a but got %a"
+          Bil.pp expected
+          Bil.pp bil
+      in
+      assert_bool err (Bil.compare expected bil = 0);
+      KB.return p
     | _ -> assert_failure "Multiple patches returned when one expected."
 
   in
-  let result = KB.run Data.Patch.patch computation KB.empty in
-  (* The ingester should stash the patch (BIL) in the KB. *)
-  let expected = Patches.Ret_3.bil 32 in
-  H.assert_property
-    ~p_res:H.print_bil ~p_expected:H.print_bil
-    ~cmp:(fun a b -> Bil.compare a b = 0)
-    Data.Patch.bil expected result
+  ignore @@ KB.run Data.Patch.patch computation KB.empty
 
 (* Test that [Patch_ingester.ingest] errors with no patch name in the KB. *)
 let test_ingest_with_no_patch (_ : test_ctxt) : unit =

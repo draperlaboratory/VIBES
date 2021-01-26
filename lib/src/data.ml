@@ -4,6 +4,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 open Knowledge.Syntax
 
 module KB = Knowledge
@@ -24,9 +25,14 @@ let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
     "bitvec-domain"
 
 (* Optional program domain *)
+(* FIXME: this is confusing, since there is a program class, which
+   also has an associated domain *)
 let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
     ~equal:Program.equal
     "prog-domain"
+
+(* The domain of BIR programs *)
+let bir_domain : Insn.t KB.domain = Theory.Semantics.domain
 
 (* Optional s-expression domain (for correctness properties) *)
 let property_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
@@ -61,14 +67,17 @@ module Patch = struct
   let patch_name : (patch_cls, string option) KB.slot =
     KB.Class.property ~package patch "patch-name" string_domain
 
+  let patch_code : (patch_cls, string option) KB.slot =
+    KB.Class.property ~package patch "patch-code" string_domain
+
+  let bir : (patch_cls, Insn.t) KB.slot =
+    KB.Class.property ~package patch "patch-bir" bir_domain
+
   let patch_point : (patch_cls, Bitvec.t option) KB.slot =
     KB.Class.property ~package patch "patch-point" bitvec_domain
 
   let patch_size : (patch_cls, int option) KB.slot =
     KB.Class.property ~package patch "patch-size" int_domain
-
-  let bil : (patch_cls, Bil.t) KB.slot =
-    KB.Class.property ~package patch "patch-bil" Bil.domain
 
   let assembly : (patch_cls, string list option) KB.slot =
     KB.Class.property ~package patch "patch-assembly" assembly_domain
@@ -83,6 +92,18 @@ module Patch = struct
     get_patch_name obj >>= fun result ->
     match result with
     | None -> Errors.fail Errors.Missing_patch_name
+    | Some value -> KB.return value
+
+  let set_patch_code (obj : t) (data : string option) : unit KB.t =
+    KB.provide patch_code obj data
+
+  let get_patch_code (obj : t) : string option KB.t =
+    KB.collect patch_code obj
+
+  let get_patch_code_exn (obj : t) : string KB.t =
+    get_patch_code obj >>= fun result ->
+    match result with
+    | None -> Errors.fail Errors.Missing_patch_code
     | Some value -> KB.return value
 
   let set_patch_point (obj : t) (data : Bitvec.t option) : unit KB.t =
@@ -109,11 +130,11 @@ module Patch = struct
     | None -> Errors.fail Errors.Missing_patch_size
     | Some value -> KB.return value
 
-  let set_bil (obj : t) (data : Bil.t) : unit KB.t =
-    KB.provide bil obj data
+  let set_bir (obj : t) (data : Insn.t) : unit KB.t =
+    KB.provide bir obj data
 
-  let get_bil (obj : t) : Bil.t KB.t =
-    KB.collect bil obj
+  let get_bir (obj : t) : Insn.t KB.t =
+    KB.collect bir obj
 
   let set_assembly (obj : t) (data : string list option) : unit KB.t =
     KB.provide assembly obj data
@@ -239,6 +260,9 @@ module Verifier = struct
   let property : (cls, Sexp.t option) KB.slot =
     KB.Class.property ~package cls "property" property_domain
 
+  let func : (cls, string option) KB.slot =
+    KB.Class.property ~package cls "func" string_domain
+
   let set_property (obj : t) (data : Sexp.t option) : unit KB.t =
     KB.provide property obj data
 
@@ -251,6 +275,18 @@ module Verifier = struct
     | None -> Errors.fail Errors.Missing_property
     | Some value -> KB.return value
 
+  let set_func (obj : t) (data : string option) : unit KB.t =
+    KB.provide func obj data
+
+  let get_func (obj : t) : string option KB.t =
+    KB.collect func obj
+
+  let get_func_exn (obj : t) : string KB.t =
+    get_func obj >>= fun result ->
+    match result with
+    | None -> Errors.fail Errors.Missing_func
+    | Some value -> KB.return value
+
 end
 
 (* Create an object of this class. *)
@@ -258,6 +294,7 @@ let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
     Patch.set_patch_name obj (Some p.patch_name) >>= fun () ->
+    Patch.set_patch_code obj (Some p.patch_code) >>= fun () ->
     Patch.set_patch_point obj (Some p.patch_point) >>= fun () ->
     Patch.set_patch_size obj (Some p.patch_size) >>= fun () ->
     KB.return obj
@@ -267,28 +304,32 @@ let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
 let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
   let patch_list = Config.patches config in
+  let func = Config.func config in
   let property = Config.property config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   create_patches patch_list >>= fun patches ->
   KB.Object.create cls >>= fun obj ->
-  Original_exe.set_filepath obj (Some exe) >>= fun _ ->
-  Patched_exe.set_filepath obj patched_exe_filepath >>= fun _ ->
-  Patched_exe.set_patches obj patches >>= fun _ ->
-  Verifier.set_property obj (Some property) >>= fun _ ->
+  Original_exe.set_filepath obj (Some exe) >>= fun () ->
+  Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
+  Patched_exe.set_patches obj patches >>= fun () ->
+  Verifier.set_func obj (Some func) >>= fun () ->
+  Verifier.set_property obj (Some property) >>= fun () ->
   KB.return obj
 
 (* Create a fresh version of an object. *)
 let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
   let fresh_patch (patch : Patch.t) : Patch.t KB.t =
     Patch.get_patch_name patch >>= fun name ->
+    Patch.get_patch_code patch >>= fun code ->
     Patch.get_patch_point patch >>= fun point ->
     Patch.get_patch_size patch >>= fun size ->
-    Patch.get_bil patch >>= fun bil ->
+    Patch.get_bir patch >>= fun bir ->
     KB.Object.create Patch.patch >>= fun patch' ->
     Patch.set_patch_name patch' name >>= fun () ->
     Patch.set_patch_point patch' point >>= fun () ->
+    Patch.set_patch_code patch' code >>= fun () ->
     Patch.set_patch_size patch' size >>= fun () ->
-    Patch.set_bil patch' bil >>= fun () ->
+    Patch.set_bir patch' bir >>= fun () ->
     KB.return patch'
   in
   KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=
@@ -297,15 +338,17 @@ let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
 let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   KB.Object.create cls >>= fun obj' ->
   Original_exe.get_filepath obj >>= fun original_exe ->
-  Original_exe.set_filepath obj' original_exe >>= fun _ ->
+  Original_exe.set_filepath obj' original_exe >>= fun () ->
   Original_exe.get_prog obj >>= fun original_exe_prog ->
-  Original_exe.set_prog obj' original_exe_prog >>= fun _ ->
+  Original_exe.set_prog obj' original_exe_prog >>= fun () ->
   Original_exe.get_addr_size obj >>= fun addr_size ->
-  Original_exe.set_addr_size obj' addr_size >>= fun _ ->
+  Original_exe.set_addr_size obj' addr_size >>= fun () ->
   Patched_exe.get_patches obj >>= fun patches ->
   fresh_patches patches >>= fun patches' ->
   Patched_exe.set_patches obj patches' >>= fun () ->
   Patched_exe.get_filepath obj >>= fun patched_exe ->
-  Patched_exe.set_filepath obj patched_exe >>= fun _ ->
-  Verifier.set_property obj' (Some property) >>= fun _ ->
+  Patched_exe.set_filepath obj patched_exe >>= fun () ->
+  Verifier.get_func obj >>= fun func ->
+  Verifier.set_func obj func >>= fun () ->
+  Verifier.set_property obj' (Some property) >>= fun () ->
   KB.return obj'

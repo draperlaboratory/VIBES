@@ -15,5 +15,5 @@ module KB = Knowledge
    a patch point (an address [Bitvec.t] in the original executable),
    and a list of assembly instructions (a [string list]), and returns
    a filepath (a [string]) to the patched executable. *)
-val patch : ?patcher:(string -> string list -> Bitvec.t -> string KB.t) ->
+val patch : ?patcher:(string -> string list -> Bitvec.t -> int -> string KB.t) ->
   Data.t -> unit KB.t

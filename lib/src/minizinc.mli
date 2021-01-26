@@ -12,6 +12,7 @@ module KB = Knowledge
 val run_minizinc : Vibes_ir.t -> Vibes_ir.t KB.t
 
 
+(**/**)
 (* Exposed for unit testing. *)
 
 type 'a mznset = {set : 'a list}  [@@deriving yojson]
@@ -44,7 +45,7 @@ type mzn_params_serial = {
   congruent : (operand, operand mznset) mznmap;
   operation_insns : (operation, insn mznset) mznmap;
   latency : (insn , int) mznmap
-}  [@@deriving yojson]
+} [@@deriving yojson]
 
 type serialization_info = {
   temps : Var.t list;

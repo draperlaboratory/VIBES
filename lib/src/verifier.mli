@@ -11,20 +11,37 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_wp
+
 module KB = Knowledge
+
+(* A [result] record that a [verifier] function can return. *)
+type result = {
+  status : Z3.Solver.status;
+  solver : Z3.Solver.solver;
+  precond : Constraint.t;
+  orig_env : Environment.t;
+  patch_env : Environment.t;
+  orig_sub : Sub.t;
+  patch_sub : Sub.t;
+}
 
 (* A [verifier] function takes two projects, the name of a function,
    and a correctness property, it verifies their correctness, and
-   returns the resulting status. *)
-type verifier = Program.t -> Program.t -> string -> Sexp.t -> Z3.Solver.status
+   returns the [result]. *)
+type verifier = sub term -> sub term -> Sexp.t -> result
+
+(* A [printer] function takes a [result] and prints it. *)
+type printer = result -> unit
 
 (* Indicates whether the patching is done, or should be attempted again. *)
 type next_step = Done | Again of Sexp.t
 
-(* [verify obj ~loader ~verifier] uses the specified [~loader] and [~verifier]
-   to load the exes and verify whether the patched executable associated with
-   [obj] is correct. If so, this function returns [Done]. If not, it returns
-   [Again property], to indicate that the VIBES pipeline/CEGIS loop should
-   try again with the new correctness [property]. *)
+(* [verify obj ~loader ~verifier ~printer] uses the specified [~loader] and
+   [~verifier] to load the exes and verify whether the patched executable
+   associated with [obj] is correct. If so, this function returns [Done]. 
+   If not, it returns [Again property], to indicate that the VIBES 
+   pipeline/CEGIS loop should try again with the new correctness [property].
+   It uses the [~printer] to print the output of the [~verifier]. *)
 val verify : ?loader:(Exe_ingester.loader) -> ?verifier:(verifier) ->
-  Data.t -> next_step KB.t
+  ?printer:(printer) -> Data.t -> next_step KB.t

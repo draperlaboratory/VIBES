@@ -16,7 +16,7 @@ let empty_proj (filename : string) : (Project.t, Error.t) result =
   Project.create input
 
 (* Same as [empty_proj], but fail if loading errors. *)
-let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
+let proj_exn (proj : (Project.t, Error.t) result) : Project.t =
   match proj with
   | Ok p -> p
   | Error e ->
@@ -24,6 +24,15 @@ let proj_exn ( proj : (Project.t, Error.t) result) : Project.t =
       let msg = Printf.sprintf "Load error: %s" (Error.to_string_hum e) in
       failwith msg
     end
+
+(* Create a dummy project with an empty main subroutine *)
+let dummy_proj ?name:(name = "main") filename : (Project.t, Error.t) result =
+  let empty_proj = empty_proj filename in
+  let dummy_main = Sub.create ~name:name () in
+  let dummy_prog = Program.Builder.create () in
+  Program.Builder.add_sub dummy_prog dummy_main;
+  let dummy_prog = Program.Builder.result dummy_prog in
+  Result.map empty_proj ~f:(fun p -> Project.with_program p dummy_prog)
 
 (* Get an empty program that can be used in tests. *)
 let prog_exn (proj : (Project.t, Error.t) result) : Program.t =
@@ -37,10 +46,11 @@ let patch_point = Bitvec.of_string patch_point_str
 let patch_size = 16
 let property_str = "true"
 let property = Sexp.Atom property_str
-let assembly = ["00000001:"; "mov R0, #3"; "00000002:"]
+let func = "main"
+let assembly = ["patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
-let proj = empty_proj original_exe
+let proj = dummy_proj original_exe
 let prog = prog_exn proj
 
 (* A BAP loader for testing. No disk I/O. Just wraps [proj] *)
@@ -53,15 +63,13 @@ let loader (_ : string) : Project.t KB.t =
       Errors.fail (Errors.Failed_to_load_proj msg)
     end
 
-
 (* A helper to create a [Data] object that can be used in tests. *)
 let obj () = KB.Object.create Data.cls
-
 
 (* After a [KB.run] computation, extract a given property from the returned
    object for further processing.  Fail if the KB computation failed. *)
 let extract_property (property : ('k, 'a) KB.slot)
-      (result : (('k, 's) KB.cls KB.value * KB.state, KB.conflict) result) 
+      (result : (('k, 's) KB.cls KB.value * KB.state, KB.conflict) result)
     : 'a =
   match result with
   | Ok (value, _) -> KB.Value.get property value
@@ -92,7 +100,6 @@ let assert_property ~cmp ?p_res ?p_expected
       Format.sprintf "Property did not have the expected value"
   in
   assert_bool msg (cmp expected actual)
-
 
 (* After a [kb_run] computation, assert that the comutation diverged with
    a particular error. [property] is the property you want to check,
@@ -131,7 +138,9 @@ let assert_error ?printer property expected result : unit =
           "but got this error"
           (Format.asprintf "%a" KB.Conflict.pp problem)
       in
-      assert_bool msg String.((KB.Conflict.to_string problem) = (KB.Conflict.to_string expected))
+      assert_bool msg String.(
+        (KB.Conflict.to_string problem) = (KB.Conflict.to_string expected)
+      )
     end
 
 (* A printer for optional string values, to be used as a printer
@@ -158,21 +167,55 @@ let print_string_list_opt items =
   | None -> "None"
 
 (* Pretty print programs. *)
-let print_prog prog = Format.asprintf "%a" Program.pp prog
+let print_prog prog = Format.asprintf "%a" Bap.Std.Program.pp prog
 let print_prog_opt opt =
   match opt with
   | Some prog -> print_prog prog
   | None -> "None"
 
-(* Pretty print BIL. *)
-let print_bil bil = Format.asprintf "%a" Bil.pp bil
+(* Pretty print BIR. *)
+let print_bir (bir : Insn.t) =
+  Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
-  : Z3.Solver.status =
-  Z3.Solver.UNSATISFIABLE
+let verify_unsat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+  : Verifier.result =
+  (* Make dummy field for Verifier.result *)
+  let status = Z3.Solver.UNSATISFIABLE in
+  let ctx = Bap_wp.Environment.mk_ctx () in
+  let var_gen = Bap_wp.Environment.mk_var_gen () in
+  let solver = Z3.Solver.mk_simple_solver ctx in
+  let precond = Bap_wp.Constraint.mk_clause [] [] in
+  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  Verifier.{
+    status = status;
+    solver = solver;
+    precond = precond;
+    orig_env = env;
+    patch_env = env;
+    orig_sub = orig;
+    patch_sub = patch;
+  }
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (_ : Program.t) (_ : Program.t) (_ : string) (_ : Sexp.t)
-  : Z3.Solver.status =
-  Z3.Solver.SATISFIABLE
+let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+  : Verifier.result =
+  (* Make dummy field for Verifier.result *)
+  let status = Z3.Solver.SATISFIABLE in
+  let ctx = Bap_wp.Environment.mk_ctx () in
+  let var_gen = Bap_wp.Environment.mk_var_gen () in
+  let solver = Z3.Solver.mk_simple_solver ctx in
+  let precond = Bap_wp.Constraint.mk_clause [] [] in
+  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  Verifier.{
+    status = status;
+    solver = solver;
+    precond = precond;
+    orig_env = env;
+    patch_env = env;
+    orig_sub = orig;
+    patch_sub = patch;
+  }
+
+(* A verifier printer function for testing. It does nothing. *)
+let verifier_printer (_ : Verifier.result) : unit = ()

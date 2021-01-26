@@ -16,9 +16,9 @@ let test_compile (_ : test_ctxt) : unit =
   let computation =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Patches.get_BIL H.patch 32 >>= fun bil ->
+    Patches.get_bir H.patch 32 >>= fun bil ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_bil patch bil >>= fun _ ->
+    Data.Patch.set_bir patch bil >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
@@ -39,12 +39,12 @@ let test_compile (_ : test_ctxt) : unit =
     ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
     Data.Patch.assembly expected patch_value
 
-(* Test that [Compiler.compile] handles no patch (BIL) in the KB. *)
+(* Test that [Compiler.compile] handles no patch (BIR) in the KB. *)
 let test_compile_with_no_patch (_ : test_ctxt) : unit =
 
   (* Run the compiler. *)
   let computation =
-    (* At the start, the KB is empty. No patch (BIL) is stashed in it. *)
+    (* At the start, the KB is empty. No patch (BIR) is stashed in it. *)
     H.obj () >>= fun obj ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
@@ -57,15 +57,15 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     | _ -> assert_failure "Multiple patches returned when one expected."
   in
   let result = KB.run Data.Patch.patch computation KB.empty in
-  (* The complier should produce an empty patch (no instructions, but a
-     label). *)
-  let expected = Some ["00000001:"] in
-  H.assert_property
-    ~cmp:(Option.equal (List.equal String.equal))
-    ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
-    Data.Patch.assembly expected result
+  let expected = Errors.Problem (Errors.Missing_semantics "arm_eff not found in:()") in
+
+  H.assert_error
+    ~printer:H.print_string_list_opt
+    Data.Patch.assembly
+    expected
+    result
 
 let suite = [
   "Test Compiler.compile" >:: test_compile;
-  "Test Compiler.compile: no patch (BIL)" >:: test_compile_with_no_patch;
+  "Test Compiler.compile: no patch (BIR)" >:: test_compile_with_no_patch;
 ]

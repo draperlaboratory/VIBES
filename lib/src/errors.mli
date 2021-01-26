@@ -8,6 +8,7 @@ type t =
   | Failed_to_load_proj of string
   | Not_implemented of string
   | Missing_patch_name
+  | Missing_patch_code
   | Missing_assembly
   | Missing_original_exe_filepath
   | Missing_original_exe_prog
@@ -16,9 +17,11 @@ type t =
   | Missing_tmp_patched_exe_filepath
   | Missing_patch_point
   | Missing_patch_size
+  | Missing_func
   | Missing_property
   | Missing_semantics of string
   | Command_not_found of string
+  | Patch_code_not_parsed of string
   | Exit_code of string
   | Unexpected_exit of string
   | WP_result_unknown of string

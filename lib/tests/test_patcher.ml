@@ -9,7 +9,7 @@ module H = Helpers
 
 
 (* A dummy patcher, that returns a fixed filename. *)
-let patcher _ _ _ = KB.return H.patched_exe
+let patcher _ _ _ _ = KB.return H.patched_exe
 
 (* Test that [Patcher.patch] works as expected. *)
 let test_patch (_ : test_ctxt) : unit =
@@ -22,6 +22,7 @@ let test_patch (_ : test_ctxt) : unit =
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
+    Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Data.Patch.set_assembly patch (Some H.assembly) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
@@ -67,6 +68,7 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
     (* Now run the patcher. *)
@@ -92,6 +94,7 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
+    Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 

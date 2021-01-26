@@ -10,7 +10,9 @@ module Errors : sig
     | Missing_exe
     | Missing_patches
     | Missing_patch_name
+    | Missing_patch_code
     | Missing_patch_point
+    | Missing_func
     | Missing_property
     | Missing_size
     | Config_not_parsed of string
@@ -34,6 +36,9 @@ type patch =
     (* The name of the patch to use. *)
     patch_name : string;
 
+    (* An s-expression version of the patch's core theory code *)
+    patch_code : string;
+
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
 
@@ -47,6 +52,9 @@ val exe : t -> string
 
 (* [patch config] returns the list of patch fragments *)
 val patches : t -> patch list
+
+(* [func config] returns the name of the function to verify. *)
+val func : t -> string
 
 (* [property config] returns the correctness property to use to verify
    whether the patched exe is correct. *)

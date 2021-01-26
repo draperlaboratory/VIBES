@@ -44,14 +44,19 @@ module Patch : sig
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
+  val patch_code : (patch_cls, string option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
-  val bil : (patch_cls, Bil.t) KB.slot
+  val bir : (patch_cls, insn) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
   val get_patch_name : t -> string option KB.t
   val get_patch_name_exn : t -> string KB.t
+
+  val set_patch_code : t -> string option -> unit KB.t
+  val get_patch_code : t -> string option KB.t
+  val get_patch_code_exn : t -> string KB.t
 
   val set_patch_point : t -> Bitvec.t option -> unit KB.t
   val get_patch_point : t -> Bitvec.t option KB.t
@@ -61,8 +66,8 @@ module Patch : sig
   val get_patch_size : t -> int option KB.t
   val get_patch_size_exn : t -> int KB.t
 
-  val set_bil : t -> Bil.t -> unit KB.t
-  val get_bil : t -> Bil.t KB.t
+  val set_bir : t -> insn -> unit KB.t
+  val get_bir : t -> insn KB.t
 
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t
@@ -116,6 +121,9 @@ module Verifier : sig
   val set_property : t -> Sexp.t option -> unit KB.t
   val get_property : t -> Sexp.t option KB.t
   val get_property_exn : t -> Sexp.t KB.t
+  val set_func : t -> string option -> unit KB.t
+  val get_func : t -> string option KB.t
+  val get_func_exn : t -> string KB.t
 end
 
 val create : Config.t -> t KB.t

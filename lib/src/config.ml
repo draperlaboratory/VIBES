@@ -11,7 +11,9 @@ module Errors = struct
     | Missing_exe
     | Missing_patches
     | Missing_patch_name
+    | Missing_patch_code
     | Missing_patch_point
+    | Missing_func
     | Missing_property
     | Missing_size
     | Config_not_parsed of string
@@ -27,9 +29,14 @@ module Errors = struct
       | Missing_patch_name ->
            "each patch in the config json \"patches\" list must have a "
          ^ "\"patch-name\" field containing a non-empty string"
+      | Missing_patch_code ->
+           "each patch in the config json \"patches\" list must have a "
+         ^ "\"patch-code\" field containing a non-empty string"
       | Missing_patch_point ->
            "each patch in the config json \"patches\" list must have a "
          ^ "\"patch-point\" field containing a non-empty string"
+      | Missing_func ->
+         "config json field \"func\" must be a non-empty string"
       | Missing_property ->
          "config json field \"property\" must be a non-empty string"
       | Missing_size ->
@@ -57,6 +64,9 @@ type patch =
     (* The name of the patch to use. *)
     patch_name : string;
 
+    (* An s-expression version of the patch's core theory code *)
+    patch_code : string;
+
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
 
@@ -69,6 +79,7 @@ type patch =
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
   patches : patch list; (* The list of patches to apply. *)
+  func : string; (* The name of the function to check. *)
   property : Sexp.t; (* Correctness property. *)
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
@@ -77,6 +88,7 @@ type t = {
 (* Accessors. *)
 let exe t : string = t.exe
 let patches t : patch list = t.patches
+let func t : string = t.func
 let property t : Sexp.t = t.property
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
@@ -85,6 +97,7 @@ let max_tries t : int option = t.max_tries
 let patch_to_string (p : patch) : string =
   String.concat ~sep:"\n" [
       Printf.sprintf "  {Patch_name: %s" p.patch_name;
+      Printf.sprintf "   Patch_code: %s" p.patch_code;
       Printf.sprintf "   Patch_point: %s" (Bitvec.to_string p.patch_point);
       Printf.sprintf "   Patch_size: %d}" p.patch_size;
     ]
@@ -96,6 +109,7 @@ let pp (ppf : Format.formatter) t : unit =
   let info = String.concat ~sep:"\n" [
       Printf.sprintf "Exe: %s" t.exe;
       Printf.sprintf "Patches: %s" (patches_to_string t.patches);
+      Printf.sprintf "Func: %s" t.func;
       Printf.sprintf "Property: %s" (Sexp.to_string t.property);
       Printf.sprintf "Output filepath: %s"
         (Option.value t.patched_exe_filepath ~default:"none provided");
@@ -117,6 +131,14 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
      if String.length s = 0 then Err.fail Errors.Missing_patch_name
      else Err.return s
   | _ -> Err.fail Errors.Missing_patch_name
+
+(* Extract the patch name and check it is non-empty string. *)
+let validate_patch_code (obj : Json.t) : (string, error) Stdlib.result =
+  match Json.Util.member "patch-code" obj with
+  | `String s ->
+     if String.length s = 0 then Err.fail Errors.Missing_patch_code
+     else Err.return s
+  | _ -> Err.fail Errors.Missing_patch_code
 
 (* Extract the patch point field and parse the hex string into a bitvector, or
    error. *)
@@ -141,15 +163,25 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t) : (patch, error) Stdlib.result =
   validate_patch_name obj >>= fun patch_name ->
+  validate_patch_code obj >>= fun patch_code ->
   validate_patch_point obj >>= fun patch_point ->
   validate_patch_size obj >>= fun patch_size ->
-  Err.return { patch_name; patch_point; patch_size }
+  Err.return { patch_name; patch_code; patch_point; patch_size }
 
 (* Extract and validate the patch fragment list, or error. *)
 let validate_patches (obj : Json.t) : (patch list, error) Stdlib.result =
   match Json.Util.member "patches" obj with
   | `List ps -> Err.all (List.map ~f:validate_patch ps)
   | _ -> Err.fail Errors.Missing_patches
+
+let validate_func (obj : Json.t) : (string, error) Stdlib.result =
+  match Json.Util.member "func" obj with
+  | `String s ->
+    begin
+      if (String.length s) > 0 then Err.return s
+      else Err.fail Missing_func
+    end
+  | _ -> Err.fail Missing_func
 
 (* Extract the property field string and parse it into an S-expression, or
    error. *)
@@ -184,7 +216,9 @@ let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   parse_json config_filepath >>= fun config_json ->
   validate_patches config_json >>= fun patches ->
+  validate_func config_json >>= fun func ->
   validate_property config_json >>= fun property ->
   validate_max_tries config_json >>= fun max_tries ->
-  let record = { exe; patches; property; patched_exe_filepath; max_tries } in
+  let record = { exe; patches; func; property;
+    patched_exe_filepath; max_tries } in
   Ok record

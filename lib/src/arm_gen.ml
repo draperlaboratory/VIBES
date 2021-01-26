@@ -4,42 +4,56 @@ open Bap_core_theory
 
 module IR = Vibes_ir
 
-type arm_eff = {current_blk : IR.operation list; other_blks : IR.t}
-[@@deriving compare, equal]
+type arm_eff = {
+  current_data : IR.operation list;
+  current_ctrl : IR.operation list;
+  other_blks : IR.t}
+[@@deriving compare, equal, sexp]
 
-let empty_eff = {current_blk = []; other_blks = IR.empty}
+let empty_eff = {current_data = []; current_ctrl = []; other_blks = IR.empty}
 
 (* FIXME: if this is a constant, I'm pretty sure the op_eff field is
    always empty *)
 type arm_pure = {op_val : IR.operand; op_eff : arm_eff}
-[@@deriving compare, equal]
+[@@deriving compare, equal, sexp]
 
 (* We use this domain both for ['a pure] and ['s bitv] *)
-let arm_pure_dom = KB.Domain.optional ~equal:equal_arm_pure "arm-pure"
+let arm_pure_domain =
+  KB.Domain.optional
+    ~inspect:sexp_of_arm_pure
+    ~equal:equal_arm_pure "arm-pure"
 
 let arm_pure =
-  KB.Class.property Theory.Value.cls "arm-pure" arm_pure_dom
+  KB.Class.property Theory.Value.cls "arm-pure" arm_pure_domain
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
-let (@) s1 s2 =
-  let { current_blk = blk1; other_blks = blks1} = s1 in
-  let { current_blk = blk2; other_blks = blks2} = s2 in
-  {current_blk = blk1 @ blk2; other_blks = IR.union blks1 blks2}
+let (@.) s1 s2 =
+  let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
+  let { current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = s2 in
+  {
+    current_data = data1 @ data2;
+    current_ctrl = ctrl1 @ ctrl2;
+    other_blks = IR.union blks1 blks2
+  }
 
-let arm_eff_domain = KB.Domain.optional ~equal:equal_arm_eff "arm-eff"
+let arm_eff_domain =
+  KB.Domain.optional
+    ~inspect:sexp_of_arm_eff
+    ~equal:equal_arm_eff
+    "arm-eff"
 
 let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
 
 let effect v = KB.Value.get arm_eff v
 
-let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_eff_domain
+let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_pure_domain
 
 let (let=) v f = KB.(>>=) v
     (fun v ->
        match KB.Value.get arm_eff v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_eff: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -48,7 +62,7 @@ let (let-) v f =
     (fun v ->
        match KB.Value.get arm_pure v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_pure: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -57,7 +71,7 @@ let (let/) v f =
     (fun v ->
        match KB.Value.get arm_mem v with
        | None ->
-         let v_str = Format.asprintf "%a" KB.Value.pp v in
+         let v_str = Format.asprintf "arm_mem: %a" KB.Value.pp v in
          Errors.fail (Errors.Missing_semantics v_str)
        | Some v -> f v)
 
@@ -99,8 +113,35 @@ let bool b =
 
 module ARM_ops = struct
 
+  let create_temp ty =
+    Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
+    IR.simple_var
+
+  (* let create_temp' reg =
+   *   let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
+   *   IR.given_var v reg *)
+
+  let freshen_operand o =
+    match o with
+    | IR.Var v ->
+      let fresh_v =
+        { v with
+          id =
+            Var.create
+              ~is_virtual:true
+              ~fresh:true
+              (Var.name v.id)
+              (Var.typ v.id)
+        } in
+      IR.Var fresh_v
+    | _ -> o
+
+  (* defaults to data instructions, since they are way more common *)
   let instr i sem =
-    {current_blk = i::sem.current_blk; other_blks = sem.other_blks}
+    {sem with current_data = i::sem.current_data}
+
+  let control j sem =
+    {sem with current_ctrl = j::sem.current_ctrl}
 
   (* Some cowboy type checking here, to check which kind of mov to use.
      FIXME: certainly doesn't work if variables are instantiated with
@@ -108,9 +149,11 @@ module ARM_ops = struct
      for registers and immediates. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
+    let arg2_var = freshen_operand arg2_var in
     let mov =
       match arg1, arg2_var with
-      | IR.Var _, IR.Var _ -> IR.simple_op `MOVr arg1 [arg2_var]
+      | IR.Var _, IR.Var _ ->
+        IR.simple_op `MOVr arg1 [arg2_var]
       | IR.Var _, IR.Const _ -> IR.simple_op `MOVi arg1 [arg2_var]
       | _ -> failwith "arm_mov: unexpected arguments!"
     in
@@ -118,42 +161,85 @@ module ARM_ops = struct
 
   let ( := ) x y = arm_mov x y
 
-  (* TODO: only works for constants! *)
-  let bx addr =
-    let i = IR.simple_op `BX (IR.Label addr) [] in
-    instr i empty_eff
+  let b_instr addr =
+    let i = IR.simple_op `Bcc (Cond `AL) [IR.Label addr] in
+    control i empty_eff
 
   let jmp arg =
-    let {op_val = arg_const; op_eff = arg_sem} = arg in
-    let jmp =
-      match arg_const with
-      | Const _ -> IR.simple_op `BX arg_const []
-      | _ -> failwith "jmp: unexpected operand"
+    let {op_val = arg_tgt; op_eff = arg_sem} = arg in
+    let pc = Var.create "PC" (Imm 32) in
+    let pc = IR.Var (IR.simple_var pc) in
+    let jmp_data, jmp_ctrl =
+      match arg_tgt with
+      | Var _ ->
+        [], IR.simple_op `MOVr pc [arg_tgt]
+      | Const w ->
+        [], IR.simple_op `Bcc (Cond `AL) [Offset w]
+        (* (\* Here we need to load the word by chunks, as it musth be
+         *    less than 16 bits wide. *\)
+         * let high_bits = Word.extract ~hi:31 ~lo:16 w in
+         * let low_bits = Word.extract ~hi:15 ~lo:0 w in
+         * begin
+         *   match Or_error.both high_bits low_bits with
+         *   (\* FIXME: handle this more gracefully *\)
+         *   | Error err -> Error.raise err
+         *   | Ok (highs, lows) ->
+         *     let tmp1 = create_temp' `R6 |> IR.Var in
+         *     let write_high = IR.simple_op `MOVi16 tmp1 [Const highs] in
+         *     let tmp2 = create_temp' `R6 |> IR.Var in
+         *     let tmp1 = freshen_operand tmp1 in
+         *     let sixteen = Word.of_int ~width:32 16 in
+         *     let shift_high = IR.simple_op `LSL tmp2 [tmp1; Const sixteen] in
+         *     let tmp3 = create_temp' `R7 |> IR.Var in
+         *     let write_low = IR.simple_op `MOVi16 tmp3 [Const lows] in
+         *     let tmp2 = freshen_operand tmp2 in
+         *     let tmp3 = freshen_operand tmp3 in
+         *     let tmp4 = create_temp' `R6 |> IR.Var in
+         *     let make_const = IR.simple_op `EORrr tmp4 [tmp2; tmp3] in
+         *     let tmp4 = freshen_operand tmp4 in
+         *     [make_const; write_low; shift_high; write_high], IR.simple_op `MOVr pc [tmp4]
+         * end *)
+      | _ ->
+        let err = Format.asprintf "%s"
+            (IR.sexp_of_operand arg_tgt |>
+             Sexp.to_string)
+        in
+        failwith @@ "jmp: unexpected operand " ^ err
     in
-    instr jmp arg_sem
+    {
+      arg_sem with
+      current_data = jmp_data @ arg_sem.current_data;
+      current_ctrl = jmp_ctrl::arg_sem.current_ctrl
+    }
+
 
   let var v = {op_val = IR.Var (IR.simple_var v); op_eff = empty_eff}
 
   let const c = {op_val = IR.Const c; op_eff = empty_eff}
 
   let uop o ty arg =
-    let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+    let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
+    let arg_val = freshen_operand arg_val in
     let op = IR.simple_op o (IR.Var res) [arg_val] in
-    let sem = {arg_sem with current_blk = op::arg_sem.current_blk} in
+    let sem = {arg_sem with current_data = op::arg_sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
 
   let binop o ty arg1 arg2 =
-    let res = Var.create ~is_virtual:true ~fresh:true "temp" ty |> IR.simple_var in
+    let res = create_temp ty in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let arg1_val = freshen_operand arg1_val in
+    let arg2_val = freshen_operand arg2_val in
     let op = IR.simple_op o (IR.Var res) [arg1_val; arg2_val] in
-    let sem = arg1_sem @ arg2_sem in
-    let sem = {sem with current_blk = op::sem.current_blk} in
+    let sem = arg1_sem @. arg2_sem in
+    let sem = {sem with current_data = op::sem.current_data} in
     {op_val = IR.Var res; op_eff = sem}
 
   (* TODO: handle non-register arguments? *)
   let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
+
+  let (-) arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
 
   let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
 
@@ -174,22 +260,62 @@ module ARM_ops = struct
 
   let ldr mem loc =
     (* Update the semantics of loc with those of mem *)
-    let loc = {loc with op_eff = loc.op_eff @ mem} in
+    let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
     uop `LDRrs (Imm 32) loc
 
   let str mem value loc =
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
+    let {op_val = mem_val; op_eff = mem_sem} = mem in
     let op = IR.simple_op `STRrs loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
-    let sem = loc_sem @ value_sem @ mem in
-    {sem with current_blk = op::sem.current_blk}
+    let sem = loc_sem @. value_sem @. mem_sem in
+    let sem = {sem with current_data = op::sem.current_data} in
+    {op_val = mem_val; op_eff = sem}
 
   let (&&) a b = binop `ANDrsi (Imm 32) a b
 
   let (||) a b = binop `ORRrsi (Imm 32) a b
 
   let xor a b = binop `EORrsi (Imm 32) a b
+
+  (* Generally, boolean operations will be handled by a normal (word
+     size) value, with value 0 if false and non-zero if true. It will
+     be the job of branching operations to call [cmp ? ?] and check
+     the appropriate flags. *)
+  let equals arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
+
+  (* Intuitively we want to generate:
+
+     ..cond.. //fills variable [cond_val]
+     CMP cond_val 0
+     BEQ
+     ..branch1... //this should just be a single jump instruction
+     ..branch2... //same, but less important
+
+  *)
+  let beq cond branch1 branch2 =
+    let {op_val = cond_val; op_eff = cond_eff} = cond in
+    (* the order of operations here is actually important! *)
+    let cond_val = freshen_operand cond_val in
+    let cmp = IR.simple_op `CMPrsi Void
+        [cond_val; Const (Word.of_int ~width:32 0)] in
+    let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
+    let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
+    let tid1 = Tid.for_name "true_branch" in
+    let tid2 = Tid.for_name "false_branch" in
+    let blk1 = IR.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
+    let blk2 = IR.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
+    let beq = IR.simple_op `Bcc (Cond `NE) [Label tid2] in
+    let blks = cond_eff.other_blks in
+    let blks = IR.union blks1 @@ IR.union blks2 blks in
+    let blks = IR.add blk1 @@ IR.add blk2 blks in
+    {
+      current_data = cmp :: cond_eff.current_data;
+      current_ctrl = [beq];
+      other_blks = blks
+    }
+
 
 end
 
@@ -200,34 +326,59 @@ struct
   include ARM_ops
 
   let set v arg =
+    (* Events.(send @@ Info "calling set"); *)
     let arg_v =
       let r_var = v |> Var.reify in
       IR.simple_var r_var
     in
-    let- arg = arg in
-    eff ((IR.Var arg_v) := arg)
+    KB.(
+      arg >>= fun arg ->
+      match Value.get arm_pure arg with
+      (* FIXME: freshen the lhs? *)
+      | Some arg -> eff ((IR.Var arg_v) := arg)
+      | None ->
+        begin
+          match Value.get arm_mem arg with
+          (* No need to explicitely assign here, we don't use the
+             "mem" variables when generating IR. *)
+          | Some arg -> eff arg.op_eff
+          | None -> assert false
+        end)
+
 
   let seq s1 s2 =
+    (* Events.(send @@ Info "calling seq"); *)
     let= s1 = s1 in
     let= s2 = s2 in
-    eff @@ s1 @ s2
+    eff @@ s1 @. s2
 
+  (* Both [data] and [ctrl] effects can have both kinds of effects,
+     AFAIKT, so we treat them (almost) identically. *)
   let blk lab data ctrl =
+    (* Events.(send @@ Info "calling blk"); *)
     let= data = data in
     let= ctrl = ctrl in
-    let new_instrs = List.append data.current_blk ctrl.current_blk in
     (* We add instructions by consing to the front of the list, so we
-       need to reverse before finalizing the block *)
-    let new_instrs = List.rev new_instrs in
-    let new_blk = IR.simple_blk lab new_instrs in
+       need to reverse before finalizing the block. *)
+    let new_data = ctrl.current_data @ data.current_data |> List.rev in
+    (* FIXME: currently we generate ctrl in the correct order, since
+       there are rougly only 2 or 3 instructions. Is this corect? *)
+    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
+    let new_blk = IR.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
     let all_blocks =
       IR.add new_blk @@ IR.union data.other_blks ctrl.other_blks in
-    eff {current_blk = []; other_blks = all_blocks}
+    eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
+    (* Events.(send @@ Info "calling var"); *)
     let sort = Theory.Var.sort v in
     let v = reify_var v in
-    KB.return @@ KB.Value.put arm_pure (Theory.Value.empty sort)
+    let slot =
+      match Theory.Value.Sort.forget sort |> Theory.Mem.refine with
+      | None -> arm_pure
+      | Some _ -> arm_mem
+    in
+    KB.return @@ KB.Value.put slot (Theory.Value.empty sort)
       (Some (var v))
 
   let unk _sort = Errors.fail (Errors.Not_implemented "Arm_gen.unk")
@@ -235,35 +386,44 @@ struct
   let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
-    (* This is incorrect: we're assuming every constant is exactly 32
+    (* Events.(send @@ Info "calling int"); *)
+    (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
     pure @@ const @@ Word.of_int32 ~width:32 w
 
   let add a b =
+    (* Events.(send @@ Info "calling add"); *)
     let- a = a in
     let- b = b in
     pure @@ a + b
 
+  let sub a b =
+    (* Events.(send @@ Info "calling sub"); *)
+    let- a = a in
+    let- b = b in
+    pure @@ a - b
+
   let goto (lab : tid) : Theory.ctrl Theory.eff =
-    eff @@ bx lab
+    (* Events.(send @@ Info "calling goto"); *)
+    eff @@ b_instr lab
 
   let jmp addr =
+    (* Events.(send @@ Info "calling jmp"); *)
     let- addr_bitv = addr in
     eff @@ jmp addr_bitv
-
-  let branch _cond _t_branch _f_branch =
-    Errors.fail (Errors.Not_implemented "Arm_gen.branch")
 
   let repeat _cond _body =
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
+    (* Events.(send @@ Info "calling load"); *)
     let/ mem = mem in
     let- loc = loc in
     pure @@ ldr mem loc
 
   let store mem loc value =
+    (* Events.(send @@ Info "calling store"); *)
     let/ mem = mem in
     let- loc = loc in
     let- value = value in
@@ -271,161 +431,244 @@ struct
        first, and the location second *)
     memory @@ str mem value loc
 
-  let perform _sort = eff {current_blk = []; other_blks = IR.empty}
+  let perform _sort =
+    (* Events.(send @@ Info "calling perform"); *)
+    eff empty_eff
 
   let shiftl sign l r =
+    (* Events.(send @@ Info "calling shiftl"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shl sign l r
 
   let shiftr sign l r =
+    (* Events.(send @@ Info "calling shiftr"); *)
     let- sign = sign in
     let- l = l in
     let- r = r in
     pure @@ shr sign l r
 
   let and_ a b =
+    (* Events.(send @@ Info "calling and_"); *)
     let- a = a in
     let- b = b in
     bool (a && b)
 
   let or_ a b =
+    (* Events.(send @@ Info "calling or_"); *)
     let- a = a in
     let- b = b in
     bool (a || b)
 
   let logand a b =
+    (* Events.(send @@ Info "calling logand"); *)
     let- a = a in
     let- b = b in
     pure (a && b)
 
   let logor a b =
+    (* Events.(send @@ Info "calling logor"); *)
     let- a = a in
     let- b = b in
     pure (a || b)
 
   let logxor a b =
+    (* Events.(send @@ Info "calling logxor"); *)
     let- a = a in
     let- b = b in
     pure @@ xor a b
+
+  let eq a b =
+    (* Events.(send @@ Info "calling eq"); *)
+    let- a = a in
+    let- b = b in
+    bool @@ equals a b
 
   let b0 = bool @@ const @@ Word.of_int ~width:32 0
 
   let b1 = bool @@ const @@ Word.of_int ~width:32 1
 
+  let branch cond branch1 branch2 =
+    let- cond = cond in
+    let= branch1 = branch1 in
+    let= branch2 = branch2 in
+    eff @@ beq cond branch1 branch2
+
 end
 
-module BilARM = Theory.Parser.Make(ARM_Core)
+let add_in_vars_blk (b : IR.blk) : IR.blk =
+  (* We only grab data here, since control effects don't influence
+     dependencies. *)
+  let ops = b.data in
+  let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
+  let collect_vars_op_list l =
+    List.fold l ~init:Var.Set.empty
+      ~f:(fun set o ->
+          match o with
+          | IR.Var v -> add_list set v.temps
+          | _ -> set)
+  in
+  (* Simultaneously collect defined and undefined vars *)
+  let _, undefined =
+    List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
+      ~f:(fun (defined, undefined) o ->
+          let undef = collect_vars_op_list o.operands in
+          let undef = Var.Set.diff undef defined in
+          let def = collect_vars_op_list o.lhs in
+          Var.Set.union defined def, Var.Set.union undefined undef)
+  in
+  let ins = Var.Set.fold undefined ~init:[]
+      ~f:(fun ins v -> IR.Var (IR.simple_var v)::ins)
+  in
+  (* We add dummy operation with no instructions and as lhs all the
+     [ins] variables *)
+  let ins = {
+    IR.id = Tid.create ();
+    IR.lhs = ins;
+    IR.insns = [];
+    IR.optional = false;
+    IR.operands = [];
+  } in
+  {b with ins = ins}
 
-let bil_stmt : type a. (a, Bil.exp, unit, Bil.stmt) Theory.Parser.stmt_parser =
-  fun (module S) ->
-  fun s ->
-  match s with
-  | Move (v, e) -> S.set_reg (Var.to_string v) 32 e
-  | _ -> failwith "bil_stmt: not implemented"
-
-let bil_bitv : type a. (a, Bil.exp, unit) Theory.Parser.bitv_parser =
-  fun (module S) ->
-  function Int w -> S.int (Word.to_bitvec w) (Word.bitwidth w)
-         | Var v ->
-           let sort = v |> Var.sort
-                      |> Theory.Bitv.refine
-                      |> Option.value ~default:(failwith "no sort!")
-           in
-           (* ??? that can't be right. *)
-           S.var (Var.to_string v) (Theory.Bitv.size sort)
-         | _ -> failwith "bil_bitv: not implemented"
-
-let bil_bool : type a. (a, Bil.exp, unit) Theory.Parser.bool_parser =
-  fun (module S) ->
-  fun _ -> assert false
-
-let bil_mem : type a. (a, Bil.exp) Theory.Parser.mem_parser =
-  fun (module S) ->
-  fun _ -> assert false
-
-let bil_float : type a. (a, Bil.exp, unit) Theory.Parser.float_parser =
-  fun (module S) ->
-  fun _ -> assert false
-
-let bil_rmode : type a. (a, unit) Theory.Parser.rmode_parser =
-  fun (module S) ->
-  fun _ -> S.rne
-
-let bil_to_arm : (Bil.exp,unit,Bil.stmt) Theory.Parser.t =
-  {
-    bitv = bil_bitv;
-    bool = bil_bool;
-    mem = bil_mem;
-    stmt = bil_stmt;
-    float = bil_float;
-    rmode = bil_rmode
-  }
+(* Collect all the variables appearing on rhs that are not defined by
+   an rhs before-hand. *)
+let add_in_vars (t : IR.t) : IR.t =
+  { t with blks = List.map ~f:add_in_vars_blk t.blks }
 
 (* FIXME: not sure what the right behavior is here... should we assume that a
    block is always created? *)
 let ir (t : arm_eff) : IR.t =
-  assert (List.is_empty t.current_blk);
-  t.other_blks
+  assert Core_kernel.(List.is_empty t.current_data
+                      && List.is_empty t.current_ctrl);
+  let blks = t.other_blks in
+  add_in_vars blks
 
 let insn_pretty i : (string, Errors.t) result =
   match i with
   | `MOVr
-  | `MOVi   -> Ok "mov"
-  | `BX     -> Ok "bx"
-  | `ADDrsi -> Ok "add"
-  | `LSL    -> Ok "lsl"
-  | `LSR    -> Ok "lsr"
-  | `ASR    -> Ok "asr"
-  | `ANDrsi -> Ok "and"
-  | `ORRrsi -> Ok "orr"
-  | `EORrsi -> Ok "eor"
-  | `LDRrs  -> Ok "ldr"
-  | `STRrs  -> Ok "str"
+  | `MOVi    -> Ok "mov"
+  | `MOVi16  -> Ok "movw"
+  | `MOVTi16 -> Ok "movt"
+  | `BX      -> Ok "bx"
+  | `ADDrsi  -> Ok "add"
+  | `SUBrsi  -> Ok "sub"
+  | `LSL     -> Ok "lsl"
+  | `LSR     -> Ok "lsr"
+  | `ASR     -> Ok "asr"
+  | `ANDrsi  -> Ok "and"
+  | `ORRrsi  -> Ok "orr"
+  | `EORrsi  -> Ok "eor"
+  | `EORrr   -> Ok "eor"
+  | `LDRrs   -> Ok "ldr"
+  | `STRrs   -> Ok "str"
+  | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
+  | `CMPrsi  -> Ok "cmp"
   | i       ->
-    let to_string _ = "UNKNOWN" in
+    let to_string i = IR.sexp_of_insn i |> Sexp.to_string in
     let msg =
       Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
     in
     Error (Errors.Not_implemented msg)
 
-
 (* We use this function when generating ARM, since the assembler
-   doesn't like % in labels. *)
+   doesn't like % or @ in labels. *)
 let tid_to_string (t : tid) : string =
-  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%')
+  Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
-let arm_operand_pretty (o : IR.operand) : (string, Errors.t) result =
+let arm_operand_pretty ~is_loc:is_loc (o : IR.operand) : (string, Errors.t) result =
   match o with
   | Var v ->
-    let error =
-      Errors.Missing_semantics
-        "operand.pre_assign field is empty in pretty printer" in
-    Result.bind
-      (Result.of_option v.pre_assign ~error:error)
-      ~f:(fun reg ->
-          Result.return (Sexp.to_string (ARM.sexp_of_gpr_reg reg)))
+     let error =
+       Errors.Missing_semantics
+         "arm_operand_pretty: operand.pre_assign field is empty" in
+     let res =
+       Result.bind
+         (Result.of_option v.pre_assign ~error:error)
+         ~f:(fun reg ->
+             Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
+     in
+     if is_loc then
+       Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
+     else
+       res
   | Const w ->
     (* A little calisthenics to get this to look nice *)
-    Result.return (Format.asprintf "#%a" Word.pp_dec w)
-  | Label l -> Result.return (tid_to_string l)
+    Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+  | Label l -> Result.return @@ tid_to_string l
+  | Cond c -> Result.return @@ IR.cond_to_string c
+  | Void -> Result.return ""
+  | Offset c ->
+    (* Special printing of offsets to jump back from patched locations *)
+    Result.return @@
+    Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
 
-let arm_operands_pretty (l : IR.operand list) : (string, Errors.t) result =
-  Result.map ~f:(String.concat ~sep:", ")
-    (Result.all (List.map l ~f:(fun o -> arm_operand_pretty o)))
+
+
+(* FIXME: Absolute hack *)
+let mk_loc_list (op : string) (args : 'a list) : bool list =
+  if String.(op = "ldr") then
+    [false; true]
+  else
+    List.init (List.length args) ~f:(fun _ -> false)
+
+let arm_operands_pretty (op : string) (hd : IR.operand) (l : IR.operand list)
+  : (string, Errors.t) result =
+  (* Don't print the head of the operand if it's void. *)
+  let l =
+    match hd with
+    | Void -> l
+    | _ -> hd::l
+  in
+  let is_loc_list = mk_loc_list op l in
+  let l = List.zip_exn is_loc_list l in
+  let all_str =
+    List.map l
+      ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o) |>
+    Result.all
+  in
+  let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
+  (* FIXME: pure hack: drop the first comma if the first argument is a
+     Cond. *)
+  let all_str =
+    begin
+      match l with
+      | (_, IR.Cond _) :: _ ->
+        Result.map all_str ~f:(fun all_str ->
+        let hd = List.hd_exn all_str in
+        let tl = List.tl_exn @@ List.tl_exn all_str in
+        hd::" "::tl)
+      | _ -> all_str
+    end
+  in
+  Result.map ~f:String.concat all_str
 
 let arm_op_pretty (t : IR.operation) : (string, Errors.t) result =
   let op = List.hd_exn t.insns in
   Result.(insn_pretty op >>= fun op ->
-          arm_operands_pretty ((List.hd_exn t.lhs) :: t.operands) >>= (fun operands ->
+          arm_operands_pretty op
+            (List.hd_exn t.lhs)
+            t.operands >>= (fun operands ->
               return (Format.asprintf "%s %s" op operands)))
 
-(* TODO: print the tid *)
 let arm_blk_pretty (t : IR.blk) : (string list, Errors.t) result =
-  let insns = List.map ~f:arm_op_pretty t.operations |> Result.all in
+  let all_ops = t.data @ t.ctrl in
+  let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
   let lab = Format.asprintf "%s:" (tid_to_string t.id) in
   Result.map insns ~f:(fun insns -> lab::insns)
 
 let arm_ir_pretty (t : IR.t) : (string list, Errors.t) result =
   List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
+
+
+let slot = arm_eff
+
+let () =
+  Theory.declare
+    ~context:["vibes"]
+    ~package:"vibes"
+    ~name:"arm-gen"
+    ~desc:"This theory allows instantiating Program semantics into \
+          a Vibes_ir.t term, using Arm_gen.slot."
+  @@ KB.return (module ARM_Core : Theory.Core)
