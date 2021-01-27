@@ -9,14 +9,12 @@ open Knowledge.Let
 module KB = Knowledge
 module Arm = Arm_selector
 
-(* Converts a list of BIR statements to a list of ARM assembly strings.
-   This is just a dummy stand-in for now. It only handles a simple move
-   instruction. *)
+(* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_assembly (solver : Ir.t -> Ir.t KB.t)
     (bir : Insn.t) : string list KB.t =
   let arm_eff = Arm.effect bir in
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
-  (* Makes for a slightly clearer *)
+  (* Makes for slightly clearer errors *)
   let arm_eff = Result.of_option arm_eff
       ~error:(Errors.Missing_semantics err) in
   (* For some reason Either is more fully featured *)
@@ -28,7 +26,7 @@ let create_assembly (solver : Ir.t -> Ir.t KB.t)
   | Error e -> Errors.fail e
 
 
-(* Compile one patch from BIL to assembly *)
+(* Compile one patch from BIR to assembly *)
 let compile_one (solver : Ir.t -> Ir.t KB.t)
       (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
@@ -51,7 +49,7 @@ let compile_one (solver : Ir.t -> Ir.t KB.t)
 
 
 (* Converts the patch (as BIR) to assembly instructions. *)
-let compile ?solver:(solver = Minizinc.run_minizinc)(obj : Data.t) : unit KB.t =
+let compile ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting compiler");
 
   (* Retrieve the patch (BIR) from the KB, and convert it to assembly. *)
