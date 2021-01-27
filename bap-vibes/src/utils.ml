@@ -18,7 +18,6 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   Unix.close fd_in;
   Unix.close fd_out
 
-
 let run_process_exn (command : string) (args : string list) : unit KB.t =
   let (as_stdout, as_stdin) =
     Unix.open_process (String.concat " " (command :: args)) in

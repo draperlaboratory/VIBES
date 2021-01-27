@@ -8,19 +8,20 @@ open Bap_knowledge
 module KB = Knowledge
 
 (* We define "domains" for the types used in our properties. *)
-val string_domain   : string option KB.Domain.t
-val int_domain      : int option KB.Domain.t
-val bitvec_domain   : Bitvec.t option KB.Domain.t
-val prog_domain     : Program.t option KB.Domain.t
-val property_domain : Sexp.t option KB.Domain.t
-val assembly_domain : string list option KB.Domain.t
+val string_domain    : string option KB.Domain.t
+val int_domain       : int option KB.Domain.t
+val bitvec_domain    : Bitvec.t option KB.Domain.t
+val prog_domain      : Program.t option KB.Domain.t
+val sexp_domain      : Sexp.t option KB.Domain.t
+val sexp_list_domain : Sexp.t list option KB.Domain.t
+val assembly_domain  : string list option KB.Domain.t
 
 (* These are the top-level class definitions.
 
-    - type cls is the class of the top-level VIBES KB object that stores
+    - type [cls] is the class of the top-level VIBES KB object that stores
       all data related to a run in properties.
-    - type t is the type of objects of that class.
-    - val cls is the declared class cls.
+    - type [t] is the type of objects of that class.
+    - val [cls] is the declared class.
  *)
 type cls
 type t = cls KB.obj
@@ -44,7 +45,7 @@ module Patch : sig
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
-  val patch_code : (patch_cls, string option) KB.slot
+  val patch_code : (patch_cls, Sexp.t list option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
@@ -54,9 +55,9 @@ module Patch : sig
   val get_patch_name : t -> string option KB.t
   val get_patch_name_exn : t -> string KB.t
 
-  val set_patch_code : t -> string option -> unit KB.t
-  val get_patch_code : t -> string option KB.t
-  val get_patch_code_exn : t -> string KB.t
+  val set_patch_code : t -> Sexp.t list option -> unit KB.t
+  val get_patch_code : t -> Sexp.t list option KB.t
+  val get_patch_code_exn : t -> Sexp.t list KB.t
 
   val set_patch_point : t -> Bitvec.t option -> unit KB.t
   val get_patch_point : t -> Bitvec.t option KB.t

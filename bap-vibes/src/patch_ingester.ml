@@ -169,12 +169,7 @@ module CoreParser (Core : Theory.Core) = struct
        Errors.fail (named_err st.nm
                       ("ends with invalid control flow: " ^ Sexp.to_string c))
 
-  let parse_bir (nm : string) (bits : int) (sexp_string : string)
-        : insn KB.t =
-    let* sexps : Sexp.t list =
-      try KB.return (Sexp.scan_sexps (Lexing.from_string sexp_string))
-      with _ -> Errors.fail (named_err nm "is not a valid S-expression")
-    in
+  let parse_bir (nm : string) (bits : int) (sexps : Sexp.t list) : insn KB.t =
     match sexps with
     | [] ->
        Errors.fail (named_err nm "must be a non-empty top-level list")
@@ -244,4 +239,3 @@ let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Patch ingest complete");
   Events.(send @@ Rule);
   KB.return ()
-

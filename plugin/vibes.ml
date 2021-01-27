@@ -6,7 +6,7 @@ open !Core_kernel
 open Bap_main
 open Bap.Std
 open Bap_knowledge
-open Bap_vibes
+
 module KB = Knowledge
 module Cmd = Extension.Command
 module Typ = Extension.Type
@@ -70,39 +70,39 @@ module Cli = struct
     let () = match verbose with
       | true ->
         begin
-          let module Config : Verbose.Config = struct
+          let module Config : Bap_vibes.Verbose.Config = struct
             let with_colors = not no_colors
           end in
-          let module Verbose_log = Verbose.Stderr (Config) in
-          Events.subscribe Verbose_log.handle
+          let module Verbose_log = Bap_vibes.Verbose.Stderr (Config) in
+          Bap_vibes.Events.subscribe Verbose_log.handle
         end
       | false -> ()
     in
 
     (* Report startup *)
-    Events.(send @@ Header "Starting VIBES");
-    Events.(send @@ Info (Printf.sprintf "Verbose logging: %b" verbose));
+    Bap_vibes.Events.(send @@ Header "Starting VIBES");
+    Bap_vibes.Events.(send @@ Info (Printf.sprintf "Verbose logging: %b" verbose));
     let () = match verbose with
       | true ->
         begin
           let msg = Printf.sprintf "With colors: %b" (not no_colors) in
-          Events.(send @@ Info msg)
+          Bap_vibes.Events.(send @@ Info msg)
         end
       | false -> ()
     in
 
     (* Parse the command line arguments. *)
     let result =
-      Config.create ~exe ~config_filepath ~patched_exe_filepath
+      Vibes_plugin_parameters.create ~exe ~config_filepath ~patched_exe_filepath
     in
     match result with
-    | Error e -> Error (Fail (Format.asprintf "%a" Config.Errors.pp e))
+    | Error e -> Error (Fail (Format.asprintf "%a" Vibes_plugin_errors.pp e))
     | Ok config ->
       begin
 
         (* Run the pipeline and print the result. If success, the result is
            the filepath to the patched executable. Otherwise, error. *)
-        let result = Pipeline.run config in
+        let result = Bap_vibes.Pipeline.run config in
         match result with
         | Ok filepath ->
           begin
