@@ -12,7 +12,7 @@ open Ir
 
 
 
-let ex1 : Ir.t = Test_vibes_ir.vir1
+let ex1 : Ir.t = Test_ir.vir1
 
 
 let (mzn_params1 , serial_info1) =  Minizinc.serialize_mzn_params ex1
@@ -134,13 +134,13 @@ let test_serialize_gold _ =
 
 let test_definer_serialize_ex1 _ =
   assert_equal ~cmp:(Var.Map.equal String.equal)
-    (Var.Map.map ~f:(fun o -> Var.to_string o.id) Test_vibes_ir.definer_map1)
+    (Var.Map.map ~f:(fun o -> Var.to_string o.id) Test_ir.definer_map1)
     (List.zip_exn serial_info1.temps
        (List.map ~f:(fun e -> e.e)
           mzn_params1.definer) |> Var.Map.of_alist_exn)
 
 
-open Test_vibes_ir
+open Test_ir
 
 let sol1 : Minizinc.sol = {
   reg = Var.Map.of_alist_exn (List.zip_exn temps1 [`R0; `R0; `R0]) ;
