@@ -24,7 +24,7 @@ run_tests:
 
     # Install minizinc.
     - cd ${XDG_home}
-    - curl -L ${MINIZINC_INSTALL} --output minizinc.tgz
+    - curl -L ${MINIZINC_URL} --output minizinc.tgz
     - tar zxvf minizinc.tgz
     - ls -la
     - echo "PATH :=> ${PATH}" 
