@@ -5,7 +5,7 @@ image: "binaryanalysisplatform/bap:latest"
 variables:
   XDG_HOME: "~"
   MINIZINC_URL: "https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz"
-  MINIZINC_INSTALL_DIR: "~/MiniZincIDE-2.5.3-bundle-linux-x86_64/"
+  MINIZINC_INSTALL_DIR: "~/MiniZincIDE-2.5.3-bundle-linux-x86_64"
 
 # Run the tests
 run_tests:
@@ -32,6 +32,7 @@ run_tests:
     - export LD_LIBRARY_PATH=${MINIZINC_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
     - echo ${PATH}
     - echo ${LD_LIBRARY_PATH}
+    - which minizinc
     - cd ${CI_PROJECT_DIR}
 
     # Install dependencies
