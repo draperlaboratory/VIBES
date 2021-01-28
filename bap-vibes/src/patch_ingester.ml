@@ -68,6 +68,18 @@ module CoreParser (Core : Theory.Core) = struct
     | None -> Errors.fail (named_err st.nm ("uses undeclared variable " ^ v))
     | Some v -> KB.return v
 
+  (* This is probably less than ideal. *)
+  let parse_int (st : parse_state) (s : string) : int KB.t =
+     try KB.return (Scanf.sscanf s "0x%x" (fun x -> x))
+     with _ ->
+       (* try to parse as decimal *)
+       try KB.return (Scanf.sscanf s "%d" (fun x -> x))
+       with _ ->
+         (* neither worked *)
+         Errors.fail (named_err st.nm
+           (  "contains invalid value " ^ s
+            ^ " where an int literal was expected"))
+
   let rec parse_pure (st : parse_state) (p : Sexp.t) : vpure KB.t =
     match p with
     | Sexp.Atom s ->
@@ -76,16 +88,7 @@ module CoreParser (Core : Theory.Core) = struct
          match M.find st.vars s with
          | Some v -> KB.return (var v)
          | None ->
-            let* i : int =
-              (* try to parse as hex *)
-              try KB.return (Scanf.sscanf s "0x%x" (fun x -> x))
-              with _ ->
-                (* try to parse as decimal *)
-                try KB.return (Scanf.sscanf s "%d" (fun x -> x))
-                with _ ->
-                  (* neither worked *)
-                  Errors.fail (named_err st.nm ("contains invalid value " ^ s))
-            in
+            let* i : int = parse_int st s in
             KB.return (int st.word_t Bitvec.M32.(!!i))
        end
     | Sexp.List [Sexp.Atom "load"; src] ->
@@ -94,6 +97,16 @@ module CoreParser (Core : Theory.Core) = struct
     | Sexp.List (Sexp.Atom "load" :: _) ->
        Errors.fail (named_err st.nm
          "contains an invalid load (load takes exactly 1 argument)")
+    | Sexp.List [Sexp.Atom "loadw"; (Sexp.Atom bits); src] ->
+       let* src = parse_pure st src in
+       let* i = parse_int st bits in
+       (* This b0 hard-codes little-endianness. Our ARM examples are little
+          endian, though technically ARM also has a big endian mode.  *)
+       KB.return (loadw (Bitv.define i) b0 st.mem src)
+    | Sexp.List (Sexp.Atom "loadw" :: _) ->
+       Errors.fail (named_err st.nm
+         (  "contains an invalid loadw (loadw takes exactly 2 "
+          ^ "arguments, the first of which must be an integer literal)"))
     | Sexp.List [Sexp.Atom "-"; v1; v2] ->
        let* v1 = parse_pure st v1 in
        let* v2 = parse_pure st v2 in
