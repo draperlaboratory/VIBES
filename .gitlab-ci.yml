@@ -4,7 +4,7 @@ image: "binaryanalysisplatform/bap:latest"
 # Some variables for use
 variables:
   MINIZINC_URL: https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz
-  MINIZINC_INSTALL_DIR: ${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64
+  MINIZINC_DIR: MiniZincIDE-2.5.3-bundle-linux-x86_64
 
 # Run the tests
 run_tests:
@@ -27,8 +27,8 @@ run_tests:
     - tar zxvf minizinc.tgz
     - ls -la
     - echo "PATH :=> ${PATH}" 
-    - export PATH=${MINIZINC_INSTALL_DIR}/bin:${PATH}
-    - export LD_LIBRARY_PATH=${MINIZINC_INSTALL_DIR}/lib:${LD_LIBRARY_PATH}
+    - export PATH=${HOME}/${MINIZINC_DIR}/bin:${PATH}
+    - export LD_LIBRARY_PATH=${HOME}/${MINIZINC_DIR}/lib:${LD_LIBRARY_PATH}
     - echo ${PATH}
     - echo ${LD_LIBRARY_PATH}
     - which minizinc
