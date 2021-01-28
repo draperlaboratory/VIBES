@@ -560,7 +560,7 @@ module Pretty = struct
 
   (* FIXME: Absolute hack *)
   let mk_loc_list (op : string) (args : 'a list) : bool list =
-    if String.(op = "ldr") then
+    if String.(op = "ldr" || op = "ldrh" || op = "ldrb") then
       [false; true]
     else
       List.init (List.length args) ~f:(fun _ -> false)
