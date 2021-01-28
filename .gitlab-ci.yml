@@ -40,9 +40,4 @@ run_tests:
     # Run the VIBES tests.
     - bash -x bin/ci/run-tests.bash
 
-    # Run simple-compiled
-    - make
-    - rm -rf resources/simple-compiled/main.patched
-    - make main.patched -C resources/simple-compiled/ 
-
     - echo "Done"
