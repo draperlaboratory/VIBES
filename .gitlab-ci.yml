@@ -3,22 +3,38 @@ image: "binaryanalysisplatform/bap:latest"
 
 # Run the tests
 run_tests:
-  tags:
-    # Tag this so docker CI runners pick it up.
-    - docker
+
+  tags: 
+    - docker # Tag this so docker CI runners pick it up.
+
   script:
+
     # Install bap_wp.
     - pushd ~
     - git clone https://github.com/draperlaboratory/cbat_tools.git
     - pushd cbat_tools/wp/lib/bap_wp
     - make
     - popd
+
+    # Install minizinc.
+    - pushd ~
     - curl -L https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz --output minizinc.tgz
-    - tar zxvf minizinc.tgz 
-    - ln -s MiniZincIDE-2.5.3-bundle-linux-x86_64/bin/minizinc usr/local/bin/minizinc
+    - tar zxvf minizinc.tgz
+    - ls -la 
+    - export PATH=~/MiniZincIDE-2.5.3-bundle-linux-x86_64/bin:${PATH}
+    - export LD_LIBRARY_PATH=~/MiniZincIDE-2.5.3-bundle-linux-x86_64/lib:${LD_LIBRARY_PATH}
+    - echo ${PATH}
+    - echo ${LD_LIBRARY_PATH}
     - popd
+
     # Install dependencies
     - opam install -y ounit2 ppx_deriving_yojson
+
     # Run the VIBES tests.
     - bash -x bin/ci/run-tests.bash
+
+    # Run simple-compiled
+    - rm -rf resources/simple-compiled/main.patched
+    - make main.patched -C resources/simple-compiled/ 
+
     - echo "Done"
