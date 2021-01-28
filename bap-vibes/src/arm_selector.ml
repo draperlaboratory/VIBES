@@ -374,6 +374,13 @@ struct
     let- loc = loc in
     pure @@ ldr32 mem loc
 
+  (* FIXME: check the endian is always false? *)
+  let loadw sort _endian mem loc =
+    let/ mem = mem in
+    let- loc = loc in
+    let size = Theory.Bitv.size sort in
+    pure @@ ldr size mem loc
+
   let store mem loc value =
     let/ mem = mem in
     let- loc = loc in
