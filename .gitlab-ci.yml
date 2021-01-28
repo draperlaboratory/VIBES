@@ -3,9 +3,8 @@ image: "binaryanalysisplatform/bap:latest"
 
 # Some variables for use
 variables:
-  XDG_HOME: "${HOME}"
-  MINIZINC_URL: "https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz"
-  MINIZINC_INSTALL_DIR: "${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64"
+  MINIZINC_URL: https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz
+  MINIZINC_INSTALL_DIR: ${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64
 
 # Run the tests
 run_tests:
@@ -16,14 +15,14 @@ run_tests:
   script:
 
     # Install bap_wp.
-    - cd ${XDG_home}
+    - cd ${HOME}
     - git clone https://github.com/draperlaboratory/cbat_tools.git
     - pushd cbat_tools/wp/lib/bap_wp
     - make
     - cd ${CI_PROJECT_DIR}
 
     # Install minizinc.
-    - cd ${XDG_home}
+    - cd ${HOME}
     - curl -L ${MINIZINC_URL} --output minizinc.tgz
     - tar zxvf minizinc.tgz
     - ls -la
