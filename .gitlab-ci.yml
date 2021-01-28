@@ -1,6 +1,14 @@
 # The docker image to run this CI pipeline in.
 image: "binaryanalysisplatform/bap:latest"
 
+# Some variables for use
+variables:
+  XDG_home: ~
+  minizinc_version: 2.5.3 # Change this to upgrade version
+  minizinc_bundle: MiniZincIDE-2.5.3-bundle-linux-x86_64
+  minizinc_url: https://github.com/MiniZinc/MiniZincIDE/releases/download/${minizinc_version}/${minizinc_bundle}.tgz
+  minizinc_install_dir: ${XDG_home}/${minizinc_bundle}/
+
 # Run the tests
 run_tests:
 
@@ -10,22 +18,23 @@ run_tests:
   script:
 
     # Install bap_wp.
-    - pushd ~
+    - cd ${XDG_home}
     - git clone https://github.com/draperlaboratory/cbat_tools.git
     - pushd cbat_tools/wp/lib/bap_wp
     - make
-    - popd
+    - cd ${CI_PROJECT_DIR}
 
     # Install minizinc.
-    - pushd ~
-    - curl -L https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz --output minizinc.tgz
+    - cd ${XDG_home}
+    - curl -L ${minizinc_url} --output minizinc.tgz
     - tar zxvf minizinc.tgz
-    - ls -la 
-    - export PATH=~/MiniZincIDE-2.5.3-bundle-linux-x86_64/bin:${PATH}
-    - export LD_LIBRARY_PATH=~/MiniZincIDE-2.5.3-bundle-linux-x86_64/lib:${LD_LIBRARY_PATH}
+    - ls -la
+    - echo "PATH :=> ${PATH}" 
+    - export PATH=${minizinc_install_dir}/bin:${PATH}
+    - export LD_LIBRARY_PATH=${minizinc_install_dir}/lib:${LD_LIBRARY_PATH}
     - echo ${PATH}
     - echo ${LD_LIBRARY_PATH}
-    - popd
+    - cd ${CI_PROJECT_DIR}
 
     # Install dependencies
     - opam install -y ounit2 ppx_deriving_yojson
