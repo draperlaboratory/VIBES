@@ -210,10 +210,22 @@ module ARM_ops = struct
     else
       binop `LSR (Imm 32) arg1 arg2
 
-  let ldr mem loc =
+  let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
-    uop `LDRrs (Imm 32) loc
+    let l_instr =
+      if bits = 32 then
+        `LDRrs
+      else if bits = 16 then
+        `LDRH
+      else if bits = 8 then
+        `LDRBrs
+      else
+        failwith "Arm_selector.ldr: Loading a bit-width that is not 8, 16 or 32!"
+    in
+    uop l_instr (Imm 32) loc
+
+  let ldr32 mem loc = ldr 32 mem loc
 
   let str mem value loc =
     let {op_val = loc_val; op_eff = loc_sem} = loc in
@@ -360,7 +372,7 @@ struct
   let load mem loc =
     let/ mem = mem in
     let- loc = loc in
-    pure @@ ldr mem loc
+    pure @@ ldr32 mem loc
 
   let store mem loc value =
     let/ mem = mem in
@@ -494,6 +506,8 @@ module Pretty = struct
     | `EORrsi  -> Ok "eor"
     | `EORrr   -> Ok "eor"
     | `LDRrs   -> Ok "ldr"
+    | `LDRH    -> Ok "ldrh"
+    | `LDRBrs  -> Ok "ldrb"
     | `STRrs   -> Ok "str"
     | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
     | `CMPrsi  -> Ok "cmp"
