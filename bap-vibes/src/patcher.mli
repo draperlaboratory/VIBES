@@ -8,6 +8,29 @@
 open Bap_knowledge
 module KB = Knowledge
 
+type patch = {
+    assembly : string list;
+    orig_loc : int64;
+    orig_size : int64;
+  }
+
+type patch_site = {
+    location : int64;
+    size : int64
+  }
+
+(*
+  A [placed_patch] is a patch that has a chosen location to place it in the binary.
+  It optionally may have a jump placed after it
+*)
+type placed_patch = {
+    assembly : string list;
+    orig_loc : int64;
+    orig_size : int64;
+    patch_loc : int64;
+    jmp : int64 option
+  }
+
 (* [patch ~patcher obj] uses the [patcher] function to patch the original
    executable associated with the provided [obj].
 
@@ -15,5 +38,7 @@ module KB = Knowledge
    a patch point (an address [Bitvec.t] in the original executable),
    and a list of assembly instructions (a [string list]), and returns
    a filepath (a [string]) to the patched executable. *)
-val patch : ?patcher:(string -> string list -> Bitvec.t -> int -> string KB.t) ->
+val patch : ?patcher:(string -> placed_patch list -> string) ->
   Data.t -> unit KB.t
+
+val place_patches : patch list -> patch_site list -> placed_patch list

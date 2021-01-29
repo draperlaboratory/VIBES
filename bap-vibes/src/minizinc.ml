@@ -305,7 +305,7 @@ let run_minizinc (model_filepath : string) (vir : Ir.t) : Ir.t KB.t =
                        "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
                        "--search-complete-msg";"\"\"";
                        model_filepath ] in
-  Utils.run_process_exn "minizinc" minizinc_args >>= fun () ->
+  Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
   let sol_serial = Yojson.Safe.from_file solution_filepath |> sol_serial_of_yojson  in
   let sol = match sol_serial with
     | Ok sol_serial -> KB.return (deserialize_sol sol_serial name_maps)

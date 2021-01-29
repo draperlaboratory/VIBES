@@ -555,7 +555,7 @@ module Pretty = struct
     | Offset c ->
       (* Special printing of offsets to jump back from patched locations *)
       Result.return @@
-      Format.asprintf "(patch + %d - relative_patch_placement)" (Word.to_int_exn c)
+      Format.asprintf "(%s + %d - %s)" Constants.patch_start_label (Word.to_int_exn c) Constants.relative_patch_placement
 
 
   (* FIXME: Absolute hack *)
