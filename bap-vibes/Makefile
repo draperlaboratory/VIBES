@@ -48,5 +48,13 @@ uninstall:
 # TEST
 #####################################################
 
-test: build
-	dune runtest tests
+test.unit: build
+	dune runtest tests/unit
+
+test.integration: build
+	dune runtest tests/integration
+
+test:
+	$(MAKE) test.unit
+	$(MAKE) test.integration
+

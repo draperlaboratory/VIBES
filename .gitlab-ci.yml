@@ -14,30 +14,13 @@ run_tests:
 
   script:
 
-    # Install bap_wp.
-    - cd ${HOME}
-    - git clone https://github.com/draperlaboratory/cbat_tools.git
-    - pushd cbat_tools/wp/lib/bap_wp
-    - make
-    - cd ${CI_PROJECT_DIR}
+    # Install dependencies.
+    - bash -x bin/ci/exec/install-dependencies.bash
 
-    # Install minizinc.
-    - cd ${HOME}
-    - curl -L ${MINIZINC_URL} --output minizinc.tgz
-    - tar zxvf minizinc.tgz
-    - ls -la
-    - echo "PATH :=> ${PATH}" 
-    - export PATH=${HOME}/${MINIZINC_DIR}/bin:${PATH}
-    - export LD_LIBRARY_PATH=${HOME}/${MINIZINC_DIR}/lib:${LD_LIBRARY_PATH}
-    - echo ${PATH}
-    - echo ${LD_LIBRARY_PATH}
-    - which minizinc
-    - cd ${CI_PROJECT_DIR}
-
-    # Install dependencies
-    - opam install -y ounit2 ppx_deriving_yojson
+    # Source environment variables.
+    - . bin/ci/lib/env.bash
 
     # Run the VIBES tests.
-    - bash -x bin/ci/run-tests.bash
+    - bash -x bin/ci/exec/run-tests.bash
 
     - echo "Done"
