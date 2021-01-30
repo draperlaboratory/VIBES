@@ -1,3 +1,4 @@
 (test
   (name test)
+  (modes byte)
   (libraries bap bap_wp bap-vibes ounit2 str))
