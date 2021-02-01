@@ -19,13 +19,14 @@ Or, to build it (without cleaning first):
 
     make build
 
-To run the tests:
+To run all tests (unit and integration):
 
     make test
 
-To clean the local build artifacts:
+To run just unit or integration:
 
-    make clean
+    make test.unit
+    make test.integration
 
 To install the library into your local opam repository:
 
@@ -34,5 +35,9 @@ To install the library into your local opam repository:
 To uninstall it from your local opam repository:
 
     make uninstall
+
+To clean the local build artifacts:
+
+    make clean
 
 
