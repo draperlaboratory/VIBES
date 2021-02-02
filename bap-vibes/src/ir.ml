@@ -3,6 +3,10 @@ open Bap.Std
 
 module Make () = struct
 
+  type reg = ARM.gpr_reg [@@deriving compare, sexp]
+
+  let equal_reg a b = compare_reg a b = 0
+
   type op_var = {
     id : Var.t;
     temps : Var.t list;
@@ -429,6 +433,13 @@ end
 
 module type S = sig
 
+  type reg = ARM.gpr_reg [@@deriving sexp, equal, compare]
+
+  type cond = ARM.cond [@@deriving sexp, equal, compare]
+
+  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
+
+
   type op_var = {
     id : var;
     temps : var list;
@@ -445,8 +456,6 @@ module type S = sig
                | Cond of ARM.cond
                | Void
                | Offset of word [@@deriving compare, equal, sexp]
-
-  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
   type operation = {
     id : tid;

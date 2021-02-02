@@ -35,6 +35,20 @@ open Bap.Std
 
 module type S = sig
 
+  (** The type of registers which may be assigned to variables in the
+     IR. *)
+  type reg = ARM.gpr_reg [@@deriving sexp, equal, compare]
+
+  (** The type of conditions on which a branch operation may be
+     performed (e.g. lt, leq, eq, etc.) useful for modelling certain
+     operands in certain architectures. *)
+  type cond = ARM.cond [@@deriving sexp, equal, compare]
+
+  (** The type of concrete (machine specific) instructions. We
+     typically do not care about their specifics, but we require them
+     to be able to emit the final code. *)
+  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
+
   (** [operand]s have unique ids, a list of potential temporaries that
       can be used to implement the operand and may be optionally
       pre-assigned to registers for calling conventions or other reasons
@@ -42,21 +56,19 @@ module type S = sig
   type op_var = {
     id : var;
     temps : var list;
-    pre_assign : ARM.gpr_reg option
+    pre_assign : reg option
   } [@@deriving compare, equal, sexp]
 
   val simple_var : var -> op_var
 
-  val given_var : var -> ARM.gpr_reg -> op_var
+  val given_var : var -> reg -> op_var
 
   type operand = Var of op_var
                | Const of word
                | Label of tid
-               | Cond of ARM.cond
+               | Cond of cond
                | Void
                | Offset of word [@@deriving compare, equal, sexp]
-
-  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
   (** An [operation] has
       a *unique* id
@@ -113,14 +125,14 @@ module type S = sig
 
   val operation_to_string : operation -> string
   val op_var_to_string : op_var -> string
-  val cond_to_string : ARM.cond -> string
+  val cond_to_string : cond -> string
 
   val all_temps : t -> Var.Set.t
   val all_operands : t -> Var.Set.t
 
   (** [preassign_map] builds a total dictionary from op_var ids to
       pre assigned registers *)
-  val preassign_map : t -> (ARM.gpr_reg option) Var.Map.t
+  val preassign_map : t -> (reg option) Var.Map.t
 
   (** [definer_map] takes a subroutine and builds a Map from all
       temporaries to the unique lhs operand where that temporary is
