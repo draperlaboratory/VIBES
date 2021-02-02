@@ -9,6 +9,8 @@ open Knowledge.Let
 module KB = Knowledge
 module Arm = Arm_selector
 
+module Ir = Minizinc.Ir
+
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_assembly (solver : Ir.t -> Ir.t KB.t)
     (bir : Insn.t) : string list KB.t =

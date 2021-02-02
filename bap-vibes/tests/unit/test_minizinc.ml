@@ -3,9 +3,9 @@ open Bap.Std
 open Bap_vibes
 open OUnit2
 
+module Ir = Test_ir.Ir
+
 open Ir
-
-
 
 
 let ex1 : Ir.t = Test_ir.vir1

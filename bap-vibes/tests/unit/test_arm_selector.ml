@@ -182,7 +182,7 @@ let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
     let v = Arm.effect v in
     let asm =
       v |> Option.map ~f:Arm.ir
-        |> Option.map ~f:Ir.dummy_reg_alloc
+        |> Option.map ~f:Arm.Ir.dummy_reg_alloc
         |> Option.map ~f:Arm.Pretty.arm_ir_pretty
         |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
         |> Option.join (* And we squash the Options *)

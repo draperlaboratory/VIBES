@@ -5,6 +5,9 @@ open Bap_knowledge
 module KB = Knowledge
 open Knowledge.Syntax
 
+(* We specialize everything to ARM for the time being *)
+module Ir = Arm_selector.Ir
+
 
 (**
    [mzn_params] Type for interfacing with ocaml code

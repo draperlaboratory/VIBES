@@ -7,6 +7,9 @@
 open Bap_knowledge
 module KB = Knowledge
 
+(* The concrete instance of the abstract Ir structures. *)
+module Ir : Ir.S
+
 (* [compile obj] converts the patch (which is BIL) associated with the
    provided [obj] into assembly. *)
 val compile : ?solver:(string -> Ir.t -> Ir.t KB.t) -> Data.t -> unit KB.t

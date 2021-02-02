@@ -2,6 +2,10 @@ open !Core_kernel
 open Bap.Std
 open Bap_core_theory
 
+
+module Ir = Ir.Make()
+
+
 type arm_eff = {
   current_data : Ir.operation list;
   current_ctrl : Ir.operation list;

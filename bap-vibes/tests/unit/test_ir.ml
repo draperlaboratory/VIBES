@@ -7,8 +7,10 @@ module KB = Knowledge
 module H = Helpers
 
 
-open Ir
+(* We need to use a specific Ir here because of later uses of Test_ir *)
+module Ir = Minizinc.Ir
 
+open Ir
 
 
 let in_op (ts : Var.t list) : operation =

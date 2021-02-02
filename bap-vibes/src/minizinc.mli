@@ -4,6 +4,9 @@ open Bap_knowledge
 
 module KB = Knowledge
 
+(* We specialize to the ARM version of the IR for now *)
+module Ir = Arm_selector.Ir
+
 (**
    [run_minzinc minizinc_model_filepath ir] encodes the provided [ir] IR.t
    to a json file, calls minizinc, and interpets the solution. It uses the

@@ -19,6 +19,8 @@
 open Bap_knowledge
 open Bap_core_theory
 
+module Ir : Ir.S
+
 (** The ARM implementation of Theory.Core.
 
     It can be included to write Core terms and directly obtain a
