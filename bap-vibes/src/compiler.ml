@@ -9,6 +9,8 @@ open Knowledge.Let
 module KB = Knowledge
 module Arm = Arm_selector
 
+(* TODO: make this the place where we instantiate the selector and
+   Minizinc functors. *)
 module Ir = Minizinc.Ir
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)

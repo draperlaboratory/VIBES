@@ -4,7 +4,7 @@ open Bap_knowledge
 
 module KB = Knowledge
 
-(* We specialize to the ARM version of the IR for now *)
+(* TODO: Make the Minizinc module parametric over the IR. *)
 module Ir = Arm_selector.Ir
 
 (**
