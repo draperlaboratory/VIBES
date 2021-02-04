@@ -8,3 +8,5 @@ _build
 *.patched
 *.install
 *.merlin
+main
+main.patched

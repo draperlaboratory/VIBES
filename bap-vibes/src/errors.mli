@@ -7,6 +7,7 @@ module KB = Knowledge
 type t =
   | Failed_to_load_proj of string
   | Not_implemented of string
+  | Missing_minizinc_model_filepath
   | Missing_patch_name
   | Missing_patch_code
   | Missing_assembly

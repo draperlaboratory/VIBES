@@ -277,8 +277,6 @@ let apply_sol (vir : Ir.t) (sol : sol) : Ir.t =
    *     }) in *)
   vir
 
-let model = Model.model
-
 (* FIXME: this belongs in Ir *)
 let delete_empty_blocks vir =
   let open Ir in
@@ -290,15 +288,11 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
-let run_minizinc (vir : Ir.t) : Ir.t KB.t =
-  let model_filename =
-    Stdlib.Filename.temp_file "vibes-model" ".mzn" in
+let run_minizinc (model_filename : string) (vir : Ir.t) : Ir.t KB.t =
   let params_filename =
     Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
   let solution_filename =
     Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
-  Out_channel.with_file model_filename
-    ~f:(fun out -> Out_channel.fprintf out "%s\r\n" model);
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filename));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in

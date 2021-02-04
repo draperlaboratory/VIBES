@@ -27,6 +27,7 @@ type t = {
   property : Sexp.t; (* Correctness property. *)
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
+  minizinc_model_filepath : string; (* Path to a minizinc model file *)
 }
 
 (* Patch accessors. *)
@@ -42,6 +43,7 @@ let func t : string = t.func
 let property t : Sexp.t = t.property
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
+let minizinc_model_filepath t : string = t.minizinc_model_filepath
 
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
@@ -68,6 +70,7 @@ let pp (ppf : Format.formatter) t : unit =
       Printf.sprintf "Output filepath: %s"
         (Option.value t.patched_exe_filepath ~default:"none provided");
       Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
+      Printf.sprintf "Minizinc model: %s" t.minizinc_model_filepath;
     ] in
   Format.fprintf ppf "@[%s@]@." info
 
@@ -82,5 +85,7 @@ let create_patch ~patch_name:(patch_name : string)
 let create ~exe:(exe : string) ~patches:(patches : patch list)
     ~func:(func : string) ~property:(property : Sexp.t)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
-    ~max_tries:(max_tries : int option) : t =
-  { exe; patches; func; property; patched_exe_filepath; max_tries }
+    ~max_tries:(max_tries : int option) 
+    ~minizinc_model_filepath:(minizinc_model_filepath : string) : t =
+  { exe; patches; func; property; patched_exe_filepath;
+    max_tries; minizinc_model_filepath }
