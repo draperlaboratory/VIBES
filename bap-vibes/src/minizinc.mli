@@ -5,11 +5,12 @@ open Bap_knowledge
 module KB = Knowledge
 
 (**
-   [run_minzinc] encodes the VIR.t to a json file, calls minizinc, and interpets
-   the solution.
+   [run_minzinc minizinc_model_filepath ir] encodes the provided [ir] IR.t
+   to a json file, calls minizinc, and interpets the solution. It uses the
+   provided [minizinc_model_filepath] to run minizinc.
 *)
 
-val run_minizinc : Ir.t -> Ir.t KB.t
+val run_minizinc : string -> Ir.t -> Ir.t KB.t
 
 
 (**/**)

@@ -117,6 +117,14 @@ module Patched_exe : sig
   val get_tmp_filepath_exn : t -> string KB.t
 end
 
+(* Properties pertaining to the solver *)
+module Solver : sig
+  val minizinc_model_filepath : (cls, string option) KB.slot
+  val set_minizinc_model_filepath : t -> string option -> unit KB.t
+  val get_minizinc_model_filepath : t -> string option KB.t
+  val get_minizinc_model_filepath_exn : t -> string KB.t
+end
+
 (* Properties pertaining to the verifier *)
 module Verifier : sig
   val set_property : t -> Sexp.t option -> unit KB.t

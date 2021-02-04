@@ -261,6 +261,27 @@ module Patched_exe = struct
 
 end
 
+(* Properties pertaining to the solver *)
+module Solver = struct
+
+  let minizinc_model_filepath : (cls, string option) KB.slot =
+    KB.Class.property ~package cls "minizinc-model-filepath" string_domain
+
+  let set_minizinc_model_filepath (obj : t) (data : string option)
+      : unit KB.t =
+    KB.provide minizinc_model_filepath obj data
+
+  let get_minizinc_model_filepath (obj : t) : string option KB.t =
+    KB.collect minizinc_model_filepath obj
+
+  let get_minizinc_model_filepath_exn (obj : t) : string KB.t =
+    get_minizinc_model_filepath obj >>= fun result ->
+    match result with
+    | None -> Errors.fail Errors.Missing_minizinc_model_filepath
+    | Some value -> KB.return value
+
+end
+
 (* Properties pertaining to the verifier *)
 module Verifier = struct
 
@@ -296,7 +317,7 @@ module Verifier = struct
 
 end
 
-(* Create an object of this class. *)
+(* Create a patch set. *)
 let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   let create_patch (p : Config.patch) : Patch.t KB.t =
     KB.Object.create Patch.patch >>= fun obj ->
@@ -308,22 +329,26 @@ let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
   in
   KB.all (List.map ~f:create_patch ps) >>| Patch_set.of_list
 
+(* Create an object of this class. *)
 let create (config : Config.t) : t KB.t =
   let exe = Config.exe config in
   let patch_list = Config.patches config in
   let func = Config.func config in
   let property = Config.property config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
+  let mzn_model_filepath = Config.minizinc_model_filepath config in
   create_patches patch_list >>= fun patches ->
   KB.Object.create cls >>= fun obj ->
   Original_exe.set_filepath obj (Some exe) >>= fun () ->
   Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
   Patched_exe.set_patches obj patches >>= fun () ->
+  Solver.set_minizinc_model_filepath
+    obj (Some mzn_model_filepath) >>= fun () ->
   Verifier.set_func obj (Some func) >>= fun () ->
   Verifier.set_property obj (Some property) >>= fun () ->
   KB.return obj
 
-(* Create a fresh version of an object. *)
+(* Create a fresh version of the patch set. *)
 let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
   let fresh_patch (patch : Patch.t) : Patch.t KB.t =
     Patch.get_patch_name patch >>= fun name ->
@@ -342,6 +367,7 @@ let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
   KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=
     fun ps' -> KB.return (Patch_set.of_list ps')
 
+(* Create a fresh version of an object. *)
 let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   KB.Object.create cls >>= fun obj' ->
   Original_exe.get_filepath obj >>= fun original_exe ->
@@ -355,6 +381,8 @@ let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   Patched_exe.set_patches obj patches' >>= fun () ->
   Patched_exe.get_filepath obj >>= fun patched_exe ->
   Patched_exe.set_filepath obj patched_exe >>= fun () ->
+  Solver.get_minizinc_model_filepath obj >>= fun mzn_model_filepath ->
+  Solver.set_minizinc_model_filepath obj mzn_model_filepath >>= fun () ->
   Verifier.get_func obj >>= fun func ->
   Verifier.set_func obj func >>= fun () ->
   Verifier.set_property obj' (Some property) >>= fun () ->

@@ -49,8 +49,11 @@ let compile_one (solver : Ir.t -> Ir.t KB.t)
 
 
 (* Converts the patch (as BIR) to assembly instructions. *)
-let compile ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t) : unit KB.t =
+let compile ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t)
+    : unit KB.t =
   Events.(send @@ Header "Starting compiler");
+  Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
+  Events.(send @@ Info ("Using minizinc model: " ^ mzn_model));
 
   (* Retrieve the patch (BIR) from the KB, and convert it to assembly. *)
   Events.(send @@ Info "Retreiving data from KB...");
@@ -58,6 +61,6 @@ let compile ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t) : unit KB.t 
   let size : string = string_of_int (Data.Patch_set.length patches) in
   Events.(send @@ Info ("There are " ^ size ^ " patch fragments."));
   Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(compile_one solver) >>= fun _ ->
+    ~f:(compile_one (solver mzn_model)) >>= fun _ ->
   Events.(send @@ Info "Done.");
   KB.return ()

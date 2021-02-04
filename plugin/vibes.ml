@@ -32,11 +32,6 @@ module Cli = struct
     ~doc:"The output location for the patched binary (a filename)"
     ~aliases:["o"]
 
-  (* --max-tries=INT, e.g., --max-tries=10
-     Specify the number of CEGIS iterations to allow before giving up. *)
-  let max_tries = Cmd.parameter (Typ.some Typ.int) "max-tries"
-    ~doc:"Number of CEGIS iterations to allow before giving up." 
-
   (* --verbose
      If present, turn on verbose logging. *)
   let verbose = Cmd.flag "verbose"
@@ -81,7 +76,7 @@ module Cli = struct
 
     (* Report startup *)
     Bap_vibes.Events.(send @@ Header "Starting VIBES");
-    Bap_vibes.Events.(send @@ Info (Printf.sprintf "Verbose logging: %b" verbose));
+    Bap_vibes.Events.(send @@ Info (Printf.sprintf "Verbose: %b" verbose));
     let () = match verbose with
       | true ->
         begin
@@ -92,8 +87,8 @@ module Cli = struct
     in
 
     (* Parse the command line arguments. *)
-    let result =
-      Vibes_plugin_parameters.create ~exe ~config_filepath ~patched_exe_filepath
+    let result = Vibes_plugin_parameters.create
+        ~exe ~config_filepath ~patched_exe_filepath
     in
     match result with
     | Error e -> Error (Fail (Format.asprintf "%a" Vibes_plugin_errors.pp e))

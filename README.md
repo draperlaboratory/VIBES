@@ -23,8 +23,13 @@ Then `cd` into the project root:
 
     cd VIBES
 
+Copy the default minizinc model file into your home directory:
 
-## Getting a development environment
+    mkdir -p ~/.vibes
+    cp resources/minizinc/model.mzn ~/.vibes/
+
+
+## Install the dependencies
 
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
 `arm-linux-gnueabi-gcc`. For example, on Ubuntu:
@@ -75,7 +80,7 @@ To run all tests:
 ## Just the library
 
 If you want just the library (without the command-line front-end), follow
-the instructions in [lib/README.md](./lib/README.md).
+the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
 
 
 ## Usage
@@ -119,6 +124,7 @@ This tells the VIBES tool to patch `resources/simple/main` with the patch
 information provided in the `resources/simple/config.json` file and to use
 verbose logging, so that you can see the progress.
 
+
 ## Configuration file format
 
 The mandatory configuation file provides the details of the patch and several
@@ -149,6 +155,9 @@ The top-level object may include the following optional field:
 * `"max-tries" : INT` -
   Specifies the number of times to let VIBES try patching. Leaving this
   parameter unspecified or setting it to `0` tells VIBES to try forever.
+* `"minizinc-model" : FILEPATH` -
+  Specifies the path to a minizinc model filepath. If this is omitted,
+  VIBES will look for the file at `~/.vibes/model.mzn`.
 
 Here is an example of a valid configuration file, taken from the
 `resources/simple` example:

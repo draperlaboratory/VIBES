@@ -8,6 +8,7 @@ module KB = Knowledge
 type t =
   | Failed_to_load_proj of string
   | Not_implemented of string
+  | Missing_minizinc_model_filepath
   | Missing_patch_name
   | Missing_patch_code
   | Missing_assembly
@@ -35,6 +36,8 @@ let pp ppf (e : t) =
   let msg = match e with
     | Failed_to_load_proj s -> s
     | Not_implemented s -> s
+    | Missing_minizinc_model_filepath ->
+      "No filepath for a minizinc model was stashed in KB"
     | Missing_patch_name -> "No patch name was stashed in KB"
     | Missing_patch_code -> "No patch code was stashed in KB"
     | Missing_assembly -> "No patch assembly was stashed in KB"

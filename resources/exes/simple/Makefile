@@ -1,5 +1,5 @@
 PROG = main
-SRC = main.s
+SRC = main.asm
 OBJ = main.o
 ENTRY = main
 
