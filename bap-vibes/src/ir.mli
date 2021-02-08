@@ -37,17 +37,17 @@ module type S = sig
 
   (** The type of registers which may be assigned to variables in the
      IR. *)
-  type reg = ARM.gpr_reg [@@deriving sexp, equal, compare]
+  type reg [@@deriving sexp, equal, compare]
 
   (** The type of conditions on which a branch operation may be
      performed (e.g. lt, leq, eq, etc.) useful for modelling certain
      operands in certain architectures. *)
-  type cond = ARM.cond [@@deriving sexp, equal, compare]
+  type cond [@@deriving sexp, equal, compare]
 
   (** The type of concrete (machine specific) instructions. We
      typically do not care about their specifics, but we require them
      to be able to emit the final code. *)
-  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
+  type insn [@@deriving sexp, equal, compare]
 
   (** [operand]s have unique ids, a list of potential temporaries that
       can be used to implement the operand and may be optionally
@@ -125,7 +125,6 @@ module type S = sig
 
   val operation_to_string : operation -> string
   val op_var_to_string : op_var -> string
-  val cond_to_string : cond -> string
 
   val all_temps : t -> Var.Set.t
   val all_operands : t -> Var.Set.t
@@ -161,4 +160,22 @@ module type S = sig
 
 end
 
-module Make() : S
+module type ARCH = sig
+
+  type reg [@@deriving sexp, equal, compare]
+
+  type cond [@@deriving sexp, equal, compare]
+
+  type insn [@@deriving sexp, equal, compare]
+
+  val fp : reg
+
+  val pc : reg
+
+  val dummy : reg
+
+  val cond_to_string : cond -> string
+
+end
+
+module Make(M : ARCH) : S with type reg = M.reg and type cond = M.cond and type insn = M.insn

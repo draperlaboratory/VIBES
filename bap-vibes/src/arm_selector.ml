@@ -3,7 +3,51 @@ open Bap.Std
 open Bap_core_theory
 
 
-module Ir = Ir.Make()
+module Arm_arch = struct
+
+  type reg = ARM.gpr_reg [@@deriving sexp, compare]
+
+  let equal_reg a b = compare_reg a b = 0
+
+  type cond = ARM.cond [@@deriving sexp, compare]
+
+  let equal_cond a b = compare_cond a b = 0
+
+  type shift = [
+    | `ASR
+    | `LSL
+    | `LSR
+    | `ROR
+    | `RRX
+  ]  [@@deriving sexp, equal, compare]
+
+  type insn = [Arm_types.insn | shift] [@@deriving sexp, compare]
+
+  let equal_insn a b = compare_insn a b = 0
+
+  let fp = `R11
+
+  let pc = `PC
+
+  let dummy = `R0
+
+  let cond_to_string c =
+    match c with
+    | `AL -> "b"
+    | `EQ -> "beq"
+    | `NE -> "bne"
+    | `GE -> "bge"
+    | `GT -> "bgt"
+    | `LS -> "bgs"
+    | `LT -> "blt"
+    | `LE -> "ble"
+    | _ -> failwith @@
+      "cond_to_string: Unsupported operation " ^ (sexp_of_cond c |> Sexp.to_string)
+
+
+end
+
+module Ir = Ir.Make(Arm_arch)
 
 
 type arm_eff = {
@@ -554,7 +598,7 @@ module Pretty = struct
       (* A little calisthenics to get this to look nice *)
       Result.return @@ Format.asprintf "#%a" Word.pp_dec w
     | Label l -> Result.return @@ tid_to_string l
-    | Cond c -> Result.return @@ Ir.cond_to_string c
+    | Cond c -> Result.return @@ Arm_arch.cond_to_string c
     | Void -> Result.return ""
     | Offset c ->
       (* Special printing of offsets to jump back from patched locations *)

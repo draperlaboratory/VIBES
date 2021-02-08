@@ -20,6 +20,9 @@ open Bap_knowledge
 open Bap_core_theory
 
 module Ir : Ir.S
+  with type reg = ARM.gpr_reg
+   and type cond = ARM.cond
+   and type insn = [Arm_types.insn | ARM.shift]
 
 (** The ARM implementation of Theory.Core.
 

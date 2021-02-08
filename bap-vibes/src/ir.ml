@@ -1,16 +1,36 @@
 open !Core_kernel
 open Bap.Std
 
-module Make () = struct
 
-  type reg = ARM.gpr_reg [@@deriving compare, sexp]
+module type ARCH = sig
+
+  type reg [@@deriving sexp, equal, compare]
+
+  type cond [@@deriving sexp, equal, compare]
+
+  type insn [@@deriving sexp, equal, compare]
+
+  val fp : reg
+
+  val pc : reg
+
+  val dummy : reg
+
+  val cond_to_string : cond -> string
+
+end
+
+
+module Make (M : ARCH) = struct
+
+  type reg = M.reg [@@deriving compare, equal, sexp]
 
   let equal_reg a b = compare_reg a b = 0
 
   type op_var = {
     id : Var.t;
     temps : Var.t list;
-    pre_assign : ARM.gpr_reg option
+    pre_assign : reg option
   } [@@deriving compare, sexp]
 
   let equal_op_var x y = [%equal: Var.t] x.id y.id
@@ -18,9 +38,9 @@ module Make () = struct
   let simple_var v =
     let pre_assign =
       if String.(Var.name v = "FP") then
-        Some `R11
+        Some M.fp
       else if String.(Var.name v = "PC") then
-        Some `PC
+        Some M.pc
       else
         None
     in
@@ -37,7 +57,7 @@ module Make () = struct
       pre_assign = Some reg
     }
 
-  type cond = ARM.cond [@@deriving compare, sexp]
+  type cond = M.cond [@@deriving compare, sexp]
 
   let equal_cond a b = compare_cond a b = 0
 
@@ -79,12 +99,7 @@ module Make () = struct
     | Var o -> o
     | _ -> failwith "Expected op_var"
 
-  type insn = [Arm_types.insn | shift] [@@deriving sexp]
-
-  (* FIXME: Absolutely disgusting implementation, but it should be correct. *)
-  let compare_insn (s1 : insn) (s2 : insn) = Int.compare (Obj.magic s1) (Obj.magic s2)
-
-  let equal_insn (s1 : insn) (s2 : insn) = compare_insn s1 s2 = 0
+  type insn = M.insn [@@deriving compare, sexp, equal]
 
   type operation = {
     id : Tid.t;
@@ -322,7 +337,7 @@ module Make () = struct
     List.map ~f:(fun (o : op_var) -> o.id) |>
     Var.Set.of_list
 
-  let preassign_map (sub : t) : (ARM.gpr_reg option) Var.Map.t =
+  let preassign_map (sub : t) : (reg option) Var.Map.t =
     List.concat_map sub.blks ~f:Blk.all_operands |>
     var_operands |>
     List.map ~f:(fun op -> (op.id, op.pre_assign))
@@ -368,19 +383,6 @@ module Make () = struct
           var_map_union_exn acc (Blk.operand_operation blk))
 
 
-  let cond_to_string c =
-    match c with
-    | `AL -> "b"
-    | `EQ -> "beq"
-    | `NE -> "bne"
-    | `GE -> "bge"
-    | `GT -> "bgt"
-    | `LS -> "bgs"
-    | `LT -> "blt"
-    | `LE -> "ble"
-    | _ -> failwith @@
-      "cond_to_string: Unsupported operation " ^ (sexp_of_cond c |> Sexp.to_string)
-
   let pretty_operand o =
     match o with
     | Var o ->
@@ -389,12 +391,12 @@ module Make () = struct
         (List.map ~f:Var.to_string o.temps |> String.concat ~sep:"::")
         ((Option.map
             ~f:(fun r ->
-                ARM.sexp_of_gpr_reg r |>
+                M.sexp_of_reg r |>
                 Ppx_sexp_conv_lib.Sexp.to_string) o.pre_assign) |>
          Option.value ~default:"N/A")
     | Const c -> Word.to_string c
     | Label l -> Tid.to_string l
-    | Cond c -> cond_to_string c
+    | Cond c -> M.cond_to_string c
     | Void -> ""
     | Offset c -> Format.asprintf "Offset(%d)" (Word.to_int_exn c)
 
@@ -427,33 +429,33 @@ module Make () = struct
       ~f:(fun v ->
           match v.pre_assign with
           | Some _ -> v
-          | None -> {v with pre_assign = Some `R0})
+          | None -> {v with pre_assign = Some M.dummy (* `R0 *)})
 
 end
 
 module type S = sig
 
-  type reg = ARM.gpr_reg [@@deriving sexp, equal, compare]
+  type reg [@@deriving sexp, equal, compare]
 
-  type cond = ARM.cond [@@deriving sexp, equal, compare]
+  type cond [@@deriving sexp, equal, compare]
 
-  type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
+  type insn [@@deriving sexp, equal, compare]
 
 
   type op_var = {
     id : var;
     temps : var list;
-    pre_assign : ARM.gpr_reg option
+    pre_assign : reg option
   } [@@deriving compare, equal, sexp]
 
   val simple_var : var -> op_var
 
-  val given_var : var -> ARM.gpr_reg -> op_var
+  val given_var : var -> reg -> op_var
 
   type operand = Var of op_var
                | Const of word
                | Label of tid
-               | Cond of ARM.cond
+               | Cond of cond
                | Void
                | Offset of word [@@deriving compare, equal, sexp]
 
@@ -496,12 +498,11 @@ module type S = sig
 
   val operation_to_string : operation -> string
   val op_var_to_string : op_var -> string
-  val cond_to_string : ARM.cond -> string
 
   val all_temps : t -> Var.Set.t
   val all_operands : t -> Var.Set.t
 
-  val preassign_map : t -> (ARM.gpr_reg option) Var.Map.t
+  val preassign_map : t -> (reg option) Var.Map.t
 
   val definer_map : t -> op_var Var.Map.t
 
