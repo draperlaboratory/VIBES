@@ -288,25 +288,25 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
-let run_minizinc (model_filename : string) (vir : Ir.t) : Ir.t KB.t =
-  let params_filename =
+let run_minizinc (model_filepath : string) (vir : Ir.t) : Ir.t KB.t =
+  let params_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
-  let solution_filename =
+  let solution_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
-  Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filename));
+  Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
   let params, name_maps = serialize_mzn_params vir_clean in
-  Yojson.Safe.to_file params_filename (mzn_params_serial_to_yojson params);
+  Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
-                       "-o"; solution_filename;
+                       "-o"; solution_filepath;
                        "--output-objective";
-                       "-d"; params_filename;
+                       "-d"; params_filepath;
                        "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
                        "--search-complete-msg";"\"\"";
-                       model_filename ] in
+                       model_filepath ] in
   Utils.run_process_exn "minizinc" minizinc_args >>= fun () ->
-  let sol_serial = Yojson.Safe.from_file solution_filename |> sol_serial_of_yojson  in
+  let sol_serial = Yojson.Safe.from_file solution_filepath |> sol_serial_of_yojson  in
   let sol = match sol_serial with
     | Ok sol_serial -> KB.return (deserialize_sol sol_serial name_maps)
     | Error msg -> Errors.fail (Errors.Minizinc_deserialization msg) in

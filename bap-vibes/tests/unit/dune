@@ -1,4 +1,3 @@
-(test
+(executable
   (name test)
-  (modes byte)
   (libraries bap bap-vibes ounit2 str))

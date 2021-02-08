@@ -81,7 +81,7 @@ constraint forall(o in operation_t where card(operation_insns[o]) > 0 )(
 % operand should only be assigned to temporary it either defines or uses.
 % Is this implicit from other constraints?
 constraint forall(o in operand_t)(
-        temp[o] in { t | t in temp_t where definer[t] = o \\/ o in users[t] }
+        temp[o] in { t | t in temp_t where definer[t] = o \/ o in users[t] }
 );
 
 
@@ -157,8 +157,8 @@ constraint forall(t in temp_t)(
 
 % C5.2 For an active operation there must be at least one live temporary available
 constraint forall(t in temp_t)(
-    %card({p | p in users[t] where live[t] == active[operand_operation[p]] /\\ temp[p] == t}) >= 1 % fishy encoding
-    live[t] <- exists(p in users[t])( active[operand_operation[p]] /\\ temp[p] = t ) % should be both way implication?
+    %card({p | p in users[t] where live[t] == active[operand_operation[p]] /\ temp[p] == t}) >= 1 % fishy encoding
+    live[t] <- exists(p in users[t])( active[operand_operation[p]] /\ temp[p] = t ) % should be both way implication?
 );
 
 % C6 Congruent operands map to the same register
@@ -172,7 +172,7 @@ constraint forall (p in operand_t, q in operand_t where q in congruent[p])(
 %       active operations that use that temporary
 constraint forall (t in temp_t)(
      let {operand_t : p = definer[t]} in
-        forall(q in users[t] where active[operand_operation[q]] /\\ temp[q] == t)(
+        forall(q in users[t] where active[operand_operation[q]] /\ temp[q] == t)(
             issue[operand_operation[q]] >= issue[operand_operation[p]] + latency[insn[operand_operation[p]]]
     )
 );
@@ -205,7 +205,7 @@ constraint forall (t in temp_t)(
 
 
 %C10 Then end cycle of a temporary is the last issue cycle of operations that use it.
-constraint forall (t in temp_t where card(users[t]) > 0 /\\ live[t])(
+constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 
    end_cycle[t] == max(
       % [ start[t] + 10 ] ++  % a kludge to make minizinc not upset when users[t] is empty.

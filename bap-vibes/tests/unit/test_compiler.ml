@@ -12,6 +12,9 @@ let dummy_solver _ vir = KB.return vir
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
 
+  (* Skip this test for now. *)
+  H.skip_test "Doesn't work without the dummy solver";
+
   (* Run the compiler. *)
   let computation =
     (* Set up the KB. *)
@@ -87,7 +90,7 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     result
 
 let suite = [
-  (* "Test Compiler.compile" >:: test_compile; *)
+  "Test Compiler.compile" >:: test_compile;
   "Test Compiler.compile: no minizinc model filepath" >::
     test_compile_with_no_minizinc_model_filepath;
   "Test Compiler.compile: no patch (BIR)" >:: test_compile_with_no_patch;
