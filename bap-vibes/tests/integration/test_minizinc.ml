@@ -101,7 +101,8 @@ let ex1 : Ir.t = {
 }
 
 (* Ensure minizinc produces the expected output on our sample IR block. *)
-let test_minizinc_ex1 _ =
+let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
+  let model = Cli.minizinc_model_filepath ctxt in
   let computation =
     (* Set up the KB. *)
     KB.Object.create Data.cls >>= fun obj ->
@@ -111,7 +112,7 @@ let test_minizinc_ex1 _ =
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
     (* Now run the compiler. *)
-    Minizinc.run_minizinc ex1 >>= fun sol ->
+    Minizinc.run_minizinc model ex1 >>= fun sol ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
       blk.data in
     assert_bool "Operations should be in order"

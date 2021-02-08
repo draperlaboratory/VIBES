@@ -36,9 +36,10 @@ done
 # Run the tests.
 make clean -C "${REPO_ROOT}"/bap-vibes > "${REPORT_FILE}" 2>&1
 make test -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
+TEST_RESULT="${?}"
 echo "REPORT:"
 cat "${REPORT_FILE}"
-if [ ${?} -ne 0 ]; then
+if [[ "${TEST_RESULT}" != "0" ]]; then
     echo "Tests failed" > "${MSG_FILE}"
     report_to_slack
     fail

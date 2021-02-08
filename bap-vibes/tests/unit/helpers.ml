@@ -6,6 +6,8 @@ open OUnit2
 
 module KB = Knowledge
 
+(* Skip a test, with a message saying why. *)
+let skip_test (msg : string) : unit = skip_if true msg
 
 (* Create an empty project. *)
 let empty_proj (filename : string) : (Project.t, Error.t) result =
