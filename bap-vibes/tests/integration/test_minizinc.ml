@@ -6,6 +6,8 @@ open OUnit2
 module KB = Knowledge
 open Knowledge.Syntax
 
+module Ir = Arm_selector.Ir
+
 open Ir
 
 (* Creates an operation built just from the specified variables,
@@ -31,7 +33,7 @@ let out_op (ts : Var.t list) : operation =
   }
 
 (* Creates an operation with a specified instruction (opcode), a specified
-   variable (before it's assigned to operands), and specified operands. *) 
+   variable (before it's assigned to operands), and specified operands. *)
 let simple_op' opcode arg args =
   let tid = Tid.create () in
   { id = tid;
@@ -45,7 +47,7 @@ let simple_op' opcode arg args =
    in the operand slots for an operation with a fixed [lhs] and [opcode]. *)
 let (:=) lhs opcode = fun args -> simple_op' opcode lhs args
 
-(* Define some temporaries to use in a test. *)          
+(* Define some temporaries to use in a test. *)
 let t1 = Var.create "t1" (Imm 32)
 let t2 = Var.create "t2" (Imm 32)
 let t3 = Var.create "t3" (Imm 32)
