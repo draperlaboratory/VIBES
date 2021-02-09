@@ -1,4 +1,5 @@
-(* This IR is intended for the eventual serialization of parameters to
+(**
+   This IR is intended for the eventual serialization of parameters to
    a constraint model that solves a joint instruction scheduling and
    register allocation problem in the style of Unison. It is modeled
    roughly after the Unison IR as described in chapter 5 of the Unison
@@ -126,7 +127,10 @@ module type S = sig
   val operation_to_string : operation -> string
   val op_var_to_string : op_var -> string
 
+  (** All the temporaries from every instruction *)
   val all_temps : t -> Var.Set.t
+
+  (** All the operands from every instruction *)
   val all_operands : t -> Var.Set.t
 
   (** [preassign_map] builds a total dictionary from op_var ids to
@@ -146,34 +150,53 @@ module type S = sig
       which they are defined and used. *)
   val temp_blk : t -> Tid.t Var.Map.t
 
+  (** Every instruction (there may be several instructions at each line)
+     from every instruction associated to their unique [tid]. *)
   val operation_insns : t -> insn list Tid.Map.t
+
+  (** Every operation associated to its unique [tid].*)
   val operand_operation : t -> operation Var.Map.t
+
+  (** pretty print the Ir for debugging/logging purposes*)
   val pretty_ir : t -> string
-  (* Alias of pretty_ir *)
+
+  (** Alias of pretty_ir *)
   val to_string : t -> string
 
   val op_var_exn : operand -> op_var
 
-  (** Populate the [pre_assign] field with [`R0] if it is not already
+  (** Populate the [pre_assign] field with [dummy] if it is not already
       assigned. Useful for testing purposes. *)
   val dummy_reg_alloc : t -> t
 
 end
 
+(** [ARCH] implements the required interface for instantiating the
+   abstract IR, which can then be passed on to the constraint solver
+   for scheduling and register allocation. *)
 module type ARCH = sig
 
+  (** The concrete type of general purpose registers *)
   type reg [@@deriving sexp, equal, compare]
 
+  (** The concrete type of conditional guards for expressions *)
   type cond [@@deriving sexp, equal, compare]
 
+  (** The concrete type of intructions, or opcodes for the
+     architecture at hand. *)
   type insn [@@deriving sexp, equal, compare]
 
+  (** The frame pointer for the given architecture and ABI. *)
   val fp : reg
 
+  (** The register which contains the program counter. *)
   val pc : reg
 
+  (** A dummy register used to implement the [dummy_reg_alloc]
+     function. *)
   val dummy : reg
 
+  (** prints a condition, in order to generate the assembly. *)
   val cond_to_string : cond -> string
 
 end
