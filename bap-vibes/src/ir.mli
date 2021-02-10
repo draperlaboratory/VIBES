@@ -33,6 +33,19 @@
 
 open Bap.Std
 
+type opcode [@@deriving compare, equal, sexp]
+
+module Opcode :
+sig
+
+  type t = opcode
+
+  val create : ?arch:string -> string -> opcode
+
+  val to_asm : opcode -> string
+
+end
+
 
 (** [operand]s have unique ids, a list of potential temporaries that
    can be used to implement the operand and may be optionally
@@ -41,21 +54,18 @@ open Bap.Std
 type op_var = {
   id : var;
   temps : var list;
-  pre_assign : ARM.gpr_reg option
+  pre_assign : var option
 } [@@deriving compare, equal, sexp]
 
 val simple_var : var -> op_var
 
-val given_var : var -> ARM.gpr_reg -> op_var
+val given_var : var -> reg:var -> op_var
 
 type operand = Var of op_var
              | Const of word
              | Label of tid
-             | Cond of ARM.cond
              | Void
              | Offset of word [@@deriving compare, equal, sexp]
-
-type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 
 (** An [operation] has
     a *unique* id
@@ -66,12 +76,12 @@ type insn = [Arm_types.insn | ARM.shift] [@@deriving sexp, equal, compare]
 type operation = {
   id : tid;
   lhs : operand list;
-  insns : insn list;
+  opcodes : opcode list;
   optional : bool;
   operands : operand list;
 } [@@deriving compare, equal, sexp]
 
-val simple_op : insn -> operand -> operand list -> operation
+val simple_op : opcode -> operand -> operand list -> operation
 
 (** A [vibes_blk] has an id,
     a set of operations,
@@ -112,14 +122,13 @@ val map_operations : f:(operation -> operation) -> t -> t
 
 val operation_to_string : operation -> string
 val op_var_to_string : op_var -> string
-val cond_to_string : ARM.cond -> string
 
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
 (** [preassign_map] builds a total dictionary from op_var ids to
     pre assigned registers *)
-val preassign_map : t -> (ARM.gpr_reg option) Var.Map.t
+val preassign_map : t -> (var option) Var.Map.t
 
 (** [definer_map] takes a subroutine and builds a Map from all
     temporaries to the unique lhs operand where that temporary is
@@ -134,7 +143,7 @@ val users_map : t -> (op_var list) Var.Map.t
     which they are defined and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
-val operation_insns : t -> insn list Tid.Map.t
+val operation_opcodes : t -> opcode list Tid.Map.t
 val operand_operation : t -> operation Var.Map.t
 val pretty_ir : t -> string
 (* Alias of pretty_ir *)

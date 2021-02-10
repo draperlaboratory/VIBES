@@ -109,6 +109,34 @@ let bool b =
 
 module ARM_ops = struct
 
+  module Ops = struct
+
+    let op s = Ir.Opcode.create ~arch:"arm" s
+
+    let mov = op "mov"
+    let movw = op "movw"
+    let bx = op "bx"
+    let add = op "add"
+    let sub = op "sub"
+    let lsl_ = op "lsl"
+    let lsr_ = op "lsr"
+    let asr_ = op "asr"
+    let and_ = op "and"
+    let orr = op "orr"
+    let eor = op "eor"
+    let ldr = op "ldr"
+    let ldrh = op "ldrh"
+    let ldrb = op "ldrb"
+    let str = op "str"
+    let cmp = op "comp"
+    let beq = op "beq"
+    let bne = op "bne"
+    let ble = op "ble"
+    let blt = op "blt"
+    let b = op "b"
+
+  end
+
   let create_temp ty =
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
     Ir.simple_var
@@ -132,9 +160,9 @@ module ARM_ops = struct
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     let mov =
       match arg1, arg2_var with
-      | Ir.Var _, Ir.Var _ ->
-        Ir.simple_op `MOVr arg1 [arg2_var]
-      | Ir.Var _, Ir.Const _ -> Ir.simple_op `MOVi arg1 [arg2_var]
+      | Ir.Var _, Ir.Var _
+      | Ir.Var _, Ir.Const _ ->
+        Ir.simple_op Ops.mov arg1 [arg2_var]
       | _ -> failwith "arm_mov: unexpected arguments!"
     in
     instr mov arg2_sem
@@ -142,7 +170,7 @@ module ARM_ops = struct
   let ( := ) x y = arm_mov x y
 
   let b_instr addr =
-    let i = Ir.simple_op `Bcc (Cond `AL) [Ir.Label addr] in
+    let i = Ir.simple_op Ops.b Void [Ir.Label addr] in
     control i empty_eff
 
   let jmp arg =
@@ -152,9 +180,9 @@ module ARM_ops = struct
     let jmp_data, jmp_ctrl =
       match arg_tgt with
       | Var _ ->
-        [], Ir.simple_op `MOVr pc [arg_tgt]
+        [], Ir.simple_op Ops.mov pc [arg_tgt]
       | Const w ->
-        [], Ir.simple_op `Bcc (Cond `AL) [Offset w]
+        [], Ir.simple_op Ops.b Void [Offset w]
       | _ ->
         let err = Format.asprintf "%s"
             (Ir.sexp_of_operand arg_tgt |>
@@ -189,11 +217,11 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
-  let (+) arg1 arg2 = binop `ADDrsi (Imm 32) arg1 arg2
+  let (+) arg1 arg2 = binop Ops.add (Imm 32) arg1 arg2
 
-  let (-) arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
+  let (-) arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
 
-  let shl _signed arg1 arg2 = binop `LSL (Imm 32) arg1 arg2
+  let shl _signed arg1 arg2 = binop Ops.lsl_ (Imm 32) arg1 arg2
 
   let shr signed arg1 arg2 =
     let b =
@@ -206,20 +234,20 @@ module ARM_ops = struct
       | _ -> failwith "Arm_gen.shr: arg2 non-constant"
     in
     if b then
-      binop `ASR (Imm 32) arg1 arg2
+      binop Ops.asr_ (Imm 32) arg1 arg2
     else
-      binop `LSR (Imm 32) arg1 arg2
+      binop Ops.lsr_ (Imm 32) arg1 arg2
 
   let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
     let l_instr =
       if bits = 32 then
-        `LDRrs
+        Ops.ldr
       else if bits = 16 then
-        `LDRH
+        Ops.ldrh
       else if bits = 8 then
-        `LDRBrs
+        Ops.ldrb
       else
         failwith "Arm_selector.ldr: Loading a bit-width that is not 8, 16 or 32!"
     in
@@ -231,23 +259,23 @@ module ARM_ops = struct
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
-    let op = Ir.simple_op `STRrs loc_val [value_val] in
+    let op = Ir.simple_op Ops.str loc_val [value_val] in
     (* Again, a little cowboy instruction ordering *)
     let sem = loc_sem @. value_sem @. mem_sem in
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = mem_val; op_eff = sem}
 
-  let (&&) a b = binop `ANDrsi (Imm 32) a b
+  let (&&) a b = binop Ops.and_ (Imm 32) a b
 
-  let (||) a b = binop `ORRrsi (Imm 32) a b
+  let (||) a b = binop Ops.orr (Imm 32) a b
 
-  let xor a b = binop `EORrsi (Imm 32) a b
+  let xor a b = binop Ops.eor (Imm 32) a b
 
   (* Generally, boolean operations will be handled by a normal (word
      size) value, with value 0 if false and non-zero if true. It will
      be the job of branching operations to call [cmp ? ?] and check
      the appropriate flags. *)
-  let equals arg1 arg2 = binop `SUBrsi (Imm 32) arg1 arg2
+  let equals arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
 
   (* Intuitively we want to generate:
 
@@ -261,7 +289,7 @@ module ARM_ops = struct
   let beq cond branch1 branch2 =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
-    let cmp = Ir.simple_op `CMPrsi Void
+    let cmp = Ir.simple_op Ops.cmp Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
     let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
     let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
@@ -269,7 +297,7 @@ module ARM_ops = struct
     let tid2 = Tid.for_name "false_branch" in
     let blk1 = Ir.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
     let blk2 = Ir.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
-    let beq = Ir.simple_op `Bcc (Cond `NE) [Label tid2] in
+    let beq = Ir.simple_op Ops.bne Void [Label tid2] in
     let blks = cond_eff.other_blks in
     let blks = Ir.union blks1 @@ Ir.union blks2 blks in
     let blks = Ir.add blk1 @@ Ir.add blk2 blks in
@@ -475,7 +503,7 @@ let add_in_vars_blk (b : Ir.blk) : Ir.blk =
   let ins = {
     Ir.id = Tid.create ();
     Ir.lhs = ins;
-    Ir.insns = [];
+    Ir.opcodes = [];
     Ir.optional = false;
     Ir.operands = [];
   } in
@@ -496,34 +524,7 @@ let ir (t : arm_eff) : Ir.t =
 
 module Pretty = struct
 
-  let insn_pretty i : (string, Errors.t) result =
-    match i with
-    | `MOVr
-    | `MOVi    -> Ok "mov"
-    | `MOVi16  -> Ok "movw"
-    | `MOVTi16 -> Ok "movt"
-    | `BX      -> Ok "bx"
-    | `ADDrsi  -> Ok "add"
-    | `SUBrsi  -> Ok "sub"
-    | `LSL     -> Ok "lsl"
-    | `LSR     -> Ok "lsr"
-    | `ASR     -> Ok "asr"
-    | `ANDrsi  -> Ok "and"
-    | `ORRrsi  -> Ok "orr"
-    | `EORrsi  -> Ok "eor"
-    | `EORrr   -> Ok "eor"
-    | `LDRrs   -> Ok "ldr"
-    | `LDRH    -> Ok "ldrh"
-    | `LDRBrs  -> Ok "ldrb"
-    | `STRrs   -> Ok "str"
-    | `Bcc     -> Ok "" (* We print nothing here since the condition will add the "b" *)
-    | `CMPrsi  -> Ok "cmp"
-    | i       ->
-      let to_string i = Ir.sexp_of_insn i |> Sexp.to_string in
-      let msg =
-        Format.asprintf "insn_pretty: instruction %s not supported" (to_string i)
-      in
-      Error (Errors.Not_implemented msg)
+  let insn_pretty i : (string, Errors.t) result = Result.return @@ Ir.Opcode.to_asm i
 
   (* We use this function when generating ARM, since the assembler
      doesn't like % or @ in labels. *)
@@ -539,8 +540,7 @@ module Pretty = struct
       let res =
         Result.bind
           (Result.of_option v.pre_assign ~error:error)
-          ~f:(fun reg ->
-              Result.return @@ Sexp.to_string @@ ARM.sexp_of_gpr_reg reg)
+          ~f:(fun reg -> Result.return @@ Var.to_string reg)
       in
       if is_loc then
         Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
@@ -550,7 +550,6 @@ module Pretty = struct
       (* A little calisthenics to get this to look nice *)
       Result.return @@ Format.asprintf "#%a" Word.pp_dec w
     | Label l -> Result.return @@ tid_to_string l
-    | Cond c -> Result.return @@ Ir.cond_to_string c
     | Void -> Result.return ""
     | Offset c ->
       (* Special printing of offsets to jump back from patched locations *)
@@ -581,23 +580,10 @@ module Pretty = struct
       Result.all
     in
     let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
-    (* FIXME: Pure hack: drop the first comma if the first argument is a
-       Cond. *)
-    let all_str =
-      begin
-        match l with
-        | (_, Ir.Cond _) :: _ ->
-          Result.map all_str ~f:(fun all_str ->
-              let hd = List.hd_exn all_str in
-              let tl = List.tl_exn @@ List.tl_exn all_str in
-              hd::" "::tl)
-        | _ -> all_str
-      end
-    in
     Result.map ~f:String.concat all_str
 
   let arm_op_pretty (t : Ir.operation) : (string, Errors.t) result =
-    let op = List.hd_exn t.insns in
+    let op = List.hd_exn t.opcodes in
     Result.(insn_pretty op >>= fun op ->
             arm_operands_pretty op
               (List.hd_exn t.lhs)

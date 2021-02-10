@@ -1,20 +1,36 @@
 open !Core_kernel
 open Bap.Std
+open Bap_knowledge
+
+(* FIXME: should this have a phantom type with the architecture? *)
+type opcode = Knowledge.Name.t [@@deriving compare, equal, sexp]
+
+module Opcode =
+struct
+
+  type t = opcode
+
+  let create ?arch:(arch = "") s = Knowledge.Name.create ~package:arch s
+
+  let to_asm o = Knowledge.Name.unqualified o
+
+end
 
 type op_var = {
   id : Var.t;
   temps : Var.t list;
-  pre_assign : ARM.gpr_reg option
+  pre_assign : var option
 } [@@deriving compare, sexp]
 
 let equal_op_var x y = [%equal: Var.t] x.id y.id
 
 let simple_var v =
+  (* FIXME: move this out into arm_select *)
   let pre_assign =
     if String.(Var.name v = "FP") then
-      Some `R11
+      Some (Var.create ~is_virtual:false ~fresh:false "r11" (Var.typ v))
     else if String.(Var.name v = "PC") then
-      Some `PC
+      Some (Var.create ~is_virtual:false ~fresh:false "pc" (Var.typ v))
     else
       None
   in
@@ -24,22 +40,17 @@ let simple_var v =
     pre_assign = pre_assign
   }
 
-let given_var v reg =
+let given_var v ~reg:reg =
   {
    id = Var.create ~fresh:true "operand" (Var.typ v);
     temps = [v];
     pre_assign = Some reg
   }
 
-type cond = ARM.cond [@@deriving compare, sexp]
-
-let equal_cond a b = compare_cond a b = 0
-
 type operand =
     Var of op_var
   | Const of Word.t
   | Label of Tid.t
-  | Cond of cond
   | Void
   | Offset of Word.t [@@deriving compare, equal, sexp]
 
@@ -73,17 +84,10 @@ let op_var_exn (x : operand) : op_var =
   | Var o -> o
   | _ -> failwith "Expected op_var"
 
-type insn = [Arm_types.insn | shift] [@@deriving sexp]
-
-(* FIXME: Absolutely disgusting implementation, but it should be correct. *)
-let compare_insn (s1 : insn) (s2 : insn) = Int.compare (Obj.magic s1) (Obj.magic s2)
-
-let equal_insn (s1 : insn) (s2 : insn) = compare_insn s1 s2 = 0
-
 type operation = {
   id : Tid.t;
   lhs : operand list;
-  insns : insn list;
+  opcodes : opcode list;
   optional : bool;
   operands :  operand list;
 } [@@deriving compare, equal, sexp]
@@ -92,7 +96,7 @@ let simple_op opcode arg args =
   let tid = Tid.create () in
   { id = tid;
     lhs = [arg];
-    insns = [opcode];
+    opcodes = [opcode];
     optional = false;
     (* Operands need to have unique ids *)
     operands = List.map ~f:freshen_operand args;
@@ -102,7 +106,7 @@ let mk_empty_operation () =
   let tid = Tid.create () in
   { id = tid;
     lhs = [];
-    insns = [];
+    opcodes = [];
     optional = false;
     operands = [];
   }
@@ -156,7 +160,7 @@ let var_operands (ops : operand list) : op_var list =
   List.fold ~f:(fun acc o ->
       match o with
       | Var v -> v :: acc
-      | Const _ | Label _ | Cond _ | Void | Offset _ -> acc
+      | Const _ | Label _ | Void | Offset _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -195,7 +199,7 @@ module Blk = struct
     List.concat_map (all_operands blk)
       ~f:(fun op ->
           match op with
-          | Const _ | Label _ | Cond _ | Void | Offset _ -> []
+          | Const _ | Label _ | Void | Offset _ -> []
           | Var op -> op.temps) |>
     Var.Set.of_list
 
@@ -225,9 +229,9 @@ module Blk = struct
   let all_operations (blk : blk) : operation list =
     blk.ins :: ( blk.outs :: (blk.data @ blk.ctrl))
 
-  let operation_insn (blk : blk) : (insn list) Tid.Map.t =
+  let operation_opcode (blk : blk) : (opcode list) Tid.Map.t =
     List.fold ~init:Tid.Map.empty ~f:(fun acc o ->
-        Tid.Map.add_exn acc ~key:o.id ~data:o.insns
+        Tid.Map.add_exn acc ~key:o.id ~data:o.opcodes
       ) (all_operations blk)
 
   let operand_operation (blk : blk) : operation Var.Map.t =
@@ -316,7 +320,7 @@ let all_operands (sub : t) : Var.Set.t =
   List.map ~f:(fun (o : op_var) -> o.id) |>
   Var.Set.of_list
 
-let preassign_map (sub : t) : (ARM.gpr_reg option) Var.Map.t =
+let preassign_map (sub : t) : (var option) Var.Map.t =
   List.concat_map sub.blks ~f:Blk.all_operands |>
   var_operands |>
   List.map ~f:(fun op -> (op.id, op.pre_assign))
@@ -349,31 +353,17 @@ let temp_blk (sub : t) : Tid.t Var.Map.t =
           ~f:(fun t -> (t, blk.id))) |>
   Var.Map.of_alist_exn
 
-let operation_insns (sub : t) : (insn list) Tid.Map.t =
+let operation_opcodes (sub : t) : (opcode list) Tid.Map.t =
   List.fold sub.blks
     ~init:Tid.Map.empty
     ~f:(fun acc blk ->
-        tid_map_union_exn acc (Blk.operation_insn blk))
+        tid_map_union_exn acc (Blk.operation_opcode blk))
 
 let operand_operation (sub : t) : operation Var.Map.t =
   List.fold sub.blks
     ~init:Var.Map.empty
     ~f:(fun acc blk ->
         var_map_union_exn acc (Blk.operand_operation blk))
-
-
-let cond_to_string c =
-  match c with
-  | `AL -> "b"
-  | `EQ -> "beq"
-  | `NE -> "bne"
-  | `GE -> "bge"
-  | `GT -> "bgt"
-  | `LS -> "bgs"
-  | `LT -> "blt"
-  | `LE -> "ble"
-  | _ -> failwith @@
-    "cond_to_string: Unsupported operation " ^ (sexp_of_cond c |> Sexp.to_string)
 
 let pretty_operand o =
   match o with
@@ -382,13 +372,10 @@ let pretty_operand o =
       (Var.to_string o.id)
       (List.map ~f:Var.to_string o.temps |> String.concat ~sep:"::")
       ((Option.map
-          ~f:(fun r ->
-              ARM.sexp_of_gpr_reg r |>
-              Ppx_sexp_conv_lib.Sexp.to_string) o.pre_assign) |>
+          ~f:(Var.to_string) o.pre_assign) |>
        Option.value ~default:"N/A")
   | Const c -> Word.to_string c
   | Label l -> Tid.to_string l
-  | Cond c -> cond_to_string c
   | Void -> ""
   | Offset c -> Format.asprintf "Offset(%d)" (Word.to_int_exn c)
 
@@ -398,8 +385,7 @@ let pretty_operand_list l =
 let pretty_operation o =
   sprintf "\t\t[%s]  <- %s [%s]" (pretty_operand_list o.lhs)
     (String.concat
-       (List.map o.insns
-          ~f:(fun i -> sexp_of_insn i |> Ppx_sexp_conv_lib.Sexp.to_string)))
+       (List.map o.opcodes ~f:Opcode.to_asm))
     (pretty_operand_list o.operands)
 
 let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\n\tctrl: \n%s"
@@ -421,4 +407,6 @@ let dummy_reg_alloc t =
     ~f:(fun v ->
         match v.pre_assign with
         | Some _ -> v
-        | None -> {v with pre_assign = Some `R0})
+        | None ->
+          let var = List.hd_exn v.temps in
+          {v with pre_assign = Some (Var.create "r0" (Var.typ var))})

@@ -4,6 +4,7 @@ open Core_kernel
 open Bap_knowledge
 module KB = Knowledge
 open Knowledge.Syntax
+open Bap_core_theory
 
 
 (**
@@ -13,7 +14,7 @@ open Knowledge.Syntax
    [definer] map from temporary to operation that defines it
    [users] map of temporaries to set of operands that use temporary
    [temp_block] map from temporary to block it belongs to
-   [latency] Unimplemented. map from insn to latency integer
+   [latency] Unimplemented. map from opcode to latency integer
    [preassign] Map from operand to optional preassigned register
    [operand_operation] Map from operands to the operation they belong to
    [congruent] List of congurent operand pairs. For the purposes of cross block operand
@@ -29,8 +30,8 @@ type mzn_params = {
   temp_block : tid Var.Map.t;
   latency : unit;
   (* width : int Var.Map.t; Vars in Bap have width. Unnecessary? *)
-  preassign : ARM.gpr_reg option Var.Map.t;
-  operation_insns : (Ir.insn list) Tid.Map.t;
+  preassign : var option Var.Map.t;
+  operation_opcodes : (Ir.opcode list) Tid.Map.t;
   operand_operation : Ir.operation Var.Map.t;
   congruent : (Ir.op_var * Ir.op_var) list;
   operands : Var.Set.t;
@@ -52,7 +53,7 @@ let mzn_params_of_vibes_ir (sub : Ir.t) : mzn_params =
     temp_block = Ir.temp_blk sub;
     latency = ();
     preassign = Ir.preassign_map sub;
-    operation_insns = Ir.operation_insns sub;
+    operation_opcodes = Ir.operation_opcodes sub;
     operand_operation = Ir.operand_operation sub;
     congruent = sub.congruent;
     temps = Ir.all_temps sub;
@@ -77,7 +78,7 @@ type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]
 type temp = mzn_enum [@@deriving yojson]
-type insn = mzn_enum [@@deriving yojson]
+type opcode = mzn_enum [@@deriving yojson]
 type reg = mzn_enum [@@deriving yojson]
 
 let mzn_enum (x : string) : mzn_enum = {e = x}
@@ -87,7 +88,7 @@ let mzn_enum_def_of_list (tags : string list) : mzn_enum_def = {set = List.map ~
 
 type mzn_params_serial = {
   reg_t : mzn_enum_def;
-  insn_t : mzn_enum_def;
+  opcode_t : mzn_enum_def;
   temp_t : mzn_enum_def;
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
@@ -101,8 +102,8 @@ type mzn_params_serial = {
   width : (temp, int) mznmap;
   preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
   congruent : (operand, operand mznset) mznmap;
-  operation_insns : (operation, insn mznset) mznmap;
-  latency : (insn , int) mznmap
+  operation_opcodes : (operation, opcode mznset) mznmap;
+  latency : (opcode , int) mznmap
 }  [@@deriving yojson]
 
 
@@ -127,15 +128,16 @@ type serialization_info = {
 
 *)
 let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
+  let tgt = Theory.Target.get "arm" in
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
-  let insns = Tid.Map.data params.operation_insns |> List.concat_map
-                ~f:(fun is -> List.map is ~f:(fun i -> Ir.sexp_of_insn i
+  let opcodes = Tid.Map.data params.operation_opcodes |> List.concat_map
+                ~f:(fun is -> List.map is ~f:(fun i -> Ir.sexp_of_opcode i
                                                        |>  Ppx_sexp_conv_lib.Sexp.to_string))
               |> String.Set.of_list |> String.Set.to_list in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
-  let operations = Tid.Map.keys params.operation_insns in
+  let operations = Tid.Map.keys params.operation_opcodes in
   let operands = Var.Set.to_list params.operands(* Var.Map.keys params.operand_operation *) in
   let width t = match Var.typ t with
     | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
@@ -143,9 +145,12 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
   in
   {
     reg_t = mzn_enum_def_of_list (List.map
-                                    ~f:(fun r -> ARM.sexp_of_gpr_reg r |> Sexp.to_string)
-                                    ARM.all_of_gpr_reg);
-    insn_t = mzn_enum_def_of_list insns;
+                                    ~f:(fun r -> r |>
+                                                 Theory.Var.ident |>
+                                                 Theory.Var.sexp_of_ident |>
+                                                 Sexp.to_string)
+                                    (Theory.Target.vars tgt |> Set.to_list));
+    opcode_t = mzn_enum_def_of_list opcodes;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Tid.to_string);
@@ -170,15 +175,15 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
     preassign = List.map operands
         ~f:(fun op ->
             Option.value_map ~default:{set = []}
-              ~f:(fun r -> {set = [ARM.sexp_of_gpr_reg r |> Sexp.to_string |> mzn_enum]})
+              ~f:(fun r -> {set = [Var.sexp_of_t r |> Sexp.to_string |> mzn_enum]})
               (Var.Map.find_exn params.preassign op)) ;
     congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
-    operation_insns = List.map ~f:(fun o ->
-        {set = Tid.Map.find_exn params.operation_insns o
-               |> List.map ~f:(fun i -> Ir.sexp_of_insn i
+    operation_opcodes = List.map ~f:(fun o ->
+        {set = Tid.Map.find_exn params.operation_opcodes o
+               |> List.map ~f:(fun i -> Ir.sexp_of_opcode i
                                         |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum)
         }) operations;
-    latency = List.map ~f:(fun _ -> 10) insns (* TODO *)
+    latency = List.map ~f:(fun _ -> 10) opcodes (* TODO *)
   },
   {
     temps = temps;
@@ -191,7 +196,7 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
 type sol_serial = {
   (* _objective : int;  Optimization is currently not implemented *)
   reg : (temp ,reg) mznmap;
-  insn : (operation , insn) mznmap;
+  opcode : (operation , opcode) mznmap;
   temp : (operand, temp) mznmap;
   live : bool list;
   active : bool list;
@@ -204,15 +209,15 @@ type sol_serial = {
    [sol] is produced by processing [sol_serial]
 
    [reg] is a mapping from temporaries to registers
-   [insn] is a mapping from operations to instructions
+   [opcode] is a mapping from operations to instructions
    [temp] is a mapping from operands to temps
    [active] is a mapping from operations to booleans
    [issue] is a mapping from operations to the issue cycle on which they execute
 *)
 
 type sol = {
-  reg : ARM.gpr_reg Var.Map.t;
-  insn : Ir.insn Tid.Map.t;
+  reg : var Var.Map.t;
+  opcode : Ir.opcode Tid.Map.t;
   temp : Var.t Var.Map.t;
   active : bool Tid.Map.t;
   issue : int Tid.Map.t;
@@ -229,13 +234,13 @@ type sol = {
 
 let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
   let strip_enum (l : mzn_enum list) : string list = List.map ~f:(fun t -> t.e) l in
-  let reg = List.map ~f:(fun r -> Sexp.of_string r.e |> ARM.gpr_reg_of_sexp) s.reg in
+  let reg = List.map ~f:(fun r -> Sexp.of_string r.e |> Var.t_of_sexp) s.reg in
   {
     reg = List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
-    insn = List.map2_exn
-        ~f:(fun op insn -> (op ,  Sexp.of_string insn |> Ir.insn_of_sexp))
+    opcode = List.map2_exn
+        ~f:(fun op opcode -> (op, Sexp.of_string opcode |> Ir.opcode_of_sexp))
         names.operations
-        (strip_enum s.insn)
+        (strip_enum s.opcode)
            |> Tid.Map.of_alist_exn;
     temp = List.map2_exn
         ~f:(fun op temp -> (op , String.Map.find_exn names.temp_map temp))
@@ -272,7 +277,7 @@ let apply_sol (vir : Ir.t) (sol : sol) : Ir.t =
   (* let vir = Ir.map_operations vir ~f:(fun o ->
    *     {
    *       o with
-   *       insns = [ Tid.Map.find_exn sol.insn o.id ];
+   *       opcodes = [ Tid.Map.find_exn sol.opcode o.id ];
    *       optional = not (Tid.Map.find_exn sol.active o.id);
    *     }) in *)
   vir
