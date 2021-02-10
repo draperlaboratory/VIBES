@@ -25,12 +25,12 @@ type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]
 type temp = mzn_enum [@@deriving yojson]
-type insn = mzn_enum [@@deriving yojson]
+type opcode = mzn_enum [@@deriving yojson]
 type reg = mzn_enum [@@deriving yojson]
 
 type mzn_params_serial = {
   reg_t : mzn_enum_def;
-  insn_t : mzn_enum_def;
+  opcode_t : mzn_enum_def;
   temp_t : mzn_enum_def;
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
@@ -44,8 +44,8 @@ type mzn_params_serial = {
   width : (temp, int) mznmap;
   preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
   congruent : (operand, operand mznset) mznmap;
-  operation_insns : (operation, insn mznset) mznmap;
-  latency : (insn , int) mznmap
+  operation_opcodes : (operation, opcode mznset) mznmap;
+  latency : (opcode , int) mznmap
 } [@@deriving yojson]
 
 type serialization_info = {
@@ -58,8 +58,8 @@ type serialization_info = {
 val serialize_mzn_params : Ir.t -> mzn_params_serial * serialization_info
 
 type sol = {
-  reg : ARM.gpr_reg Var.Map.t;
-  insn : Ir.insn Tid.Map.t;
+  reg : var Var.Map.t;
+  opcode : Ir.opcode Tid.Map.t;
   temp : Var.t Var.Map.t;
   active : bool Tid.Map.t;
   issue : int Tid.Map.t;
