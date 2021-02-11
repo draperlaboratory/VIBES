@@ -40,7 +40,7 @@ let mzn_params_gold =
       { \"e\": \"SP\" }
     ]
   },
-  \"opcode_t\": { \"set\": [ { \"e\": \"MOVi\" } ] },
+  \"opcode_t\": { \"set\": [ { \"e\": \"mov\" } ] },
   \"temp_t\": {
     \"set\": [
       {
@@ -115,8 +115,8 @@ let mzn_params_gold =
     { \"set\": [] }
   ],
   \"operation_opcodes\": [
-    { \"set\": [ { \"e\": \"MOVi\" } ] },
-    { \"set\": [ { \"e\": \"MOVi\" } ] },
+    { \"set\": [ { \"e\": \"mov\" } ] },
+    { \"set\": [ { \"e\": \"mov\" } ] },
     { \"set\": [] },
     { \"set\": [] }
   ],
