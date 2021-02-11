@@ -22,25 +22,78 @@ let mzn_params_gold =
   "{
   \"reg_t\": {
     \"set\": [
-      { \"e\": \"R0\" },
-      { \"e\": \"R1\" },
-      { \"e\": \"R2\" },
-      { \"e\": \"R3\" },
-      { \"e\": \"R4\" },
-      { \"e\": \"R5\" },
-      { \"e\": \"R6\" },
-      { \"e\": \"R7\" },
-      { \"e\": \"R8\" },
-      { \"e\": \"R9\" },
-      { \"e\": \"R10\" },
-      { \"e\": \"R11\" },
-      { \"e\": \"R12\" },
-      { \"e\": \"LR\" },
-      { \"e\": \"PC\" },
-      { \"e\": \"SP\" }
+      { \"e\": \"((name(Reg(name CF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
+      {
+        \"e\":
+          \"((name(Reg(name LR)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      { \"e\": \"((name(Reg(name NF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
+      { \"e\": \"((name(Reg(name QF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
+      {
+        \"e\":
+          \"((name(Reg(name R0)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R1)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R10)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R11)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R12)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R2)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R3)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R4)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R5)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R6)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R7)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R8)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name R9)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      {
+        \"e\":
+          \"((name(Reg(name SP)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
+      },
+      { \"e\": \"((name(Reg(name VF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
+      { \"e\": \"((name(Reg(name ZF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
+      {
+        \"e\":
+          \"((name(Reg(name mem)(ver 0)))(sort(App(args((App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))(App(args((Int 8)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))(Sym core-theory:Mem)))(name(core-theory:Mem)))))\"
+      }
     ]
   },
-  \"opcode_t\": { \"set\": [ { \"e\": \"mov\" } ] },
+  \"opcode_t\": { \"set\": [ { \"e\": \"arm:mov\" } ] },
   \"temp_t\": {
     \"set\": [
       {
@@ -115,8 +168,8 @@ let mzn_params_gold =
     { \"set\": [] }
   ],
   \"operation_opcodes\": [
-    { \"set\": [ { \"e\": \"mov\" } ] },
-    { \"set\": [ { \"e\": \"mov\" } ] },
+    { \"set\": [ { \"e\": \"arm:mov\" } ] },
+    { \"set\": [ { \"e\": \"arm:mov\" } ] },
     { \"set\": [] },
     { \"set\": [] }
   ],
