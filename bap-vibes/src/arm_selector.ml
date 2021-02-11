@@ -114,8 +114,8 @@ module ARM_ops = struct
     let op s = Ir.Opcode.create ~arch:"arm" s
 
     let mov = op "mov"
-    let movw = op "movw"
-    let bx = op "bx"
+    (* let movw = op "movw" *)
+    (* let bx = op "bx" *)
     let add = op "add"
     let sub = op "sub"
     let lsl_ = op "lsl"
@@ -129,10 +129,10 @@ module ARM_ops = struct
     let ldrb = op "ldrb"
     let str = op "str"
     let cmp = op "comp"
-    let beq = op "beq"
+    (* let beq = op "beq" *)
     let bne = op "bne"
-    let ble = op "ble"
-    let blt = op "blt"
+    (* let ble = op "ble" *)
+    (* let blt = op "blt" *)
     let b = op "b"
 
   end

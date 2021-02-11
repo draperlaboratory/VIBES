@@ -28,9 +28,9 @@ let simple_var v =
   (* FIXME: move this out into arm_select *)
   let pre_assign =
     if String.(Var.name v = "FP") then
-      Some (Var.create ~is_virtual:false ~fresh:false "r11" (Var.typ v))
+      Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     else if String.(Var.name v = "PC") then
-      Some (Var.create ~is_virtual:false ~fresh:false "pc" (Var.typ v))
+      Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
     else
       None
   in
@@ -409,4 +409,4 @@ let dummy_reg_alloc t =
         | Some _ -> v
         | None ->
           let var = List.hd_exn v.temps in
-          {v with pre_assign = Some (Var.create "r0" (Var.typ var))})
+          {v with pre_assign = Some (Var.create "R0" (Var.typ var))})
