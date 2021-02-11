@@ -128,7 +128,7 @@ type serialization_info = {
 
 *)
 let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
-  let tgt = Theory.Target.get "arm" in
+  let tgt = Arm_target.LE.v7 in
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
