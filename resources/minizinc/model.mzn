@@ -10,7 +10,7 @@ include "globals.mzn";
 % Type definitions
 % All are enumerative types
 enum reg_t;
-enum insn_t;
+enum opcode_t;
 enum temp_t;
 enum operand_t;
 enum operation_t;
@@ -31,18 +31,18 @@ array[operand_t] of set of reg_t : preassign; % preassign operand_t to register.
 array[operand_t] of set of operand_t : congruent; % Whether congruent. Congruent operands are actually the same temporary split by linear SSA
 
 
-array[operation_t] of set of insn_t : operation_insns; % map from operation to possible instructions that implement it
+array[operation_t] of set of opcode_t : operation_opcodes; % map from operation to possible instructions that implement it
 
 % register class
 % For simd registers, spilling.
 
-%array[operand_t] of array[insn_t] of class_t : op_insn_class; % two alternative representation for register class.
+%array[operand_t] of array[opcode_t] of class_t : op_opcode_class; % two alternative representation for register class.
 %array[reg_t] of class_t : reg_class;
 
 % vs
 
-%array[operand_t] of array[insn_t] of set of reg_t : reg_class;
-array[insn_t] of int: latency; % latency of instruction
+%array[operand_t] of array[opcode_t] of set of reg_t : reg_class;
+array[opcode_t] of int: latency; % latency of instruction
 
 
 int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from file.
@@ -58,7 +58,7 @@ int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from
 %%  VARIABLES
 %% ---------------------------------------------------------------
 array[temp_t] of var reg_t : reg;
-array[operation_t] of var insn_t : insn;
+array[operation_t] of var opcode_t : opcode;
 array[operand_t] of var temp_t : temp;
 array[temp_t] of var bool : live;
 array[operation_t] of var bool : active;
@@ -72,9 +72,9 @@ array[temp_t] of var 0..MAXC : end_cycle;
 
 % constraint to choose instruction from allowed instructions. Why was this not implied
 % not in the paper
-% maybe if I had more logic interconnecting choice of temporary / register with insn this would be implied
-constraint forall(o in operation_t where card(operation_insns[o]) > 0 )(
-    insn[o] in operation_insns[o]
+% maybe if I had more logic interconnecting choice of temporary / register with opcode this would be implied
+constraint forall(o in operation_t where card(operation_opcodes[o]) > 0 )(
+    opcode[o] in operation_opcodes[o]
  );
 
 
@@ -173,7 +173,7 @@ constraint forall (p in operand_t, q in operand_t where q in congruent[p])(
 constraint forall (t in temp_t)(
      let {operand_t : p = definer[t]} in
         forall(q in users[t] where active[operand_operation[q]] /\ temp[q] == t)(
-            issue[operand_operation[q]] >= issue[operand_operation[p]] + latency[insn[operand_operation[p]]]
+            issue[operand_operation[q]] >= issue[operand_operation[p]] + latency[opcode[operand_operation[p]]]
     )
 );
 
@@ -198,7 +198,7 @@ constraint forall (t in temp_t where live[t])(
 % end is at least past the start cycle plus the latency of the operation
 /*
 constraint forall (t in temp_t)(
-    end[t] >= start[t] + latency[ insn[ operand_operation[definer[t]] ]]
+    end[t] >= start[t] + latency[ opcode[ operand_operation[definer[t]] ]]
 );
 */
 

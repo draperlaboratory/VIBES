@@ -14,7 +14,7 @@ let in_op (ts : Var.t list) : operation =
   let tid = Tid.create () in
   { id = tid;
     lhs = List.map ~f:(fun t -> Var (simple_var t)) ts;
-    insns = [];
+    opcodes = [];
     optional = false;
     operands = [];
   }
@@ -25,18 +25,18 @@ let out_op (ts : Var.t list) : operation =
   let tid = Tid.create () in
   { id = tid;
     lhs = [];
-    insns = [];
+    opcodes = [];
     optional = false;
     operands = List.map ~f:(fun t -> Var (simple_var t)) ts;
   }
 
 (* Creates an operation with a specified instruction (opcode), a specified
-   variable (before it's assigned to operands), and specified operands. *) 
+   variable (before it's assigned to operands), and specified operands. *)
 let simple_op' opcode arg args =
   let tid = Tid.create () in
   { id = tid;
     lhs = [Var (simple_var arg)];
-    insns = [opcode];
+    opcodes = [opcode];
     optional = false;
     operands = List.map ~f:(fun t -> Var (simple_var t)) args;
   }
@@ -44,16 +44,17 @@ let simple_op' opcode arg args =
 (* Creates a function which takes a set of variables, and uses them to fill
    in the operand slots for an operation with a fixed [lhs] and [opcode]. *)
 let (:=) lhs opcode = fun args -> simple_op' opcode lhs args
+let mov = Ir.Opcode.create ~arch:"arm" "mov"
 
-(* Define some temporaries to use in a test. *)          
+(* Define some temporaries to use in a test. *)
 let t1 = Var.create "t1" (Imm 32)
 let t2 = Var.create "t2" (Imm 32)
 let t3 = Var.create "t3" (Imm 32)
 let temps1 = [t1; t2; t3]
 
 (* Define some opcodes to use in a test. *)
-let op1 = (t2 := `MOVi) [t1]
-let op2 = (t3 := `MOVi) [t2]
+let op1 = (t2 := mov) [t1]
+let op2 = (t3 := mov) [t2]
 let ops = [op1; op2]
 
 (* Construct a block to use in a test. *)
@@ -80,9 +81,9 @@ let user_map1 = Var.Map.of_alist_exn [
     (t3, List.map ~f:op_var_exn blk1.outs.operands) ]
 
 (* Map the TIDs of the specified operations to their opcodes. *)
-let op_insns1 = Tid.Map.of_alist_exn [
-    (op1.id, [`MOVi]);
-    (op2.id, [`MOVi]);
+let op_opcodes1 = Tid.Map.of_alist_exn [
+    (op1.id, [mov]);
+    (op2.id, [mov]);
     ( blk1.ins.id, []);
     (blk1.outs.id, []) ]
 
