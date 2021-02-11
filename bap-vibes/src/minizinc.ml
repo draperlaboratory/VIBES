@@ -145,9 +145,8 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
   in
   {
     reg_t = mzn_enum_def_of_list (List.map
-                                    ~f:(fun r -> r |>
-                                                 Theory.Var.ident |>
-                                                 Theory.Var.sexp_of_ident |>
+                                    ~f:(fun r -> Var.reify r |>
+                                                 Var.sexp_of_t |>
                                                  Sexp.to_string)
                                     (Theory.Target.vars tgt |> Set.to_list));
     opcode_t = mzn_enum_def_of_list opcodes;
