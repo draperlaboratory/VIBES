@@ -120,10 +120,9 @@ let verify
     Events.(send @@
             Info "Weakest-precondition analysis returned: incorrect");
     Events.(send @@ Info "The patched binary is not correct");
-    (* We will just fail for now, but in the future we will return [Again]
-       and let the CEGIS loop try again. *)
-    let msg = "Halting for now." in
-    Errors.fail (Errors.Other msg)
+    (* For now, we will keep the correctness property, and try again. *)
+    Events.(send @@ Info "Trying again");
+    KB.return (Again property)
   | Z3.Solver.UNKNOWN ->
     let msg = "Weakest-precondition analysis returned: unknown" in
     Events.(send @@ Info msg);
