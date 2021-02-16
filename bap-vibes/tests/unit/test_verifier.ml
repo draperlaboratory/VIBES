@@ -86,11 +86,10 @@ let test_verify_sat (_ : test_ctxt) : unit =
   in
   let result = KB.run Test_data.cls computation KB.empty in
 
-  (* NOTE: If Z3 returns [UNSAT], then the [Verifier] should return [Again]
-     to indicate that the CEGIS loop needs to try again. For now, though,
-     the [Verifier] just halts with an error. *)
-  let expected = Errors.Problem (Errors.Other "Halting for now.") in
-  H.assert_error ~printer:(fun s -> s)
+  (* It should be [Again]. *)
+  let expected = "Again" in
+  H.assert_property ~cmp:String.equal
+    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
     Test_data.result expected result
 
 (* Test that [Verifier.verify] errors without an original exe program. *)
