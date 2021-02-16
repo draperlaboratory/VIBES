@@ -11,8 +11,7 @@ let rec input_lines ?acc:(acc = []) (ic : in_channel) : string list =
 (* [shell cmd] runs [cmd] in the shell, returns output as a string list. *)
 let shell (cmd : string) : string list =
   let ic = Unix.open_process_in cmd in
-  let result = input_lines ic in
-  result
+  input_lines ic
 
 (* [realpath path] returns the realpath of [path], or an error. *)
 let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
