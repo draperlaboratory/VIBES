@@ -28,9 +28,10 @@ let gpr =
   let tgt = Arm_target.LE.v7 in
   let maybe_reify v =
     let v = Var.reify v in
-    if String.is_suffix (Var.name v) ~suffix:"F" then
-      None
-    else Some v
+    let name = Var.name v in
+    if String.(is_prefix name ~prefix:"R" || name = "FP") then
+      Some v
+    else None
   in
   Theory.Target.vars tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)

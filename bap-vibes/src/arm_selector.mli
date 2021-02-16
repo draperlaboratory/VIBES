@@ -37,6 +37,9 @@ val effect : 'a Theory.effect -> arm_eff option
     representation. *)
 val ir : arm_eff -> Ir.t
 
+(** Returns the set of registers suitable for register allocation on ARM *)
+val gpr : Bap.Std.Var.Set.t
+
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
