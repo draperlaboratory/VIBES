@@ -13,7 +13,7 @@ let shell (cmd : string) : string list =
   let ic = Unix.open_process_in cmd in
   input_lines ic
 
-(* [realpath path] returns the realpath of [path], or an error. *)
+(* [realpath path] returns the Unix realpath of [path], or an error. *)
 let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
   let cmd = "realpath " ^ path in
   let shell_output = shell cmd in
