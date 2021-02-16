@@ -128,18 +128,18 @@ let validate_minizinc_model_filepath (obj : Json.t)
       if (String.length s) > 0 then
         begin
           let realpath = Vibes_plugin_utils.realpath s in
-          if Sys.file_exists realpath then Err.return realpath
-          else Err.fail
-            (Errors.No_such_file ("No such minizinc model file: " ^ realpath))
+          match realpath with
+          | Ok path -> Err.return path
+          | Error e -> Err.fail e
         end
       else Err.fail (Errors.Missing_minizinc_model_filepath)
     end
   | _ ->
     begin
       let realpath = Vibes_plugin_utils.realpath minizinc_model_filepath in
-      if Sys.file_exists realpath then Err.return realpath
-      else Err.fail
-        (Errors.No_such_file ("Could not find minizinc model at: " ^ realpath))
+      match realpath with
+      | Ok path -> Err.return path
+      | Error e -> Err.fail e
     end
 
 (* Parse the user-provided JSON config file into a Yojson.Safe.t *)

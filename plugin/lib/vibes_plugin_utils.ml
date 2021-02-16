@@ -14,11 +14,13 @@ let shell (cmd : string) : string list =
   let result = input_lines ic in
   result
 
-(* [realpath "~/foo/bar"] returns the real path of [~/foo/bar]. *)
-let realpath (path : string) : string =
+(* [realpath path] returns the realpath of [path], or an error. *)
+let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
   let cmd = "realpath " ^ path in
   let shell_output = shell cmd in
-  match shell_output with
-  | [] -> path
-  | expanded_path::[] -> expanded_path
-  | head::tail -> path
+  let path =
+    if (List.length shell_output) = 1 then List.hd shell_output
+    else path
+  in
+  if Sys.file_exists path then Ok path
+  else Error (Vibes_plugin_errors.No_such_file path)
