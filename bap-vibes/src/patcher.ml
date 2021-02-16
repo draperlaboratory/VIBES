@@ -176,7 +176,7 @@ let find_site_greedy (patch_sites : patch_site list) (patch_size : int64): int64
             location = p.location + patch_size; 
             size = p.size - patch_size 
           } in
-        ( p.location, new_patch_site :: ps )
+        (p.location, new_patch_site :: ps) 
       else 
         let (loc, ps) = find_site_aux ps in
         (loc, p :: ps) 
@@ -198,7 +198,7 @@ let place_patches
           then 
             (* If patch exactly fits *)
             if patch_size = patch.orig_size then
-              ((exact_fit_patch patch :: acc), patch_sites)
+              (exact_fit_patch patch :: acc, patch_sites)
             else (* Inexact fit. Add jmp, put leftover space in patch_sites *)
               let (placed_patch, new_patch_site) = loose_fit_patch patch patch_size in
               (placed_patch :: acc, new_patch_site :: patch_sites)
@@ -208,7 +208,7 @@ let place_patches
             let (patch_loc, patch_sites) = find_site_greedy patch_sites patch_size in
             let (jmp_to_patch, placed_patch) = external_patch_site patch patch_loc in
             (* TODO: We could also insert the unused original space into patch_sites here. *)
-            ( jmp_to_patch :: placed_patch  :: acc , patch_sites)
+            (jmp_to_patch :: placed_patch  :: acc , patch_sites)
         )
   in
   placed_patches 
