@@ -24,6 +24,17 @@ let arm_pure =
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
+let gpr =
+  let tgt = Arm_target.LE.v7 in
+  let maybe_reify v =
+    let v = Var.reify v in
+    if String.is_suffix (Var.name v) ~suffix:"F" then
+      None
+    else Some v
+  in
+  Theory.Target.vars tgt |>
+  Set.filter_map ~f:(maybe_reify) (module Var)
+
 let (@.) s1 s2 =
   let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
   let { current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = s2 in
