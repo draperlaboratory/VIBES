@@ -2,7 +2,6 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 
-(* FIXME: should this have a phantom type with the architecture? *)
 type opcode = Knowledge.Name.t [@@deriving compare, equal, sexp]
 
 module Opcode =
@@ -10,9 +9,9 @@ struct
 
   type t = opcode
 
-  let create ?arch:(arch = "") s = Knowledge.Name.create ~package:arch s
+  let create ?arch:arch s = Knowledge.Name.create ?package:arch s
 
-  let to_asm o = Knowledge.Name.unqualified o
+  let name o = Knowledge.Name.unqualified o
 
 end
 
@@ -385,7 +384,7 @@ let pretty_operand_list l =
 let pretty_operation o =
   sprintf "\t\t[%s]  <- %s [%s]" (pretty_operand_list o.lhs)
     (String.concat
-       (List.map o.opcodes ~f:Opcode.to_asm))
+       (List.map o.opcodes ~f:Opcode.name))
     (pretty_operand_list o.operands)
 
 let pretty_blk b = sprintf "blk : %s \n\tins : %s \n\touts: %s\n\tdata: \n%s\n\tctrl: \n%s"

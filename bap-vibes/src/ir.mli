@@ -42,7 +42,7 @@ sig
 
   val create : ?arch:string -> string -> opcode
 
-  val to_asm : opcode -> string
+  val name : opcode -> string
 
 end
 

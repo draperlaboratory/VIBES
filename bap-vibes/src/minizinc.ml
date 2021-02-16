@@ -41,7 +41,7 @@ type mzn_params = {
 (** [mzn_params_of_vibes_ir] converts a Ir.t subroutine into the intermediate data
     structure mzn_params
     TODO Unimplemented:
-       * No copy instructions
+       * No copy operations
        * Latency
        * Preassignment
 *)
@@ -132,10 +132,16 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
-  let opcodes = Tid.Map.data params.operation_opcodes |> List.concat_map
-                ~f:(fun is -> List.map is ~f:(fun i -> Ir.sexp_of_opcode i
-                                                       |>  Ppx_sexp_conv_lib.Sexp.to_string))
-              |> String.Set.of_list |> String.Set.to_list in
+  let opcodes = Tid.Map.data params.operation_opcodes |>
+                List.concat_map
+                  ~f:(fun is ->
+                      List.map is
+                        ~f:(fun i ->
+                            Ir.sexp_of_opcode i |>
+                            Ppx_sexp_conv_lib.Sexp.to_string)) |>
+                String.Set.of_list |>
+                String.Set.to_list
+  in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
   let operations = Tid.Map.keys params.operation_opcodes in
   let operands = Var.Set.to_list params.operands(* Var.Map.keys params.operand_operation *) in
@@ -144,44 +150,80 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
     | _ -> failwith "width unimplemented for Mem or Unk"
   in
   {
-    reg_t = mzn_enum_def_of_list (List.map
-                                    ~f:(fun r -> Var.reify r |>
-                                                 Var.sexp_of_t |>
-                                                 Sexp.to_string)
-                                    (Theory.Target.vars tgt |> Set.to_list));
+    reg_t = mzn_enum_def_of_list
+        (List.map
+           ~f:(fun r -> Var.reify r |>
+                        Var.sexp_of_t |>
+                        Sexp.to_string)
+           (Theory.Target.vars tgt |> Set.to_list));
     opcode_t = mzn_enum_def_of_list opcodes;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Tid.to_string);
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
     class_t = {set = [{e = "unimplemented_class"}]};
-    operand_operation = List.map ~f:(fun t -> Var.Map.find_exn params.operand_operation t
-                                              |> Ir.operation_to_string |> mzn_enum) operands;
-    definer = List.map ~f:(fun t -> Var.Map.find_exn params.definer t |> Ir.op_var_to_string
-                                    |> mzn_enum) temps;
-    users = List.map ~f:(fun t -> match Var.Map.find params.users t with
-        | None -> {set = []}
-        | Some operands -> {
-            set = List.map
-                ~f:(fun o -> Ir.op_var_to_string o |> mzn_enum) operands})
+    operand_operation =
+      List.map
+        ~f:(fun t ->
+            Var.Map.find_exn params.operand_operation t |>
+            Ir.operation_to_string |>
+            mzn_enum)
+        operands;
+    definer =
+      List.map
+        ~f:(fun t ->
+            Var.Map.find_exn params.definer t |>
+            Ir.op_var_to_string |>
+            mzn_enum)
         temps;
-    temp_block = List.map temps
-        ~f:(fun t -> Var.Map.find_exn params.temp_block t |> Tid.to_string |> mzn_enum);
-    copy  = {set = Tid.Set.to_list params.copy |>
-                   List.map ~f:(fun o -> Tid.to_string o |> mzn_enum)
-            };
+    users =
+      List.map
+        ~f:(fun t ->
+            match Var.Map.find params.users t with
+            | None -> {set = []}
+            | Some operands ->
+              {
+                set =
+                  List.map
+                    ~f:(fun o ->
+                        Ir.op_var_to_string o |>
+                        mzn_enum)
+                    operands
+              })
+        temps;
+    temp_block =
+      List.map
+        temps
+        ~f:(fun t ->
+            Var.Map.find_exn params.temp_block t |>
+            Tid.to_string |>
+            mzn_enum);
+    copy  =
+      {
+        set =
+          Tid.Set.to_list params.copy |>
+          List.map ~f:(fun o -> Tid.to_string o |> mzn_enum)
+      };
     width = List.map ~f:width temps;
-    preassign = List.map operands
+    preassign =
+      List.map operands
         ~f:(fun op ->
             Option.value_map ~default:{set = []}
               ~f:(fun r -> {set = [Var.sexp_of_t r |> Sexp.to_string |> mzn_enum]})
-              (Var.Map.find_exn params.preassign op)) ;
-    congruent = List.map ~f:(fun _ -> {set = []} ) operands ; (* TODO *)
-    operation_opcodes = List.map ~f:(fun o ->
-        {set = Tid.Map.find_exn params.operation_opcodes o
-               |> List.map ~f:(fun i -> Ir.sexp_of_opcode i
-                                        |> Ppx_sexp_conv_lib.Sexp.to_string |> mzn_enum)
-        }) operations;
+              (Var.Map.find_exn params.preassign op));
+    congruent = List.map ~f:(fun _ -> {set = []} ) operands; (* TODO *)
+    operation_opcodes =
+      List.map
+        ~f:(fun o ->
+            {
+              set = Tid.Map.find_exn params.operation_opcodes o |>
+                    List.map
+                      ~f:(fun i ->
+                          Ir.sexp_of_opcode i |>
+                          Ppx_sexp_conv_lib.Sexp.to_string |>
+                          mzn_enum)
+            })
+        operations;
     latency = List.map ~f:(fun _ -> 10) opcodes (* TODO *)
   },
   {
@@ -208,7 +250,7 @@ type sol_serial = {
    [sol] is produced by processing [sol_serial]
 
    [reg] is a mapping from temporaries to registers
-   [opcode] is a mapping from operations to instructions
+   [opcode] is a mapping from operations to opcodes
    [temp] is a mapping from operands to temps
    [active] is a mapping from operations to booleans
    [issue] is a mapping from operations to the issue cycle on which they execute
@@ -232,20 +274,22 @@ type sol = {
 
 
 let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
-  let strip_enum (l : mzn_enum list) : string list = List.map ~f:(fun t -> t.e) l in
-  let reg = List.map ~f:(fun r -> Sexp.of_string r.e |> Var.t_of_sexp) s.reg in
+  let strip_enum (l : mzn_enum list) : string list =
+    List.map ~f:(fun t -> t.e) l
+  in
+  let reg =
+    List.map ~f:(fun r -> Sexp.of_string r.e |> Var.t_of_sexp) s.reg
+  in
   {
     reg = List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
-    opcode = List.map2_exn
+    opcode =
+      List.map2_exn
         ~f:(fun op opcode -> (op, Sexp.of_string opcode |> Ir.opcode_of_sexp))
-        names.operations
-        (strip_enum s.opcode)
-           |> Tid.Map.of_alist_exn;
-    temp = List.map2_exn
+        names.operations (strip_enum s.opcode) |> Tid.Map.of_alist_exn;
+    temp =
+      List.map2_exn
         ~f:(fun op temp -> (op , String.Map.find_exn names.temp_map temp))
-        names.operands
-        (strip_enum s.temp)
-           |> Var.Map.of_alist_exn;
+        names.operands (strip_enum s.temp) |> Var.Map.of_alist_exn;
     active = List.zip_exn names.operations s.active |> Tid.Map.of_alist_exn;
     issue = List.zip_exn names.operations s.issue |> Tid.Map.of_alist_exn
   }
@@ -272,13 +316,6 @@ let apply_sol (vir : Ir.t) (sol : sol) : Ir.t =
       let temp = Var.Map.find_exn sol.temp o.id in
       let reg = Var.Map.find_exn sol.reg temp in
       { id = o.id ; temps = [temp]; pre_assign = Some reg  }) in
-  (*  Set instruction field of operation *)
-  (* let vir = Ir.map_operations vir ~f:(fun o ->
-   *     {
-   *       o with
-   *       opcodes = [ Tid.Map.find_exn sol.opcode o.id ];
-   *       optional = not (Tid.Map.find_exn sol.active o.id);
-   *     }) in *)
   vir
 
 (* FIXME: this belongs in Ir *)
@@ -287,7 +324,9 @@ let delete_empty_blocks vir =
   let blks = vir.blks in
   let blks = List.fold blks ~init:[]
       ~f:(fun acc b ->
-          if (List.is_empty b.data && List.is_empty b.ctrl) then acc else b::acc
+          if (List.is_empty b.data && List.is_empty b.ctrl)
+          then acc
+          else b::acc
         )
   in
   {vir with blks = blks}
