@@ -524,7 +524,7 @@ let ir (t : arm_eff) : Ir.t =
 
 module Pretty = struct
 
-  let insn_pretty i : (string, Errors.t) result = Result.return @@ Ir.Opcode.to_asm i
+  let opcode_pretty i : (string, Errors.t) result = Result.return @@ Ir.Opcode.name i
 
   (* We use this function when generating ARM, since the assembler
      doesn't like % or @ in labels. *)
@@ -584,7 +584,7 @@ module Pretty = struct
 
   let arm_op_pretty (t : Ir.operation) : (string, Errors.t) result =
     let op = List.hd_exn t.opcodes in
-    Result.(insn_pretty op >>= fun op ->
+    Result.(opcode_pretty op >>= fun op ->
             arm_operands_pretty op
               (List.hd_exn t.lhs)
               t.operands >>= (fun operands ->
@@ -592,9 +592,9 @@ module Pretty = struct
 
   let arm_blk_pretty (t : Ir.blk) : (string list, Errors.t) result =
     let all_ops = t.data @ t.ctrl in
-    let insns = List.map ~f:arm_op_pretty all_ops |> Result.all in
+    let opcodes = List.map ~f:arm_op_pretty all_ops |> Result.all in
     let lab = Format.asprintf "%s:" (tid_to_string t.id) in
-    Result.map insns ~f:(fun insns -> lab::insns)
+    Result.map opcodes ~f:(fun opcodes -> lab::opcodes)
 
   let arm_ir_pretty (t : Ir.t) : (string list, Errors.t) result =
     List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
