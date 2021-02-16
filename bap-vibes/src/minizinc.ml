@@ -128,7 +128,6 @@ type serialization_info = {
 
 *)
 let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
-  let tgt = Arm_target.LE.v7 in
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
@@ -152,10 +151,9 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
   {
     reg_t = mzn_enum_def_of_list
         (List.map
-           ~f:(fun r -> Var.reify r |>
-                        Var.sexp_of_t |>
+           ~f:(fun r -> Var.sexp_of_t r |>
                         Sexp.to_string)
-           (Theory.Target.vars tgt |> Set.to_list));
+           (Arm_selector.gpr |> Set.to_list));
     opcode_t = mzn_enum_def_of_list opcodes;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
