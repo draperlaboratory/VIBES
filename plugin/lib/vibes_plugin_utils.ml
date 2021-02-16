@@ -22,4 +22,4 @@ let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
     else path
   in
   if Sys.file_exists path then Ok path
-  else Error (Vibes_plugin_errors.No_such_file path)
+  else Error (Vibes_plugin_errors.No_such_file ("No such file: " ^ path))
