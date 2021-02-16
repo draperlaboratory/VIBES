@@ -18,25 +18,31 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   Unix.close fd_in;
   Unix.close fd_out
 
-let run_process_exn (command : string) (args : string list) : unit KB.t =
+  (** [lift_kb] lifts the Result monad to the KB monad *)
+let lift_kb_result (x : ('a, Errors.t) Result.t) : 'a KB.t =
+  match x with
+  | Ok x -> KB.return x
+  | Error e -> Errors.fail e
+
+let run_process (command : string) (args : string list) : (unit, Errors.t) Result.t =
   let (as_stdout, as_stdin) =
-    Unix.open_process (String.concat " " (command :: args)) in
+  Unix.open_process (String.concat " "  (command :: args)) in
   let status = Unix.close_process (as_stdout, as_stdin) in
   match status with
-  | WEXITED 0 -> KB.return ()
+  | WEXITED 0 -> Ok ()
   | WEXITED 127 ->
     begin
       let msg = Format.sprintf "'%s' not found in PATH" command in
-      Errors.fail (Errors.Command_not_found msg)
+      Error (Errors.Command_not_found msg)
     end
   | WEXITED n ->
     begin
       let msg = Format.sprintf "%s returned exit code: %d" command n in
-      Errors.fail (Errors.Exit_code msg)
+      Error (Errors.Exit_code msg)
     end
   | _ ->
     begin
       let msg =
         Format.sprintf "%s exited with unknown return status" command in
-      Errors.fail (Errors.Unexpected_exit msg)
+      Error (Errors.Unexpected_exit msg)
     end
