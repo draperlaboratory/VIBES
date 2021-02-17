@@ -156,6 +156,59 @@ module Prog9 (S : Core) = struct
 
 end
 
+
+module Prog10 (S : Core) = struct
+
+  open S
+  open Core_notations.Make(S)
+
+  let prog =
+    let b32 = Bitv.define 32 in
+    let mem_ty = Mem.define b32 b32 in
+    let v1 = Var.define b32 "v1" in
+    let v2 = Var.define b32 "v2" in
+    let mem = Var.define mem_ty "mem" in
+    let data = data_body [mem := store (var mem) (var v1) (var v2)] in
+    let control = ctrl_body [] in
+    let l = Bap.Std.Tid.for_name "entry" in
+    blk l data control
+
+end
+
+module Prog11 (S : Core) = struct
+
+  open S
+  open Core_notations.Make(S)
+
+  let prog =
+    let b32 = Bitv.define 32 in
+    let mem_ty = Mem.define b32 b32 in
+    let v1 = Var.define b32 "v1" in
+    let v2 = Var.define b32 "v2" in
+    let mem = Var.define mem_ty "mem" in
+    let data = data_body [v2 := load (var mem) (var v1)] in
+    let control = ctrl_body [] in
+    let l = Bap.Std.Tid.for_name "entry" in
+    blk l data control
+
+end
+
+module Prog12 (S : Core) = struct
+
+  open S
+  open Core_notations.Make(S)
+
+  let prog =
+    let v = Var.define Bool.t "v" in
+    let tgt = Bap.Std.Tid.for_name "tgt" in
+    let data = data_body [] in
+    let fall = perform Effect.Sort.fall in
+    let control = ctrl_body [branch (var v) (goto tgt) fall] in
+    let l = Bap.Std.Tid.for_name "entry" in
+    blk l data control
+
+end
+
 module Arm = Arm_selector
 
 module Prog1_inst = Prog1(Arm.ARM_Core)
@@ -175,6 +228,12 @@ module Prog7_inst = Prog7(Arm.ARM_Core)
 module Prog8_inst = Prog8(Arm.ARM_Core)
 
 module Prog9_inst = Prog9(Arm.ARM_Core)
+
+module Prog10_inst = Prog10(Arm.ARM_Core)
+
+module Prog11_inst = Prog11(Arm.ARM_Core)
+
+module Prog12_inst = Prog12(Arm.ARM_Core)
 
 let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
   let computation =
@@ -242,6 +301,21 @@ let test_ir8 ctxt =
 let test_ir9 ctxt =
   test_ir ctxt Prog9_inst.prog ["entry:"; "b tgt"]
 
+let test_ir10 ctxt =
+  test_ir ctxt Prog10_inst.prog ["entry:"; "str R0, R0"]
+
+let test_ir11 ctxt =
+  test_ir ctxt Prog11_inst.prog ["entry:"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
+
+let test_ir12 ctxt =
+  test_ir ctxt Prog12_inst.prog
+    ["entry:";
+     "cmp R0, #0";
+     "bne false_branch";
+     "true_branch:";
+     "b tgt";
+     "false_branch:"]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -253,4 +327,7 @@ let suite =
     "Test Arm.ir 7" >:: test_ir7;
     "Test Arm.ir 8" >:: test_ir8;
     "Test Arm.ir 9" >:: test_ir9;
+    "Test Arm.ir 10" >:: test_ir10;
+    "Test Arm.ir 11" >:: test_ir11;
+    "Test Arm.ir 12" >:: test_ir12;
   ]
