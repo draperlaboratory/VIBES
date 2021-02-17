@@ -19,16 +19,9 @@ let mzn_params_string = Format.asprintf "%a"
 
 
 let mzn_params_gold =
-  "{
+"{
   \"reg_t\": {
     \"set\": [
-      { \"e\": \"((name(Reg(name CF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
-      {
-        \"e\":
-          \"((name(Reg(name LR)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
-      },
-      { \"e\": \"((name(Reg(name NF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
-      { \"e\": \"((name(Reg(name QF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
       {
         \"e\":
           \"((name(Reg(name R0)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
@@ -80,16 +73,6 @@ let mzn_params_gold =
       {
         \"e\":
           \"((name(Reg(name R9)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
-      },
-      {
-        \"e\":
-          \"((name(Reg(name SP)(ver 0)))(sort(App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))))\"
-      },
-      { \"e\": \"((name(Reg(name VF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
-      { \"e\": \"((name(Reg(name ZF)(ver 0)))(sort(Sym core-theory:Bool)))\" },
-      {
-        \"e\":
-          \"((name(Reg(name mem)(ver 0)))(sort(App(args((App(args((Int 32)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))(App(args((Int 8)(Sym core-theory:BitVec)))(name(core-theory:BitVec)))(Sym core-theory:Mem)))(name(core-theory:Mem)))))\"
       }
     ]
   },
@@ -112,42 +95,42 @@ let mzn_params_gold =
   },
   \"operand_t\": {
     \"set\": [
-      { \"e\": \"#26\" },
-      { \"e\": \"#27\" },
-      { \"e\": \"#28\" },
-      { \"e\": \"#29\" },
-      { \"e\": \"#30\" },
-      { \"e\": \"#31\" }
+      { \"e\": \"#34\" },
+      { \"e\": \"#35\" },
+      { \"e\": \"#36\" },
+      { \"e\": \"#37\" },
+      { \"e\": \"#38\" },
+      { \"e\": \"#39\" }
     ]
   },
   \"operation_t\": {
     \"set\": [
-      { \"e\": \"%0000000c\" },
       { \"e\": \"%0000000d\" },
       { \"e\": \"%0000000e\" },
-      { \"e\": \"%0000000f\" }
+      { \"e\": \"%0000000f\" },
+      { \"e\": \"%00000010\" }
     ]
   },
-  \"block_t\": { \"set\": [ { \"e\": \"%00000010\" } ] },
+  \"block_t\": { \"set\": [ { \"e\": \"%00000011\" } ] },
   \"class_t\": { \"set\": [ { \"e\": \"unimplemented_class\" } ] },
   \"operand_operation\": [
-    { \"e\": \"%0000000c\" },
-    { \"e\": \"%0000000c\" },
     { \"e\": \"%0000000d\" },
     { \"e\": \"%0000000d\" },
     { \"e\": \"%0000000e\" },
-    { \"e\": \"%0000000f\" }
+    { \"e\": \"%0000000e\" },
+    { \"e\": \"%0000000f\" },
+    { \"e\": \"%00000010\" }
   ],
-  \"definer\": [ { \"e\": \"#31\" }, { \"e\": \"#27\" }, { \"e\": \"#29\" } ],
+  \"definer\": [ { \"e\": \"#39\" }, { \"e\": \"#35\" }, { \"e\": \"#37\" } ],
   \"users\": [
-    { \"set\": [ { \"e\": \"#26\" } ] },
-    { \"set\": [ { \"e\": \"#28\" } ] },
-    { \"set\": [ { \"e\": \"#30\" } ] }
+    { \"set\": [ { \"e\": \"#34\" } ] },
+    { \"set\": [ { \"e\": \"#36\" } ] },
+    { \"set\": [ { \"e\": \"#38\" } ] }
   ],
   \"temp_block\": [
-    { \"e\": \"%00000010\" },
-    { \"e\": \"%00000010\" },
-    { \"e\": \"%00000010\" }
+    { \"e\": \"%00000011\" },
+    { \"e\": \"%00000011\" },
+    { \"e\": \"%00000011\" }
   ],
   \"copy\": { \"set\": [] },
   \"width\": [ 1, 1, 1 ],
