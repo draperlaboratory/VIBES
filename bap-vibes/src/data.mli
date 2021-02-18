@@ -30,6 +30,7 @@ val package : string
 val name : string
 val cls : (cls, unit) KB.cls
 
+
 (* The patch module defines an additional class holding all properties related
    to a specific patch fragment - a contiguous region of code that is
    being patched into the binary.   The outer class defined above holds a
@@ -73,6 +74,9 @@ module Patch : sig
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t
   val get_assembly_exn : t -> string list KB.t
+
+  val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
+  val add_minizinc_solution :t -> Minizinc.sol -> unit KB.t 
 end
 
 (* Properties pertaining to the original executable *)

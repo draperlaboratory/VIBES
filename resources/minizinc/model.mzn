@@ -54,6 +54,21 @@ int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from
 % weight
 % cost
 
+%% -------------------
+%% Solution exclusion
+%% ---------------------
+int : number_excluded;
+set of int : exclusions = 1..number_excluded;
+array[exclusions, temp_t] of reg_t : exclude_reg;
+/* array[exclusions, operation_t] of opcode_t : exclude_insn;
+array[exclusions, operand_t] of temp_t : exclude_temp;
+array[exclusions, temp_t] of bool : exclude_live;
+array[exclusions, operation_t] of bool : exclude_active;
+array[exclusions, operation_t] of 0..MAXC : exclude_issue; % maybe make these ranges. I could see a good argument for that
+array[exclusions, temp_t] of 0..MAXC : exclude_start_cycle;
+array[exclusions, temp_t] of 0..MAXC : exclude_end_cycle;
+*/
+
 %% ---------------------------------------------------------------
 %%  VARIABLES
 %% ---------------------------------------------------------------
@@ -65,6 +80,26 @@ array[operation_t] of var bool : active;
 array[operation_t] of var 0..MAXC : issue; % maybe make these ranges. I could see a good argument for that
 array[temp_t] of var 0..MAXC : start_cycle;
 array[temp_t] of var 0..MAXC : end_cycle;
+
+
+
+
+%% ------------------------------
+%% CONSTRAINTS
+%% ------------------------------
+
+
+% Exclude all previous solutions
+constraint forall(n in exclusions)(
+        exists( t in temp_t )( reg[t] != exclude_reg[n,t] )
+    %\/  exists( o in operation_t )( opcode[o] != exclude_opcode[n,o] )
+    %\/  exists( o in operand_t )( temp[o] != exclude_temp[n,o] )
+    %\/  exists( t in temp_t )( live[t] != exclude_live[n,t] )
+    %\/  exists( o in operation_t )( active[o] != exclude_active[n,o] )
+    %\/  exists( o in operation_t )( issue[o] != exclude_issue[n,o] )
+    %\/  exists( t in temp_t )( start_cycle[t] != exclude_start_cycle[n,t] )
+    %\/  exists( t in temp_t )( end_cycle[t] != exclude_end_cycle[n,t] )
+);
 
 
 % function nonempty?
@@ -98,14 +133,6 @@ constraint forall(t in temp_t)(
     temp[users[t]] = t
 );
 */
-
-
-%% ------------------------------
-%% CONSTRAINTS
-%% ------------------------------
-
-
-
 
 %C1.1
 % no overlap constraint for live register usage

@@ -7,7 +7,7 @@ open OUnit2
 module KB = Knowledge
 module H = Helpers
 
-let dummy_solver _ vir = KB.return vir
+let dummy_solver ?prev_sols:(_prev_sols = []) _ vir = KB.return vir
 
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
