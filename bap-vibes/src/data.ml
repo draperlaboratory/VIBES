@@ -50,6 +50,10 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
     ~equal:(fun x y -> List.equal String.equal x y)
     "assembly-domain"
 
+let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t = 
+  KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
+
+
 (* General knowledge info for the package *)
 type cls
 type t = cls KB.obj
@@ -87,6 +91,9 @@ module Patch = struct
 
   let assembly : (patch_cls, string list option) KB.slot =
     KB.Class.property ~package patch "patch-assembly" assembly_domain
+  
+  let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
+    KB.Class.property ~package patch "minizinc-solutions" minizinc_solution_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -153,6 +160,15 @@ module Patch = struct
     match result with
     | None -> Errors.fail Errors.Missing_assembly
     | Some value -> KB.return value
+
+  let get_minizinc_solutions (obj : t) : Minizinc.sol_set KB.t = 
+    KB.collect minizinc_solutions obj
+  
+  let add_minizinc_solution (obj : t) (sol : Minizinc.sol) : unit KB.t = 
+    KB.provide minizinc_solutions obj (Set.singleton (module Minizinc.Sol) sol)
+
+  let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set) : unit KB.t = 
+    KB.provide minizinc_solutions obj sol_set
 
 end
 
@@ -356,12 +372,14 @@ let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
     Patch.get_patch_point patch >>= fun point ->
     Patch.get_patch_size patch >>= fun size ->
     Patch.get_bir patch >>= fun bir ->
+    Patch.get_minizinc_solutions patch >>= fun sol_set ->
     KB.Object.create Patch.patch >>= fun patch' ->
     Patch.set_patch_name patch' name >>= fun () ->
     Patch.set_patch_point patch' point >>= fun () ->
     Patch.set_patch_code patch' code >>= fun () ->
     Patch.set_patch_size patch' size >>= fun () ->
     Patch.set_bir patch' bir >>= fun () ->
+    Patch.union_minizinc_solution patch' sol_set >>= fun () ->
     KB.return patch'
   in
   KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=

@@ -84,6 +84,8 @@ type reg = mzn_enum [@@deriving yojson]
 let mzn_enum (x : string) : mzn_enum = {e = x}
 let mzn_enum_def_of_list (tags : string list) : mzn_enum_def = {set = List.map ~f:mzn_enum tags}
 
+let mzn_enum_of_var (v : var) : mzn_enum = Var.sexp_of_t v |> Sexp.to_string |> mzn_enum
+
 (* [mzn_params_serial] is a type ready for Minizinc serialization *)
 
 type mzn_params_serial = {
@@ -103,7 +105,9 @@ type mzn_params_serial = {
   preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
   congruent : (operand, operand mznset) mznmap;
   operation_opcodes : (operation, opcode mznset) mznmap;
-  latency : (opcode , int) mznmap
+  latency : (opcode , int) mznmap;
+  number_excluded : int;
+  exclude_reg : (int, (temp, reg) mznmap) mznmap
 }  [@@deriving yojson]
 
 
@@ -115,7 +119,38 @@ type serialization_info = {
   temp_map : Var.t String.Map.t;
   operations : Tid.t list;
   operands : Var.t list;
-}
+} 
+
+(**
+   [sol] is produced by processing [sol_serial]
+
+   [reg] is a mapping from temporaries to registers
+   [opcode] is a mapping from operations to opcodes
+   [temp] is a mapping from operands to temps
+   [active] is a mapping from operations to booleans
+   [issue] is a mapping from operations to the issue cycle on which they execute
+*)
+
+
+type sol = {
+  reg : var Var.Map.t;
+  opcode : Ir.opcode Tid.Map.t;
+  temp : Var.t Var.Map.t;
+  active : bool Tid.Map.t;
+  issue : int Tid.Map.t;
+} [@@deriving sexp, compare]
+
+module Sol = struct 
+  module S = struct
+  type t = sol
+  let compare = compare_sol
+  let sexp_of_t = sexp_of_sol
+  end
+  include S
+  include Base.Comparable.Make(S)
+end
+
+type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
 (** [serialize_man_params] converts the intermediate structure into the serializable structure
     [mzn_params_serial] and retains [serialization_info]. These two structures are produced at
@@ -127,7 +162,7 @@ type serialization_info = {
        Implement latency
 
 *)
-let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
+let serialize_mzn_params (vir : Ir.t) (prev_sols : sol list): mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
@@ -207,7 +242,7 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
       List.map operands
         ~f:(fun op ->
             Option.value_map ~default:{set = []}
-              ~f:(fun r -> {set = [Var.sexp_of_t r |> Sexp.to_string |> mzn_enum]})
+              ~f:(fun r -> {set = [mzn_enum_of_var r]})
               (Var.Map.find_exn params.preassign op));
     congruent = List.map ~f:(fun _ -> {set = []} ) operands; (* TODO *)
     operation_opcodes =
@@ -222,7 +257,12 @@ let serialize_mzn_params (vir : Ir.t) : mzn_params_serial * serialization_info =
                           mzn_enum)
             })
         operations;
-    latency = List.map ~f:(fun _ -> 10) opcodes (* TODO *)
+    latency = List.map ~f:(fun _ -> 10) opcodes; (* TODO *)
+    number_excluded = List.length prev_sols;
+    exclude_reg = List.map prev_sols 
+                  ~f:(fun sol ->  List.map temps
+                        ~f:(fun t -> Var.Map.find_exn sol.reg t |> mzn_enum_of_var)
+                     ) 
   },
   {
     temps = temps;
@@ -244,23 +284,7 @@ type sol_serial = {
   end_cycle : int list
 } [@@deriving yojson]
 
-(**
-   [sol] is produced by processing [sol_serial]
 
-   [reg] is a mapping from temporaries to registers
-   [opcode] is a mapping from operations to opcodes
-   [temp] is a mapping from operands to temps
-   [active] is a mapping from operations to booleans
-   [issue] is a mapping from operations to the issue cycle on which they execute
-*)
-
-type sol = {
-  reg : var Var.Map.t;
-  opcode : Ir.opcode Tid.Map.t;
-  temp : Var.t Var.Map.t;
-  active : bool Tid.Map.t;
-  issue : int Tid.Map.t;
-}
 
 
 
@@ -329,15 +353,16 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
-let run_minizinc (model_filepath : string) (vir : Ir.t) : Ir.t KB.t =
+let run_minizinc (model_filepath : string) (prev_sols : sol list) (vir : Ir.t) : (Ir.t * sol) KB.t =
   let params_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
   let solution_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
+  Events.(send @@ Info (sprintf "Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let params, name_maps = serialize_mzn_params vir_clean in
+  let params, name_maps = serialize_mzn_params vir_clean prev_sols in
   Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filepath;
@@ -355,4 +380,4 @@ let run_minizinc (model_filepath : string) (vir : Ir.t) : Ir.t KB.t =
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in
   Events.(send @@ Info (sprintf "Solved Ir: %s\n" (Ir.pretty_ir vir')));
-  KB.return vir'
+  KB.return (vir', sol)
