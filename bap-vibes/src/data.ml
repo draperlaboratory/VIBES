@@ -378,12 +378,12 @@ let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
   Original_exe.set_addr_size obj' addr_size >>= fun () ->
   Patched_exe.get_patches obj >>= fun patches ->
   fresh_patches patches >>= fun patches' ->
-  Patched_exe.set_patches obj patches' >>= fun () ->
+  Patched_exe.set_patches obj' patches' >>= fun () ->
   Patched_exe.get_filepath obj >>= fun patched_exe ->
-  Patched_exe.set_filepath obj patched_exe >>= fun () ->
+  Patched_exe.set_filepath obj' patched_exe >>= fun () ->
   Solver.get_minizinc_model_filepath obj >>= fun mzn_model_filepath ->
-  Solver.set_minizinc_model_filepath obj mzn_model_filepath >>= fun () ->
+  Solver.set_minizinc_model_filepath obj' mzn_model_filepath >>= fun () ->
   Verifier.get_func obj >>= fun func ->
-  Verifier.set_func obj func >>= fun () ->
+  Verifier.set_func obj' func >>= fun () ->
   Verifier.set_property obj' (Some property) >>= fun () ->
   KB.return obj'
