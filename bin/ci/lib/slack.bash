@@ -53,8 +53,8 @@ build_slack_payload () {
     DATA="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${REPORT_FILE}")"
     TEXT="STATUS: ${MESSAGE}"
     TEXT="${TEXT}\nBAP: ${BAP}"
-    TEXT="${TEXT}\n\`\`\`\nCOMMIT:\n${COMMIT}\n\`\`\`"
-    TEXT="${TEXT}\n\`\`\`\nOUTPUT:\n${DATA}\n\`\`\`"
+    TEXT="${TEXT}\nCOMMIT:\n\`\`\`\n${COMMIT}\n\`\`\`"
+    TEXT="${TEXT}\nOUTPUT:\n\`\`\`\n${DATA}\n\`\`\`"
     echo "{
         \"username\":\"${SLACK_USERNAME}\",
         \"text\":\"${TEXT}\"
