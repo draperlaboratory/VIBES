@@ -47,7 +47,7 @@ plugin.uninstall:
 test.library:
 	$(MAKE) test -C $(LIB_DIR)
 
-test.system:
+test.system: install
 	$(MAKE) test -C $(PLUGIN_DIR)
 
 test:
