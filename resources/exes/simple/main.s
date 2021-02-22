@@ -4,9 +4,7 @@
 @
 @ To compile this:
 @
-@    arm-linux-gnueabi-as -g main.asm -o main.o
-@    arm-linux-gnueabi-ld -entry=main main.o -o main
-@
+@    arm-linux-gnueabi-gcc -marm main.s -o main
 @
 
 @ ----------------------------------------------

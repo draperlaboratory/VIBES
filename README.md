@@ -34,7 +34,7 @@ Copy the default minizinc model file into your home directory:
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
 `arm-linux-gnueabi-gcc`. For example, on Ubuntu:
 
-    apt install -y binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
+    apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
 
 Install `minizinc`, for example if you use `snap`:
 

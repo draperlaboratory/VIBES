@@ -1,5 +1,6 @@
 PROG = main
-SRC = main.asm
+PATCH = main.patched
+SRC = main.s
 OBJ = main.o
 ENTRY = main
 
@@ -18,8 +19,7 @@ all: clean build
 
 build: $(PROG)
 $(PROG): $(SRC)
-	arm-linux-gnueabi-as -g $(SRC) -o $(OBJ)
-	arm-linux-gnueabi-ld -entry=$(ENTRY) $(OBJ) -o $(PROG)
+	arm-linux-gnueabi-gcc -marm $(SRC) -o $(PROG)
 
 
 #####################################################
@@ -28,5 +28,18 @@ $(PROG): $(SRC)
 
 .PHONY: clean
 clean:
-	rm -rf $(OBJ)
-	rm -rf $(PROG)
+	rm -rf $(OBJ) $(PROG) $(PATCH)
+
+
+#####################################################
+# PATCH
+#####################################################
+
+$(PATCH): $(PROG)
+	bap vibes $(PROG) \
+		--config=config.json \
+		-o $(PATCH) \
+		--verbose
+	chmod +x $(PATCH)
+
+patch: $(PATCH)

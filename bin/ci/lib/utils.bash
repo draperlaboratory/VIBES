@@ -41,16 +41,31 @@ MSG_FILE="${TMP_SCRATCH_DIR}/message.txt"
 REPORT_FILE="${TMP_SCRATCH_DIR}/report.txt"
 SLACK_FILE="${TMP_SCRATCH_DIR}/data.json"
 BAP_VERSION_FILE="${TMP_SCRATCH_DIR}/bap-version.txt"
+GIT_COMMIT_FILE="${TMP_SCRATCH_DIR}/git-commit.txt"
 echo "No message yet" > "${MSG_FILE}"
 echo "Nothing to report yet" > "${REPORT_FILE}"
-echo '{"username":"run-test.sh","text":"Nothing yet"}' > "${SLACK_FILE}"
+echo '{"username":"None yet","text":"Nothing yet"}' > "${SLACK_FILE}"
 echo "No BAP version to report yet" > "${BAP_VERSION_FILE}"
+echo "No commit to report yet" > "${GIT_COMMIT_FILE}"
 
 # DESC
 #   Record the BAP version
 bap_version () {
     bap --version > "${BAP_VERSION_FILE}"
     echo "BAP_VERSION: $(cat "${BAP_VERSION_FILE}")"
+}
+
+# DESC
+#   Record the current GIT commit
+git_commit () {
+  git log -1 > "${GIT_COMMIT_FILE}"
+  if [[ -z "$(cat "${GIT_COMMIT_FILE}")" ]]; then
+    echo "${CI_COMMIT_MESSAGE}" > "${GIT_COMMIT_FILE}"
+    if [[ -z "$(cat "${GIT_COMMIT_FILE}")" ]]; then
+      echo "No commit message could be obtained" > "${GIT_COMMIT_FILE}"
+    fi
+  fi
+  echo -e "GIT_COMMIT:\n$(cat "${GIT_COMMIT_FILE}")"
 }
 
 # DESC
@@ -95,5 +110,6 @@ if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
     exit 1
 fi
 
-# Note the BAP version.
+# Note some relevant information.
 bap_version
+git_commit

@@ -1,11 +1,6 @@
 # The docker image to run this CI pipeline in.
 image: "binaryanalysisplatform/bap:latest"
 
-# Some variables for use
-variables:
-  MINIZINC_URL: https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz
-  MINIZINC_DIR: MiniZincIDE-2.5.3-bundle-linux-x86_64
-
 # Run the tests
 run_tests:
 
@@ -14,7 +9,10 @@ run_tests:
 
   script:
 
-    # Install dependencies.
+    # Install APT dependencies.
+    - sudo -E apt install -y qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+    # Install other dependencies (non-sudo).
     - bash -x bin/ci/exec/install-dependencies.bash
 
     # Source environment variables.

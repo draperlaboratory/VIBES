@@ -43,12 +43,18 @@ there_is_a_SLACK_URL () {
 build_slack_payload () {
     local MESSAGE
     local BAP
+    local BRANCH
+    local COMMIT
     local DATA
     local TEXT
     MESSAGE="$(cat "${MSG_FILE}")"
     BAP="$(cat "${BAP_VERSION_FILE}")"
+    COMMIT="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${GIT_COMMIT_FILE}")"
     DATA="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${REPORT_FILE}")"
-    TEXT="STATUS: ${MESSAGE}\nBAP: ${BAP}\n\`\`\`\nOUTPUT:\n${DATA}\n\`\`\`"
+    TEXT="STATUS: ${MESSAGE}"
+    TEXT="${TEXT}\nBAP: ${BAP}"
+    TEXT="${TEXT}\nCOMMIT:\n\`\`\`\n${COMMIT}\n\`\`\`"
+    TEXT="${TEXT}\nOUTPUT:\n\`\`\`\n${DATA}\n\`\`\`"
     echo "{
         \"username\":\"${SLACK_USERNAME}\",
         \"text\":\"${TEXT}\"
