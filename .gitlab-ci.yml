@@ -7,12 +7,6 @@ run_tests:
   tags: 
     - docker # Tag this so docker CI runners pick it up.
 
-  only:
-    # Run on main, merge requests, and any branch starting with test/*
-    - main
-    - merge_requests
-    - /^test\/.*$/
-
   script:
 
     # Install dependencies.
