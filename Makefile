@@ -52,4 +52,4 @@ test.system: install
 
 test:
 	$(MAKE) test.library
-	$(MAKE) test.system
+#	$(MAKE) test.system
