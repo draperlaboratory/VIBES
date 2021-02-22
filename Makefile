@@ -44,5 +44,12 @@ plugin.uninstall:
 # TEST
 #####################################################
 
-test:
+test.library:
 	$(MAKE) test -C $(LIB_DIR)
+
+test.system:
+	$(MAKE) test -C $(PLUGIN_DIR)
+
+test:
+	$(MAKE) test.library
+	$(MAKE) test.system
