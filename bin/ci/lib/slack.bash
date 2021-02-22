@@ -49,13 +49,11 @@ build_slack_payload () {
     local TEXT
     MESSAGE="$(cat "${MSG_FILE}")"
     BAP="$(cat "${BAP_VERSION_FILE}")"
-    BRANCH="$(cat "${GIT_BRANCH_FILE}")"
-    COMMIT="$(cat "${GIT_COMMIT_FILE}")"
+    COMMIT="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${GIT_COMMIT_FILE}")"
     DATA="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${REPORT_FILE}")"
     TEXT="STATUS: ${MESSAGE}"
     TEXT="${TEXT}\nBAP: ${BAP}"
-    TEXT="${TEXT}\nBRANCH: ${BANCH}"
-    TEXT="${TEXT}\nCOMMIT: ${COMMIT}"
+    TEXT="${TEXT}\n\`\`\`\nCOMMIT:\n${COMMIT}\n\`\`\`"
     TEXT="${TEXT}\n\`\`\`\nOUTPUT:\n${DATA}\n\`\`\`"
     echo "{
         \"username\":\"${SLACK_USERNAME}\",

@@ -41,13 +41,11 @@ MSG_FILE="${TMP_SCRATCH_DIR}/message.txt"
 REPORT_FILE="${TMP_SCRATCH_DIR}/report.txt"
 SLACK_FILE="${TMP_SCRATCH_DIR}/data.json"
 BAP_VERSION_FILE="${TMP_SCRATCH_DIR}/bap-version.txt"
-GIT_BRANCH_FILE="${TMP_SCRATCH_DIR}/git-branch.txt"
 GIT_COMMIT_FILE="${TMP_SCRATCH_DIR}/git-commit.txt"
 echo "No message yet" > "${MSG_FILE}"
 echo "Nothing to report yet" > "${REPORT_FILE}"
-echo '{"username":"run-test.sh","text":"Nothing yet"}' > "${SLACK_FILE}"
+echo '{"username":"None yet","text":"Nothing yet"}' > "${SLACK_FILE}"
 echo "No BAP version to report yet" > "${BAP_VERSION_FILE}"
-echo "No branch to report yet" > "${GIT_BRANCH_FILE}"
 echo "No commit to report yet" > "${GIT_COMMIT_FILE}"
 
 # DESC
@@ -58,17 +56,10 @@ bap_version () {
 }
 
 # DESC
-#   Record the current GIT branch
-git_branch () {
-  git symbolic-ref --short HEAD > "${GIT_BRANCH_FILE}"
-  echo "GIT_BRANCH: $(cat "${GIT_BRANCH_FILE}")"
-}
-
-# DESC
 #   Record the current GIT commit
 git_commit () {
-  git log --oneline -1 > "${GIT_COMMIT_FILE}"
-  echo "GIT_COMMIT: $(cat "${GIT_COMMIT_FILE}")"
+  git log -1 > "${GIT_COMMIT_FILE}"
+  echo -e "GIT_COMMIT:\n$(cat "${GIT_COMMIT_FILE}")"
 }
 
 # DESC

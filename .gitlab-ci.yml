@@ -1,16 +1,17 @@
 # The docker image to run this CI pipeline in.
 image: "binaryanalysisplatform/bap:latest"
 
-# Some variables for use
-variables:
-  MINIZINC_URL: https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz
-  MINIZINC_DIR: MiniZincIDE-2.5.3-bundle-linux-x86_64
-
 # Run the tests
 run_tests:
 
   tags: 
     - docker # Tag this so docker CI runners pick it up.
+
+  only:
+    # Run on main, merge requests, and any branch starting with test/*
+    - main
+    - merge_requests
+    - /^test\/.*$/
 
   script:
 
