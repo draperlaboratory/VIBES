@@ -10,7 +10,7 @@ run_tests:
   script:
 
     # Install APT dependencies.
-    - sudo apt install -y qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+    - sudo -E apt install -y qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
     # Install other dependencies (non-sudo).
     - bash -x bin/ci/exec/install-dependencies.bash
