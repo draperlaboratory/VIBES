@@ -59,6 +59,12 @@ bap_version () {
 #   Record the current GIT commit
 git_commit () {
   git log -1 > "${GIT_COMMIT_FILE}"
+  if [[ -z "$(cat "${GIT_COMMIT_FILE}")" ]]; then
+    echo "${CI_COMMIT_MESSAGE}" > "${GIT_COMMIT_FILE}"
+    if [[ -z "$(cat "${GIT_COMMIT_FILE}")" ]]; then
+      echo "No commit message could be obtained" > "${GIT_COMMIT_FILE}"
+    fi
+  fi
   echo -e "GIT_COMMIT:\n$(cat "${GIT_COMMIT_FILE}")"
 }
 
@@ -106,5 +112,4 @@ fi
 
 # Note some relevant information.
 bap_version
-git_branch
 git_commit
