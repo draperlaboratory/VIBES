@@ -28,8 +28,7 @@ $(PROG): $(SRC)
 
 .PHONY: clean
 clean:
-	rm -rf $(OBJ)
-	rm -rf $(PROG)
+	rm -rf $(OBJ) $(PROG) $(PATCH)
 
 
 #####################################################

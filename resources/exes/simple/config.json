@@ -6,7 +6,7 @@
      "patch-code" : "(var-decls retvar)
                      (set retvar 3)
                      fallthrough",
-     "patch-point" : "0x54",
+     "patch-point" : "0x10400",
      "patch-size" : 8}
   ]
 }
