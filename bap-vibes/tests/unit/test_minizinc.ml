@@ -174,6 +174,15 @@ let test_definer_serialize_ex1 _ =
 
 open Test_ir
 
+let dummy_sol : Minizinc.sol =
+  {
+    reg = Var.Map.empty ;
+    opcode = Tid.Map.empty;
+    temp = Var.Map.empty;
+    active = Tid.Map.empty;
+    issue  = Tid.Map.empty;
+  }
+
 let sol1 : Minizinc.sol =
   let r0 = Var.create ~is_virtual:false ~fresh:false "r0" (Type.Imm 32) in
   let mov = Ir.Opcode.create ~arch:"arm" "mov" in
