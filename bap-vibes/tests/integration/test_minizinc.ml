@@ -113,13 +113,13 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
     (* Now run the compiler. *)
-    Minizinc.run_minizinc model ex1 >>= fun sol ->
+    Minizinc.run_minizinc model [] ex1 >>= fun (vir, _) ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
       blk.data in
     assert_bool "Operations should be in order"
       (List.for_all2_exn
          ~f:(fun o1 o2 -> Tid.equal o1.id o2.id)
-         (get_ops sol)
+         (get_ops vir)
          (get_ops ex1));
     KB.return obj
   in
