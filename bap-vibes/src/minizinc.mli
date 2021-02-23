@@ -4,6 +4,19 @@ open Bap_knowledge
 
 module KB = Knowledge
 
+
+(** [sol] is a solution returned by minizinc. Its fields include:
+
+   [reg] is a mapping from temporaries to registers
+   [opcode] is a mapping from operations to opcodes
+   [temp] is a mapping from operands to temps
+   [active] is a mapping from operations to booleans
+   [issue] is a mapping from operations to the issue cycle on which they execute
+
+   It is unlikely that you need introspect inside this data type outside the minizinc
+   module.
+*)
+
 type sol = {
   reg : var Var.Map.t;
   opcode : Ir.opcode Tid.Map.t;
@@ -12,6 +25,16 @@ type sol = {
   issue : int Tid.Map.t;
 } [@@deriving sexp, compare]
 
+(**
+   [run_minzinc minizinc_model_filepath ir] encodes the provided [ir] IR.t
+   to a json file, calls minizinc, and interpets the solution. It uses the
+   provided [minizinc_model_filepath] to run minizinc.
+   It will exclude the solutions in the [sol list] parameter.
+*)
+
+val run_minizinc : string -> sol list -> Ir.t -> (Ir.t * sol) KB.t
+
+(** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
   module S :
     sig
@@ -21,41 +44,14 @@ module Sol : sig
     end
   type t = sol
   val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
-  val ( >= ) : S.t -> S.t -> bool
-  val ( <= ) : S.t -> S.t -> bool
-  val ( = ) : S.t -> S.t -> bool
-  val ( > ) : S.t -> S.t -> bool
-  val ( < ) : S.t -> S.t -> bool
-  val ( <> ) : S.t -> S.t -> bool
-  val equal : S.t -> S.t -> bool
   val compare : S.t -> S.t -> int
-  val min : S.t -> S.t -> S.t
-  val max : S.t -> S.t -> S.t
-  val ascending : S.t -> S.t -> int
-  val descending : S.t -> S.t -> int
-  val between : S.t -> low:S.t -> high:S.t -> bool
-  val clamp_exn : S.t -> min:S.t -> max:S.t -> S.t
-  val clamp : S.t -> min:S.t -> max:S.t -> S.t Base__.Or_error.t
   type comparator_witness = Base__Comparable.Make(S).comparator_witness
   val comparator : (S.t, comparator_witness) Base__.Comparator.comparator
-  val validate_lbound :
-    min:S.t Base__.Maybe_bound.t -> S.t Base__.Validate.check
-  val validate_ubound :
-    max:S.t Base__.Maybe_bound.t -> S.t Base__.Validate.check
-  val validate_bound :
-    min:S.t Base__.Maybe_bound.t ->
-    max:S.t Base__.Maybe_bound.t -> S.t Base__.Validate.check
 end
 
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
-(**
-   [run_minzinc minizinc_model_filepath ir] encodes the provided [ir] IR.t
-   to a json file, calls minizinc, and interpets the solution. It uses the
-   provided [minizinc_model_filepath] to run minizinc.
-*)
 
-val run_minizinc : string -> sol list -> Ir.t -> (Ir.t * sol) KB.t
 
 
 (**/**)
