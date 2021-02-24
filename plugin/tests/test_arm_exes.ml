@@ -10,7 +10,7 @@ let test_simple (ctxt : test_ctxt) : unit =
   H.run_arm_exe ["main.patched"] ~dir:"simple" ~exit_code:3 ~ctxt;
   H.run_make ["clean"] ~dir:"simple" ~ctxt
 
-(* Check patching the "simple" exe example. *)
+(* Check patching the "simple-cegis" exe example. *)
 let test_simple_cegis (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"simple-cegis" ~ctxt;
   H.run_make ["patch"] ~dir:"simple-cegis" ~ctxt;
