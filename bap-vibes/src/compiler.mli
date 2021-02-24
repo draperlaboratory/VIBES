@@ -8,6 +8,8 @@ open Bap_knowledge
 module KB = Knowledge
 
 (* [compile obj] converts the patch (which is BIL) associated with the
-   provided [obj] into assembly. *)
+   provided [obj] into assembly. It stores this assembly and the minizinc solution into
+   slots of the patches of the [obj]. [compile] also takes an optional [solver] parameter 
+   for unit testing which defaults to [Minizinc.run_minizinc] *)
 val compile : ?solver:(string -> Minizinc.sol list -> Ir.t -> (Ir.t * Minizinc.sol) KB.t) 
    -> Data.t -> unit KB.t
