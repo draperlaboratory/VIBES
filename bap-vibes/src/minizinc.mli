@@ -7,14 +7,14 @@ module KB = Knowledge
 
 (** [sol] is a solution returned by minizinc. Its fields include:
 
-   [reg] is a mapping from temporaries to registers
-   [opcode] is a mapping from operations to opcodes
-   [temp] is a mapping from operands to temps
-   [active] is a mapping from operations to booleans
-   [issue] is a mapping from operations to the issue cycle on which they execute
+    [reg] is a mapping from temporaries to registers
+    [opcode] is a mapping from operations to opcodes
+    [temp] is a mapping from operands to temps
+    [active] is a mapping from operations to booleans
+    [issue] is a mapping from operations to the issue cycle on which they execute
 
-   It is unlikely that you need introspect inside this data type outside the minizinc
-   module.
+    It is unlikely that you need introspect inside this data type outside the minizinc
+    module.
 *)
 
 type sol = {
@@ -37,11 +37,11 @@ val run_minizinc : string -> sol list -> Ir.t -> (Ir.t * sol) KB.t
 (** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
   module S :
-    sig
-      type t = sol
-      val compare : sol -> sol -> int
-      val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
-    end
+  sig
+    type t = sol
+    val compare : sol -> sol -> int
+    val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
+  end
   type t = sol
   val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
   val compare : S.t -> S.t -> int
@@ -86,7 +86,7 @@ type mzn_params_serial = {
   preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
   congruent : (operand, operand mznset) mznmap;
   operation_opcodes : (operation, opcode mznset) mznmap;
-  latency : (opcode , int) mznmap;
+  latency : (opcode, int) mznmap;
   number_excluded : int;
   exclude_reg : (int, (temp, reg) mznmap) mznmap
 } [@@deriving yojson]

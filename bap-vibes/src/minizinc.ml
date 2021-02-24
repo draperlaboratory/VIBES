@@ -142,9 +142,9 @@ type sol = {
 
 module Sol = struct 
   module S = struct
-  type t = sol
-  let compare = compare_sol
-  let sexp_of_t = sexp_of_sol
+    type t = sol
+    let compare = compare_sol
+    let sexp_of_t = sexp_of_sol
   end
   include S
   include Base.Comparable.Make(S)
@@ -260,9 +260,9 @@ let serialize_mzn_params (vir : Ir.t) (prev_sols : sol list): mzn_params_serial 
     latency = List.map ~f:(fun _ -> 10) opcodes; (* TODO *)
     number_excluded = List.length prev_sols;
     exclude_reg = List.map prev_sols 
-                  ~f:(fun sol ->  List.map temps
-                        ~f:(fun t -> Var.Map.find_exn sol.reg t |> mzn_enum_of_var)
-                     ) 
+        ~f:(fun sol ->  List.map temps
+               ~f:(fun t -> Var.Map.find_exn sol.reg t |> mzn_enum_of_var)
+           ) 
   },
   {
     temps = temps;
