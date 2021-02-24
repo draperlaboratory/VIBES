@@ -359,7 +359,7 @@ let run_minizinc (model_filepath : string) (prev_sols : sol list) (vir : Ir.t) :
   let solution_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
-  Events.(send @@ Info (sprintf "Excluded Solutions: %d\n" (List.length prev_sols)));
+  Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
   let params, name_maps = serialize_mzn_params vir_clean prev_sols in
