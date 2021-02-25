@@ -5,16 +5,26 @@ open Bap_knowledge
 module KB = Knowledge
 
 
-(** [sol] is a solution returned by minizinc. Its fields include:
-
-    [reg] is a mapping from temporaries to registers
-    [opcode] is a mapping from operations to opcodes
-    [temp] is a mapping from operands to temps
-    [active] is a mapping from operations to booleans
-    [issue] is a mapping from operations to the issue cycle on which they execute
-
+(** [sol] is a solution returned by minizinc. 
     It is unlikely that you need introspect inside this data type outside the minizinc
     module.
+
+    As of the functionality of vibes 2/25/21 the only two fields that are of interest are
+       [reg] and [issue]
+
+    Its fields include:
+    [reg] is a mapping from temporaries to registers. It holds the solution to the 
+      register allocation problem.
+    [opcode] is a mapping from operations to opcodes. It is interesting in the case of 
+      there being multiple possible opcodes for an operation.
+    [temp] is a mapping from operands to temps. It is interesing in the case where 
+      there are multiple logical temporaries available due to copying.
+    [active] is a mapping from operations to booleans. It is interesting when there 
+      are optional instructions for copying. If it is false, the operation should be
+      deleted from the Ir.
+    [issue] is a mapping from operations to the issue cycle on which they execute.
+      The ordering of these numbers is the ordering of the assembly to emit.
+
 *)
 
 type sol = {
