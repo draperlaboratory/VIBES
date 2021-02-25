@@ -1,0 +1,18 @@
+{
+  "func": "main",
+  "property" : "(assert true)",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "(var-decls retvar)
+                     (set retvar 3)
+                     fallthrough",
+     "patch-point" : "0x3ce",
+     "patch-size" : 2},
+    {"patch-name" : "ret-4",
+     "patch-code" : "(var-decls retvar)
+                     (set retvar 4)
+                     fallthrough",
+     "patch-point" : "0x3da",
+     "patch-size" : 2}
+  ]
+}
