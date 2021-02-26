@@ -11,12 +11,12 @@ let test_arm_simple (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple" ~ctxt
 
 (* Check patching the "simple-cegis" exe example. *)
-let test_simple_cegis (ctxt : test_ctxt) : unit =
-  H.run_make ["clean"] ~dir:"simple-cegis" ~ctxt;
-  H.run_make ["patch"] ~dir:"simple-cegis" ~ctxt;
-  H.run_arm_exe ["main"] ~dir:"simple-cegis" ~exit_code:5 ~ctxt;
-  H.run_arm_exe ["main.patched"] ~dir:"simple-cegis" ~exit_code:3 ~ctxt;
-  H.run_make ["clean"] ~dir:"simple-cegis" ~ctxt
+let test_arm_simple_cegis (ctxt : test_ctxt) : unit =
+  H.run_make ["clean"] ~dir:"arm-simple-cegis" ~ctxt;
+  H.run_make ["patch"] ~dir:"arm-simple-cegis" ~ctxt;
+  H.run_arm_exe ["main"] ~dir:"arm-simple-cegis" ~exit_code:5 ~ctxt;
+  H.run_arm_exe ["main.patched"] ~dir:"arm-simple-cegis" ~exit_code:3 ~ctxt;
+  H.run_make ["clean"] ~dir:"arm-simple-cegis" ~ctxt
 
 (* Check patching the "simple-compiled" exe example. *)
 let test_arm_simple_compiled (ctxt : test_ctxt) : unit =
@@ -35,8 +35,8 @@ let test_arm_simple_multi (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple-multi" ~ctxt
 
 let suite = [
-  "Test: simple" >:: test_simple;
-  "Test: simple-cegis" >:: test_simple_cegis;
+  "Test: arm-simple" >:: test_arm_simple;
+  "Test: arm-simple-cegis" >:: test_arm_simple_cegis;
   "Test: arm-simple-compiled" >:: test_arm_simple_compiled;
   "Test: arm-simple-multi" >:: test_arm_simple_multi;
 ]
