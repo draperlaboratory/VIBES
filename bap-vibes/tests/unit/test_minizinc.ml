@@ -156,7 +156,9 @@ let mzn_params_gold =
     { \"set\": [] },
     { \"set\": [] }
   ],
-  \"latency\": [ 10 ]
+  \"latency\": [ 10 ],
+  \"number_excluded\": 0,
+  \"exclude_reg\": []
 }"
 
 let test_serialize_gold _ =
@@ -223,5 +225,5 @@ let test_sol_apply_ex1 _ =
 let suite = [
   "Test Definer Serialization" >:: test_definer_serialize_ex1;
   "Test Solution Application" >::  test_sol_apply_ex1;
-  (* "Test Minizinc.serialize_mzn_params" >:: test_serialize_gold; *)
+  "Test Minizinc.serialize_mzn_params" >:: test_serialize_gold;
 ]
