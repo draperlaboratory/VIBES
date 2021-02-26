@@ -3,7 +3,7 @@ open OUnit2
 module H = Helpers
 
 (* Check patching the "simple" exe example. *)
-let test_simple (ctxt : test_ctxt) : unit =
+let test_arm_simple (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple" ~ctxt;
   H.run_make ["patch"] ~dir:"arm-simple" ~ctxt;
   H.run_arm_exe ["main"] ~dir:"arm-simple" ~exit_code:5 ~ctxt;
@@ -19,7 +19,7 @@ let test_simple_cegis (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"simple-cegis" ~ctxt
 
 (* Check patching the "simple-compiled" exe example. *)
-let test_simple_compiled (ctxt : test_ctxt) : unit =
+let test_arm_simple_compiled (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple-compiled" ~ctxt;
   H.run_make ["patch"] ~dir:"arm-simple-compiled" ~ctxt;
   H.run_arm_exe ["main"] ~dir:"arm-simple-compiled" ~exit_code:5 ~ctxt;
@@ -27,7 +27,7 @@ let test_simple_compiled (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple-compiled" ~ctxt
 
 (* Check patching the "simple-multi" exe example. *)
-let test_simple_multi (ctxt : test_ctxt) : unit =
+let test_arm_simple_multi (ctxt : test_ctxt) : unit =
   H.run_make ["clean"] ~dir:"arm-simple-multi" ~ctxt;
   H.run_make ["patch"] ~dir:"arm-simple-multi" ~ctxt;
   H.run_arm_exe ["main"] ~dir:"arm-simple-multi" ~exit_code:0 ~ctxt;
@@ -37,6 +37,6 @@ let test_simple_multi (ctxt : test_ctxt) : unit =
 let suite = [
   "Test: simple" >:: test_simple;
   "Test: simple-cegis" >:: test_simple_cegis;
-  "Test: simple-compiled" >:: test_simple_compiled;
-  "Test: simple-multi" >:: test_simple_multi;
+  "Test: arm-simple-compiled" >:: test_arm_simple_compiled;
+  "Test: arm-simple-multi" >:: test_arm_simple_multi;
 ]
