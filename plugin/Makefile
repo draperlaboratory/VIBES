@@ -1,7 +1,7 @@
 PLUGIN := vibes.plugin
 PLUGIN_DESC := "the VIBES tool"
 SRC_FILES := $(wildcard **/*.ml) $(wildcard **/*.mli)
-PKGs := findlib.dynload,bap,bap-arm,bap_wp,bap-vibes,yojson
+PKGs := findlib.dynload,bap,bap-arm,bap-primus,bap_wp,bap-vibes,yojson
 TAG := "warn(all)"
 Is := "lib"
 

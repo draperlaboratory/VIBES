@@ -1,19 +1,46 @@
 (* Implements {!Vibes_plugin_parameters}. *)
 
 open !Core_kernel
-open Monads.Std
+open Bap.Std
+open Bap_core_theory
+open Bap_main
+open Bap_primus.Std
+
+module M = Monads.Std
+
+open KB.Syntax
 
 module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
 module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
-module Err = Monad.Result.Make (Errors) (Monad.Ident)
-open Err.Syntax
+module Err = M.Monad.Result.Make (Errors) (M.Monad.Ident)
+(* open Err.Syntax *)
 type error = Errors.t Err.error
 
 (* Get the default minizinc model filepath. *)
 let minizinc_model_filepath = Vibes_plugin_constants.minizinc_model_filepath
+
+let lisp_test () : unit =
+(*  let build_config : unit KB.t = Obj.magic "foo"
+  in
+  Toplevel.eval Theory.Semantics.slot.obj
+
+  Format.eprintf "%s:@ %a@." "TEST TEST:" Bil.pp (Insn.bil sema)*)
+  Toplevel.exec @@ begin
+    Primus.Lisp.Unit.create Theory.Target.unknown >>= fun unit ->
+    KB.Object.scoped Theory.Program.cls @@ fun obj ->
+    KB.sequence [
+      KB.provide Theory.Label.unit obj (Some unit);
+      KB.provide Theory.Label.name obj (Some "example1");
+    ] >>= fun () ->
+    KB.collect Theory.Semantics.slot obj >>| fun sema ->
+    Format.eprintf "%s:@ %a@." "example1" Bil.pp (Insn.bil sema)
+  end
+
+
+open Err.Syntax
 
 (* Error if a string is empty. *)
 let is_not_empty (value : string) (e : Errors.t)
@@ -70,7 +97,7 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
   | _ -> Err.fail Errors.Missing_size
 
 (* Validate a specific patch fragment within the list, or error *)
-let validate_patch (obj : Json.t) 
+ let validate_patch (obj : Json.t)
     : (Vibes_config.patch, error) Stdlib.result =
   validate_patch_name obj >>= fun patch_name ->
   validate_patch_code patch_name obj >>= fun patch_code ->
@@ -148,10 +175,12 @@ let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
     Err.return (Json.from_file config_filepath)
   with e -> Err.fail (Errors.Config_not_parsed (Exn.to_string e))
 
+
 (* Construct a configuration record from the given parameters. *)
 let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
       ~patched_exe_filepath:(patched_exe_filepath : string option)
     : (Vibes_config.t, error) result =
+  lisp_test ();
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   parse_json config_filepath >>= fun config_json ->
   validate_patches config_json >>= fun patches ->
