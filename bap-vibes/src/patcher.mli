@@ -6,6 +6,7 @@
    executable, thereby producing a new, patched executable. *)
 
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
 
 type patch = {
@@ -38,7 +39,13 @@ type placed_patch = {
    a patch point (an address [Bitvec.t] in the original executable),
    and a list of assembly instructions (a [string list]), and returns
    a filepath (a [string]) to the patched executable. *)
-val patch : ?patcher:(string -> placed_patch list -> string) ->
-  Data.t -> unit KB.t
+val patch :
+  ?patcher:(Theory.language -> string -> placed_patch list -> string) ->
+  Data.t ->
+  unit KB.t
 
-val place_patches : patch list -> patch_site list -> placed_patch list
+val place_patches :
+  Theory.language ->
+  patch list ->
+  patch_site list ->
+  placed_patch list

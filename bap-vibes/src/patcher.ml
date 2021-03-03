@@ -2,6 +2,8 @@
 open Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
+open Bap_core_theory
+open Bap.Std
 
 module KB = Knowledge
 module In = Core_kernel.In_channel
@@ -32,11 +34,18 @@ type placed_patch = {
   jmp : int64 option
 } [@@deriving sexp, equal]
 
-
-let tgt = "arm"
+let tgt_flag (l : Theory.language) : string =
+  let l = Theory.Language.to_string l in
+  let open String in
+  if is_substring l ~substring:"A32" then ""
+  else if is_substring l ~substring:"T32" then "-mthumb"
+  (* Needed for testing *)
+  else if is_substring l ~substring:"unknown" then ""
+  else failwith ("Unsupported language: " ^ l)
 
 (** [binary_of_asm] uses external programs to convert assembly code to binary *)
-let binary_of_asm (assembly : string list) : (string, Errors.t) Result.t =
+let binary_of_asm (lang : Theory.language) (assembly : string list)
+  : (string, Errors.t) Result.t =
   (* Write assembly to temporary file *)
   let asm_filename = Stdlib.Filename.temp_file "vibes-assembly" ".asm" in
   Out.write_lines asm_filename assembly;
@@ -45,7 +54,7 @@ let binary_of_asm (assembly : string list) : (string, Errors.t) Result.t =
   let assembler = "/usr/bin/arm-linux-gnueabi-as" in
   let with_elf_filename = Stdlib.Filename.temp_file "vibes-assembly" ".o" in
   (* FIXME: a bit hacky, we should have a dictionary here probably. *)
-  let tgt_flag = if String.(tgt = "arm") then "" else "-m"^tgt in
+  let tgt_flag = tgt_flag lang in
   let args =
     [
       "-o";
@@ -89,7 +98,8 @@ let jmp_instr_size : int64 = 4L
 
 
 (** [build_patch] returns the binary of a patch with athe appropriate jumps *)
-let build_patch (patch : placed_patch) : (string, Errors.t) Result.t =
+let build_patch (l : Theory.language) (patch : placed_patch)
+  : (string, Errors.t) Result.t =
   (* [abs_jmp] produces assembly for an unconditional jmp *)
   let abs_jmp (abs_addr : int64) : string =
     Printf.sprintf "b (%s + (%Ld))" Constants.patch_start_label abs_addr in
@@ -107,7 +117,8 @@ let build_patch (patch : placed_patch) : (string, Errors.t) Result.t =
     (patch_loc :: patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
 
 
-let patch_size (patch : patch) : (int64, Errors.t) Result.t =
+let patch_size (l : Theory.language) (patch : patch)
+  : (int64, Errors.t) Result.t =
   let placed_patch =
     {
       assembly = patch.assembly;
@@ -119,11 +130,13 @@ let patch_size (patch : patch) : (int64, Errors.t) Result.t =
   in
   Result.map
     ~f:(fun b -> String.length b |> Int64.of_int)
-    (build_patch placed_patch)
+    (build_patch l placed_patch)
 
 (** [patch_file] takes a filename and a list of patch binaries and
     locations and returns the filename of a patched file *)
-let patch_file (original_exe_filename : string) (patches : placed_patch list)
+let patch_file (lang : Theory.language)
+    (original_exe_filename : string)
+    (patches : placed_patch list)
   : string =
   let tmp_patched_exe_filename =
     Stdlib.Filename.temp_file "vibes-assembly" ".patched" in
@@ -134,7 +147,7 @@ let patch_file (original_exe_filename : string) (patches : placed_patch list)
         Core_kernel.List.iter patches
           ~f:(fun patch ->
               Out.seek file patch.patch_loc;
-              let patch_binary = build_patch patch in
+              let patch_binary = build_patch lang patch in
               let patch_binary =
                 Result.map_error patch_binary
                   ~f:(Format.asprintf "%a" Errors.pp)
@@ -249,11 +262,12 @@ let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
     At the moment it is just greedy.
 *)
 let place_patches
+    (lang : Theory.language)
     (patches : patch list)
     (patch_sites : patch_site list) : placed_patch list =
   let open Int64 in
   let process_patch (acc, patch_sites) patch =
-    let patch_size = patch_size patch |> Result.ok |> Option.value_exn in
+    let patch_size = patch_size lang patch |> Result.ok |> Option.value_exn in
     if patch_size <= patch.orig_size (* Patch fits inplace *)
     then
       begin
@@ -290,6 +304,12 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
               orig_loc = Bitvec.to_int64 patch_point;
               orig_size = Int64.of_int patch_size}
 
+let get_lang_exn (obj : Data.t) : Theory.language KB.t =
+  let (let*) x f = KB.bind x ~f in
+  let* prog = Data.Original_exe.get_prog_exn obj in
+  let tid = Term.tid prog in
+  KB.collect Theory.Label.encoding tid
+
 (* Patches the original exe, to produce a patched exe. *)
 let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let (let*) x f = KB.bind x ~f in
@@ -303,14 +323,15 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let patch_list = Data.Patch_set.to_list patches in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
+  let* lang = get_lang_exn obj in
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
-  let placed_patches = place_patches patch_list patch_sites in
+  let placed_patches = place_patches lang patch_list patch_sites in
   Events.(send @@ Info "Patch Placement Solution:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_placed_patch placed_patches));
   Events.(send @@ Info "Patching file...");
-  let tmp_patched_exe_filename = patcher original_exe_filename placed_patches in
+  let tmp_patched_exe_filename = patcher lang original_exe_filename placed_patches in
 
   (* Stash the filepath in the KB. *)
   let* _ = Data.Patched_exe.set_tmp_filepath obj (Some tmp_patched_exe_filename) in

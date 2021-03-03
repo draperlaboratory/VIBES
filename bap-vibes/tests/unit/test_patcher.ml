@@ -19,31 +19,34 @@ let dummy_patch n m : Patcher.patch = {
 
 
 
-let test_patch_placer_exact_fit _ = 
+let test_patch_placer_exact_fit _ =
+  let lang = Arm_target.llvm_a32 in
   let patch = dummy_patch 2L 8L in
   let patch_sites = [] in
-  let placed_patch = Patcher.place_patches [patch] patch_sites |> List.hd_exn in
+  let placed_patch = Patcher.place_patches lang [patch] patch_sites |> List.hd_exn in
   assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
-  assert_equal placed_patch.jmp None 
+  assert_equal placed_patch.jmp None
 
-let test_patch_placer_loose_fit _ = 
+let test_patch_placer_loose_fit _ =
+  let lang = Arm_target.llvm_a32 in
     let patch = dummy_patch 1L 8L in
     let patch_sites : Patcher.patch_site list = [{
       location = 100L;
       size = 128L
     }] in
-    let placed_patch = Patcher.place_patches [patch] patch_sites |> List.hd_exn in
+    let placed_patch = Patcher.place_patches lang [patch] patch_sites |> List.hd_exn in
     assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
-    assert_equal ~printer:Int64.to_string 8L (Option.value_exn placed_patch.jmp) 
+    assert_equal ~printer:Int64.to_string 8L (Option.value_exn placed_patch.jmp)
 
-  let test_patch_placer_no_fit _ = 
+  let test_patch_placer_no_fit _ =
+  let lang = Arm_target.llvm_a32 in
     let patch = dummy_patch 8L 4L in
     let patch_sites : Patcher.patch_site list = [{
       location = 100L;
       size = 128L
     }] in
-    match Patcher.place_patches [patch] patch_sites with
-    | [orig_jmp; placed_patch] -> 
+    match Patcher.place_patches lang [patch] patch_sites with
+    | [orig_jmp; placed_patch] ->
     assert_equal ~printer:Int64.to_string placed_patch.patch_loc 100L;
     assert_equal ~printer:Int64.to_string 4L (Option.value_exn placed_patch.jmp);
     assert_equal 0L orig_jmp.patch_loc;
@@ -51,7 +54,7 @@ let test_patch_placer_loose_fit _ =
     | _ -> assert_failure "List is wrong size"
 
 (* A dummy patcher, that returns a fixed filename. *)
-let patcher _ _= H.patched_exe
+let patcher _ _ _ = H.patched_exe
 
 (* Test that [Patcher.patch] works as expected. *)
 let test_patch (_ : test_ctxt) : unit =
@@ -62,6 +65,7 @@ let test_patch (_ : test_ctxt) : unit =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
+    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
@@ -156,7 +160,7 @@ let suite = [
   "Test Patcher.patch" >:: test_patch;
   "Test Patcher.patch: no original exe" >:: test_patch_with_no_original_exe;
   "Test Patcher.patch: no patch point" >:: test_patch_with_no_patch_point;
-  "Test Patcher.patch: no assembly" >:: test_patch_with_no_assembly; 
+  "Test Patcher.patch: no assembly" >:: test_patch_with_no_assembly;
   "Test Patcher.place_patch: exact fit" >:: test_patch_placer_exact_fit;
   "Test Patcher.place_patch: loose fit" >:: test_patch_placer_loose_fit;
   "Test Patcher.place_patch: no fit" >:: test_patch_placer_no_fit

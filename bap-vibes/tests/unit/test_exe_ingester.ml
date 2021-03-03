@@ -27,7 +27,7 @@ let test_ingest_addr_size (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should stash the address size in the KB. *)
-  let expected = Some 64 in
+  let expected = Some 32 in
   H.assert_property
     ~p_res:H.print_int_opt ~p_expected:H.print_int_opt ~cmp:(Option.equal (=))
     Data.Original_exe.addr_size expected result

@@ -11,7 +11,7 @@ let skip_test (msg : string) : unit = skip_if true msg
 
 (* Create an empty project. *)
 let empty_proj (filename : string) : (Project.t, Error.t) result =
-  let arch = `x86_64 in
+  let arch = `armv7 in
   let code = Memmap.empty in
   let data = Memmap.empty in
   let input = Project.Input.create arch filename ~code ~data in
