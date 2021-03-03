@@ -70,11 +70,13 @@ let build_patch (patch : placed_patch) : (string, Errors.t) Result.t =
     Printf.sprintf "b (%s + (%Ld))" Constants.patch_start_label abs_addr in
   let patch_relative = Printf.sprintf ".equiv %s, %Ld\n" 
       Constants.relative_patch_placement Int64.(patch.patch_loc - patch.orig_loc) in
+  let patch_loc = Printf.sprintf ".equiv %s, %Ld\n" 
+      Constants.patch_location patch.patch_loc in
   let patch_start = Printf.sprintf "%s:" Constants.patch_start_label in
   let patch_jmp = match patch.jmp with
     | None -> ""
     | Some j -> abs_jmp Int64.(j - patch.patch_loc)  in
-  binary_of_asm (patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
+  binary_of_asm (patch_loc :: patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
 
 
 let patch_size (patch : patch) : (int64, Errors.t) Result.t = 
