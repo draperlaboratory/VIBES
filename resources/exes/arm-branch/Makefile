@@ -24,7 +24,7 @@ main.patched:
 run-orig: main
 	@echo "-----------------------------------------------------------------------"
 	@echo ""
-	@echo "  Running original program - make should say it's ignoring Error 5"
+	@echo "  Running original program - make should say it's ignoring Error 1"
 	@echo ""
 	@echo "-----------------------------------------------------------------------"
 	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main
@@ -33,7 +33,7 @@ run-orig: main
 run-patched: patch
 	@echo "-----------------------------------------------------------------------"
 	@echo ""
-	@echo "  Running patched program - make should say it's ignoring Error 3"
+	@echo "  Running patched program - make should say it's ignoring Error 2"
 	@echo ""
 	@echo "-----------------------------------------------------------------------"
 	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main.patched
