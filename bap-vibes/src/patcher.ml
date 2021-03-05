@@ -304,10 +304,15 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
               orig_loc = Bitvec.to_int64 patch_point;
               orig_size = Int64.of_int patch_size}
 
-let get_lang_exn (obj : Data.t) : Theory.language KB.t =
-  let (let*) x f = KB.bind x ~f in
-  let* prog = Data.Original_exe.get_prog_exn obj in
-  let tid = Term.tid prog in
+let lang = Arm_target.llvm_a32
+
+let get_lang_exn (origin : Data.t) (patch : Data.Patch.t) : Theory.language KB.t =
+  let open KB.Let in
+  let* addr = Data.Patch.get_patch_point_exn patch in
+  let* pkg = Data.Original_exe.get_filepath_exn origin in
+  (* FIXME: currently does not work *)
+  let* _ = KB.Symbol.set_package pkg in
+  let* tid = Theory.Label.for_addr addr in
   KB.collect Theory.Label.encoding tid
 
 (* Patches the original exe, to produce a patched exe. *)
@@ -323,7 +328,7 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let patch_list = Data.Patch_set.to_list patches in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
-  let* lang = get_lang_exn obj in
+  (* let* lang = get_lang_exn obj (Data.Patch_set.choose_exn patches) in *)
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
