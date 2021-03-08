@@ -13,3 +13,9 @@ val relative_patch_placement : string
  addressing relative to the patch start.
 *)
 val patch_start_label : string
+
+(**
+ [patch_location] A variable set in the assembly file with the the file offset 
+ in the binary at which the patch will be placed
+*)
+val patch_location : string
