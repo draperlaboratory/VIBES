@@ -12,6 +12,6 @@ module KB = Knowledge
    into a BAP [Project.t]. *)
 type loader = string -> Project.t KB.t
 
-(* [ingest ~loader obj] uses the [loader] function to load the original
-   executable associated with the provided [obj]. *)
-val ingest : ?loader:(loader) -> Data.t -> unit KB.t
+(* [ingest obj proj] processes the provided [proj] and stores the relevant
+   info about with the provided [obj]. *)
+val ingest : Data.t -> Project.t -> unit KB.t

@@ -1,6 +1,7 @@
 (* Implements {!Pipeline}. *)
 
 open !Core_kernel
+open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 
@@ -41,13 +42,13 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
     end
 
 (* Set everything up for the CEGIS loop, and then run the CEGIS loop. *)
-let init_and_run (config : Config.t) =
+let init_and_run (config : Config.t) (proj : Project.t) =
 
   (* Get a Data object we can work with. *)
   Data.create config >>= fun obj ->
 
   (* Load the original exe and the patch. *)
-  Exe_ingester.ingest obj >>= fun _ ->
+  Exe_ingester.ingest obj proj >>= fun _ ->
   Patch_ingester.ingest obj >>= fun _ ->
 
   (* Start the CEGIS loop. *)
@@ -59,8 +60,24 @@ let run (config : Config.t) : (string, KB.Conflict.t) result =
   Events.(send @@ Header "Starthing pipeline");
   Events.(send @@ Info (Format.asprintf "%a" Config.pp config));
 
+  (* Lift the original executable. *)
+  let filepath = Config.exe config in
+  Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
+  let load_result = Exe_loader.simple_load filepath in
+  let proj = match load_result with
+    | Ok proj -> proj
+    | Error e ->
+      begin
+        let msg = Format.asprintf "Error loading: %s\n%s\n"
+          filepath (Error.to_string_hum e) in
+        Events.(send @@ Info msg);
+        failwith msg
+      end
+    in 
+
   (* Initialize and run the CEGIS loop in the KB monad. *)
-  let result = KB.run Data.cls (init_and_run config) KB.empty in
+  let state = Toplevel.current () in
+  let result = KB.run Data.cls (init_and_run config proj) state in
   Events.(send @@ Header "Pipeline finished");
 
   (* If all went well, report the patched exe filepath. *)

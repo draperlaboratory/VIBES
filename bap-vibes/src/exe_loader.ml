@@ -8,6 +8,10 @@ module KB = Knowledge
 
 let loader = "llvm"
 
+let simple_load (filename : string) =
+  let input = Project.Input.file ~loader ~filename in
+  Project.create input ~package:filename
+
 let load (filename : string) : Project.t KB.t =
   let input = Project.Input.file ~loader ~filename in
   match Project.create input ~package:filename with

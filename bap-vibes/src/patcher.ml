@@ -323,6 +323,14 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   (* Get patch information (the address to start patching and the number
      of bytes to overwrite), and get the patch assembly. *)
   Events.(send @@ Info "Retrieving data from KB...");
+
+  print_endline ">>>>>>>>>>>>>>>>>>>>>";
+  Format.printf "%a\n%!" KB.pp_state (Toplevel.current ());
+  print_endline ">>>>>>>>>>>>>>>>>>>>>";
+  let* tids = KB.objects Theory.Program.cls in
+  Seq.iter tids ~f:(fun t -> Printf.printf "*** %a\n" Tid.ppo t);
+  print_endline ">>>>>>>>>>>>>>>>>>>>>";
+
   let* original_exe_filename = Data.Original_exe.get_filepath_exn obj in
   let* patches = Data.Patched_exe.get_patches obj in
   let patch_list = Data.Patch_set.to_list patches in
