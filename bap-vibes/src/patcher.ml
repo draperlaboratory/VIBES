@@ -306,14 +306,16 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
 
 let lang = Arm_target.llvm_a32
 
-let get_lang_exn (origin : Data.t) (patch : Data.Patch.t) : Theory.language KB.t =
+let get_lang_exn (patch : Data.Patch.t) : Theory.language KB.t =
   let open KB.Let in
   let* addr = Data.Patch.get_patch_point_exn patch in
-  let* pkg = Data.Original_exe.get_filepath_exn origin in
-  (* FIXME: currently does not work *)
-  let* _ = KB.Symbol.set_package pkg in
+  (* FIMXE: remove this when we replace offsets with addresses *)
+  let addr = Bitvec.M32.(addr + !$"0x10000") in
+  let* pkg = KB.Symbol.package in
   let* tid = Theory.Label.for_addr addr in
-  KB.collect Theory.Label.encoding tid
+  let* lang = KB.collect Theory.Label.encoding tid in
+  (* Printf.printf "addr: %s lang: %s\n" (Bitvec.to_string addr) (Theory.Language.to_string lang); *)
+  KB.return lang
 
 (* Patches the original exe, to produce a patched exe. *)
 let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
@@ -324,19 +326,12 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
      of bytes to overwrite), and get the patch assembly. *)
   Events.(send @@ Info "Retrieving data from KB...");
 
-  print_endline ">>>>>>>>>>>>>>>>>>>>>";
-  Format.printf "%a\n%!" KB.pp_state (Toplevel.current ());
-  print_endline ">>>>>>>>>>>>>>>>>>>>>";
-  let* tids = KB.objects Theory.Program.cls in
-  Seq.iter tids ~f:(fun t -> Printf.printf "*** %a\n" Tid.ppo t);
-  print_endline ">>>>>>>>>>>>>>>>>>>>>";
-
   let* original_exe_filename = Data.Original_exe.get_filepath_exn obj in
   let* patches = Data.Patched_exe.get_patches obj in
   let patch_list = Data.Patch_set.to_list patches in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
-  (* let* lang = get_lang_exn obj (Data.Patch_set.choose_exn patches) in *)
+  let* lang = get_lang_exn (Data.Patch_set.choose_exn patches) in
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
