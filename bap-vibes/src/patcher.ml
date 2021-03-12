@@ -111,8 +111,9 @@ let build_patch (l : Theory.language) (patch : placed_patch)
   let patch_start = Printf.sprintf "%s:" Constants.patch_start_label in
   let patch_jmp = match patch.jmp with
     | None -> ""
-    | Some j -> abs_jmp Int64.(j - patch.patch_loc)  in
-  binary_of_asm
+    | Some j -> abs_jmp Int64.(j - patch.patch_loc)
+  in
+  binary_of_asm l
     (patch_loc :: patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
 
 
