@@ -3,7 +3,6 @@ open Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_core_theory
-open Bap.Std
 
 module KB = Knowledge
 module In = Core_kernel.In_channel
@@ -304,17 +303,13 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
               orig_loc = Bitvec.to_int64 patch_point;
               orig_size = Int64.of_int patch_size}
 
-let lang = Arm_target.llvm_a32
-
 let get_lang_exn (patch : Data.Patch.t) : Theory.language KB.t =
   let open KB.Let in
   let* addr = Data.Patch.get_patch_point_exn patch in
   (* FIMXE: remove this when we replace offsets with addresses *)
   let addr = Bitvec.M32.(addr + !$"0x10000") in
-  let* pkg = KB.Symbol.package in
   let* tid = Theory.Label.for_addr addr in
   let* lang = KB.collect Theory.Label.encoding tid in
-  (* Printf.printf "addr: %s lang: %s\n" (Bitvec.to_string addr) (Theory.Language.to_string lang); *)
   KB.return lang
 
 (* Patches the original exe, to produce a patched exe. *)
