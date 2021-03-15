@@ -33,10 +33,10 @@ let lisp_test () : unit =
     KB.Object.scoped Theory.Program.cls @@ fun obj ->
     KB.sequence [
       KB.provide Theory.Label.unit obj (Some unit);
-      KB.provide Theory.Label.name obj (Some "example1");
+      KB.provide Theory.Label.name obj (Some "ret-3");
     ] >>= fun () ->
     KB.collect Theory.Semantics.slot obj >>| fun sema ->
-    Format.eprintf "%s:@ %a@." "example1" Bil.pp (Insn.bil sema)
+    Format.eprintf "%s:@ %a@." "ret-3" Bil.pp (Insn.bil sema)
   end
 
 

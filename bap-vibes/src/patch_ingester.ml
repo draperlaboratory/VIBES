@@ -5,6 +5,8 @@ open Bap_knowledge
 open Knowledge.Syntax
 open Core_kernel
 open Bap_core_theory
+open Bap_primus.Std
+open Arm_selector
 
 module KB = Knowledge
 open KB.Let
@@ -210,6 +212,18 @@ module CoreParser (Core : Theory.Core) = struct
 
 end
 
+(* XXX temp *)
+let load_patch () : Insn.t KB.t =
+  Primus.Lisp.Unit.create Theory.Target.unknown >>= fun unit ->
+  KB.Object.create Theory.Program.cls >>= fun obj ->
+  KB.sequence [
+    KB.provide Theory.Label.unit obj (Some unit);
+    KB.provide Theory.Label.name obj (Some "ret-3");
+  ] >>= fun () ->
+  KB.collect Theory.Semantics.slot obj
+
+
+
 
 (* Loads the BIR version of a patch. For now, we select from a hand-written
    set of patches defined in the {!Patches} module. *)
@@ -227,13 +241,25 @@ let ingest_one (addr_size : int) (n : int KB.t) (patch : Data.Patch.t)
   (* Get the patch (as BIL). *)
   SexpParser.parse_bir name addr_size code >>= fun bir ->
 
+  (* XXX test ignore parsed code and use lisp *)
+  load_patch () >>= fun bir_lisp ->
+
   (* Stash the BIL in the KB. *)
-  Data.Patch.set_bir patch bir >>= fun () ->
+  Data.Patch.set_bir patch bir_lisp >>= fun () ->
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
   let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
   Events.(send @@ Info bir_str);
+  let bir_str' = Format.asprintf "%a" Bil.pp (Insn.bil bir) in
+  Events.(send @@ Info bir_str');
+  (* XXX *)
+  Events.(send @@ Info "The lisp patch has the following BIL:");
+  Events.(send @@ Rule);
+  let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir_lisp) in
+  Events.(send @@ Info bir_str);
+  let bir_str' = Format.asprintf "%a" Bil.pp (Insn.bil bir_lisp) in
+  Events.(send @@ Info bir_str');
   Events.(send @@ Rule);
   KB.return (patch_num+1)
 

@@ -2,6 +2,15 @@ open !Core_kernel
 open Bap.Std
 open Bap_core_theory
 
+open KB.Let
+
+(* Utility funtion that I'm surprised isn't in the Option module *)
+let omap3 ~f:(f : 'a -> 'b -> 'c -> 'd)
+      (a : 'a option) (b : 'b option) (c : 'c option) =
+  match (a,b,c) with
+  | (Some a, Some b, Some c) -> Some (f a b c)
+  | _ -> None
+
 type arm_eff = {
   current_data : Ir.operation list;
   current_ctrl : Ir.operation list;
@@ -36,9 +45,13 @@ let gpr =
   Theory.Target.vars tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
-let (@.) s1 s2 =
-  let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
-  let { current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = s2 in
+let (@.) (s1 : arm_eff) (s2 : arm_eff) : arm_eff =
+  let { current_data = data1;
+        current_ctrl = ctrl1;
+        other_blks = blks1 } = s1 in
+  let { current_data = data2;
+        current_ctrl = ctrl2;
+        other_blks = blks2} = s2 in
   {
     current_data = data1 @ data2;
     current_ctrl = ctrl1 @ ctrl2;
@@ -57,37 +70,20 @@ let effect v = KB.Value.get arm_eff v
 
 let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_pure_domain
 
-let (let=) v f = KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_eff v with
-       | None ->
-         let v_str = Format.asprintf "arm_eff: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
-       | Some v -> f v)
+let (let=) v f =
+  let* v = v in f (KB.Value.get arm_eff v)
 
 let (let-) v f =
-  KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_pure v with
-       | None ->
-         let v_str = Format.asprintf "arm_pure: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
-       | Some v -> f v)
+  let* v = v in f (KB.Value.get arm_pure v)
 
 let (let/) v f =
-  KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_mem v with
-       | None ->
-         let v_str = Format.asprintf "arm_mem: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
-       | Some v -> f v)
+  let* v = v in f (KB.Value.get arm_mem v)
 
 let eff d =
   KB.return @@
   KB.Value.put arm_eff
     (Theory.Effect.empty Theory.Effect.Sort.bot)
-    (Some d)
+    d
 
 type 'a bitv_sort = 'a Theory.Bitv.t Theory.Value.sort
 
@@ -101,7 +97,7 @@ let memory m =
   KB.return @@
   KB.Value.put arm_mem
     (Theory.Value.empty (Theory.Mem.define (s32 ()) (s32 ())))
-    (Some m)
+    m
 
 let pure v =
   KB.return @@
@@ -109,7 +105,7 @@ let pure v =
     (* This means we only have 32 bit vectors as our values *)
     (* TODO: extend this arbitrary sizes *)
     (Theory.Value.empty (s32 ()))
-    (Some v)
+    v
 
 let bool b =
   KB.return @@
@@ -117,7 +113,7 @@ let bool b =
     (* This means we only have 32 bit vectors as our values *)
     (* TODO: extend this arbitrary sizes *)
     (Theory.Value.empty Theory.Bool.t)
-    (Some b)
+    b
 
 module ARM_ops = struct
 
@@ -250,6 +246,17 @@ module ARM_ops = struct
     else
       binop Ops.lsr_ (Imm 32) arg1 arg2
 
+  let asr_ arg1 arg2 =
+    binop Ops.asr_ (Imm 32) arg1 arg2
+
+  let lt arg1 arg2 =
+    let sub = arg1 - arg2 in
+    binop Ops.lsr_ (Imm 32) sub (const (Word.of_int ~width:32 31))
+
+  let lte arg1 arg2 =
+    let arg2 = (const (Word.of_int ~width:32 1)) + arg2 in
+    lt arg1 arg2
+
   let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
@@ -328,45 +335,51 @@ struct
   include Theory.Empty
   include ARM_ops
 
-  let set v arg =
+  let cast _s _b x_orig =
+    let- x_casted = x_orig in pure x_casted
+
+  let set v arg_orig =
     let arg_v =
       let r_var = v |> Var.reify in
       Ir.simple_var r_var
     in
     KB.(
-      arg >>= fun arg ->
-      match Value.get arm_pure arg with
-      | Some arg -> eff ((Ir.Var arg_v) := arg)
+      arg_orig >>= fun arg_value ->
+      match Value.get arm_pure arg_value with
+      | Some arg -> eff (Some ((Ir.Var arg_v) := arg))
       | None ->
         begin
-          match Value.get arm_mem arg with
+          match Value.get arm_mem arg_value with
           (* No need to explicitely assign here, we don't use the
              "mem" variables when generating Ir. *)
-          | Some arg -> eff arg.op_eff
-          | None -> assert false
+          | Some arg -> eff (Some arg.op_eff)
+          | None -> eff None
         end)
 
 
   let seq s1 s2 =
     let= s1 = s1 in
     let= s2 = s2 in
-    eff @@ s1 @. s2
+    eff @@ Option.map2 s1 s2 ~f:(@.)
 
   (* Both [data] and [ctrl] effects can have both kinds of effects,
      AFAIKT, so we treat them (almost) identically. *)
   let blk lab data ctrl =
     let= data = data in
     let= ctrl = ctrl in
-    (* We add instructions by consing to the front of the list, so we
-       need to reverse before finalizing the block. *)
-    let new_data = ctrl.current_data @ data.current_data |> List.rev in
-    (* Currently we generate ctrl in the correct order, since
-       there are rougly only 2 or 3 instructions. *)
-    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
-    let new_blk = Ir.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
-    let all_blocks =
-      Ir.add new_blk @@ Ir.union data.other_blks ctrl.other_blks in
-    eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
+    let blk (data : arm_eff) (ctrl : arm_eff) : arm_eff =
+      (* We add instructions by consing to the front of the list, so we
+         need to reverse before finalizing the block. *)
+      let new_data = ctrl.current_data @ data.current_data |> List.rev in
+      (* Currently we generate ctrl in the correct order, since
+         there are rougly only 2 or 3 instructions. *)
+      let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
+      let new_blk = Ir.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
+      let all_blocks =
+        Ir.add new_blk @@ Ir.union data.other_blks ctrl.other_blks in
+      {current_data = []; current_ctrl = []; other_blks = all_blocks}
+    in
+    eff (Option.map2 data ctrl ~f:blk)
 
   let var (v : 'a Theory.var) : 'a Theory.pure =
     let sort = Theory.Var.sort v in
@@ -387,24 +400,26 @@ struct
     (* FIXME: we're assuming every constant is exactly 32
        bits. *)
     let w = Bitvec.to_int32 w in
-    pure @@ const @@ Word.of_int32 ~width:32 w
+    pure @@ Some (const @@ Word.of_int32 ~width:32 w)
 
   let add a b =
     let- a = a in
     let- b = b in
-    pure @@ a + b
+    pure @@ Option.map2 ~f:(+) a b
 
   let sub a b =
     let- a = a in
     let- b = b in
-    pure @@ a - b
+    pure @@ Option.map2 ~f:(-) a b
+
+  let neg _x = assert false
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
-    eff @@ b_instr lab
+    eff @@ Some (b_instr lab)
 
   let jmp addr =
     let- addr_bitv = addr in
-    eff @@ jmp addr_bitv
+    eff @@ Option.map ~f:jmp addr_bitv
 
   let repeat _cond _body =
     Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
@@ -412,14 +427,14 @@ struct
   let load mem loc =
     let/ mem = mem in
     let- loc = loc in
-    pure @@ ldr32 mem loc
+    pure @@ Option.map2 ~f:ldr32 mem loc
 
   (* FIXME: check the endian is always false? *)
   let loadw sort _endian mem loc =
     let/ mem = mem in
     let- loc = loc in
     let size = Theory.Bitv.size sort in
-    pure @@ ldr size mem loc
+    pure @@ Option.map2 ~f:(ldr size) mem loc
 
   let store mem loc value =
     let/ mem = mem in
@@ -427,62 +442,87 @@ struct
     let- value = value in
     (* We have to swap the arguments here, since ARM likes the value
        first, and the location second *)
-    memory @@ str mem value loc
+    memory @@ omap3 ~f:str mem value loc
+
+  let storew _endian mem loc value =
+    (* FIXME this implementation is incorrect when the size of value is not the
+       same as the size of memory *)
+    let/ mem = mem in
+    let- loc = loc in
+    let- value = value in
+    (* We have to swap the arguments here, since ARM likes the value
+       first, and the location second *)
+    memory @@ omap3 str mem value loc
 
   let perform _sort =
-    eff empty_eff
+    eff (Some empty_eff)
 
   let shiftl sign l r =
     let- sign = sign in
     let- l = l in
     let- r = r in
-    pure @@ shl sign l r
+    pure @@ omap3 ~f:shl sign l r
 
   let shiftr sign l r =
     let- sign = sign in
     let- l = l in
     let- r = r in
-    pure @@ shr sign l r
+    pure @@ omap3 ~f:shr sign l r
+
+  let arshift value offset =
+    let- value = value in
+    let- offset = offset in
+    pure @@ Option.map2 ~f:asr_ value offset
+
+  let rshift value offset =
+    let- value = value in
+    let- offset = offset in
+    pure @@ Option.map2 ~f:(binop Ops.lsr_ (Imm 32)) value offset
+
+  let lshift value offset =
+    let- value = value in
+    let- offset = offset in
+    pure @@ Option.map2 ~f:(binop Ops.lsl_ (Imm 32)) value offset
 
   let and_ a b =
     let- a = a in
     let- b = b in
-    bool (a && b)
+    bool @@ Option.map2 ~f:(&&) a b
 
   let or_ a b =
     let- a = a in
     let- b = b in
-    bool (a || b)
+    bool @@ Option.map2 ~f:(||) a b
 
   let logand a b =
     let- a = a in
     let- b = b in
-    pure (a && b)
+    pure @@ Option.map2 ~f:(&&) a b
 
   let logor a b =
     let- a = a in
     let- b = b in
-    pure (a || b)
+    pure @@ Option.map2 ~f:(||) a b
 
   let logxor a b =
     let- a = a in
     let- b = b in
-    pure @@ xor a b
+    pure @@ Option.map2 ~f:xor a b
 
   let eq a b =
     let- a = a in
     let- b = b in
-    bool @@ equals a b
+    bool @@ Option.map2 ~f:equals a b
 
-  let b0 = bool @@ const @@ Word.of_int ~width:32 0
+  let b0 = bool @@ Some (const @@ Word.of_int ~width:32 0)
 
-  let b1 = bool @@ const @@ Word.of_int ~width:32 1
+  let b1 = bool @@ Some (const @@ Word.of_int ~width:32 1)
 
   let branch cond branch1 branch2 =
     let- cond = cond in
     let= branch1 = branch1 in
     let= branch2 = branch2 in
-    eff @@ beq cond branch1 branch2
+    eff @@ omap3 ~f:beq cond branch1 branch2
 
 end
 
@@ -528,8 +568,8 @@ let add_in_vars (t : Ir.t) : Ir.t =
 
 (* We assume that a block is always created *)
 let ir (t : arm_eff) : Ir.t =
-  assert Core_kernel.(List.is_empty t.current_data
-                      && List.is_empty t.current_ctrl);
+(*  assert Core_kernel.(List.is_empty t.current_data
+                      && List.is_empty t.current_ctrl); *)
   let blks = t.other_blks in
   add_in_vars blks
 
@@ -617,7 +657,7 @@ let slot = arm_eff
 
 let () =
   Theory.declare
-    ~context:["vibes"]
+  (*  ~context:["vibes"] *)
     ~package:"vibes"
     ~name:"arm-gen"
     ~desc:"This theory allows instantiating Program semantics into \
