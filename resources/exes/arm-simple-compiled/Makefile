@@ -17,6 +17,7 @@ patch: main main.patched
 main.patched:
 	bap vibes main \
     --config=config.json \
+    --primus-lisp-load=config \
     -o main.patched \
     --verbose
 	chmod +x main.patched

@@ -579,9 +579,11 @@ module Pretty = struct
   let opcode_pretty i : (string, Errors.t) result = Result.return @@ Ir.Opcode.name i
 
   (* We use this function when generating ARM, since the assembler
-     doesn't like % or @ in labels. *)
+     doesn't like %, @ or - in labels. *)
   let tid_to_string (t : tid) : string =
-    Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
+    Tid.name t |>
+      String.strip ~drop:Char.(fun c -> c = '%' || c = '@') |>
+      String.tr ~target:'-' ~replacement:'_'
 
   let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand) : (string, Errors.t) result =
     match o with
