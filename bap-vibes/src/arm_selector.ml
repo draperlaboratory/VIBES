@@ -620,6 +620,55 @@ end
 
 let slot = arm_eff
 
+let is_nop (op : Ir.operation) : bool =
+  let open Ir in
+  let { opcodes; lhs; operands; _ } = op in
+  let opcode = List.hd_exn opcodes |> Ir.Opcode.name in
+  if String.(opcode = "mov") then
+    begin
+      match lhs, operands with
+      | [Var a1], [Var a2] ->
+        begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r *)
+          | Some v1, Some v2 -> Var.(v1 = v2)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  else if String.(opcode = "add" || opcode = "sub") then
+    begin
+      match lhs, operands with
+      | [Var a1], [Var a2; Const w] ->
+        begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r +/- 0 *)
+          | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  else
+    false
+
+
+let peephole (ir : Ir.t) : Ir.t =
+  let filter_ops l =
+    List.filter l ~f:(fun o -> not (is_nop o))
+  in
+  let filter_nops blk =
+    let {Ir.data; Ir.ctrl; _} = blk in
+    let data = filter_ops data in
+    let ctrl = filter_ops ctrl in
+    { blk with
+      data = data;
+      ctrl = ctrl;
+    }
+  in
+  Ir.map_blks ir ~f:(filter_nops)
+
+
+
 let () =
   Theory.declare
     ~context:["vibes"]

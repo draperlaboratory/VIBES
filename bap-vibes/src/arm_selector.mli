@@ -37,6 +37,10 @@ val effect : 'a Theory.effect -> arm_eff option
     representation. *)
 val ir : arm_eff -> Ir.t
 
+(** Performs various ARM specific simplifications of a given [ir]
+   program, aimed mostly to conserve space. *)
+val peephole : Ir.t -> Ir.t
+
 (** Returns the set of registers suitable for register allocation on ARM *)
 val gpr : Bap.Std.Var.Set.t
 

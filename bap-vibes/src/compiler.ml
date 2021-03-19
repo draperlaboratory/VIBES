@@ -9,6 +9,12 @@ open Knowledge.Let
 module KB = Knowledge
 module Arm = Arm_selector
 
+(* Applies the peephole optimizer to the output of a given solver. *)
+let optimized solver =
+  function ir ->
+    let+ (ir, sol) = solver ir in
+    (Arm.peephole ir, sol)
+
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
     (bir : Insn.t) : (string list * Minizinc.sol) KB.t =
@@ -20,7 +26,12 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   (* For some reason Either is more fully featured *)
   let ir = Result.map ~f:Arm.ir arm_eff |> Result.to_either in
   let* (ir, new_sol) =
-    Either.value_map ~first:solver ~second:Kb_error.fail ir in
+    Either.value_map
+      (* run the peephole optimizer here *)
+      ~first:(optimized solver)
+      ~second:Kb_error.fail
+      ir
+  in
   let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return (assembly, new_sol)
