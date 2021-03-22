@@ -104,7 +104,8 @@ module Cli = struct
             print_endline filepath;
             Ok ()
           end
-        | Error e -> Error (Fail (Format.asprintf "%a" KB.Conflict.pp e))
+        | Error e ->
+          Error (Fail (Format.asprintf "%a" Bap_vibes.Toplevel_error.pp e))
 
       end
 

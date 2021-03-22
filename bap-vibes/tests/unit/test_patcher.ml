@@ -65,7 +65,6 @@ let test_patch (_ : test_ctxt) : unit =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->

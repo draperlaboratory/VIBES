@@ -1,5 +1,4 @@
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
@@ -20,7 +19,7 @@ let test_ingest_addr_size (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
 
-    (* Now run the ingester (use the dummy [H.loader]). *)
+    (* Now run the ingester. *)
     Exe_ingester.ingest obj proj >>= fun _ ->
     KB.return obj
 
@@ -33,31 +32,6 @@ let test_ingest_addr_size (_ : test_ctxt) : unit =
     ~p_res:H.print_int_opt ~p_expected:H.print_int_opt ~cmp:(Option.equal (=))
     Data.Original_exe.addr_size expected result
 
-(* Test that [Exe_ingester.ingest] stashes the lifted program in the KB. *)
-let test_ingest_prog (_ : test_ctxt) : unit =
-
-  (* Run the ingester. *)
-  let computation =
-    let proj = H.proj |> Result.map_error ~f:Error.raise |> Result.ok_exn in
-
-    (* Set up the KB. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_filepath obj (Some H.original_exe) >>= fun _ ->
-
-    (* Now run the ingester (use the dummy [H.loader]). *)
-    Exe_ingester.ingest obj proj >>= fun _ ->
-    KB.return obj
-
-  in
-  let result = KB.run Data.cls computation KB.empty in
-
-  (* The ingester should stash the lifted program in the KB. *)
-  let expected = Some H.prog in
-  H.assert_property ~p_res:H.print_prog_opt ~p_expected:H.print_prog_opt
-    ~cmp:(Option.equal Program.equal)
-    Data.Original_exe.prog expected result
-
 let suite = [
   "Test Exe_ingester.ingest: stashes address size" >:: test_ingest_addr_size;
-  "Test Exe_ingester.ingest: stashes lifted program" >:: test_ingest_prog;
 ]

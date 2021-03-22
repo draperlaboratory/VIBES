@@ -12,7 +12,6 @@ type t =
   | Missing_patch_code
   | Missing_assembly
   | Missing_original_exe_filepath
-  | Missing_original_exe_prog
   | Missing_addr_size
   | Missing_patched_exe_filepath
   | Missing_tmp_patched_exe_filepath

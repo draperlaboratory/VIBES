@@ -46,7 +46,7 @@ let patch = "ret-3"
 let patch_point_str = "0x3f"
 let patch_point = Bitvec.of_string patch_point_str
 let patch_size = 16
-let property_str = "true"
+let property_str = "(assert (= true true))"
 let property = Sexp.Atom property_str
 let func = "main"
 let assembly = ["patch:"; "mov R0, #3"]
@@ -205,6 +205,26 @@ let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.SATISFIABLE in
+  let ctx = Bap_wp.Environment.mk_ctx () in
+  let var_gen = Bap_wp.Environment.mk_var_gen () in
+  let solver = Z3.Solver.mk_simple_solver ctx in
+  let precond = Bap_wp.Constraint.mk_clause [] [] in
+  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  Verifier.{
+    status = status;
+    solver = solver;
+    precond = precond;
+    orig_env = env;
+    patch_env = env;
+    orig_sub = orig;
+    patch_sub = patch;
+  }
+
+(* A verifier function for testing. It always returns unknown. *)
+let verify_unknown (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+  : Verifier.result =
+  (* Make dummy field for Verifier.result *)
+  let status = Z3.Solver.UNKNOWN in
   let ctx = Bap_wp.Environment.mk_ctx () in
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in

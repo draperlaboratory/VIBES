@@ -1,19 +1,16 @@
-(* Verifies the patched executable.
+(** Verifies the patched executable.
 
-   This module is responsible for comparing the patched executable (produced
-   by the {!Patcher}) against the original executable, to determine if the
-   patched executable is correct.
+    This module is responsible for comparing the patched executable (produced
+    by the {!Patcher}) against the original executable, to determine if the
+    patched executable is correct.
 
-   This module checks correctness by using CBAT to confirm whether a
-   correctness property specified by the user holds of the patched executable
-   relative to the original executable. *)
+    This module checks correctness by using CBAT to confirm whether a
+    correctness property specified by the user holds of the patched executable
+    relative to the original executable. *)
 
 open !Core_kernel
 open Bap.Std
-open Bap_knowledge
 open Bap_wp
-
-module KB = Knowledge
 
 (* A [result] record that a [verifier] function can return. *)
 type result = {
@@ -26,22 +23,21 @@ type result = {
   patch_sub : Sub.t;
 }
 
-(* A [verifier] function takes two projects, the name of a function,
-   and a correctness property, it verifies their correctness, and
-   returns the [result]. *)
+(** A [verifier] function takes two subroutines and a correctness property,
+    it verifies their correctness, and it returns a {!result}. *)
 type verifier = sub term -> sub term -> Sexp.t -> result
 
-(* A [printer] function takes a [result] and prints it. *)
+(** A [printer] function takes a [result] and prints it. *)
 type printer = result -> unit
 
-(* Indicates whether the patching is done, or should be attempted again. *)
-type next_step = Done | Again of Sexp.t
+(** Indicates whether the patching is done, or should be attempted again. *)
+type next_step = Done | Again
 
-(* [verify obj ~loader ~verifier ~printer] uses the specified [~loader] and
-   [~verifier] to load the exes and verify whether the patched executable
-   associated with [obj] is correct. If so, this function returns [Done]. 
-   If not, it returns [Again property], to indicate that the VIBES 
-   pipeline/CEGIS loop should try again with the new correctness [property].
-   It uses the [~printer] to print the output of the [~verifier]. *)
-val verify : ?loader:(Exe_ingester.loader) -> ?verifier:(verifier) ->
-  ?printer:(printer) -> Data.t -> next_step KB.t
+(** [verify orig_prog patch_prog func property ~verifier ~printer] uses the
+    [verifier] to verify that the [func] in the [orig_prog] and [patch_prog]
+    satisfies the provided [property]. The [printer] is used to print the
+    verifier's results. *) 
+val verify : ?verifier:(verifier) -> ?printer:(printer) ->
+  orig_prog:Program.t -> patch_prog:Program.t ->
+  string -> Sexp.t ->
+  (next_step, Toplevel_error.t) Core_kernel.result

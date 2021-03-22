@@ -1,4 +1,6 @@
 (* Implements {!Utils}. *)
+
+open Bap.Std
 open Bap_knowledge
 module KB = Knowledge
 
@@ -18,13 +20,14 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   Unix.close fd_in;
   Unix.close fd_out
 
-  (** [lift_kb] lifts the Result monad to the KB monad *)
+(* [lift_kb] lifts the Result monad to the KB monad *)
 let lift_kb_result (x : ('a, Errors.t) Result.t) : 'a KB.t =
   match x with
   | Ok x -> KB.return x
   | Error e -> Errors.fail e
 
-let run_process (command : string) (args : string list) : (unit, Errors.t) Result.t =
+let run_process (command : string) (args : string list)
+    : (unit, Errors.t) Result.t =
   let (as_stdout, as_stdin) =
   Unix.open_process (String.concat " "  (command :: args)) in
   let status = Unix.close_process (as_stdout, as_stdin) in
@@ -46,3 +49,23 @@ let run_process (command : string) (args : string list) : (unit, Errors.t) Resul
         Format.sprintf "%s exited with unknown return status" command in
       Error (Errors.Unexpected_exit msg)
     end
+
+let load_exe (filename : string)
+    : (project * Program.t, Toplevel_error.t) result =
+  let input = Project.Input.file ~loader:"llvm" ~filename in
+  match Project.create input ~package:filename with
+  | Ok proj ->
+    begin
+      let prog = Project.program proj in
+      Ok (proj, prog)
+    end
+  | Error e ->
+    begin
+      let err = Core_kernel.Error.to_string_hum e in
+      let msg = Format.sprintf "Load error: %s" err in
+      Error (Toplevel_error.Failed_to_load_proj msg)
+    end
+
+let get_func (prog : Program.t) (name : string) : Sub.t =
+  let subs = Term.enum sub_t prog in
+  Seq.find_exn ~f:(fun s -> String.equal (Sub.name s) name) subs

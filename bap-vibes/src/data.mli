@@ -11,7 +11,6 @@ module KB = Knowledge
 val string_domain    : string option KB.Domain.t
 val int_domain       : int option KB.Domain.t
 val bitvec_domain    : Bitvec.t option KB.Domain.t
-val prog_domain      : Program.t option KB.Domain.t
 val sexp_domain      : Sexp.t option KB.Domain.t
 val sexp_list_domain : Sexp.t list option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
@@ -22,14 +21,15 @@ val assembly_domain  : string list option KB.Domain.t
       all data related to a run in properties.
     - type [t] is the type of objects of that class.
     - val [cls] is the declared class.
+    - type [computed] is the type of the result computed by [KB.run].
  *)
 type cls
 type t = cls KB.obj
+type computed = (cls, unit) KB.cls KB.value
 
 val package : string
 val name : string
 val cls : (cls, unit) KB.cls
-
 
 (* The patch module defines an additional class holding all properties related
    to a specific patch fragment - a contiguous region of code that is
@@ -51,6 +51,7 @@ module Patch : sig
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
+  val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
   val get_patch_name : t -> string option KB.t
@@ -76,22 +77,19 @@ module Patch : sig
   val get_assembly_exn : t -> string list KB.t
 
   val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
-  val add_minizinc_solution :t -> Minizinc.sol -> unit KB.t 
+  val add_minizinc_solution : t -> Minizinc.sol -> unit KB.t
+  val union_minizinc_solution : t -> Minizinc.sol_set -> unit KB.t
+
 end
 
 (* Properties pertaining to the original executable *)
 module Original_exe : sig
   val filepath : (cls, string option) KB.slot
-  val prog : (cls, Program.t option) KB.slot
   val addr_size : (cls, int option) KB.slot
 
   val set_filepath : t -> string option -> unit KB.t
   val get_filepath : t -> string option KB.t
   val get_filepath_exn : t -> string KB.t
-
-  val set_prog : t -> Program.t option -> unit KB.t
-  val get_prog : t -> Program.t option KB.t
-  val get_prog_exn : t -> Program.t KB.t
 
   val set_addr_size : t -> int option -> unit KB.t
   val get_addr_size : t -> int option KB.t
@@ -139,5 +137,7 @@ module Verifier : sig
   val get_func_exn : t -> string KB.t
 end
 
-val create : Config.t -> t KB.t
+(*
+val create : ?seed:(Seed.t option) -> Config.t -> t KB.t
 val fresh : property:Sexp.t -> t -> t KB.t
+*)
