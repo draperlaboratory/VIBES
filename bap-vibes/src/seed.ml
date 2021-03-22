@@ -32,7 +32,7 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
     begin
       let msg = Format.asprintf 
         "Seed info for patch cannot be computed in KB: %a" KB.Conflict.pp e in
-      let err = Errors.Other msg in
+      let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
   | Ok (value, _) ->
@@ -41,7 +41,7 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
       | None ->
         begin
           let msg = "Patch_name not available for seed info" in
-          let err = Errors.Other msg in
+          let err = Kb_error.Other msg in
           Error (Toplevel_error.KB_error err)
         end
       | Some patch_name ->

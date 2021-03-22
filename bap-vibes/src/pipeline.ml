@@ -58,14 +58,14 @@ let finalize_patched_exe (value : Data.computed)
   | (None, _) ->
     begin
       let msg = "Missing filepath for the original exe" in
-      let err = Errors.Other msg in
+      let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
   | (_, None) ->
     begin
       let msg =
         "No filepath for the temporary patched exe was computed" in
-      let err = Errors.Other msg in
+      let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
 
@@ -79,7 +79,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
       let msg = Format.asprintf "%a\n" KB.Conflict.pp e in
       Events.(send @@ Info "An error occurred during a KB computation");
       Events.(send @@ Info msg); 
-      let err = Errors.Other msg in
+      let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
   | Ok (value, state') -> Ok (value, state')

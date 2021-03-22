@@ -44,7 +44,7 @@ let tgt_flag (l : Theory.language) : string =
 
 (** [binary_of_asm] uses external programs to convert assembly code to binary *)
 let binary_of_asm (lang : Theory.language) (assembly : string list)
-  : (string, Errors.t) Result.t =
+  : (string, Kb_error.t) Result.t =
   (* Write assembly to temporary file *)
   let asm_filename = Stdlib.Filename.temp_file "vibes-assembly" ".asm" in
   Out.write_lines asm_filename assembly;
@@ -98,7 +98,7 @@ let jmp_instr_size : int64 = 4L
 
 (** [build_patch] returns the binary of a patch with athe appropriate jumps *)
 let build_patch (l : Theory.language) (patch : placed_patch)
-  : (string, Errors.t) Result.t =
+  : (string, Kb_error.t) Result.t =
   (* [abs_jmp] produces assembly for an unconditional jmp *)
   let abs_jmp (abs_addr : int64) : string =
     Printf.sprintf "b (%s + (%Ld))" Constants.patch_start_label abs_addr in
@@ -118,7 +118,7 @@ let build_patch (l : Theory.language) (patch : placed_patch)
 
 
 let patch_size (l : Theory.language) (patch : patch)
-  : (int64, Errors.t) Result.t =
+  : (int64, Kb_error.t) Result.t =
   let placed_patch =
     {
       assembly = patch.assembly;
@@ -150,7 +150,7 @@ let patch_file (lang : Theory.language)
               let patch_binary = build_patch lang patch in
               let patch_binary =
                 Result.map_error patch_binary
-                  ~f:(Format.asprintf "%a" Errors.pp)
+                  ~f:(Format.asprintf "%a" Kb_error.pp)
               in
               let patch_binary = Result.ok_or_failwith patch_binary in
               Out.output_string file patch_binary

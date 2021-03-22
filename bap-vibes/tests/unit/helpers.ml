@@ -56,16 +56,6 @@ let minizinc_model_filepath = "/path/to/model.mzn"
 let proj = dummy_proj original_exe
 let prog = prog_exn proj
 
-(* A BAP loader for testing. No disk I/O. Just wraps [proj] *)
-let loader (_ : string) : Project.t KB.t =
-  match proj with
-  | Ok p -> KB.return p
-  | Error e ->
-    begin
-      let msg = Printf.sprintf "Load error: %s" (Error.to_string_hum e) in
-      Errors.fail (Errors.Failed_to_load_proj msg)
-    end
-
 (* A helper to create a [Data] object that can be used in tests. *)
 let obj () = KB.Object.create Data.cls
 

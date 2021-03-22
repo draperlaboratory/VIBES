@@ -1,9 +1,9 @@
-(* Creates the patched executable.
+(** Creates the patched executable.
 
-   This module is responsible for taking the assembly-like instructions
-   produced by the {!Compiler}, converting it into binary instructions,
-   and then splicing that binary code into (a copy of) the original
-   executable, thereby producing a new, patched executable. *)
+    This module is responsible for taking the assembly-like instructions
+    produced by the {!Compiler}, converting them into binary instructions,
+    and then splicing that binary code into (a copy of) the original
+    executable, thereby producing a new, patched executable. *)
 
 open Bap_knowledge
 open Bap_core_theory
@@ -20,10 +20,8 @@ type patch_site = {
     size : int64
   }
 
-(*
-  A [placed_patch] is a patch that has a chosen location to place it in the binary.
-  It optionally may have a jump placed after it
-*)
+(** A [placed_patch] is a patch that has a chosen location to place it in the
+    binary. It optionally may have a jump placed after it. *)
 type placed_patch = {
     assembly : string list;
     orig_loc : int64;
@@ -32,13 +30,8 @@ type placed_patch = {
     jmp : int64 option
   }
 
-(* [patch ~patcher obj] uses the [patcher] function to patch the original
-   executable associated with the provided [obj].
-
-   The [patcher] can be any function that takes a filepath (a [string]),
-   a patch point (an address [Bitvec.t] in the original executable),
-   and a list of assembly instructions (a [string list]), and returns
-   a filepath (a [string]) to the patched executable. *)
+(** [patch ~patcher obj] uses the [patcher] function to patch the original
+    executable associated with the provided [obj]. *)
 val patch :
   ?patcher:(Theory.language -> string -> placed_patch list -> string) ->
   Data.t ->

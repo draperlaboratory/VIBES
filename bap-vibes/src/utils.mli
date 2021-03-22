@@ -8,11 +8,11 @@ module KB = Knowledge
 val cp : string -> string -> unit
 
 (** [run_process command args] runs [command] with [args] *)
-val run_process : string -> string list -> (unit, Errors.t) Result.t
+val run_process : string -> string list -> (unit, Kb_error.t) Result.t
 
 (** [lift_kb_result] transforms a computation in the Result.t monad 
     into the KB.t monad. *)
-val lift_kb_result : ('a, Errors.t) Result.t -> 'a KB.t
+val lift_kb_result : ('a, Kb_error.t) Result.t -> 'a KB.t
 
 (** [load_exe "/path/to/exe"] loads /path/to/exe into BAP. *)
 val load_exe : string -> (project * Program.t, Toplevel_error.t) result

@@ -60,6 +60,10 @@ into the `wp/lib/bap_wp` folder, and install with `make`:
 
     make
 
+Install the following opam packages:
+
+    opam install ounit2 ppx_deriving_yojson
+
 
 ## Installing/uninstalling
 

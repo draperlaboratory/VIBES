@@ -1,15 +1,9 @@
-(***********************************************************
- *
- * This module contains notational conveniences for Core
- * implementations. To use with a Core theory [C], just do
- * [open Core_notations.Make(C)].
- *
- * (You probably also want to do [open C] as well.)
- *
- *
- *
- *
- *************************************************************)
+(** This module contains notational conveniences for Core
+    implementations. To use with a Core theory [C], just do
+    [open Core_notations.Make(C)].
+
+    (You probably also want to do [open C] as well.) *)
+
 open !Core_kernel
 open Bap_core_theory
 open Theory

@@ -1,10 +1,10 @@
-(* Implements {!Errors}. *)
+(* Implements {!Kb_error}. *)
 
 open Bap_knowledge
 
 module KB = Knowledge
 
-(* Errors we want to raise explicitly. *)
+(* Errors we want to raise explicitly during a [KB.run]. *)
 type t =
   | Failed_to_load_proj of string
   | Not_implemented of string

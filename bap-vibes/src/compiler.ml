@@ -16,14 +16,15 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
   (* Makes for slightly clearer errors *)
   let arm_eff = Result.of_option arm_eff
-      ~error:(Errors.Missing_semantics err) in
+      ~error:(Kb_error.Missing_semantics err) in
   (* For some reason Either is more fully featured *)
   let ir = Result.map ~f:Arm.ir arm_eff |> Result.to_either in
-  let* (ir, new_sol) = Either.value_map ~first:solver ~second:Errors.fail ir in
+  let* (ir, new_sol) =
+    Either.value_map ~first:solver ~second:Kb_error.fail ir in
   let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return (assembly, new_sol)
-  | Error e -> Errors.fail e
+  | Error e -> Kb_error.fail e
 
 
 (* Compile one patch from BIR to assembly *)

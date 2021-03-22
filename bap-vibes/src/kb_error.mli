@@ -1,9 +1,12 @@
-(* Custom errors for the VIBES pipeline. *)
+(** Errors that can occur during a [KB.run] in the VIBES pipeline.
+
+    See the {!Toplevel_error} module for errors that can occur in the VIBES
+    pipeline outside of a [KB.run]. *)
 
 open Bap_knowledge
 module KB = Knowledge
 
-(* Errors that the VIBES pipeline can raise. *)
+(** Errors that the VIBES pipeline can raise while inside a [KB.run]. *)
 type t =
   | Failed_to_load_proj of string
   | Not_implemented of string
@@ -29,11 +32,11 @@ type t =
   | Minizinc_deserialization of string
   | Other of string
 
-(* [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
+(** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
 val pp : Format.formatter -> t -> unit
 
-(* These errors are subsumed under KB conflicts. *)
+(** These errors are subsumed under KB conflicts. *)
 type KB.Conflict.t += Problem of t
 
-(* Triggers a failure in the VIBES pipeline. *)
+(** Triggers a failure in the VIBES pipeline. *)
 val fail : t -> 'a KB.t

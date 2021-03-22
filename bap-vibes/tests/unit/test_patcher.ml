@@ -98,7 +98,7 @@ let test_patch_with_no_original_exe (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The patcher should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_original_exe_filepath in
+  let expected = Kb_error.Problem Kb_error.Missing_original_exe_filepath in
   H.assert_error ~printer:H.print_opt
     Data.Patched_exe.tmp_filepath expected result
 
@@ -124,7 +124,7 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The patcher should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_patch_point in
+  let expected = Kb_error.Problem Kb_error.Missing_patch_point in
   H.assert_error ~printer:H.print_opt
     Data.Patched_exe.tmp_filepath expected result
 
@@ -151,7 +151,7 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The patcher should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_assembly in
+  let expected = Kb_error.Problem Kb_error.Missing_assembly in
   H.assert_error ~printer:H.print_opt
     Data.Patched_exe.tmp_filepath expected result
 

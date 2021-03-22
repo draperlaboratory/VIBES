@@ -43,5 +43,5 @@ val gpr : Bap.Std.Var.Set.t
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
-  val arm_ir_pretty : Ir.t -> (string list, Errors.t) result
+  val arm_ir_pretty : Ir.t -> (string list, Kb_error.t) result
 end

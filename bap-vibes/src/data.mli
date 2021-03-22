@@ -1,5 +1,5 @@
-(* This module captures our KB "ontology" - the collection of classes and
-   properties that the VIBES toolchain defines and manipulates *)
+(** This module captures our KB "ontology" - the collection of classes and
+    properties that the VIBES toolchain defines and manipulates *)
 
 open !Core_kernel
 open Bap.Std
@@ -7,7 +7,7 @@ open Bap_knowledge
 
 module KB = Knowledge
 
-(* We define "domains" for the types used in our properties. *)
+(** We define "domains" for the types used in our properties. *)
 val string_domain    : string option KB.Domain.t
 val int_domain       : int option KB.Domain.t
 val bitvec_domain    : Bitvec.t option KB.Domain.t
@@ -15,14 +15,13 @@ val sexp_domain      : Sexp.t option KB.Domain.t
 val sexp_list_domain : Sexp.t list option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
 
-(* These are the top-level class definitions.
+(** These are the top-level class definitions.
 
     - type [cls] is the class of the top-level VIBES KB object that stores
       all data related to a run in properties.
     - type [t] is the type of objects of that class.
     - val [cls] is the declared class.
-    - type [computed] is the type of the result computed by [KB.run].
- *)
+    - type [computed] is the type of the result computed by [KB.run]. *)
 type cls
 type t = cls KB.obj
 type computed = (cls, unit) KB.cls KB.value
@@ -31,10 +30,10 @@ val package : string
 val name : string
 val cls : (cls, unit) KB.cls
 
-(* The patch module defines an additional class holding all properties related
-   to a specific patch fragment - a contiguous region of code that is
-   being patched into the binary.   The outer class defined above holds a
-   collection of these.  *)
+(** The patch module defines an additional class holding all properties
+    related to a specific patch fragment - a contiguous region of code that
+    is being patched into the binary. The outer class defined above holds a
+    collection of these (see {!Patched_exe.patches}). *)
 module Patch : sig
 
   (* The KB infrastructure *)
@@ -82,7 +81,10 @@ module Patch : sig
 
 end
 
-(* Properties pertaining to the original executable *)
+(** Sets of patches *)
+module Patch_set : Set.S with type Elt.t = Patch.t
+
+(** Properties pertaining to the original executable *)
 module Original_exe : sig
   val filepath : (cls, string option) KB.slot
   val addr_size : (cls, int option) KB.slot
@@ -97,10 +99,7 @@ module Original_exe : sig
 
 end
 
-(* Sets of patches *)
-module Patch_set : Set.S with type Elt.t = Patch.t
-
-(* Properties pertaining to the patched executable *)
+(** Properties pertaining to the patched executable *)
 module Patched_exe : sig
 
   val patches : (cls, Patch_set.t) KB.slot
@@ -119,7 +118,7 @@ module Patched_exe : sig
   val get_tmp_filepath_exn : t -> string KB.t
 end
 
-(* Properties pertaining to the solver *)
+(** Properties pertaining to the solver *)
 module Solver : sig
   val minizinc_model_filepath : (cls, string option) KB.slot
   val set_minizinc_model_filepath : t -> string option -> unit KB.t
@@ -127,7 +126,7 @@ module Solver : sig
   val get_minizinc_model_filepath_exn : t -> string KB.t
 end
 
-(* Properties pertaining to the verifier *)
+(** Properties pertaining to the verifier *)
 module Verifier : sig
   val set_property : t -> Sexp.t option -> unit KB.t
   val get_property : t -> Sexp.t option KB.t
@@ -136,8 +135,3 @@ module Verifier : sig
   val get_func : t -> string option KB.t
   val get_func_exn : t -> string KB.t
 end
-
-(*
-val create : ?seed:(Seed.t option) -> Config.t -> t KB.t
-val fresh : property:Sexp.t -> t -> t KB.t
-*)
