@@ -13,6 +13,8 @@ struct
 
   let name o = Knowledge.Name.unqualified o
 
+  let (=) = equal_opcode
+
 end
 
 type op_var = {

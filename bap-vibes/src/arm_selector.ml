@@ -141,7 +141,7 @@ module ARM_ops = struct
     let ldrb = op "ldrb"
     let str = op "str"
     let cmp = op "cmp"
-    (* let beq = op "beq" *)
+    let beq = op "beq"
     let bne = op "bne"
     (* let ble = op "ble" *)
     (* let blt = op "blt" *)
@@ -309,13 +309,14 @@ module ARM_ops = struct
     let tid2 = Tid.for_name "false_branch" in
     let blk1 = Ir.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
     let blk2 = Ir.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
-    let beq = Ir.simple_op Ops.bne Void [Label tid2] in
+    let beq = Ir.simple_op Ops.beq Void [Label tid1] in
+    let b = Ir.simple_op Ops.b Void [Label tid2] in
     let blks = cond_eff.other_blks in
     let blks = Ir.union blks1 @@ Ir.union blks2 blks in
     let blks = Ir.add blk1 @@ Ir.add blk2 blks in
     {
       current_data = cmp :: cond_eff.current_data;
-      current_ctrl = [beq];
+      current_ctrl = [beq; b];
       other_blks = blks
     }
 
@@ -620,11 +621,14 @@ end
 
 let slot = arm_eff
 
+(* Returns [true] if an instruction has no effect on data or
+   control, is an overaproximation, of course. *)
 let is_nop (op : Ir.operation) : bool =
   let open Ir in
   let { opcodes; lhs; operands; _ } = op in
-  let opcode = List.hd_exn opcodes |> Ir.Opcode.name in
-  if String.(opcode = "mov") then
+  let opcode = List.hd_exn opcodes in
+  let open ARM_ops.Ops in
+  if Ir.Opcode.(opcode = mov) then
     begin
       match lhs, operands with
       | [Var a1], [Var a2] ->
@@ -636,7 +640,7 @@ let is_nop (op : Ir.operation) : bool =
         end
       | _ -> false
     end
-  else if String.(opcode = "add" || opcode = "sub") then
+  else if Ir.Opcode.(opcode = add || opcode = sub) then
     begin
       match lhs, operands with
       | [Var a1], [Var a2; Const w] ->
@@ -651,21 +655,132 @@ let is_nop (op : Ir.operation) : bool =
   else
     false
 
+(* Removes spurious data operations *)
+let filter_nops (ops : Ir.operation list) : Ir.operation list =
+  List.filter ops ~f:(fun o -> not (is_nop o))
+
+(* Returns [None] if the control is fall-through or a conditional jump,
+   or if the data section is non-empty. Otherwise, if it is an
+   unconditional jump to label [l], returns [Some l]. *)
+let is_simple_branch (blk : Ir.blk) : tid option =
+  let open ARM_ops.Ops in
+  if not (List.is_empty blk.data) then None
+  else
+    match blk.ctrl with
+    | [{ Ir.opcodes; Ir.operands; _}] ->
+      let opcode = List.hd_exn opcodes in
+      if Ir.Opcode.(opcode = b) then
+        begin
+          match operands with
+          |[Label l] -> Some l
+          | _ -> None
+        end
+        else None
+    | _ -> None
+
+let is_empty_blk (blk : Ir.blk) : bool =
+  (List.is_empty blk.data) && (List.is_empty blk.ctrl)
+
+(* Returns the pair of labels from a [beq l1; b l2] control operation
+   in a block, and [None] if not applicable. *)
+let get_eq_branches (blk : Ir.blk) : (tid * tid) option =
+  let open ARM_ops.Ops in
+  match blk.ctrl with
+  | [{ Ir.opcodes = ops1; Ir.operands = args1; _};
+     { Ir.opcodes = ops2; Ir.operands = args2; _}] ->
+    let op1 = List.hd_exn ops1 in
+    let op2 = List.hd_exn ops2 in
+    if Ir.Opcode.(op1 = beq && op2 = b) then
+      begin
+        match args1, args2 with
+        |[Label l1], [Label l2] -> Some (l1, l2)
+        | _ -> None
+      end
+    else None
+  | _ -> None
+
+
+(*
+   Takes a block and a set of blocks, and if the block is of the form:
+
+     beq l1
+     b l2
+
+   and the [l1] and [l2] bloks are, respectively:
+
+   l1:
+     b l3
+
+   and
+
+   l2: //empty
+
+   then turn the first block into
+
+     beq l3
+
+   and mark the other two blocks for deletion.
+
+
+*)
+(* FIXME: clean this up *)
+let opt_jmp_helper (blk : Ir.blk) (blks : Ir.blk list) : (Ir.blk * tid list) option =
+  match get_eq_branches blk with
+  | None -> None
+  | Some (l_true, l_false) ->
+    let true_dest =
+      List.find blks
+        ~f:(fun blk -> Tid.(blk.id = l_true)) |>
+      Option.bind ~f:is_simple_branch
+    in
+    let false_fall =
+      List.find blks
+        ~f:(fun blk -> Tid.(blk.id = l_true)) |>
+      Option.map ~f:is_empty_blk
+    in
+    begin
+      match true_dest, false_fall with
+      | Some dest, Some true ->
+        let new_blk =
+          { blk with
+            ctrl =
+              [
+                Ir.simple_op ARM_ops.Ops.beq Ir.Void [Ir.Label dest]
+              ]
+          }
+        in
+        Some (new_blk, [l_true; l_false])
+      | _ -> None
+    end
+
+
+let opt_jmp (blks : Ir.blk list) : Ir.blk list =
+  let new_blks, to_remove = List.fold blks
+      ~init:([], [])
+      ~f:(fun (new_blks, to_remove) b ->
+          match opt_jmp_helper b blks with
+          | None -> (b :: new_blks, to_remove)
+          | Some (b_new, new_remove) ->
+            (b_new :: new_blks, new_remove @ to_remove))
+  in
+  List.filter new_blks
+    ~f:(fun b -> not @@
+         List.mem to_remove b.id ~equal:Tid.equal)
 
 let peephole (ir : Ir.t) : Ir.t =
-  let filter_ops l =
-    List.filter l ~f:(fun o -> not (is_nop o))
-  in
   let filter_nops blk =
     let {Ir.data; Ir.ctrl; _} = blk in
-    let data = filter_ops data in
-    let ctrl = filter_ops ctrl in
+    let data = filter_nops data in
+    let ctrl = filter_nops ctrl in
     { blk with
       data = data;
       ctrl = ctrl;
     }
   in
-  Ir.map_blks ir ~f:(filter_nops)
+  let ir = Ir.map_blks ir ~f:filter_nops in
+  { ir with
+    blks = opt_jmp ir.blks
+  }
 
 
 
