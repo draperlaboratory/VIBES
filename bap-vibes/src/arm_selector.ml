@@ -662,7 +662,7 @@ let filter_nops (ops : Ir.operation list) : Ir.operation list =
 (* Returns [None] if the control is fall-through or a conditional jump,
    or if the data section is non-empty. Otherwise, if it is an
    unconditional jump to label [l], returns [Some l]. *)
-let is_simple_branch (blk : Ir.blk) : tid option =
+let is_simple_branch (blk : Ir.blk) : Ir.operand option =
   let open ARM_ops.Ops in
   if not (List.is_empty blk.data) then None
   else
@@ -672,7 +672,7 @@ let is_simple_branch (blk : Ir.blk) : tid option =
       if Ir.Opcode.(opcode = b) then
         begin
           match operands with
-          |[Label l] -> Some l
+          |[o] -> Some o
           | _ -> None
         end
         else None
@@ -735,7 +735,7 @@ let opt_jmp_helper (blk : Ir.blk) (blks : Ir.blk list) : (Ir.blk * tid list) opt
     in
     let false_fall =
       List.find blks
-        ~f:(fun blk -> Tid.(blk.id = l_true)) |>
+        ~f:(fun blk -> Tid.(blk.id = l_false)) |>
       Option.map ~f:is_empty_blk
     in
     begin
@@ -745,7 +745,7 @@ let opt_jmp_helper (blk : Ir.blk) (blks : Ir.blk list) : (Ir.blk * tid list) opt
           { blk with
             ctrl =
               [
-                Ir.simple_op ARM_ops.Ops.beq Ir.Void [Ir.Label dest]
+                Ir.simple_op ARM_ops.Ops.beq Ir.Void [dest]
               ]
           }
         in
