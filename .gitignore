@@ -10,4 +10,3 @@ _build
 *.merlin
 main
 main.patched
-main.reference.patched

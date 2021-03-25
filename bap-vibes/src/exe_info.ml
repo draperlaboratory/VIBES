@@ -1,4 +1,4 @@
-(* Implements {!Exe_ingester}. *)
+(* Implements {!Exe_info}. *)
 
 open !Core_kernel
 open Bap.Std
@@ -7,13 +7,9 @@ open Knowledge.Syntax
 open Bap_core_theory
 module KB = Knowledge
 
-(* Pull in the original exe. Right now, we do nothing with it, except
-   get the address size and stash that in the KB for others to use. *)
-let ingest (obj : Data.t) (proj : Project.t) : unit KB.t =
+(* Extract info about an executable and stash it in the KB. *)
+let extract (obj : Data.t) (proj : Project.t) : unit KB.t =
   Events.(send @@ Header "Starting exe ingester");
-
-  (* Get the filepath to the exe to load. *)
-  Events.(send @@ Info "Retreiving data from KB...");
 
   (* Get the address size of the project and stash it in the KB. *)
   let target = Project.target proj in

@@ -11,6 +11,7 @@ type t =
   | Failed_to_load_proj of string
   | WP_result_unknown of string
   | Max_tries of int
+  | No_value_in_KB of string
   | KB_error of Kb_error.t
   | Other of string
 

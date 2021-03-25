@@ -405,7 +405,6 @@ struct
 
   let jmp addr =
     let- addr_bitv = addr in
-    (* KB.bind (Data.Patch.get_patch_point Data.Patch.patch) ~f:(fun patch_pt -> *)
     eff @@ jmp ~patch_pt:Word.b0 addr_bitv
 
   let repeat _cond _body =

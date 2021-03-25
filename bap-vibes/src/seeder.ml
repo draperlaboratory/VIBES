@@ -1,4 +1,4 @@
-(** Implements {!Seed}. *)
+(** Implements {!Seeder}. *)
 
 open !Core_kernel
 open Bap_knowledge
@@ -14,15 +14,11 @@ type patch = {
   minizinc_solutions : Minizinc.sol_set;
 }
 
-(* A bundle of seed info that can be used to seed a new {!Data.t} object. *)
+(* A bundle of seed info that can be used to seed the KB
+   for a new pipeline run. *)
 type t = {
   patches : patch list;
 }
-
-(* Accessors for [patch] and [t] fields. *)
-let patches t : patch list = t.patches
-let patch_name patch : string = patch.patch_name
-let minizinc_solutions patch : Minizinc.sol_set = patch.minizinc_solutions
 
 (* Extract seed info from a {Data.Patch.t} instance. *)
 let extract_patch (p : Data.Patch.t) (s : KB.state)
@@ -31,7 +27,7 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
   | Error e ->
     begin
       let msg = Format.asprintf 
-        "Seed info for patch cannot be computed in KB: %a" KB.Conflict.pp e in
+        "(KB.return patch) failed in KB: %a" KB.Conflict.pp e in
       let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
@@ -40,9 +36,8 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
       match KB.Value.get Data.Patch.patch_name value with
       | None ->
         begin
-          let msg = "Patch_name not available for seed info" in
-          let err = Kb_error.Other msg in
-          Error (Toplevel_error.KB_error err)
+          let msg = "No patch_name in KB to use for seed info" in
+          Error (Toplevel_error.No_value_in_KB msg)
         end
       | Some patch_name ->
         begin
@@ -60,9 +55,9 @@ let patch_with_name (seed : t option) (name : string) : patch option =
   | Some t ->
     List.find t.patches ~f:(fun p -> String.equal p.patch_name name)
 
-(* Take a [Data.computed] result and extract the info we want to use
-   to seed a new [Data.t]. *)
-let extract (value : Data.computed) (s : KB.state)
+(* Takes a [Data.computed] result and extract the info we want to use
+   to seed the KB for a new pipeline run. *)
+let extract_seed (value : Data.computed) (s : KB.state)
     : (t, Toplevel_error.t) result =
   let patch_objects = KB.Value.get Data.Patched_exe.patches value in
   let the_list = Data.Patch_set.to_list patch_objects in
@@ -84,15 +79,16 @@ let create_patches ?seed:(seed=None) (ps : Config.patch list)
     let* () = match patch_with_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed -> Data.Patch.union_minizinc_solution
-          obj (minizinc_solutions patch_seed)
+          obj patch_seed.minizinc_solutions
     in
     KB.return obj
   in
   let patches = List.map ps ~f:(fun p -> create_patch seed p) in
   KB.all patches >>| Data.Patch_set.of_list
 
-  (* Create a {!Data.t} instance, possibly with [seed] info. *)
-let create ?seed:(seed=None) (config : Config.t) : Data.t KB.t =
+(* Create a {!Data.t} instance from the provided {Config.t} data,
+   possibly adding extra [seed] info. *)
+let init_KB ?seed:(seed=None) (config : Config.t) : Data.t KB.t =
   let exe = Config.exe config in
   let patch_list = Config.patches config in
   let func = Config.func config in

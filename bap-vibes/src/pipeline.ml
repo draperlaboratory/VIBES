@@ -19,15 +19,32 @@ let halt_if_too_many (count : int) (max_tries : int option)
     if count > n then Error (Toplevel_error.Max_tries n)
     else Ok ()
 
-(* Compute and produce the patched exe. This is called by [KB.run] below. *)
+(* This function triggers all the steps that produce a patched exe.
+   This sequence of steps is performed inside a KB computation, and
+   so this function is called by [KB.run] below. *)
 let create_patch ?seed:(seed=None) (config : Config.t) (proj : project)
     : Data.t KB.t =
-  let* obj = Seed.create config ~seed in
-  let* () = Exe_ingester.ingest obj proj in
+  let* obj = Seeder.init_KB config ~seed in
+  let* () = Exe_info.extract obj proj in
   let* () = Patch_ingester.ingest obj in
   let* () = Compiler.compile obj in
   let* () = Patcher.patch obj in
   KB.return obj
+
+(* Each time we produce a patch, we give it a tmp filepath. This function
+   retrieves that value from the computed KB result. *)
+let get_tmp_patched_exe_filepath (value : Data.computed)
+    : (string, Toplevel_error.t) result =
+  let tmp_filepath : string option =
+    KB.Value.get Data.Patched_exe.tmp_filepath value in
+  match tmp_filepath with
+  | None ->
+    begin
+      let msg =
+        "KB is missing a filepath for the temporary patched exe" in
+      Error (Toplevel_error.No_value_in_KB msg)
+    end
+  | Some filepath -> Ok filepath
 
 (* Extract the patched exe filepath from the [KB.run] result, and
    copy the patched exe to the user-specified location. Return the
@@ -35,21 +52,17 @@ let create_patch ?seed:(seed=None) (config : Config.t) (proj : project)
 let finalize_patched_exe (value : Data.computed) 
     : (string, Toplevel_error.t) result =
   let original_exe_filepath : string option =
-    KB.Value.get Data.Original_exe.filepath value
-  in
+    KB.Value.get Data.Original_exe.filepath value in
   let tmp_patched_exe_filepath : string option =
-    KB.Value.get Data.Patched_exe.tmp_filepath value
-  in
+    KB.Value.get Data.Patched_exe.tmp_filepath value in
   match (original_exe_filepath, tmp_patched_exe_filepath) with
   | (Some orig_path, Some tmp_path) ->
     begin
       let user_filepath : string option =
-        KB.Value.get Data.Patched_exe.filepath value
-      in
+        KB.Value.get Data.Patched_exe.filepath value in
       let patched_exe_filepath : string =
         Option.value user_filepath
-          ~default:((Filename.basename orig_path) ^ ".patched")
-      in
+          ~default:((Filename.basename orig_path) ^ ".patched") in
       Utils.cp tmp_path patched_exe_filepath;
       Events.(send @@ Info 
         (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
@@ -57,16 +70,14 @@ let finalize_patched_exe (value : Data.computed)
     end
   | (None, _) ->
     begin
-      let msg = "Missing filepath for the original exe" in
-      let err = Kb_error.Other msg in
-      Error (Toplevel_error.KB_error err)
+      let msg = "KB is missing a filepath for the original exe" in
+      Error (Toplevel_error.No_value_in_KB msg)
     end
   | (_, None) ->
     begin
       let msg =
-        "No filepath for the temporary patched exe was computed" in
-      let err = Kb_error.Other msg in
-      Error (Toplevel_error.KB_error err)
+        "When finalizing patched exe, no tmp filepath found in KB" in
+      Error (Toplevel_error.No_value_in_KB msg)
     end
 
 (* Use [KB.run] to run the provided computation [f] with the given [state]. *)
@@ -99,20 +110,17 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) ?seed:(seed=None)
   let computation = create_patch config orig_proj ~seed in
   let+ value, state' = run_KB_computation computation state in
 
-  let+ patched_exe_filepath = finalize_patched_exe value in
-  let+ _, patch_prog = Utils.load_exe patched_exe_filepath in
+  let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
+  let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
 
   let func = Config.func config in
   let property = Config.property config in
   match Verifier.verify func property ~orig_prog ~patch_prog with
-  | Ok Verifier.Done -> 
-    begin
-      Ok patched_exe_filepath
-    end
+  | Ok Verifier.Done -> finalize_patched_exe value
   | Ok Verifier.Again ->
     begin
       let new_count = count + 1 in
-      let+ new_seed = Seed.extract value state' in
+      let+ new_seed = Seeder.extract_seed value state' in
       cegis config orig_proj orig_prog state
         ~count:new_count ~max_tries ~seed:(Some new_seed)
     end
