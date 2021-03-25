@@ -375,7 +375,7 @@ let run_minizinc (model_filepath : string) (prev_sols : sol list) (vir : Ir.t) :
   let sol_serial = Yojson.Safe.from_file solution_filepath |> sol_serial_of_yojson  in
   let sol = match sol_serial with
     | Ok sol_serial -> KB.return (deserialize_sol sol_serial name_maps)
-    | Error msg -> Errors.fail (Errors.Minizinc_deserialization msg) in
+    | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
 
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in

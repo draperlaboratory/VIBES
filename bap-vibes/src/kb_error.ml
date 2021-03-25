@@ -1,10 +1,10 @@
-(* Implements {!Errors}. *)
+(* Implements {!Kb_error}. *)
 
 open Bap_knowledge
 
 module KB = Knowledge
 
-(* Errors we want to raise explicitly. *)
+(* Errors we want to raise explicitly during a [KB.run]. *)
 type t =
   | Failed_to_load_proj of string
   | Not_implemented of string
@@ -13,7 +13,6 @@ type t =
   | Missing_patch_code
   | Missing_assembly
   | Missing_original_exe_filepath
-  | Missing_original_exe_prog
   | Missing_addr_size
   | Missing_patched_exe_filepath
   | Missing_tmp_patched_exe_filepath
@@ -43,8 +42,6 @@ let pp ppf (e : t) =
     | Missing_assembly -> "No patch assembly was stashed in KB"
     | Missing_original_exe_filepath ->
       "No filepath for the original exe was stashed in KB"
-    | Missing_original_exe_prog ->
-      "No lifted program for the original exe was stashed in KB"
     | Missing_addr_size -> "No address size was stashed in KB"
     | Missing_patched_exe_filepath ->
       "No filepath for the patched exe was stashed in KB"

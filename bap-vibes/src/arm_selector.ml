@@ -62,7 +62,7 @@ let (let=) v f = KB.(>>=) v
        match KB.Value.get arm_eff v with
        | None ->
          let v_str = Format.asprintf "arm_eff: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
+         Kb_error.fail (Kb_error.Missing_semantics v_str)
        | Some v -> f v)
 
 let (let-) v f =
@@ -71,7 +71,7 @@ let (let-) v f =
        match KB.Value.get arm_pure v with
        | None ->
          let v_str = Format.asprintf "arm_pure: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
+         Kb_error.fail (Kb_error.Missing_semantics v_str)
        | Some v -> f v)
 
 let (let/) v f =
@@ -80,7 +80,7 @@ let (let/) v f =
        match KB.Value.get arm_mem v with
        | None ->
          let v_str = Format.asprintf "arm_mem: %a" KB.Value.pp v in
-         Errors.fail (Errors.Missing_semantics v_str)
+         Kb_error.fail (Kb_error.Missing_semantics v_str)
        | Some v -> f v)
 
 let eff d =
@@ -379,9 +379,9 @@ struct
     KB.return @@ KB.Value.put slot (Theory.Value.empty sort)
       (Some (var v))
 
-  let unk _sort = Errors.fail (Errors.Not_implemented "Arm_gen.unk")
+  let unk _sort = Kb_error.fail (Kb_error.Not_implemented "Arm_gen.unk")
 
-  let let_ _v _e _b = Errors.fail (Errors.Not_implemented "Arm_gen.let_")
+  let let_ _v _e _b = Kb_error.fail (Kb_error.Not_implemented "Arm_gen.let_")
 
   let int _sort (w : Theory.word) : 's Theory.bitv =
     (* FIXME: we're assuming every constant is exactly 32
@@ -407,7 +407,7 @@ struct
     eff @@ jmp addr_bitv
 
   let repeat _cond _body =
-    Errors.fail (Errors.Not_implemented "Arm_gen.repeat")
+    Kb_error.fail (Kb_error.Not_implemented "Arm_gen.repeat")
 
   let load mem loc =
     let/ mem = mem in
@@ -536,18 +536,20 @@ let ir (t : arm_eff) : Ir.t =
 
 module Pretty = struct
 
-  let opcode_pretty i : (string, Errors.t) result = Result.return @@ Ir.Opcode.name i
+  let opcode_pretty i : (string, Kb_error.t) result =
+    Result.return @@ Ir.Opcode.name i
 
   (* We use this function when generating ARM, since the assembler
      doesn't like % or @ in labels. *)
   let tid_to_string (t : tid) : string =
     Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
-  let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand) : (string, Errors.t) result =
+  let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
+      : (string, Kb_error.t) result =
     match o with
     | Var v ->
       let error =
-        Errors.Missing_semantics
+        Kb_error.Missing_semantics
           "arm_operand_pretty: operand.pre_assign field is empty" in
       let res =
         Result.bind
@@ -566,7 +568,10 @@ module Pretty = struct
     | Offset c ->
       (* Special printing of offsets to jump back from patched locations *)
       Result.return @@
-      Format.asprintf "(%s + %d - %s)" Constants.patch_start_label (Word.to_int_exn c) Constants.patch_location
+      Format.asprintf "(%s + %d - %s)"
+        Constants.patch_start_label
+        (Word.to_int_exn c)
+        Constants.patch_location
 
 
   (* FIXME: Absolute hack *)
@@ -577,7 +582,7 @@ module Pretty = struct
       List.init (List.length args) ~f:(fun _ -> false)
 
   let arm_operands_pretty (op : string) (hd : Ir.operand) (l : Ir.operand list)
-    : (string, Errors.t) result =
+    : (string, Kb_error.t) result =
     (* Don't print the head of the operand if it's void. *)
     let l =
       match hd with
@@ -594,7 +599,7 @@ module Pretty = struct
     let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
     Result.map ~f:String.concat all_str
 
-  let arm_op_pretty (t : Ir.operation) : (string, Errors.t) result =
+  let arm_op_pretty (t : Ir.operation) : (string, Kb_error.t) result =
     let op = List.hd_exn t.opcodes in
     Result.(opcode_pretty op >>= fun op ->
             arm_operands_pretty op
@@ -602,13 +607,13 @@ module Pretty = struct
               t.operands >>= (fun operands ->
                   return (Format.asprintf "%s %s" op operands)))
 
-  let arm_blk_pretty (t : Ir.blk) : (string list, Errors.t) result =
+  let arm_blk_pretty (t : Ir.blk) : (string list, Kb_error.t) result =
     let all_ops = t.data @ t.ctrl in
     let opcodes = List.map ~f:arm_op_pretty all_ops |> Result.all in
     let lab = Format.asprintf "%s:" (tid_to_string t.id) in
     Result.map opcodes ~f:(fun opcodes -> lab::opcodes)
 
-  let arm_ir_pretty (t : Ir.t) : (string list, Errors.t) result =
+  let arm_ir_pretty (t : Ir.t) : (string list, Kb_error.t) result =
     List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
 
 end

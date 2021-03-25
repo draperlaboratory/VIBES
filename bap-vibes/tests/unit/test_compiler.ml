@@ -58,7 +58,7 @@ let test_compile_with_no_minizinc_model_filepath (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The compiler should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_minizinc_model_filepath in
+  let expected = Kb_error.Problem Kb_error.Missing_minizinc_model_filepath in
   H.assert_error Data.Solver.minizinc_model_filepath expected result
 
 (* Test that [Compiler.compile] handles no patch (BIR) in the KB. *)
@@ -82,7 +82,7 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
   in
   let result = KB.run Data.Patch.patch computation KB.empty in
   let expected =
-    Errors.Problem (Errors.Missing_semantics "arm_eff not found in:()") in
+    Kb_error.Problem (Kb_error.Missing_semantics "arm_eff not found in:()") in
 
   H.assert_error
     ~printer:H.print_string_list_opt

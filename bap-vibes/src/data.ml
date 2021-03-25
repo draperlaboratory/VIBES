@@ -24,13 +24,6 @@ let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
     ~equal:Bitvec.equal
     "bitvec-domain"
 
-(* Optional program domain *)
-(* FIXME: this is confusing, since there is a program class, which
-   also has an associated domain *)
-let prog_domain : Program.t option KB.Domain.t = KB.Domain.optional
-    ~equal:Program.equal
-    "prog-domain"
-
 (* The domain of BIR programs *)
 let bir_domain : Insn.t KB.domain = Theory.Semantics.domain
 
@@ -50,13 +43,14 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
     ~equal:(fun x y -> List.equal String.equal x y)
     "assembly-domain"
 
+(* For storing sets of minizinc solutions *)
 let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t = 
   KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
-
 
 (* General knowledge info for the package *)
 type cls
 type t = cls KB.obj
+type computed = (cls, unit) KB.cls KB.value
 let package = "vibes"
 let name = "data"
 let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
@@ -93,7 +87,8 @@ module Patch = struct
     KB.Class.property ~package patch "patch-assembly" assembly_domain
   
   let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
-    KB.Class.property ~package patch "minizinc-solutions" minizinc_solution_domain
+    KB.Class.property ~package patch "minizinc-solutions"
+    minizinc_solution_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -104,7 +99,7 @@ module Patch = struct
   let get_patch_name_exn (obj : t) : string KB.t =
     get_patch_name obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_patch_name
+    | None -> Kb_error.fail Kb_error.Missing_patch_name
     | Some value -> KB.return value
 
   let set_patch_code (obj : t) (data : Sexp.t list option) : unit KB.t =
@@ -116,7 +111,7 @@ module Patch = struct
   let get_patch_code_exn (obj : t) : Sexp.t list KB.t =
     get_patch_code obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_patch_code
+    | None -> Kb_error.fail Kb_error.Missing_patch_code
     | Some value -> KB.return value
 
   let set_patch_point (obj : t) (data : Bitvec.t option) : unit KB.t =
@@ -128,7 +123,7 @@ module Patch = struct
   let get_patch_point_exn (obj : t) : Bitvec.t KB.t =
     get_patch_point obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_patch_point
+    | None -> Kb_error.fail Kb_error.Missing_patch_point
     | Some value -> KB.return value
 
   let set_patch_size (obj : t) (data : int option) : unit KB.t =
@@ -140,7 +135,7 @@ module Patch = struct
   let get_patch_size_exn (obj : t) : int KB.t =
     get_patch_size obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_patch_size
+    | None -> Kb_error.fail Kb_error.Missing_patch_size
     | Some value -> KB.return value
 
   let set_bir (obj : t) (data : Insn.t) : unit KB.t =
@@ -158,7 +153,7 @@ module Patch = struct
   let get_assembly_exn (obj : t) : string list KB.t =
     get_assembly obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_assembly
+    | None -> Kb_error.fail Kb_error.Missing_assembly
     | Some value -> KB.return value
 
   let get_minizinc_solutions (obj : t) : Minizinc.sol_set KB.t = 
@@ -167,10 +162,14 @@ module Patch = struct
   let add_minizinc_solution (obj : t) (sol : Minizinc.sol) : unit KB.t = 
     KB.provide minizinc_solutions obj (Set.singleton (module Minizinc.Sol) sol)
 
-  let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set) : unit KB.t = 
+  let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
+      : unit KB.t = 
     KB.provide minizinc_solutions obj sol_set
 
 end
+
+(* Sets of patches *)
+module Patch_set = Set.Make (Patch)
 
 (* Properties pertaining to the original executable *)
 module Original_exe = struct
@@ -178,10 +177,6 @@ module Original_exe = struct
   let filepath : (cls, string option) KB.slot =
     KB.Class.property ~package cls "original-exe-filepath"
       string_domain
-
-  let prog : (cls, Program.t option) KB.slot =
-    KB.Class.property ~package cls "original-exe-prog"
-      prog_domain
 
   let addr_size : (cls, int option) KB.slot =
     KB.Class.property ~package cls "original-exe-address-size"
@@ -196,19 +191,7 @@ module Original_exe = struct
   let get_filepath_exn (obj : t) : string KB.t =
     get_filepath obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_original_exe_filepath
-    | Some value -> KB.return value
-
-  let set_prog (obj : t) (data : Program.t option) : unit KB.t =
-    KB.provide prog obj data
-
-  let get_prog (obj : t) : Program.t option KB.t =
-    KB.collect prog obj
-
-  let get_prog_exn (obj : t) : Program.t KB.t =
-    get_prog obj >>= fun result ->
-    match result with
-    | None -> Errors.fail Errors.Missing_original_exe_prog
+    | None -> Kb_error.fail Kb_error.Missing_original_exe_filepath
     | Some value -> KB.return value
 
   let set_addr_size (obj : t) (data : int option) : unit KB.t =
@@ -220,13 +203,10 @@ module Original_exe = struct
   let get_addr_size_exn (obj : t) : int KB.t =
     get_addr_size obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_addr_size
+    | None -> Kb_error.fail Kb_error.Missing_addr_size
     | Some value -> KB.return value
 
 end
-
-(* Sets of patches *)
-module Patch_set = Set.Make (Patch)
 
 (* Properties pertaining to the patched executable *)
 module Patched_exe = struct
@@ -260,7 +240,7 @@ module Patched_exe = struct
   let get_filepath_exn (obj : t) : string KB.t =
     get_filepath obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_patched_exe_filepath
+    | None -> Kb_error.fail Kb_error.Missing_patched_exe_filepath
     | Some value -> KB.return value
 
   let set_tmp_filepath (obj : t) (data : string option) : unit KB.t =
@@ -272,7 +252,7 @@ module Patched_exe = struct
   let get_tmp_filepath_exn (obj : t) : string KB.t =
     get_tmp_filepath obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_tmp_patched_exe_filepath
+    | None -> Kb_error.fail Kb_error.Missing_tmp_patched_exe_filepath
     | Some value -> KB.return value
 
 end
@@ -293,7 +273,7 @@ module Solver = struct
   let get_minizinc_model_filepath_exn (obj : t) : string KB.t =
     get_minizinc_model_filepath obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_minizinc_model_filepath
+    | None -> Kb_error.fail Kb_error.Missing_minizinc_model_filepath
     | Some value -> KB.return value
 
 end
@@ -316,7 +296,7 @@ module Verifier = struct
   let get_property_exn (obj : t) : Sexp.t KB.t =
     get_property obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_property
+    | None -> Kb_error.fail Kb_error.Missing_property
     | Some value -> KB.return value
 
   let set_func (obj : t) (data : string option) : unit KB.t =
@@ -328,80 +308,7 @@ module Verifier = struct
   let get_func_exn (obj : t) : string KB.t =
     get_func obj >>= fun result ->
     match result with
-    | None -> Errors.fail Errors.Missing_func
+    | None -> Kb_error.fail Kb_error.Missing_func
     | Some value -> KB.return value
 
 end
-
-(* Create a patch set. *)
-let create_patches (ps : Config.patch list) : Patch_set.t KB.t =
-  let create_patch (p : Config.patch) : Patch.t KB.t =
-    KB.Object.create Patch.patch >>= fun obj ->
-    Patch.set_patch_name obj (Some (Config.patch_name p)) >>= fun () ->
-    Patch.set_patch_code obj (Some (Config.patch_code p)) >>= fun () ->
-    Patch.set_patch_point obj (Some (Config.patch_point p)) >>= fun () ->
-    Patch.set_patch_size obj (Some (Config.patch_size p)) >>= fun () ->
-    KB.return obj
-  in
-  KB.all (List.map ~f:create_patch ps) >>| Patch_set.of_list
-
-(* Create an object of this class. *)
-let create (config : Config.t) : t KB.t =
-  let exe = Config.exe config in
-  let patch_list = Config.patches config in
-  let func = Config.func config in
-  let property = Config.property config in
-  let patched_exe_filepath = Config.patched_exe_filepath config in
-  let mzn_model_filepath = Config.minizinc_model_filepath config in
-  create_patches patch_list >>= fun patches ->
-  KB.Object.create cls >>= fun obj ->
-  Original_exe.set_filepath obj (Some exe) >>= fun () ->
-  Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
-  Patched_exe.set_patches obj patches >>= fun () ->
-  Solver.set_minizinc_model_filepath
-    obj (Some mzn_model_filepath) >>= fun () ->
-  Verifier.set_func obj (Some func) >>= fun () ->
-  Verifier.set_property obj (Some property) >>= fun () ->
-  KB.return obj
-
-(* Create a fresh version of the patch set. *)
-let fresh_patches (patches : Patch_set.t) : Patch_set.t KB.t =
-  let fresh_patch (patch : Patch.t) : Patch.t KB.t =
-    Patch.get_patch_name patch >>= fun name ->
-    Patch.get_patch_code patch >>= fun code ->
-    Patch.get_patch_point patch >>= fun point ->
-    Patch.get_patch_size patch >>= fun size ->
-    Patch.get_bir patch >>= fun bir ->
-    Patch.get_minizinc_solutions patch >>= fun sol_set ->
-    KB.Object.create Patch.patch >>= fun patch' ->
-    Patch.set_patch_name patch' name >>= fun () ->
-    Patch.set_patch_point patch' point >>= fun () ->
-    Patch.set_patch_code patch' code >>= fun () ->
-    Patch.set_patch_size patch' size >>= fun () ->
-    Patch.set_bir patch' bir >>= fun () ->
-    Patch.union_minizinc_solution patch' sol_set >>= fun () ->
-    KB.return patch'
-  in
-  KB.all (List.map ~f:fresh_patch (Patch_set.to_list patches)) >>=
-    fun ps' -> KB.return (Patch_set.of_list ps')
-
-(* Create a fresh version of an object. *)
-let fresh ~property:(property : Sexp.t) (obj : t) : t KB.t =
-  KB.Object.create cls >>= fun obj' ->
-  Original_exe.get_filepath obj >>= fun original_exe ->
-  Original_exe.set_filepath obj' original_exe >>= fun () ->
-  Original_exe.get_prog obj >>= fun original_exe_prog ->
-  Original_exe.set_prog obj' original_exe_prog >>= fun () ->
-  Original_exe.get_addr_size obj >>= fun addr_size ->
-  Original_exe.set_addr_size obj' addr_size >>= fun () ->
-  Patched_exe.get_patches obj >>= fun patches ->
-  fresh_patches patches >>= fun patches' ->
-  Patched_exe.set_patches obj' patches' >>= fun () ->
-  Patched_exe.get_filepath obj >>= fun patched_exe ->
-  Patched_exe.set_filepath obj' patched_exe >>= fun () ->
-  Solver.get_minizinc_model_filepath obj >>= fun mzn_model_filepath ->
-  Solver.set_minizinc_model_filepath obj' mzn_model_filepath >>= fun () ->
-  Verifier.get_func obj >>= fun func ->
-  Verifier.set_func obj' func >>= fun () ->
-  Verifier.set_property obj' (Some property) >>= fun () ->
-  KB.return obj'

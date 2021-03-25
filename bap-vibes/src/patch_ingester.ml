@@ -28,7 +28,7 @@ module CoreParser (Core : Theory.Core) = struct
                       vars : vvar M.t}
 
 
-  let named_err (patch_name : string) (err : string) : Errors.t =
+  let named_err (patch_name : string) (err : string) : Kb_error.t =
     Patch_code_not_parsed ("Patch code for patch " ^ patch_name ^ " " ^ err)
 
   let parse_var_decls (nm : string) (word_t : vsort) (ds : Sexp.t)
@@ -41,13 +41,13 @@ module CoreParser (Core : Theory.Core) = struct
       match ds with
       | Sexp.List ((Sexp.Atom "var-decls") :: vars) -> KB.return vars
       | Sexp.Atom "var-decls" -> KB.return []
-      | _ -> Errors.fail (named_err nm "must begin with var-decls")
+      | _ -> Kb_error.fail (named_err nm "must begin with var-decls")
     in
     let get_var_folder (v : Sexp.t) (vs : string list KB.t) =
       let* vs = vs in
       match v with
       | Sexp.Atom s -> KB.return (s :: vs)
-      | Sexp.List _ -> Errors.fail (named_err nm "has invalid var-decls spec")
+      | Sexp.List _ -> Kb_error.fail (named_err nm "has invalid var-decls spec")
     in
     let* var_strings : string list =
       List.fold_right ~f:get_var_folder ~init:(KB.return []) var_sexps
@@ -58,14 +58,14 @@ module CoreParser (Core : Theory.Core) = struct
     in
     match M.of_alist var_assocs with
     | `Duplicate_key k ->
-       Errors.fail (named_err nm
+       Kb_error.fail (named_err nm
                       (  "has duplicated or reserved variable \""
                        ^ k ^ "\" in declaration list"))
     | `Ok m -> KB.return m
 
   let parse_var (st : parse_state) (v : string) : vvar KB.t =
     match M.find st.vars v with
-    | None -> Errors.fail (named_err st.nm ("uses undeclared variable " ^ v))
+    | None -> Kb_error.fail (named_err st.nm ("uses undeclared variable " ^ v))
     | Some v -> KB.return v
 
   (* This is probably less than ideal. *)
@@ -76,7 +76,7 @@ module CoreParser (Core : Theory.Core) = struct
        try KB.return (Scanf.sscanf s "%d" (fun x -> x))
        with _ ->
          (* neither worked *)
-         Errors.fail (named_err st.nm
+         Kb_error.fail (named_err st.nm
            (  "contains invalid value " ^ s
             ^ " where an int literal was expected"))
 
@@ -95,7 +95,7 @@ module CoreParser (Core : Theory.Core) = struct
        let* src = parse_pure st src in
        KB.return (load st.mem src)
     | Sexp.List (Sexp.Atom "load" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
          "contains an invalid load (load takes exactly 1 argument)")
     | Sexp.List [Sexp.Atom "loadw"; (Sexp.Atom bits); src] ->
        let* src = parse_pure st src in
@@ -104,7 +104,7 @@ module CoreParser (Core : Theory.Core) = struct
           endian, though technically ARM also has a big endian mode.  *)
        KB.return (loadw (Bitv.define i) b0 st.mem src)
     | Sexp.List (Sexp.Atom "loadw" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
          (  "contains an invalid loadw (loadw takes exactly 2 "
           ^ "arguments, the first of which must be an integer literal)"))
     | Sexp.List [Sexp.Atom "-"; v1; v2] ->
@@ -112,36 +112,36 @@ module CoreParser (Core : Theory.Core) = struct
        let* v2 = parse_pure st v2 in
        KB.return (sub v1 v2)
     | Sexp.List (Sexp.Atom "-" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
          "contains an invalid - (- takes exactly 2 arguments)")
     | Sexp.List [Sexp.Atom "+"; v1; v2] ->
        let* v1 = parse_pure st v1 in
        let* v2 = parse_pure st v2 in
        KB.return (add v1 v2)
     | Sexp.List (Sexp.Atom "+" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
          "contains an invalid + (+ takes exactly 2 arguments)")
     | _ ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("contains invalid value " ^ Sexp.to_string p))
 
   let parse_stmt (st : parse_state) (sexps : Sexp.t) : data eff KB.t =
     match sexps with
     | Sexp.Atom s ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("uses unimplemented atomic statement " ^ s))
-    | Sexp.List [] -> Errors.fail (named_err st.nm "contains empty statement")
+    | Sexp.List [] -> Kb_error.fail (named_err st.nm "contains empty statement")
     | Sexp.List [Sexp.Atom "set"; Sexp.Atom dest; value] ->
        let* (dest : vvar) = parse_var st dest in
        let* (value : vpure) = parse_pure st value in
        KB.return (set dest value)
     | Sexp.List (Sexp.Atom "set" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
           ("contains a \"set\" not followed by a destination and value"))
     | Sexp.List (Sexp.Atom s :: _) ->
-       Errors.fail (named_err st.nm ("uses unimplemented statement " ^ s))
+       Kb_error.fail (named_err st.nm ("uses unimplemented statement " ^ s))
     | Sexp.List (Sexp.List _ :: _) ->
-       Errors.fail (named_err st.nm "has an invalid statement (list at head)")
+       Kb_error.fail (named_err st.nm "has an invalid statement (list at head)")
 
   let parse_bool (st : parse_state) (b : Sexp.t) : Bool.t pure KB.t =
     match b with
@@ -150,7 +150,7 @@ module CoreParser (Core : Theory.Core) = struct
        let* v2 = parse_pure st v2 in
        KB.return (eq v1 v2)
     | _ ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("contains invalid boolean value: " ^ Sexp.to_string b))
 
   let rec parse_ctrl (st : parse_state) (c : Sexp.t) : ctrl eff KB.t =
@@ -162,30 +162,30 @@ module CoreParser (Core : Theory.Core) = struct
        let* b2 = parse_ctrl st b2 in
        KB.return (branch cond b1 b2)
     | Sexp.List (Sexp.Atom "branch" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("contains a branch without exactly three arguments: "
                        ^ Sexp.to_string c))
     | Sexp.List [Sexp.Atom "goto"; Sexp.Atom label] ->
        KB.return (goto (Tid.for_name label))
     | Sexp.List (Sexp.Atom "goto" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("contains a goto without exactly one atomic argument: "
                        ^ Sexp.to_string c))
     | Sexp.List [Sexp.Atom "jmp"; dest] ->
        let* dest = parse_pure st dest in
        KB.return (jmp dest)
     | Sexp.List (Sexp.Atom "jmp" :: _) ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("contains a jmp without exactly one atomic argument: "
                        ^ Sexp.to_string c))
     | _ ->
-       Errors.fail (named_err st.nm
+       Kb_error.fail (named_err st.nm
                       ("ends with invalid control flow: " ^ Sexp.to_string c))
 
   let parse_bir (nm : string) (bits : int) (sexps : Sexp.t list) : insn KB.t =
     match sexps with
     | [] ->
-       Errors.fail (named_err nm "must be a non-empty top-level list")
+       Kb_error.fail (named_err nm "must be a non-empty top-level list")
     | decls :: sexps ->
        let word_t : vsort = Bitv.define bits in
        (* not sure about this mem stuff- copying patches.ml *)
@@ -197,7 +197,7 @@ module CoreParser (Core : Theory.Core) = struct
        let* (stmt_sexps, ctrl_sexp) =
          match List.split_n sexps (List.length sexps - 1) with
          | (sss, [cs]) -> KB.return (sss,cs)
-         | _ -> Errors.fail (named_err nm "has no body")
+         | _ -> Kb_error.fail (named_err nm "has no body")
        in
        let* data : data eff list =
          KB.all (List.map ~f:(parse_stmt st) stmt_sexps) in

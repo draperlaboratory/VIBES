@@ -40,6 +40,14 @@ Install `minizinc`, for example if you use `snap`:
 
     snap install minizinc --classic
 
+Or install it this way:
+
+    cd ~
+    curl -L "https://github.com/MiniZinc/MiniZincIDE/releases/download/2.5.3/MiniZincIDE-2.5.3-bundle-linux-x86_64.tgz" --output minizinc.tgz
+    tar zxvf minizinc.tgz
+    export PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/bin":"${PATH}"
+    export LD_LIBRARY_PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/lib":"${LD_LIBRARY_PATH}"
+
 If you don't have a `4.09.1` OCaml switch, create one. 
 
 Install the latest (bleeding edge) version of BAP:
@@ -52,7 +60,7 @@ into the `wp/lib/bap_wp` folder, and install with `make`:
 
     make
 
-Then install the remaining dependencies needed for VIBES:
+Install the following opam packages:
 
     opam install ounit2 ppx_deriving_yojson
 

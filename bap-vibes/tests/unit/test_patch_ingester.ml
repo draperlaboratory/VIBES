@@ -61,7 +61,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_patch_name in
+  let expected = Kb_error.Problem Kb_error.Missing_patch_name in
   H.assert_error Data.Patched_exe.patches expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
@@ -85,7 +85,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_addr_size in
+  let expected = Kb_error.Problem Kb_error.Missing_addr_size in
   H.assert_error Data.Patched_exe.patches expected result
 
 let suite = [

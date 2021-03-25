@@ -2,7 +2,8 @@ PROG = main
 PATCH = main.patched
 SRC = main.s
 OBJ = main.o
-ENTRY = main
+PROG_REFERENCE = main.reference
+PATCH_REFERENCE = main.reference.patched
 
 
 #####################################################
@@ -43,3 +44,15 @@ $(PATCH): $(PROG)
 	chmod +x $(PATCH)
 
 patch: $(PATCH)
+
+
+#####################################################
+# PATCH THE REFERENCE EXECUTABLE
+#####################################################
+
+patch.reference: $(PROG_REFERENCE)
+	bap vibes $(PROG_REFERENCE) \
+		--config=config.json \
+		-o $(PATCH_REFERENCE) \
+		--verbose
+	chmod +x $(PATCH_REFERENCE)

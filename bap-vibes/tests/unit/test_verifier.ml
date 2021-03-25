@@ -1,203 +1,63 @@
-open !Core_kernel
-open Bap_knowledge
-open Knowledge.Syntax
 open Bap_vibes
 open OUnit2
 
-module KB = Knowledge
 module H = Helpers
 
-(* A KB class to stash test results in. *)
-module Test_data = struct
-  type cls = Test_data
-  let package = "vibes"
-  let name = "test-data-for-verifier"
-  let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
-  let result : (cls, string) KB.slot =
-    KB.Class.property ~package cls
-      "test-result-for-verifier" KB.Domain.string
-end
+(* Some dummy values to use in the tests below. *)
+let orig_proj = H.dummy_proj "orig_exe" ~name:H.func
+let orig_prog = H.prog_exn orig_proj
+let patch_proj = H.dummy_proj "patched_exe" ~name:H.func
+let patch_prog = H.prog_exn patch_proj
 
-(* Test that [Verifier.verify] works as expected when [UNSAT]. *)
+(* A helper to print the results. *)
+let res_str r : string =
+  match r with
+  | Ok Verifier.Done -> "[Ok Verifier.Done]"
+  | Ok Verifier.Again -> "[Ok Verifier.Again]"
+  | Error (Toplevel_error.WP_result_unknown _) ->
+    "[Error (Toplevel_error.WP_result_unknown)]"
+  | Error e -> Format.asprintf "[Error (%a)]" Toplevel_error.pp e
+
+(* Test that the verifier works as expected when [WP] returns [UNSAT]. *)
 let test_verify_unsat (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Set up the KB with the required data. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
-    Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
-    Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
-    Data.Verifier.set_func obj (Some H.func) >>= fun _ ->
-
-    (* Now run the verifier. Stash the result in [Test_data.result]. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_unsat
-      ~printer:H.verifier_printer >>= fun result ->
-    match result with
-    | Verifier.Done ->
-      begin
-        KB.provide Test_data.result test_data "Done" >>= fun _ ->
-        KB.return test_data
-      end
-    | Verifier.Again _ ->
-      begin
-        KB.provide Test_data.result test_data "Again" >>= fun _ ->
-        KB.return test_data
-      end
+  let result = Verifier.verify H.func H.property
+    ~orig_prog ~patch_prog
+    ~verifier:H.verify_unsat ~printer:H.verifier_printer
   in
-  let result = KB.run Test_data.cls computation KB.empty in
+  let expected = Ok Verifier.Done in 
+  let msg = Format.sprintf
+    "Expected [Ok Verifier.Done], but got %s" (res_str result) 
+  in
+  assert_bool msg (result = expected)
 
-  (* It should be [Done]. *)
-  let expected = "Done" in
-  H.assert_property ~cmp:String.equal
-    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
-    Test_data.result expected result
-
-(* Test that [Verifier.verify] works as expected when [SAT]. *)
+(* Test that the verifier works as expected when [WP] returns [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Set up the KB with the required data. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
-    Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
-    Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
-    Data.Verifier.set_func obj (Some "main") >>= fun _ ->
-
-    (* Now run the verifier. Stash the result in [Test_data.result]. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
-      ~printer:H.verifier_printer >>= fun result ->
-    match result with
-    | Verifier.Done ->
-      begin
-        KB.provide Test_data.result test_data "Done" >>= fun _ ->
-        KB.return test_data
-      end
-    | Verifier.Again _ ->
-      begin
-        KB.provide Test_data.result test_data "Again" >>= fun _ ->
-        KB.return test_data
-      end
+  let result = Verifier.verify H.func H.property
+    ~orig_prog ~patch_prog
+    ~verifier:H.verify_sat ~printer:H.verifier_printer
   in
-  let result = KB.run Test_data.cls computation KB.empty in
-
-  (* It should be [Again]. *)
-  let expected = "Again" in
-  H.assert_property ~cmp:String.equal
-    ~p_res:(Format.sprintf "%s") ~p_expected:(Format.sprintf "%s")
-    Test_data.result expected result
-
-(* Test that [Verifier.verify] errors without an original exe program. *)
-let test_verify_with_no_original_exe_prog (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Set up the KB with nothing in it. *)
-    H.obj () >>= fun obj ->
-
-    (* Run the verifier. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
-      ~printer:H.verifier_printer >>= fun _ ->
-    KB.return test_data
-
+  let expected = Ok Verifier.Again in
+  let msg = Format.sprintf
+    "Expected [Ok Verifier.Again], but got %s" (res_str result)
   in
-  let result = KB.run Test_data.cls computation KB.empty in
+  assert_bool msg (result = expected)
 
-  (* The computation should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_original_exe_prog in
-  H.assert_error ~printer:(Format.sprintf "%s")
-    Test_data.result expected result
-
-(* Test that [Verifier.verify] errors without an patched exe filepath. *)
-let test_verify_with_no_patched_exe (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Set up the KB with no patched exe filepath. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
-
-    (* Now run the verifier. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
-      ~printer:H.verifier_printer >>= fun _ ->
-    KB.return test_data
+(* Test that the verifier works as expected when [WP] returns [UNKNOWN]. *)
+let test_verify_unknown (_ : test_ctxt) : unit =
+  let result = Verifier.verify H.func H.property
+    ~orig_prog ~patch_prog
+    ~verifier:H.verify_unknown ~printer:H.verifier_printer
   in
-  let result = KB.run Test_data.cls computation KB.empty in
-
-  (* The computation should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_tmp_patched_exe_filepath in
-  H.assert_error ~printer:(Format.sprintf "%s")
-    Test_data.result expected result
-
-(* Test that [Verifier.verify] errors without a correctness property. *)
-let test_verify_with_no_property (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Setup KB with no correctness property. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
-    Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
-
-    (* Now run the verifier. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
-      ~printer:H.verifier_printer  >>= fun _ ->
-    KB.return test_data
-
+  let msg = Format.sprintf
+    "Expected [Error Toplevel_error.WP_result_unknown], but got %s"
+    (res_str result)
   in
-  let result = KB.run Test_data.cls computation KB.empty in
-
-  (* The computation should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_property in
-  H.assert_error ~printer:(Format.sprintf "%s")
-    Test_data.result expected result
-
-(* Test that [Verifier.verify] errors without a function to verify. *)
-let test_verify_with_no_func (_ : test_ctxt) : unit =
-
-  (* Run the verifier. *)
-  let computation =
-
-    (* Setup KB with no func. *)
-    H.obj () >>= fun obj ->
-    Data.Original_exe.set_prog obj (Some H.prog) >>= fun _ ->
-    Data.Patched_exe.set_tmp_filepath obj (Some H.patched_exe) >>= fun _ ->
-    Data.Verifier.set_property obj (Some H.property) >>= fun _ ->
-
-    (* Now run the verifier. *)
-    KB.Object.create Test_data.cls >>= fun test_data ->
-    Verifier.verify obj ~loader:H.loader ~verifier:H.verify_sat
-      ~printer:H.verifier_printer  >>= fun _ ->
-    KB.return test_data
-
-  in
-  let result = KB.run Test_data.cls computation KB.empty in
-
-  (* The computation should diverge with the appropriate error. *)
-  let expected = Errors.Problem Errors.Missing_func in
-  H.assert_error ~printer:(Format.sprintf "%s")
-    Test_data.result expected result
+  match result with
+  | Error (Toplevel_error.WP_result_unknown _) -> assert_bool msg true
+  | _ -> assert_bool msg false
 
 let suite = [
   "Test Verifier.verify: UNSAT" >:: test_verify_unsat;
   "Test Verifier.verify: SAT" >:: test_verify_sat;
-  "Test Verifier.verify: no lifted original exe" >::
-  test_verify_with_no_original_exe_prog;
-  "Test Verifier.verify: no patched exe filepath" >::
-  test_verify_with_no_patched_exe;
-  "Test Verifier.verify: no correctness property" >::
-  test_verify_with_no_property;
-  "Test Verifier.verify: no func" >::
-  test_verify_with_no_func;
+  "Test Verifier.verify: UNKNOWN" >:: test_verify_unknown;
 ]
