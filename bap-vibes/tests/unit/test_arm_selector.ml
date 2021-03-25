@@ -309,12 +309,15 @@ let test_ir11 ctxt =
 
 let test_ir12 ctxt =
   test_ir ctxt Prog12_inst.prog
-    ["entry:";
-     "cmp R0, #0";
-     "bne false_branch";
-     "true_branch:";
-     "b tgt";
-     "false_branch:"]
+    [
+      "entry:";
+      "cmp R0, #0";
+      "beq true_branch";
+      "b false_branch";
+      "true_branch:";
+      "b tgt";
+      "false_branch:";
+    ]
 
 let suite =
   [
