@@ -185,7 +185,7 @@ module ARM_ops = struct
     let i = Ir.simple_op Ops.b Void [Ir.Label addr] in
     control i empty_eff
 
-  let jmp ~patch_pt:patch_pt arg =
+  let jmp arg =
     let {op_val = arg_tgt; op_eff = arg_sem} = arg in
     let pc = Var.create "PC" (Imm 32) in
     let pc = Ir.Var (Ir.simple_var pc) in
@@ -194,7 +194,6 @@ module ARM_ops = struct
       | Var _ ->
         [], Ir.simple_op Ops.mov pc [arg_tgt]
       | Const w ->
-        let w = Word.(w - patch_pt) in
         [], Ir.simple_op Ops.b Void [Offset w]
       | _ ->
         let err = Format.asprintf "%s"
@@ -405,7 +404,7 @@ struct
 
   let jmp addr =
     let- addr_bitv = addr in
-    eff @@ jmp ~patch_pt:Word.b0 addr_bitv
+    eff @@ jmp addr_bitv
 
   let repeat _cond _body =
     Kb_error.fail (Kb_error.Not_implemented "Arm_gen.repeat")
