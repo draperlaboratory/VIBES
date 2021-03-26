@@ -123,7 +123,9 @@ module ARM_ops = struct
 
   module Ops = struct
 
-    let op s = Ir.Opcode.create ~arch:"arm" s
+    include Ir.Opcode
+
+    let op s = create ~arch:"arm" s
 
     let mov = op "mov"
     (* let movw = op "movw" *)
@@ -545,42 +547,61 @@ module Pretty = struct
   let tid_to_string (t : tid) : string =
     Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
+  type bracket =
+      Open | Close | Neither | Both
+
   let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
       : (string, Kb_error.t) result =
-    match o with
-    | Var v ->
-      let error =
-        Kb_error.Missing_semantics
-          "arm_operand_pretty: operand.pre_assign field is empty" in
-      let res =
-        Result.bind
-          (Result.of_option v.pre_assign ~error:error)
-          ~f:(fun reg -> Result.return @@ Var.to_string reg)
-      in
-      if is_loc then
-        Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
-      else
+    let pretty_aux =
+      match o with
+      | Var v ->
+        let error =
+          Kb_error.Missing_semantics
+            "arm_operand_pretty: operand.pre_assign field is empty" in
+        let res =
+          Result.map
+            (Result.of_option v.pre_assign ~error:error)
+            ~f:(fun reg -> Var.to_string reg)
+        in
         res
-    | Const w ->
-      (* A little calisthenics to get this to look nice *)
-      Result.return @@ Format.asprintf "#%a" Word.pp_dec w
-    | Label l -> Result.return @@ tid_to_string l
-    | Void -> Result.return ""
-    | Offset c ->
-      (* Special printing of offsets to jump back from patched locations *)
-      Result.return @@
-      Format.asprintf "(%s + %d - %s)"
-        Constants.patch_start_label
-        (Word.to_int_exn c)
-        Constants.patch_location
+      | Const w ->
+        (* A little calisthenics to get this to look nice *)
+        Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+      | Label l -> Result.return @@ tid_to_string l
+      | Void -> Result.return ""
+      | Offset c ->
+        (* Special printing of offsets to jump back from patched locations *)
+        Result.return @@
+        Format.asprintf "(%s + %d - %s)"
+          Constants.patch_start_label
+          (Word.to_int_exn c)
+          Constants.patch_location
+    in
+    Result.map pretty_aux
+      ~f:(fun p ->
+          match is_loc with
+          | Open -> Format.asprintf "[%s" p
+          | Close -> Format.asprintf "%s]" p
+          | Neither -> p
+          | Both -> Format.asprintf "[%s]" p
+        )
 
 
   (* FIXME: Absolute hack *)
-  let mk_loc_list (op : string) (args : 'a list) : bool list =
+  (* We mark where the bracket location start and end in the argument list. *)
+  let mk_loc_list (op : string) (args : 'a list) : bracket list =
+    let len = List.length args in
+    let init_neither len = List.init len ~f:(fun _ -> Neither) in
     if String.(op = "ldr" || op = "ldrh" || op = "ldrb") then
-      [false; true]
+      begin
+        if len = 2 then
+          [Neither; Both]
+        else if len = 3 then
+          [Neither; Open; Close]
+        else failwith "mk_loc_list: expected to receive 2 or 3 arguments"
+      end
     else
-      List.init (List.length args) ~f:(fun _ -> false)
+      init_neither len
 
   let arm_operands_pretty (op : string) (hd : Ir.operand) (l : Ir.operand list)
     : (string, Kb_error.t) result =
@@ -767,6 +788,55 @@ let opt_jmp (blks : Ir.blk list) : Ir.blk list =
     ~f:(fun b -> not @@
          List.mem to_remove b.id ~equal:Tid.equal)
 
+
+let add_load (op1 : Ir.operation) (op2 : Ir.operation) : Ir.operation option =
+  let opc1, opc2 =
+    op1.opcodes |> List.hd_exn, op2.opcodes |> List.hd_exn
+  in
+  if ARM_ops.Ops.(
+      (opc1 = add || opc1 = sub)
+      &&
+      (opc2 = ldr || opc2 = ldrh || opc2 = ldrb))
+  then begin
+    match op1.lhs, op1.operands, op2.operands with
+    (* We are in the case:
+       v1 := v2 +/- c; _ := ldr(b|h) x [v3]
+    *)
+    | [Var v1], [Var v2; Const c], [Var v3] ->
+      begin
+        let v1 = Option.value_exn v1.pre_assign in
+        let v3 = Option.value_exn v3.pre_assign in
+        if Var.(v1 = v3) then
+          (* Invert c if op1 is a subtraction *)
+          let c =
+            if ARM_ops.Ops.(opc1 = sub) then
+              Word.neg c
+            else c
+          in
+          let res =
+            {op2 with
+             operands = [Var v2; Const c]
+            }
+          in
+          Some res
+        else None
+      end
+    | _ -> None
+  end
+  else
+    None
+
+let rec opt_add_loads (ops : Ir.operation list) : Ir.operation list =
+  match ops with
+  | o1 :: o2 :: os ->
+    begin
+      match add_load o1 o2 with
+      | Some o -> o :: (opt_add_loads os)
+      | None -> o1 :: (opt_add_loads (o2 :: os))
+    end
+  | _ -> ops
+
+
 let peephole (ir : Ir.t) : Ir.t =
   let filter_nops blk =
     let {Ir.data; Ir.ctrl; _} = blk in
@@ -777,11 +847,17 @@ let peephole (ir : Ir.t) : Ir.t =
       ctrl = ctrl;
     }
   in
+  let opt_add_loads blk =
+    let {Ir.data; _} = blk in
+    let data = opt_add_loads data in
+    { blk with
+      data = data
+    }
+  in
   let ir = Ir.map_blks ir ~f:filter_nops in
-  { ir with
-    blks = opt_jmp ir.blks
-  }
-
+  let ir = Ir.map_blks ir ~f:opt_add_loads in
+  let ir = { ir with blks = opt_jmp ir.blks } in
+  ir
 
 
 let () =
