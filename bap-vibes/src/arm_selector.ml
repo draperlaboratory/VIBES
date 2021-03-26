@@ -123,7 +123,9 @@ module ARM_ops = struct
 
   module Ops = struct
 
-    let op s = Ir.Opcode.create ~arch:"arm" s
+    include Ir.Opcode
+
+    let op s = create ~arch:"arm" s
 
     let mov = op "mov"
     (* let movw = op "movw" *)
@@ -141,8 +143,8 @@ module ARM_ops = struct
     let ldrb = op "ldrb"
     let str = op "str"
     let cmp = op "cmp"
-    (* let beq = op "beq" *)
-    let bne = op "bne"
+    let beq = op "beq"
+    (* let bne = op "bne" *)
     (* let ble = op "ble" *)
     (* let blt = op "blt" *)
     let b = op "b"
@@ -309,13 +311,14 @@ module ARM_ops = struct
     let tid2 = Tid.for_name "false_branch" in
     let blk1 = Ir.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
     let blk2 = Ir.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
-    let beq = Ir.simple_op Ops.bne Void [Label tid2] in
+    let beq = Ir.simple_op Ops.beq Void [Label tid1] in
+    let b = Ir.simple_op Ops.b Void [Label tid2] in
     let blks = cond_eff.other_blks in
     let blks = Ir.union blks1 @@ Ir.union blks2 blks in
     let blks = Ir.add blk1 @@ Ir.add blk2 blks in
     {
       current_data = cmp :: cond_eff.current_data;
-      current_ctrl = [beq];
+      current_ctrl = [beq; b];
       other_blks = blks
     }
 
@@ -544,42 +547,61 @@ module Pretty = struct
   let tid_to_string (t : tid) : string =
     Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
 
+  type bracket =
+      Open | Close | Neither | Both
+
   let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
       : (string, Kb_error.t) result =
-    match o with
-    | Var v ->
-      let error =
-        Kb_error.Missing_semantics
-          "arm_operand_pretty: operand.pre_assign field is empty" in
-      let res =
-        Result.bind
-          (Result.of_option v.pre_assign ~error:error)
-          ~f:(fun reg -> Result.return @@ Var.to_string reg)
-      in
-      if is_loc then
-        Result.map res ~f:(fun s -> Format.asprintf "[%s]" s)
-      else
+    let pretty_aux =
+      match o with
+      | Var v ->
+        let error =
+          Kb_error.Missing_semantics
+            "arm_operand_pretty: operand.pre_assign field is empty" in
+        let res =
+          Result.map
+            (Result.of_option v.pre_assign ~error:error)
+            ~f:(fun reg -> Var.to_string reg)
+        in
         res
-    | Const w ->
-      (* A little calisthenics to get this to look nice *)
-      Result.return @@ Format.asprintf "#%a" Word.pp_dec w
-    | Label l -> Result.return @@ tid_to_string l
-    | Void -> Result.return ""
-    | Offset c ->
-      (* Special printing of offsets to jump back from patched locations *)
-      Result.return @@
-      Format.asprintf "(%s + %d - %s)"
-        Constants.patch_start_label
-        (Word.to_int_exn c)
-        Constants.patch_location
+      | Const w ->
+        (* A little calisthenics to get this to look nice *)
+        Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+      | Label l -> Result.return @@ tid_to_string l
+      | Void -> Result.return ""
+      | Offset c ->
+        (* Special printing of offsets to jump back from patched locations *)
+        Result.return @@
+        Format.asprintf "(%s + %d - %s)"
+          Constants.patch_start_label
+          (Word.to_int_exn c)
+          Constants.patch_location
+    in
+    Result.map pretty_aux
+      ~f:(fun p ->
+          match is_loc with
+          | Open -> Format.asprintf "[%s" p
+          | Close -> Format.asprintf "%s]" p
+          | Neither -> p
+          | Both -> Format.asprintf "[%s]" p
+        )
 
 
   (* FIXME: Absolute hack *)
-  let mk_loc_list (op : string) (args : 'a list) : bool list =
+  (* We mark where the bracket location start and end in the argument list. *)
+  let mk_loc_list (op : string) (args : 'a list) : bracket list =
+    let len = List.length args in
+    let init_neither len = List.init len ~f:(fun _ -> Neither) in
     if String.(op = "ldr" || op = "ldrh" || op = "ldrb") then
-      [false; true]
+      begin
+        if len = 2 then
+          [Neither; Both]
+        else if len = 3 then
+          [Neither; Open; Close]
+        else failwith "mk_loc_list: expected to receive 2 or 3 arguments"
+      end
     else
-      List.init (List.length args) ~f:(fun _ -> false)
+      init_neither len
 
   let arm_operands_pretty (op : string) (hd : Ir.operand) (l : Ir.operand list)
     : (string, Kb_error.t) result =
@@ -619,6 +641,224 @@ module Pretty = struct
 end
 
 let slot = arm_eff
+
+(* Returns [true] if an instruction has no effect on data or
+   control, is an overaproximation, of course. *)
+let is_nop (op : Ir.operation) : bool =
+  let open Ir in
+  let { opcodes; lhs; operands; _ } = op in
+  let opcode = List.hd_exn opcodes in
+  let open ARM_ops.Ops in
+  if Ir.Opcode.(opcode = mov) then
+    begin
+      match lhs, operands with
+      | [Var a1], [Var a2] ->
+        begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r *)
+          | Some v1, Some v2 -> Var.(v1 = v2)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  else if Ir.Opcode.(opcode = add || opcode = sub) then
+    begin
+      match lhs, operands with
+      | [Var a1], [Var a2; Const w] ->
+        begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r +/- 0 *)
+          | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  else
+    false
+
+(* Removes spurious data operations *)
+let filter_nops (ops : Ir.operation list) : Ir.operation list =
+  List.filter ops ~f:(fun o -> not (is_nop o))
+
+(* Returns [None] if the control is fall-through or a conditional jump,
+   or if the data section is non-empty. Otherwise, if it is an
+   unconditional jump to label [l], returns [Some l]. *)
+let is_simple_branch (blk : Ir.blk) : Ir.operand option =
+  let open ARM_ops.Ops in
+  if not (List.is_empty blk.data) then None
+  else
+    match blk.ctrl with
+    | [{ Ir.opcodes; Ir.operands; _}] ->
+      let opcode = List.hd_exn opcodes in
+      if Ir.Opcode.(opcode = b) then
+        begin
+          match operands with
+          |[o] -> Some o
+          | _ -> None
+        end
+        else None
+    | _ -> None
+
+let is_empty_blk (blk : Ir.blk) : bool =
+  (List.is_empty blk.data) && (List.is_empty blk.ctrl)
+
+(* Returns the pair of labels from a [beq l1; b l2] control operation
+   in a block, and [None] if not applicable. *)
+let get_eq_branches (blk : Ir.blk) : (tid * tid) option =
+  let open ARM_ops.Ops in
+  match blk.ctrl with
+  | [{ Ir.opcodes = ops1; Ir.operands = args1; _};
+     { Ir.opcodes = ops2; Ir.operands = args2; _}] ->
+    let op1 = List.hd_exn ops1 in
+    let op2 = List.hd_exn ops2 in
+    if Ir.Opcode.(op1 = beq && op2 = b) then
+      begin
+        match args1, args2 with
+        |[Label l1], [Label l2] -> Some (l1, l2)
+        | _ -> None
+      end
+    else None
+  | _ -> None
+
+
+(*
+   Takes a block and a set of blocks, and if the block is of the form:
+
+     beq l1
+     b l2
+
+   and the [l1] and [l2] bloks are, respectively:
+
+   l1:
+     b l3
+
+   and
+
+   l2: //empty
+
+   then turn the first block into
+
+     beq l3
+
+   and mark the other two blocks for deletion.
+
+
+*)
+(* FIXME: clean this up *)
+let opt_jmp_helper (blk : Ir.blk) (blks : Ir.blk list) : (Ir.blk * tid list) option =
+  match get_eq_branches blk with
+  | None -> None
+  | Some (l_true, l_false) ->
+    let true_dest =
+      List.find blks
+        ~f:(fun blk -> Tid.(blk.id = l_true)) |>
+      Option.bind ~f:is_simple_branch
+    in
+    let false_fall =
+      List.find blks
+        ~f:(fun blk -> Tid.(blk.id = l_false)) |>
+      Option.map ~f:is_empty_blk
+    in
+    begin
+      match true_dest, false_fall with
+      | Some dest, Some true ->
+        let new_blk =
+          { blk with
+            ctrl =
+              [
+                Ir.simple_op ARM_ops.Ops.beq Ir.Void [dest]
+              ]
+          }
+        in
+        Some (new_blk, [l_true; l_false])
+      | _ -> None
+    end
+
+
+let opt_jmp (blks : Ir.blk list) : Ir.blk list =
+  let new_blks, to_remove = List.fold blks
+      ~init:([], [])
+      ~f:(fun (new_blks, to_remove) b ->
+          match opt_jmp_helper b blks with
+          | None -> (b :: new_blks, to_remove)
+          | Some (b_new, new_remove) ->
+            (b_new :: new_blks, new_remove @ to_remove))
+  in
+  List.filter new_blks
+    ~f:(fun b -> not @@
+         List.mem to_remove b.id ~equal:Tid.equal)
+
+
+let add_load (op1 : Ir.operation) (op2 : Ir.operation) : Ir.operation option =
+  let opc1, opc2 =
+    op1.opcodes |> List.hd_exn, op2.opcodes |> List.hd_exn
+  in
+  if ARM_ops.Ops.(
+      (opc1 = add || opc1 = sub)
+      &&
+      (opc2 = ldr || opc2 = ldrh || opc2 = ldrb))
+  then begin
+    match op1.lhs, op1.operands, op2.operands with
+    (* We are in the case:
+       v1 := v2 +/- c; _ := ldr(b|h) x [v3]
+    *)
+    | [Var v1], [Var v2; Const c], [Var v3] ->
+      begin
+        let v1 = Option.value_exn v1.pre_assign in
+        let v3 = Option.value_exn v3.pre_assign in
+        if Var.(v1 = v3) then
+          (* Invert c if op1 is a subtraction *)
+          let c =
+            if ARM_ops.Ops.(opc1 = sub) then
+              Word.neg c
+            else c
+          in
+          let res =
+            {op2 with
+             operands = [Var v2; Const c]
+            }
+          in
+          Some res
+        else None
+      end
+    | _ -> None
+  end
+  else
+    None
+
+let rec opt_add_loads (ops : Ir.operation list) : Ir.operation list =
+  match ops with
+  | o1 :: o2 :: os ->
+    begin
+      match add_load o1 o2 with
+      | Some o -> o :: (opt_add_loads os)
+      | None -> o1 :: (opt_add_loads (o2 :: os))
+    end
+  | _ -> ops
+
+
+let peephole (ir : Ir.t) : Ir.t =
+  let filter_nops blk =
+    let {Ir.data; Ir.ctrl; _} = blk in
+    let data = filter_nops data in
+    let ctrl = filter_nops ctrl in
+    { blk with
+      data = data;
+      ctrl = ctrl;
+    }
+  in
+  let opt_add_loads blk =
+    let {Ir.data; _} = blk in
+    let data = opt_add_loads data in
+    { blk with
+      data = data
+    }
+  in
+  let ir = Ir.map_blks ir ~f:filter_nops in
+  let ir = Ir.map_blks ir ~f:opt_add_loads in
+  let ir = { ir with blks = opt_jmp ir.blks } in
+  ir
+
 
 let () =
   Theory.declare

@@ -42,6 +42,8 @@ sig
 
   val name : opcode -> string
 
+  val (=) : opcode -> opcode -> bool
+
 end
 
 
