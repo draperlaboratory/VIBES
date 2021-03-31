@@ -76,11 +76,11 @@ fi
 # Where to record progress.
 REPORT="$(report_file "${REPORT_RESULTS}")"
 
-# Record some useful info
+# Record some useful info.
 bap_version
 git_commit
 
-# Note that we're starting the tests
+# Note that we're starting the tests.
 print_test_startup_info
 
 # Run every test.
@@ -88,7 +88,7 @@ for FILEPATH in "${TESTS_DIR}"/test-*.bash; do
     . ${FILEPATH}
 done
 
-# Summary, and exit with the appropriate exit code.
+# Final report for the test results.
 print_summary
 
 # Report the results (if needed) and exit.
