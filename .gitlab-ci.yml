@@ -22,6 +22,6 @@ run_tests:
     - bash -x bin/ci/exec/run-tests.bash
 
     # Run the VIBES system tests.
-    - bash -x bin/system-tests/run-test.bash
+    - bash -x bin/system-tests/run-test.bash --report-results
 
     - echo "Done"
