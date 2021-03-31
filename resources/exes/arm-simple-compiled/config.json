@@ -1,6 +1,7 @@
 {
+  "max-tries": 3,
   "func": "main",
-  "property" : "(assert true)",
+  "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "(var-decls retvar)

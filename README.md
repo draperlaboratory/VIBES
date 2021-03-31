@@ -12,23 +12,6 @@ The command-line tool is implemented as a BAP command, `bap vibes`. Its
 source code lives in [plugin/](./plugin).
 
 
-## Getting the code
-
-Clone this repo wherever you prefer to keep your projects, for example:
-
-    cd ~/code
-    git clone https://github.com/draperlaboratory/VIBES.git
-
-Then `cd` into the project root:
-
-    cd VIBES
-
-Copy the default minizinc model file into your home directory:
-
-    mkdir -p ~/.vibes
-    cp resources/minizinc/model.mzn ~/.vibes/
-
-
 ## Install the dependencies
 
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
@@ -63,6 +46,14 @@ into the `wp/lib/bap_wp` folder, and install with `make`:
 Install the following opam packages:
 
     opam install ounit2 ppx_deriving_yojson
+
+
+## Getting the code
+
+Clone this repo wherever you prefer to keep your projects, for example:
+
+    cd ~/code
+    git clone https://github.com/draperlaboratory/VIBES.git
 
 
 ## Installing/uninstalling
@@ -165,7 +156,8 @@ The top-level object may include the following optional field:
   parameter unspecified or setting it to `0` tells VIBES to try forever.
 * `"minizinc-model" : FILEPATH` -
   Specifies the path to a minizinc model filepath. If this is omitted,
-  VIBES will look for the file at `~/.vibes/model.mzn`.
+  VIBES will look for the file at `~/.vibes/model.mzn` (which is created
+  for you automatically when you run `make` or `make install`).
 
 Here is an example of a valid configuration file, taken from the
 `resources/simple` example:

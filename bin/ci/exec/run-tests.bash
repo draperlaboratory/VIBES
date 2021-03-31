@@ -33,18 +33,35 @@ while (( "${#}" )); do
     shift
 done
 
-# Run the tests.
+# Prep for test runs.
 make clean -C "${REPO_ROOT}"/bap-vibes > "${REPORT_FILE}" 2>&1
-make test -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
+
+# Run the unit tests.
+make test.unit -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
 TEST_RESULT="${?}"
 echo "REPORT:"
 cat "${REPORT_FILE}"
 if [[ "${TEST_RESULT}" != "0" ]]; then
-    echo "Tests failed" > "${MSG_FILE}"
+    echo "Unit tests failed" > "${MSG_FILE}"
     report_to_slack
     fail
     exit 1
 else
-    echo "Tests passed" > "${MSG_FILE}"
+    echo "Unit tests passed" > "${MSG_FILE}"
+    report_to_slack
+fi
+
+# Run the integration tests.
+make test.integration -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
+TEST_RESULT="${?}"
+echo "REPORT:"
+cat "${REPORT_FILE}"
+if [[ "${TEST_RESULT}" != "0" ]]; then
+    echo "Integration tests failed" > "${MSG_FILE}"
+    report_to_slack
+    fail
+    exit 1
+else
+    echo "Integration tests passed" > "${MSG_FILE}"
     report_to_slack
 fi
