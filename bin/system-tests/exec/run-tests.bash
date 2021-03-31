@@ -25,7 +25,8 @@ usage () {
     echo "  Run the system tests"
     echo ""
     echo "OPTIONS"
-    echo "  -h | --help    Print this help and exit"
+    echo "  -h | --help       Print this help and exit"
+    echo "  --report-results  Report the results to slack"
 }
 
 # Parse the command line arguments.
