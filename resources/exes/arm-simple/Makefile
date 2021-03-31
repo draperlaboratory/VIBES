@@ -3,7 +3,7 @@ PATCH = main.patched
 SRC = main.s
 OBJ = main.o
 PROG_REFERENCE = main.reference
-PATCH_REFERENCE = main.reference.patched
+PATCH_REFERENCE = main.patched.by.vibes
 
 
 #####################################################
@@ -29,7 +29,7 @@ $(PROG): $(SRC)
 
 .PHONY: clean
 clean:
-	rm -rf $(OBJ) $(PROG) $(PATCH)
+	rm -rf $(OBJ) $(PROG) $(PATCH) $(PATCH_REFERENCE)
 
 
 #####################################################

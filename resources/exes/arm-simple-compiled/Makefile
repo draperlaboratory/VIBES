@@ -1,4 +1,6 @@
 SRC = main.c
+PROG_REFERENCE = main.reference
+PATCH_REFERENCE = main.patched.by.vibes
 
 .PHONY: all build clean run
 
@@ -10,7 +12,7 @@ main: $(SRC)
 	arm-linux-gnueabi-gcc -marm -o $@ $<
 
 clean:
-	rm -f main main.patched
+	rm -f main main.patched $(PATCH_REFERENCE)
 
 patch: main main.patched
 
@@ -40,3 +42,14 @@ run-patched: patch
 	@echo ""
 
 test: run-orig run-patched
+
+#####################################################
+# PATCH THE REFERENCE EXECUTABLE
+#####################################################
+
+patch.reference: $(PROG_REFERENCE)
+	bap vibes $(PROG_REFERENCE) \
+                --config=config.json \
+                -o $(PATCH_REFERENCE) \
+                --verbose
+	chmod +x $(PATCH_REFERENCE)
