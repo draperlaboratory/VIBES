@@ -66,6 +66,6 @@ let load_exe (filename : string)
       Error (Toplevel_error.Failed_to_load_proj msg)
     end
 
-let get_func (prog : Program.t) (name : string) : Sub.t =
+let get_func (prog : Program.t) (name : string) : Sub.t option =
   let subs = Term.enum sub_t prog in
-  Seq.find_exn ~f:(fun s -> String.equal (Sub.name s) name) subs
+  Seq.find ~f:(fun s -> String.equal (Sub.name s) name) subs

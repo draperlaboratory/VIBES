@@ -15,6 +15,8 @@ type result = {
   patch_sub : Sub.t;
 }
 
+let (let*) x f = Result.bind x ~f
+
 (* The type for a verifier used by the [verify] function. *)
 type verifier = Sub.t -> Sub.t -> Sexp.t -> result
 
@@ -85,8 +87,10 @@ let verify ?verifier:(verifier=wp_verifier) ?printer:(printer=naive_printer)
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
-  let orig_sub =  Utils.get_func orig_prog func in
-  let patch_sub = Utils.get_func patch_prog func in
+  let* orig_sub = Result.of_option (Utils.get_func orig_prog func)
+                    ~error:(Toplevel_error.Missing_func_orig func) in
+  let* patch_sub = Result.of_option (Utils.get_func patch_prog func)
+                     ~error:(Toplevel_error.Missing_func_patched func) in
   let result = verifier orig_sub patch_sub property in
   printer result;
 
