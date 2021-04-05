@@ -2,6 +2,7 @@
 
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
 
 (** [cp src dst] copies the file from the [src] to the [dst] filepath. *)
@@ -19,3 +20,8 @@ val load_exe : string -> (project * Program.t, Toplevel_error.t) result
 
 (** [get_sub prog "main"] returns the function ["main"] in [prog], if present. *)
 val get_func : Program.t -> string -> Sub.t option
+
+(** [get_lang_exn patch] returns the language associated with the
+   patch in the current binary under scutiny, at the location
+   indicated at the patch. *)
+val get_lang_exn : Bitvec.t -> Theory.language KB.t

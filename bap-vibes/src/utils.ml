@@ -2,7 +2,9 @@
 
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
+open KB.Let
 
 let cp (src_filepath : string) (dst_filepath : string) : unit =
   let buffer_size = 1026 in
@@ -69,3 +71,10 @@ let load_exe (filename : string)
 let get_func (prog : Program.t) (name : string) : Sub.t option =
   let subs = Term.enum sub_t prog in
   Seq.find ~f:(fun s -> String.equal (Sub.name s) name) subs
+
+let get_lang_exn (addr : Bitvec.t) : Theory.language KB.t =
+  (* FIMXE: remove this when we replace offsets with addresses *)
+  let addr = Bitvec.M32.(addr + !$"0x10000") in
+  let* tid = Theory.Label.for_addr addr in
+  let* lang = KB.collect Theory.Label.encoding tid in
+  KB.return lang

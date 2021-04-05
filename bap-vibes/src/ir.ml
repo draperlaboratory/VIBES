@@ -26,19 +26,10 @@ type op_var = {
 let equal_op_var x y = [%equal: Var.t] x.id y.id
 
 let simple_var v =
-  (* FIXME: move this out into arm_select *)
-  let pre_assign =
-    if String.(Var.name v = "FP") then
-      Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
-    else if String.(Var.name v = "PC") then
-      Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
-    else
-      None
-  in
   {
     id = Var.create ~fresh:true "operand" (Var.typ v);
     temps = [v];
-    pre_assign = pre_assign
+    pre_assign = None
   }
 
 let given_var v ~reg:reg =

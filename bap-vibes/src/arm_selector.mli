@@ -44,6 +44,11 @@ val peephole : Ir.t -> Ir.t
 (** Returns the set of registers suitable for register allocation on ARM *)
 val gpr : Bap.Std.Var.Set.t
 
+(** Pre-assigns variables according to specific roles (PC, SP, etc) *)
+(* FIXME: make this happen at variable creation time *)
+val preassign : Theory.language -> Ir.t -> Ir.t
+
+
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)

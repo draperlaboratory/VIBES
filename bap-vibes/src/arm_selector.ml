@@ -33,8 +33,29 @@ let gpr =
       Some v
     else None
   in
-  Theory.Target.vars tgt |>
+  Theory.Target.regs tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
+
+let preassign_var (lang : Theory.language) (v : var) : var option =
+  if String.(Var.name v = "FP") then
+    begin
+      let l = Theory.Language.to_string lang in
+      if String.is_substring l ~substring:"A32" then
+        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
+      else if String.is_substring l ~substring:"T32" then
+        Some (Var.create ~is_virtual:false ~fresh:false "R7" (Var.typ v))
+      (* Needed for testing *)
+      else if String.is_substring l ~substring:"unknown" then None
+      else failwith ("Unsupported language: " ^ l)
+    end
+  else if String.(Var.name v = "PC") then
+    Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
+  else
+    None
+
+let preassign (lang : Theory.language) (ir : Ir.t) : Ir.t =
+    Ir.map_op_vars ir
+      ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
 
 let (@.) s1 s2 =
   let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in

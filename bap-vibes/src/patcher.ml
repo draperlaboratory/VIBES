@@ -8,8 +8,6 @@ module KB = Knowledge
 module In = Core_kernel.In_channel
 module Out = Core_kernel.Out_channel
 
-let (let*) x f = Result.bind x ~f
-
 type patch = {
   assembly : string list;
   orig_loc : int64;
@@ -45,6 +43,7 @@ let tgt_flag (l : Theory.language) : string =
 (** [binary_of_asm] uses external programs to convert assembly code to binary *)
 let binary_of_asm (lang : Theory.language) (assembly : string list)
   : (string, Kb_error.t) Result.t =
+  let (let*) x f = Result.bind x ~f in
   (* Write assembly to temporary file *)
   let asm_filename = Stdlib.Filename.temp_file "vibes-assembly" ".asm" in
   Out.write_lines asm_filename assembly;
@@ -97,7 +96,9 @@ let jmp_instr_size : int64 = 4L
 
 
 (** [build_patch] returns the binary of a patch with athe appropriate jumps *)
-let build_patch (l : Theory.language) (patch : placed_patch)
+let build_patch
+    (l : Theory.language)
+    (patch : placed_patch)
   : (string, Kb_error.t) Result.t =
   (* [abs_jmp] produces assembly for an unconditional jmp *)
   let abs_jmp (abs_addr : int64) : string =
@@ -304,19 +305,9 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
               orig_loc = Bitvec.to_int64 patch_point;
               orig_size = Int64.of_int patch_size}
 
-let get_lang_exn (patch : Data.Patch.t) : Theory.language KB.t =
-  let open KB.Let in
-  let* addr = Data.Patch.get_patch_point_exn patch in
-  (* FIMXE: remove this when we replace offsets with addresses *)
-  let addr = Bitvec.M32.(addr + !$"0x10000") in
-  let* tid = Theory.Label.for_addr addr in
-  let* lang = KB.collect Theory.Label.encoding tid in
-  KB.return lang
-
 (* Patches the original exe, to produce a patched exe. *)
 let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
-  let (let*) x f = KB.bind x ~f in
-
+  let open KB.Let in
   Events.(send @@ Header "Starting patcher");
   (* Get patch information (the address to start patching and the number
      of bytes to overwrite), and get the patch assembly. *)
@@ -327,7 +318,12 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let patch_list = Data.Patch_set.to_list patches in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
-  let* lang = get_lang_exn (Data.Patch_set.choose_exn patches) in
+  (* Slightly hacky way to get *some* address from our patch set. *)
+  let* addr =
+    let patch = Data.Patch_set.choose_exn patches in
+    Data.Patch.get_patch_point_exn patch
+  in
+  let* lang = Utils.get_lang_exn addr in
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
