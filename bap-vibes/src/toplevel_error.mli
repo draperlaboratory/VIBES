@@ -12,6 +12,8 @@ type t =
   | WP_result_unknown of string
   | Max_tries of int
   | No_value_in_KB of string
+  | Missing_func_orig of string
+  | Missing_func_patched of string
   | KB_error of Kb_error.t
   | Other of string
 
