@@ -70,19 +70,15 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Solver.set_minizinc_model_filepath
       obj (Some H.minizinc_model_filepath) >>= fun () ->
-    KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
     Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
-    | [] -> assert_failure "Result patch missing."
-    | (p :: []) -> KB.return p
-    | _ -> assert_failure "Multiple patches returned when one expected."
+    | [] -> Kb_error.fail Kb_error.Missing_patch_code
+    | (p :: _) -> KB.return p
   in
   let result = KB.run Data.Patch.patch computation KB.empty in
   let expected =
-    Kb_error.Problem (Kb_error.Missing_semantics "arm_eff not found in:()") in
+    Kb_error.Problem Kb_error.Missing_patch_code in
 
   H.assert_error
     ~printer:H.print_string_list_opt
