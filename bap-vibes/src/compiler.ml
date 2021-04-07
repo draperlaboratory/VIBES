@@ -27,9 +27,9 @@ let create_assembly
   (* Makes for slightly clearer errors *)
   let arm_eff = Result.of_option arm_eff
       ~error:(Kb_error.Missing_semantics err) in
-  (* For some reason Either is more fully featured *)
   let ir = Result.map ~f:Arm.ir arm_eff |>
            Result.map ~f:(Arm.preassign lang) |>
+           (* For some reason Either is more fully featured *)
            Result.to_either
   in
   let* (ir, new_sol) =
@@ -61,8 +61,7 @@ let compile_one
   Data.Patch.get_bir patch >>= fun bir ->
   Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
   let prev_sols = Set.to_list prev_sols in
-  let* patch_pt = Data.Patch.get_patch_point_exn patch in
-  let* lang = Utils.get_lang_exn patch_pt in
+  let* lang = Data.Patch.get_lang patch in
   create_assembly (solver prev_sols) lang bir >>= fun (assembly, new_sol) ->
   (* Stash the assembly in the KB. *)
   Data.Patch.set_assembly patch (Some assembly) >>= fun () ->

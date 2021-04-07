@@ -2,6 +2,7 @@
 
 open !Core_kernel
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
 open KB.Syntax
 open KB.Let
@@ -66,16 +67,27 @@ let extract_seed (value : Data.computed) (s : KB.state)
   Ok { patches }
 
 (* Create a patch set. *)
-let create_patches ?seed:(seed=None) (ps : Config.patch list)
+let create_patches
+    ?seed:(seed=None)
+    ~filename
+    ~addr_size
+    (ps : Config.patch list)
     : Data.Patch_set.t KB.t =
   let create_patch (seed : t option) (p : Config.patch)
       : Data.Patch.t KB.t =
     KB.Object.create Data.Patch.patch >>= fun obj ->
     let patch_name = Config.patch_name p in
+    let* lang =
+      Utils.get_lang
+        ~filename:filename
+        ~addr_size:addr_size
+        ~addr:(Config.patch_point p)
+    in
     Data.Patch.set_patch_name obj (Some patch_name) >>= fun () ->
     Data.Patch.set_patch_code obj (Some (Config.patch_code p)) >>= fun () ->
     Data.Patch.set_patch_point obj (Some (Config.patch_point p)) >>= fun () ->
     Data.Patch.set_patch_size obj (Some (Config.patch_size p)) >>= fun () ->
+    Data.Patch.set_lang obj lang >>= fun () ->
     let* () = match patch_with_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed -> Data.Patch.union_minizinc_solution
@@ -88,15 +100,28 @@ let create_patches ?seed:(seed=None) (ps : Config.patch list)
 
 (* Create a {!Data.t} instance from the provided {Config.t} data,
    possibly adding extra [seed] info. *)
-let init_KB ?seed:(seed=None) (config : Config.t) : Data.t KB.t =
+let init_KB
+    ?seed:(seed=None)
+    (config : Config.t)
+    (proj : Bap.Std.Project.t)
+  : Data.t KB.t =
   let exe = Config.exe config in
   let patch_list = Config.patches config in
   let func = Config.func config in
   let property = Config.property config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   let mzn_model_filepath = Config.minizinc_model_filepath config in
-  create_patches patch_list ~seed >>= fun patches ->
+  let target = Bap.Std.Project.target proj in
+  let addr_size = Theory.Target.bits target in
+
+  create_patches patch_list ~filename:exe ~addr_size:addr_size ~seed >>= fun patches ->
   KB.Object.create Data.cls >>= fun obj ->
+    Events.(send @@ Header "Starting exe ingester");
+
+  (* Get the address size of the project and stash it in the KB. *)
+  Data.Original_exe.set_addr_size obj (Some addr_size) >>= fun _ ->
+  Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));
+
   Data.Original_exe.set_filepath obj (Some exe) >>= fun () ->
   Data.Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
   Data.Patched_exe.set_patches obj patches >>= fun () ->

@@ -1,5 +1,6 @@
 (** Utilities for initializing/seeding the KB for a pipeline run. *)
 
+open Bap.Std
 open Bap_knowledge
 module KB = Knowledge
 
@@ -14,4 +15,4 @@ val extract_seed : Data.computed -> KB.state -> (t, Toplevel_error.t) result
 (** [init_KB config ~seed] initializes the KB for a new pipeline run.
     The KB {Data.t} object it returns is built from the provided [config],
     and any extra [seed] info. *)
-val init_KB : ?seed:(t option) -> Config.t -> Data.t KB.t
+val init_KB : ?seed:(t option) -> Config.t -> Project.t -> Data.t KB.t

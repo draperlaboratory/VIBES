@@ -85,7 +85,10 @@ module Patch = struct
 
   let assembly : (patch_cls, string list option) KB.slot =
     KB.Class.property ~package patch "patch-assembly" assembly_domain
-  
+
+  let lang : (patch_cls, Theory.language) KB.slot =
+    KB.Class.property ~package patch "patch-language" Theory.Language.domain
+
   let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
     KB.Class.property ~package patch "minizinc-solutions"
     minizinc_solution_domain
@@ -143,6 +146,12 @@ module Patch = struct
 
   let get_bir (obj : t) : Insn.t KB.t =
     KB.collect bir obj
+
+  let set_lang (obj : t) (data : Theory.language) : unit KB.t =
+    KB.provide lang obj data
+
+  let get_lang (obj : t) : Theory.language KB.t =
+    KB.collect lang obj
 
   let set_assembly (obj : t) (data : string list option) : unit KB.t =
     KB.provide assembly obj data

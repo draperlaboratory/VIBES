@@ -318,12 +318,10 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let patch_list = Data.Patch_set.to_list patches in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
-  (* Slightly hacky way to get *some* address from our patch set. *)
-  let* addr =
+  let* lang =
     let patch = Data.Patch_set.choose_exn patches in
-    Data.Patch.get_patch_point_exn patch
+    Data.Patch.get_lang patch
   in
-  let* lang = Utils.get_lang_exn addr in
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
