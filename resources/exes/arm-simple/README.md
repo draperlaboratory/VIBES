@@ -1,15 +1,28 @@
-# Simple
+# ARM Simple
 
-A simple program that can be used for demonstrating/testing the VIBES tool.
-This program consists of a `main` function, which returns `5`. 
-
-To clean and build:
+To clean, build, and patch:
 
     make
 
-To just build (without cleaning):
+To build:
 
     make build
+
+To patch:
+
+    make patch
+
+To run the executable and the patched executable (in qemu):
+
+    make run.test
+
+To create reference versions of the executables:
+
+    make reference
+
+To patch the reference executable:
+
+    make patch.reference
 
 To clean:
 

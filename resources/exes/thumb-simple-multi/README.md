@@ -1,15 +1,10 @@
-# Simple Multi
+# THUMB Simple Multi
 
-A simple program that can be used for demonstrating/testing the VIBES tool.
-This example demonstrates the application of multiple patch fragments.  The
-return values of the functions "f1" and "f2" are changed.  This causes main,
-which calls them, to take a different branch and return 1 rather than 0.
-
-To build and patch:
+To clean, build, and patch:
 
     make
 
-To just build (no patch):
+To build:
 
     make build
 
@@ -17,6 +12,18 @@ To patch:
 
     make patch
 
-To run in qemu:
+To run the executable and the patched executable (in qemu):
 
-    make test
+    make run.test
+
+To create reference versions of the executables:
+
+    make reference
+
+To patch the reference executable:
+
+    make patch.reference
+
+To clean:
+
+    make clean

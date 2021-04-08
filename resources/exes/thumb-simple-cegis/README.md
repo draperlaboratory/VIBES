@@ -1,4 +1,4 @@
-# ARM Simple Multi
+# THUMB Simple CEGIS
 
 To clean, build, and patch:
 

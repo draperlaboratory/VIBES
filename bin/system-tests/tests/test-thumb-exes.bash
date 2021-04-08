@@ -1,11 +1,11 @@
 # --------------------------------------------------------------
 #
-# This script tests the "arm-*" exes.
+# This script tests the "thumb-*" exes.
 #
 # --------------------------------------------------------------
 
-test_arm_simple () {
-    local TEST_DIR="${EXES_DIR}/arm-simple"
+test_thumb_simple () {
+    local TEST_DIR="${EXES_DIR}/thumb-simple"
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
@@ -22,8 +22,8 @@ test_arm_simple () {
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
 
-test_arm_simple_cegis () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-cegis"
+test_thumb_simple_cegis () {
+    local TEST_DIR="${EXES_DIR}/thumb-simple-cegis"
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
@@ -40,8 +40,8 @@ test_arm_simple_cegis () {
     run_arm_exe "${TEST_PATCH_EXE}" 1
 }
 
-test_arm_simple_compiled () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-compiled"
+test_thumb_simple_compiled () {
+    local TEST_DIR="${EXES_DIR}/thumb-simple-compiled"
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
@@ -58,8 +58,8 @@ test_arm_simple_compiled () {
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
 
-test_arm_simple_multi () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-multi"
+test_thumb_simple_multi () {
+    local TEST_DIR="${EXES_DIR}/thumb-simple-multi"
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
@@ -77,7 +77,7 @@ test_arm_simple_multi () {
 }
 
 # Run these tests:
-test_arm_simple
-test_arm_simple_cegis
-test_arm_simple_compiled
-test_arm_simple_multi
+test_thumb_simple
+test_thumb_simple_cegis
+test_thumb_simple_compiled
+test_thumb_simple_multi

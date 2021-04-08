@@ -4,7 +4,7 @@
 @
 @ To compile this:
 @
-@    arm-linux-gnueabi-gcc -marm main.s -o main
+@    arm-linux-gnueabi-gcc -mthumb main.s -o main
 @
 
 @ ----------------------------------------------
