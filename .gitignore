@@ -10,4 +10,4 @@ _build
 *.merlin
 main
 main.patched
-main.patched.by.vibes
+*.vibes

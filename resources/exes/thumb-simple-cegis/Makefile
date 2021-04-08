@@ -1,4 +1,5 @@
-SRC := main.c
+SRC := main.s
+OBJ := main.o
 
 PROG := main
 PATCHED_PROG := main.patched
@@ -22,10 +23,9 @@ all: clean build patch
 #####################################################
 
 $(PROG): $(SRC)
-	arm-linux-gnueabi-gcc -marm $(SRC) -o $(PROG)
+	arm-linux-gnueabi-gcc -mthumb $(SRC) -o $(PROG)
 
 build: $(PROG)
-
 
 
 #####################################################
@@ -43,9 +43,9 @@ clean:
 
 $(PATCHED_PROG): $(PROG)
 	bap vibes $(PROG) \
-                --config=config.json \
-                -o $(PATCHED_PROG) \
-                --verbose
+		--config=config.json \
+		-o $(PATCHED_PROG) \
+		--verbose
 	chmod +x $(PATCHED_PROG)
 
 patch: $(PATCHED_PROG)
@@ -57,9 +57,9 @@ patch: $(PATCHED_PROG)
 
 $(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
 	bap vibes $(REF_PROG) \
-                --config=config.json \
-                -o $(PATCHED_PROG_FOR_TESTING) \
-                --verbose
+		--config=config.json \
+		-o $(PATCHED_PROG_FOR_TESTING) \
+		--verbose
 	chmod +x $(PATCHED_PROG_FOR_TESTING)
 
 patch.reference: $(PATCHED_PROG_FOR_TESTING)
