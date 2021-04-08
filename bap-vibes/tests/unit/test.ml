@@ -1,7 +1,6 @@
 open OUnit2
 
 let suite = "Full suite" >::: [
-    "Exe_info" >::: Test_exe_info.suite;
     "Patch_ingester" >::: Test_patch_ingester.suite;
     "Compiler" >::: Test_compiler.suite;
     "Ir" >::: Test_ir.suite;
