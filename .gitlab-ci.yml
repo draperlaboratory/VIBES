@@ -18,6 +18,9 @@ run_tests:
     # Source environment variables.
     - . bin/ci/lib/env.bash
 
+    # Install the vibes tool.
+    - make
+
     # Run the VIBES unit and integration tests.
     - bash -x bin/ci/exec/run-tests.bash
 
