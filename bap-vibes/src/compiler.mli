@@ -7,12 +7,17 @@
 open Bap_knowledge
 module KB = Knowledge
 
-(** [compile obj] converts the patch (which is BIL) associated with the
+(** [compile_ir obj] converts the patch (which is BIL) associated with the
+    provided [obj] into VIBES IR. It stores this IR
+    into slots of the patches of the [obj]. *)
+    val compile_ir : Data.t -> unit KB.t
+
+(** [compile_assembly obj] converts the patch IR associated with the
     provided [obj] into assembly. It stores this assembly and the minizinc
-    solution into slots of the patches of the [obj]. [compile] also takes
+    solution into slots of the patches of the [obj]. [compile_assembly] also takes
     an optional [solver] parameter for unit testing which defaults
     to [Minizinc.run_minizinc] *)
 val compile_assembly : ?solver:(string -> Minizinc.sol list -> Ir.t ->
   (Ir.t * Minizinc.sol) KB.t) -> Data.t -> unit KB.t
 
-val compile_ir : Data.t -> unit KB.t
+

@@ -19,13 +19,6 @@ let optimized solver =
 let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
     (ir : Ir.t) : (string list * Minizinc.sol) KB.t =
   optimized solver ir >>= fun (ir, new_sol) ->
-  (* let* (ir, new_sol) =
-   Either.value_map
-      (* run the peephole optimizer here *)
-      ~first:(optimized solver)
-      ~second:Kb_error.fail
-      (Ok ir) 
-  in *)
   let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return (assembly, new_sol)
