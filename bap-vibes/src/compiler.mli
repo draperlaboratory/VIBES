@@ -12,5 +12,7 @@ module KB = Knowledge
     solution into slots of the patches of the [obj]. [compile] also takes
     an optional [solver] parameter for unit testing which defaults
     to [Minizinc.run_minizinc] *)
-val compile : ?solver:(string -> Minizinc.sol list -> Ir.t ->
+val compile_assembly : ?solver:(string -> Minizinc.sol list -> Ir.t ->
   (Ir.t * Minizinc.sol) KB.t) -> Data.t -> unit KB.t
+
+val compile_ir : Data.t -> unit KB.t

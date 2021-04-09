@@ -22,11 +22,22 @@ let halt_if_too_many (count : int) (max_tries : int option)
 (* This function triggers all the steps that produce a patched exe.
    This sequence of steps is performed inside a KB computation, and
    so this function is called by [KB.run] below. *)
+let init_vibes (config : Config.t) (proj : project)
+   : Data.t KB.t =
+ let* obj = Seeder.init_KB config ~seed:None in
+ let* () = Exe_info.extract obj proj in
+ let* () = Patch_ingester.ingest obj in
+ let* () = Compiler.compile_ir obj in
+ KB.return obj
+
+(* This function triggers all the steps that produce a patched exe.
+   This sequence of steps is performed inside a KB computation, and
+   so this function is called by [KB.run] below. *)
 let create_patch ?seed:(seed=None) (config : Config.t) (proj : project)
     : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed in
   let* () = Patch_ingester.ingest obj in
-  let* () = Compiler.compile obj in
+  let* () = Compiler.compile_assembly obj in
   let* () = Patcher.patch obj in
   KB.return obj
 
@@ -97,7 +108,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
 (* This is the main CEGIS loop. It computes a patch (via a [KB.run]),
    and it verifies the patch. If the patch is correct, it returns the
    filepath of the patched exe. If incorrect, it runs again. *)
-let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) ?seed:(seed=None)
+let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) ?seed:(seed = None)
     (config : Config.t) (orig_proj : project) (orig_prog : Program.t) 
     (state : KB.state) : (string, Toplevel_error.t) result =
 
@@ -136,4 +147,7 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
 
   let state = Toplevel.current () in
   let max_tries = Config.max_tries config in
-  cegis config orig_proj orig_prog state ~max_tries
+  let computation = init_vibes config orig_proj in
+  let+ obj, state = run_KB_computation computation state in
+  let+ seed = Seeder.extract_seed obj state in
+  cegis config orig_proj orig_prog state ~max_tries ~seed:(Some seed)
