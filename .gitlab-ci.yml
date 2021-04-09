@@ -10,21 +10,22 @@ run_tests:
   script:
 
     # Install APT dependencies.
-    - sudo -E apt install -y qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+    - >-
+      sudo -E apt install -y
+      qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
     # Install other dependencies (non-sudo).
-    - bash -x bin/ci/exec/install-dependencies.bash
+    - bash -x bin/setup/install-dependencies.bash
 
     # Source environment variables.
-    - . bin/ci/lib/env.bash
+    - . bin/common-lib/env.bash
 
     # Install the vibes tool.
     - make
 
-    # Run the VIBES unit and integration tests.
-    - bash -x bin/ci/exec/run-tests.bash
-
-    # Run the VIBES system tests.
+    # Run the various tests.
+    - bash -x bin/unit-tests/run-tests.bash --report-results
+    - bash -x bin/integration-tests/run-tests.bash --report-results
     - bash -x bin/system-tests/exec/run-tests.bash --report-results
 
     - echo "Done"
