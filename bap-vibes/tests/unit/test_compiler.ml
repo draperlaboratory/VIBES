@@ -29,7 +29,8 @@ let test_compile (_ : test_ctxt) : unit =
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the compiler. *)
-    Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
+    Compiler.compile_ir obj >>= fun _ ->
+    Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
@@ -52,7 +53,8 @@ let test_compile_with_no_minizinc_model_filepath (_ : test_ctxt) : unit =
   (* Run the compiler. *)
   let computation =
     H.obj () >>= fun obj ->
-    Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
+    Compiler.compile_ir obj >>= fun _ ->
+    Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in
@@ -70,7 +72,11 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Solver.set_minizinc_model_filepath
       obj (Some H.minizinc_model_filepath) >>= fun () ->
-    Compiler.compile ~solver:dummy_solver obj >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+    Data.Patched_exe.set_patches obj
+      (Data.Patch_set.singleton patch) >>= fun _ ->
+    Compiler.compile_ir obj >>= fun _ ->
+    Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> Kb_error.fail Kb_error.Missing_patch_code
