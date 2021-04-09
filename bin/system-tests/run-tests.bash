@@ -1,6 +1,6 @@
 # --------------------------------------------------------------
 #
-# Run the unit tests.
+# Run the system tests.
 #
 # --------------------------------------------------------------
 
@@ -8,10 +8,12 @@
 THIS_SCRIPT="${BASH_SOURCE[0]}"
 THIS_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
 COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
+TESTS_DIR="$(cd "${THIS_DIR}/tests" && pwd)"
 
 # Include the relevant libraries.
 . "${COMMON_LIB_DIR}/utils.bash"
 . "${COMMON_LIB_DIR}/slack.bash"
+. "${COMMON_LIB_DIR}/system-testing.bash"
 
 # Report progress to slack?
 REPORT_RESULTS="false"
@@ -20,7 +22,7 @@ REPORT_RESULTS="false"
 usage () {
     echo "USAGE: bash $(get_me) [OPTIONS]"
     echo ""
-    echo "  Run the unit tests."
+    echo "  Run the system tests."
     echo ""
     echo "OPTIONS"
     echo "  -h | --help       Print this help and exit"
@@ -78,26 +80,30 @@ REPORT="$(report_file "${REPORT_RESULTS}")"
 bap_version
 git_commit
 
-echo ""
+# Note that we're starting the tests.
+print_test_startup_info
 
-# Prep for test runs.
-make clean -C "${REPO_ROOT}"/bap-vibes > "${REPORT_FILE}" 2>&1
+# Run every test.
+for FILEPATH in "${TESTS_DIR}"/test-*.bash; do
+    . ${FILEPATH}
+done
 
-# Run the unit tests.
-make test.unit -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
-TEST_RESULT="${?}"
-echo "REPORT:"
-cat "${REPORT_FILE}"
-if [[ "${TEST_RESULT}" != "0" ]]; then
-    echo "Unit tests failed" | tee "${MSG_FILE}"
+# Final report for the test results.
+print_summary
+
+# Report the results (if needed) and exit.
+if [[ "${TESTS_FINAL_STATUS}" == "FAILED" ]]; then
     if [[ "${REPORT_RESULTS}" == "true" ]]; then
+        echo "Posting results to slack..."
+        echo "System tests failed" > "${MSG_FILE}"
         report_to_slack
     fi
-    fail
     exit 1
 else
-    echo "Unit tests passed" | tee "${MSG_FILE}"
     if [[ "${REPORT_RESULTS}" == "true" ]]; then
+        echo "Posting results to slack..."
+        echo "System tests passed" > "${MSG_FILE}"
         report_to_slack
     fi
+    exit 0
 fi
