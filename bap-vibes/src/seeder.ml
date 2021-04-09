@@ -10,6 +10,7 @@ let (let+) x f = Result.bind x ~f
 
 (* Seed information about a particular patch. *)
 type patch = {
+  raw_ir : Ir.t;
   patch_name : string;
   minizinc_solutions : Minizinc.sol_set;
 }
@@ -43,7 +44,12 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
         begin
           let minizinc_solutions =
             KB.Value.get Data.Patch.minizinc_solutions value in
-          Ok { patch_name; minizinc_solutions }
+          match KB.Value.get Data.Patch.raw_ir value with
+          | None -> begin
+                    let msg = "No raw_ir in KB to use for seed info" in
+                    Error (Toplevel_error.No_value_in_KB msg)
+                    end
+          | Some raw_ir -> Ok { raw_ir; patch_name; minizinc_solutions }
         end
     end
 
@@ -78,8 +84,10 @@ let create_patches ?seed:(seed=None) (ps : Config.patch list)
     Data.Patch.set_patch_size obj (Some (Config.patch_size p)) >>= fun () ->
     let* () = match patch_with_name seed patch_name with
       | None -> KB.return ()
-      | Some patch_seed -> Data.Patch.union_minizinc_solution
-          obj patch_seed.minizinc_solutions
+      | Some patch_seed -> 
+          let* () = Data.Patch.union_minizinc_solution
+                    obj patch_seed.minizinc_solutions in
+          Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)
     in
     KB.return obj
   in

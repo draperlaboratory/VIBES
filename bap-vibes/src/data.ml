@@ -43,6 +43,11 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
     ~equal:(fun x y -> List.equal String.equal x y)
     "assembly-domain"
 
+(* Optional Ir domain for storing ir immediately after translation from core_theory *)
+   let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
+   ~equal:Ir.equal
+   "ir-domain"
+
 (* For storing sets of minizinc solutions *)
 let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t = 
   KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
@@ -76,6 +81,9 @@ module Patch = struct
 
   let bir : (patch_cls, Insn.t) KB.slot =
     KB.Class.property ~package patch "patch-bir" bir_domain
+  
+  let raw_ir : (patch_cls, Ir.t option) KB.slot =
+    KB.Class.property ~package patch "patch-raw-ir" ir_domain
 
   let patch_point : (patch_cls, Bitvec.t option) KB.slot =
     KB.Class.property ~package patch "patch-point" bitvec_domain
@@ -143,6 +151,12 @@ module Patch = struct
 
   let get_bir (obj : t) : Insn.t KB.t =
     KB.collect bir obj
+
+  let set_raw_ir (obj : t) (data : Ir.t option) : unit KB.t =
+    KB.provide raw_ir obj data
+
+  let get_raw_ir (obj : t) : Ir.t option KB.t =
+    KB.collect raw_ir obj
 
   let set_assembly (obj : t) (data : string list option) : unit KB.t =
     KB.provide assembly obj data

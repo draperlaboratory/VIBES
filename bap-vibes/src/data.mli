@@ -49,6 +49,7 @@ module Patch : sig
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
+  val raw_ir : (patch_cls, Ir.t option) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
 
@@ -70,6 +71,9 @@ module Patch : sig
 
   val set_bir : t -> insn -> unit KB.t
   val get_bir : t -> insn KB.t
+
+  val set_raw_ir : t -> Ir.t option -> unit KB.t
+  val get_raw_ir : t -> Ir.t option KB.t
 
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t
