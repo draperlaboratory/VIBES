@@ -15,12 +15,10 @@ run_tests:
       qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
     # Install other dependencies (non-sudo).
-    - bash -x bin/setup/install-dependencies.bash
+    - bash -x bin/setup/install-dependencies.bash --report-results
 
-    # Source environment variables.
+    # Source environment variables and install the vibes tool.
     - . bin/common-lib/env.bash
-
-    # Install the vibes tool.
     - make
 
     # Run the various tests.

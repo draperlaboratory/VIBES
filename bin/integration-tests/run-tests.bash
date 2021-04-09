@@ -6,8 +6,8 @@
 
 # Define some paths.
 THIS_SCRIPT="${BASH_SOURCE[0]}"
-SETUP_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
-COMMON_LIB_DIR="$(cd "${SETUP_DIR}/../common-lib" && pwd)"
+THIS_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
+COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
 
 # Include the relevant libraries.
 . "${COMMON_LIB_DIR}/utils.bash"
