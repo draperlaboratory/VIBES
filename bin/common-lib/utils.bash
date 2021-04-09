@@ -50,8 +50,8 @@ REPORT_FILE="${TMP_SCRATCH_DIR}/report.txt"
 SLACK_FILE="${TMP_SCRATCH_DIR}/data.json"
 BAP_VERSION_FILE="${TMP_SCRATCH_DIR}/bap-version.txt"
 GIT_COMMIT_FILE="${TMP_SCRATCH_DIR}/git-commit.txt"
-echo "No message yet" > "${MSG_FILE}"
-echo "Nothing to report yet" > "${REPORT_FILE}"
+echo "Initializing message...no message yet" > "${MSG_FILE}"
+echo "Initializing report...nothing to report yet" > "${REPORT_FILE}"
 echo '{"username":"None yet","text":"Nothing yet"}' > "${SLACK_FILE}"
 echo "No BAP version to report yet" > "${BAP_VERSION_FILE}"
 echo "No commit to report yet" > "${GIT_COMMIT_FILE}"
@@ -110,8 +110,12 @@ if [ ${?} -ne 0 ]; then
     return 1
 fi
 
+# Where are we?
+THIS_SCRIPT="${BASH_SOURCE[0]}"
+COMMON_LIB_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
+
 # Ensure we can find the root of the repo.
-REPO_ROOT="$(cd "${EXEC_DIR}"/../../../ && pwd)"
+REPO_ROOT="$(cd "${COMMON_LIB_DIR}"/../../ && pwd)"
 if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
     echo "Halting."
     echo "Cannot find the repo root."
@@ -119,6 +123,9 @@ if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
     echo "But could not find a .gitlab-ci.yml file."
     exit 1
 fi
+
+# Where these scripts are all kept.
+BIN_DIR="${REPO_ROOT}/bin"
 
 # Where the executables are kept.
 EXES_DIR="$(cd "${REPO_ROOT}/resources/exes" && pwd)"
