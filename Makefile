@@ -51,13 +51,13 @@ plugin.uninstall:
 #####################################################
 
 test.unit:
-	$(MAKE) test.unit -C $(LIB_DIR)
+	bash bin/unit-tests/run-tests.bash
 
 test.integration:
-	$(MAKE) test.integration -C $(LIB_DIR)
+	bash bin/integration-tests/run-tests.bash
 
 test.system: install
-	bash bin/system-tests/exec/run-tests.bash
+	bash bin/system-tests/run-tests.bash
 
 test:
 	$(MAKE) test.unit
