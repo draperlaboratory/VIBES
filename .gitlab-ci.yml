@@ -24,6 +24,6 @@ run_tests:
     # Run the various tests.
     - bash -x bin/unit-tests/run-tests.bash --report-results
     - bash -x bin/integration-tests/run-tests.bash --report-results
-    - bash -x bin/system-tests/exec/run-tests.bash --report-results
+    - bash -x bin/system-tests/run-tests.bash --report-results
 
     - echo "Done"
