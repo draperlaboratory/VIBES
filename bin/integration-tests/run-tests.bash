@@ -81,10 +81,10 @@ git_commit
 echo ""
 
 # Prep for test runs.
-make clean -C "${REPO_ROOT}"/bap-vibes > "${REPORT_FILE}" 2>&1
+make clean -C "${REPO_ROOT}"/bap-vibes 2>&1 | tee "${REPORT_FILE}"
 
 # Run the integration tests.
-make test.integration -C "${REPO_ROOT}" >> "${REPORT_FILE}" 2>&1
+make test.integration -C "${REPO_ROOT}" 2>&1 | tee -a "${REPORT_FILE}"
 TEST_RESULT="${?}"
 echo "REPORT:"
 cat "${REPORT_FILE}"
