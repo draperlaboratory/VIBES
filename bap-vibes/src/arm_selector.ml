@@ -40,6 +40,11 @@ let preassign_var (lang : Theory.language) (v : var) : var option =
   if String.(Var.name v = "FP") then
     begin
       let l = Theory.Language.to_string lang in
+      (* In LLVM-land, A32 designates a variety of ARM 32-bit
+         dialects, and T32 the Thumb 32-bit version. We then assign
+         R11 as the pre-assigned FP register on ARM, and R7 for Thumb,
+         keeping in line with the ABI (as far as i can tell).
+      *)
       if String.is_substring l ~substring:"A32" then
         Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
       else if String.is_substring l ~substring:"T32" then
