@@ -51,6 +51,9 @@ module Patch : sig
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
+  (* The language/encoding of the assembly, typically used to
+     distinguish between ARM and Thumb. *)
+  (* TODO: add the target as well. *)
   val lang : (patch_cls, Theory.language) KB.slot
   val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
 
