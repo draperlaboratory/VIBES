@@ -4,6 +4,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 
 module KB = Knowledge
 
@@ -50,6 +51,10 @@ module Patch : sig
   val patch_size : (patch_cls, int option) KB.slot
   val bir : (patch_cls, insn) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
+  (* The language/encoding of the assembly, typically used to
+     distinguish between ARM and Thumb. *)
+  (* TODO: add the target as well. *)
+  val lang : (patch_cls, Theory.language) KB.slot
   val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
@@ -74,6 +79,9 @@ module Patch : sig
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t
   val get_assembly_exn : t -> string list KB.t
+
+  val set_lang : t -> Theory.language -> unit KB.t
+  val get_lang : t -> Theory.language KB.t
 
   val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
   val add_minizinc_solution : t -> Minizinc.sol -> unit KB.t

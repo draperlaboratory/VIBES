@@ -24,8 +24,7 @@ let halt_if_too_many (count : int) (max_tries : int option)
    so this function is called by [KB.run] below. *)
 let create_patch ?seed:(seed=None) (config : Config.t) (proj : project)
     : Data.t KB.t =
-  let* obj = Seeder.init_KB config ~seed in
-  let* () = Exe_info.extract obj proj in
+  let* obj = Seeder.init_KB config proj ~seed in
   let* () = Patch_ingester.ingest obj in
   let* () = Compiler.compile obj in
   let* () = Patcher.patch obj in

@@ -2,7 +2,9 @@
 
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
+open KB.Let
 
 let cp (src_filepath : string) (dst_filepath : string) : unit =
   let buffer_size = 1026 in
@@ -69,3 +71,51 @@ let load_exe (filename : string)
 let get_func (prog : Program.t) (name : string) : Sub.t option =
   let subs = Term.enum sub_t prog in
   Seq.find ~f:(fun s -> String.equal (Sub.name s) name) subs
+
+let get_text_addr filename : string =
+  (* TODO: Surely there must be a better way *)
+  let open !Core_kernel in
+  let command =
+    Printf.sprintf
+      "readelf -S %s | grep text | awk '{print $5}'"
+      filename
+  in
+  let in_channel = Caml_unix.open_process_in command in
+  match In_channel.input_line in_channel with
+  | None -> failwith "get_text_addr: failed invocation to readelf"
+  | Some addr_string ->
+    Printf.sprintf "0x%s" addr_string
+
+let get_text_offset filename =
+  (* TODO: Surely there must be a better way *)
+  let open !Core_kernel in
+  let command =
+    Printf.sprintf
+      "readelf -S %s | grep text | awk '{print $6}'"
+      filename
+  in
+  let in_channel = Caml_unix.open_process_in command in
+  match In_channel.input_line in_channel with
+  | None -> failwith "get_text_offset: failed invocation to readelf"
+  | Some offset_string ->
+    Printf.sprintf "0x%s" offset_string
+
+(* Do some tedious invocations to readelf and some arithmetic to get
+   the address from an offset. *)
+let compute_offset_from_addr (filename : string) (addr_size : int) : Bitvec.t =
+  let module M = Bitvec.Make(struct let modulus = Bitvec.modulus addr_size end) in
+  let addr = filename |> get_text_addr |> Bitvec.of_string in
+  let offset = filename |> get_text_offset |> Bitvec.of_string in
+  M.(addr - offset)
+
+let get_lang
+    ~filename:(filename : string)
+    ~addr_size:(addr_size : int)
+    ~addr:(addr : Bitvec.t)
+  : Theory.language KB.t =
+  (* FIMXE: remove this when we replace offsets with addresses *)
+  let offset = compute_offset_from_addr filename addr_size in
+  let addr = Bitvec.M32.(addr + offset) in
+  let* tid = Theory.Label.for_addr addr in
+  let* lang = KB.collect Theory.Label.encoding tid in
+  KB.return lang
