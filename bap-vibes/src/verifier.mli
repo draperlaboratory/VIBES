@@ -11,6 +11,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_wp
+open Bap_core_theory
 
 (* A [result] record that a [verifier] function can return. *)
 type result = {
@@ -23,9 +24,10 @@ type result = {
   patch_sub : Sub.t;
 }
 
-(** A [verifier] function takes two subroutines and a correctness property,
-    it verifies their correctness, and it returns a {!result}. *)
-type verifier = sub term -> sub term -> Sexp.t -> result
+(** A [verifier] function takes a target, two subroutines and a
+   correctness property, it verifies their correctness, and it returns
+   a {!result}. *)
+type verifier = Theory.target -> sub term -> sub term -> Sexp.t -> result
 
 (** A [printer] function takes a [result] and prints it. *)
 type printer = result -> unit
@@ -36,8 +38,13 @@ type next_step = Done | Again
 (** [verify orig_prog patch_prog func property ~verifier ~printer] uses the
     [verifier] to verify that the [func] in the [orig_prog] and [patch_prog]
     satisfies the provided [property]. The [printer] is used to print the
-    verifier's results. *) 
-val verify : ?verifier:(verifier) -> ?printer:(printer) ->
-  orig_prog:Program.t -> patch_prog:Program.t ->
-  string -> Sexp.t ->
+    verifier's results. *)
+val verify :
+  ?verifier:(verifier) ->
+  ?printer:(printer) ->
+  orig_prog:Program.t ->
+  patch_prog:Program.t ->
+  Theory.target ->
+  func:string ->
+  Sexp.t ->
   (next_step, Toplevel_error.t) Core_kernel.result

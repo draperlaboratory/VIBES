@@ -8,6 +8,7 @@ let orig_proj = H.dummy_proj "orig_exe" ~name:H.func
 let orig_prog = H.prog_exn orig_proj
 let patch_proj = H.dummy_proj "patched_exe" ~name:H.func
 let patch_prog = H.prog_exn patch_proj
+let tgt = Bap_core_theory.Theory.Target.unknown
 
 (* A helper to print the results. *)
 let res_str r : string =
@@ -20,19 +21,19 @@ let res_str r : string =
 
 (* Test that the verifier works as expected when [WP] returns [UNSAT]. *)
 let test_verify_unsat (_ : test_ctxt) : unit =
-  let result = Verifier.verify H.func H.property
+  let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
     ~verifier:H.verify_unsat ~printer:H.verifier_printer
   in
-  let expected = Ok Verifier.Done in 
+  let expected = Ok Verifier.Done in
   let msg = Format.sprintf
-    "Expected [Ok Verifier.Done], but got %s" (res_str result) 
+    "Expected [Ok Verifier.Done], but got %s" (res_str result)
   in
   assert_bool msg (result = expected)
 
 (* Test that the verifier works as expected when [WP] returns [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
-  let result = Verifier.verify H.func H.property
+  let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
     ~verifier:H.verify_sat ~printer:H.verifier_printer
   in
@@ -44,7 +45,7 @@ let test_verify_sat (_ : test_ctxt) : unit =
 
 (* Test that the verifier works as expected when [WP] returns [UNKNOWN]. *)
 let test_verify_unknown (_ : test_ctxt) : unit =
-  let result = Verifier.verify H.func H.property
+  let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
     ~verifier:H.verify_unknown ~printer:H.verifier_printer
   in

@@ -3,6 +3,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_wp
+open Bap_core_theory
 
 (* A result record that a verifier can return. *)
 type result = {
@@ -18,7 +19,7 @@ type result = {
 let (let*) x f = Result.bind x ~f
 
 (* The type for a verifier used by the [verify] function. *)
-type verifier = Sub.t -> Sub.t -> Sexp.t -> result
+type verifier = Theory.target -> Sub.t -> Sub.t -> Sexp.t -> result
 
 (* The type for a printer used by the [printer] function. *)
 type printer = result -> unit
@@ -30,15 +31,15 @@ type next_step =
 
 (* A verifier that uses CBAT's WP library to verify the correctness
    property of the specified function in the original/patched executables. *)
-let wp_verifier (orig_sub : Sub.t) (patch_sub : Sub.t)
+let wp_verifier (tgt : Theory.target) (orig_sub : Sub.t) (patch_sub : Sub.t)
     (property : Sexp.t) : result =
 
   let z3_ctx = Environment.mk_ctx () in
   let var_gen = Environment.mk_var_gen () in
 
   (* FIXME: Get the arch from BAP. *)
-  let env_1 = Precondition.mk_env ~arch:`armv7 z3_ctx var_gen in
-  let env_2 = Precondition.mk_env ~arch:`armv7 z3_ctx var_gen in
+  let env_1 = Precondition.mk_env ~arch:tgt z3_ctx var_gen in
+  let env_2 = Precondition.mk_env ~arch:tgt z3_ctx var_gen in
   let env_2 = Environment.set_freshen env_2 true in
 
   let vars_1 = Precondition.get_vars env_1 orig_sub in
@@ -71,7 +72,7 @@ let naive_printer (r : result) : unit =
 
 (** Verifies the correctness of the patched exe relative to the original exe.
     Takes a [verifier] and a [printer], which it uses to actually verify
-    the exe and print the results. 
+    the exe and print the results.
 
     This function returns the [next_step] that the CEGIS loop should take:
 
@@ -82,8 +83,8 @@ let naive_printer (r : result) : unit =
               and the CEGIS loop should try again. *)
 let verify ?verifier:(verifier=wp_verifier) ?printer:(printer=naive_printer)
     ~orig_prog:(orig_prog : Program.t) ~patch_prog:(patch_prog : Program.t)
-    (func : string) (property : Sexp.t) 
-    : (next_step, Toplevel_error.t) Core_kernel.result = 
+    (tgt : Theory.target) ~func:(func : string) (property : Sexp.t)
+    : (next_step, Toplevel_error.t) Core_kernel.result =
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
@@ -91,7 +92,7 @@ let verify ?verifier:(verifier=wp_verifier) ?printer:(printer=naive_printer)
                     ~error:(Toplevel_error.Missing_func_orig func) in
   let* patch_sub = Result.of_option (Utils.get_func patch_prog func)
                      ~error:(Toplevel_error.Missing_func_patched func) in
-  let result = verifier orig_sub patch_sub property in
+  let result = verifier tgt orig_sub patch_sub property in
   printer result;
 
   match result.status with
