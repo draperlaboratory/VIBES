@@ -1,6 +1,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 open Bap_vibes
 open OUnit2
 
@@ -171,7 +172,7 @@ let print_bir (bir : Insn.t) =
   Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_unsat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.UNSATISFIABLE in
@@ -179,7 +180,7 @@ let verify_unsat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;
@@ -191,7 +192,7 @@ let verify_unsat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   }
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_sat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.SATISFIABLE in
@@ -199,7 +200,7 @@ let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;
@@ -211,7 +212,7 @@ let verify_sat (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   }
 
 (* A verifier function for testing. It always returns unknown. *)
-let verify_unknown (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_unknown (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.UNKNOWN in
@@ -219,7 +220,7 @@ let verify_unknown (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;

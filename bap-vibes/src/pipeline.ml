@@ -117,7 +117,8 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
 
   let func = Config.func config in
   let property = Config.property config in
-  match Verifier.verify func property ~orig_prog ~patch_prog with
+  let target = Project.target orig_proj in
+  match Verifier.verify target ~func:func property ~orig_prog ~patch_prog with
   | Ok Verifier.Done -> finalize_patched_exe value
   | Ok Verifier.Again ->
     begin
