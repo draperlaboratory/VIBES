@@ -180,7 +180,7 @@ let verify_unsat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;
@@ -200,7 +200,7 @@ let verify_sat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;
@@ -220,7 +220,7 @@ let verify_unknown (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sex
   let var_gen = Bap_wp.Environment.mk_var_gen () in
   let solver = Z3.Solver.mk_simple_solver ctx in
   let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~arch:tgt ctx var_gen in
+  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
   Verifier.{
     status = status;
     solver = solver;
