@@ -37,9 +37,8 @@ let wp_verifier (tgt : Theory.target) (orig_sub : Sub.t) (patch_sub : Sub.t)
   let z3_ctx = Environment.mk_ctx () in
   let var_gen = Environment.mk_var_gen () in
 
-  (* FIXME: Get the arch from BAP. *)
-  let env_1 = Precondition.mk_env ~arch:tgt z3_ctx var_gen in
-  let env_2 = Precondition.mk_env ~arch:tgt z3_ctx var_gen in
+  let env_1 = Precondition.mk_env ~target:tgt z3_ctx var_gen in
+  let env_2 = Precondition.mk_env ~target:tgt z3_ctx var_gen in
   let env_2 = Environment.set_freshen env_2 true in
 
   let vars_1 = Precondition.get_vars env_1 orig_sub in
