@@ -79,6 +79,7 @@ module Patch : sig
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t
   val get_raw_ir : t -> Ir.t option KB.t
+  val get_raw_ir_exn : t -> Ir.t KB.t
 
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t

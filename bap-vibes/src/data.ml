@@ -167,6 +167,12 @@ module Patch = struct
   let get_raw_ir (obj : t) : Ir.t option KB.t =
     KB.collect raw_ir obj
 
+  let get_raw_ir_exn (obj : t) : Ir.t KB.t =
+    get_raw_ir obj >>= fun result ->
+    match result with
+    | None -> Kb_error.fail Kb_error.Missing_raw_ir
+    | Some value -> KB.return value
+
   let set_assembly (obj : t) (data : string list option) : unit KB.t =
     KB.provide assembly obj data
 

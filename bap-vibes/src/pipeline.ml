@@ -19,18 +19,19 @@ let halt_if_too_many (count : int) (max_tries : int option)
     if count > n then Error (Toplevel_error.Max_tries n)
     else Ok ()
 
+(* This function parses the patch code and builds the initial patch IR. *)
 let init (config : Config.t) (proj : project) : Data.t KB.t =
  let* obj = Seeder.init_KB config proj ~seed:None in
  let* () = Patch_ingester.ingest obj in
  let* () = Compiler.compile_ir obj in
  KB.return obj
 
-(* This function triggers all the steps that produce a patched exe.
-   This sequence of steps is performed inside a KB computation, and
-   so this function is called by [KB.run] below. *)
+(* This function produces a patched exe. *)
 let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
     (proj : project) : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed:(Some seed) in
+    : Data.t KB.t =
+  let* obj = Seeder.init_KB config ~seed:(Some seed) in
   let* () = Compiler.compile_assembly obj in
   let* () = Patcher.patch obj in
   KB.return obj
@@ -99,20 +100,18 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
     end
   | Ok (value, new_state) -> Ok (value, new_state)
 
-(* This is the main CEGIS loop. It computes a patch (via a [KB.run]),
-   and it verifies the patch. If the patch is correct, it returns the
-   filepath of the patched exe. If incorrect, it runs again. *)
+(* This is the main CEGIS loop. It constructs a patched exe and verifies it.
+   If its correct, it returns the filepath. If not, it runs again. *)
 let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
     ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
     (orig_prog : Program.t) (state : KB.state)
     : (string, Toplevel_error.t) result =
-
   Events.(send @@ Header "Starting CEGIS iteration");
   Events.(send @@ Info (Printf.sprintf "Iteration: %d" count));
 
   let+ _ = halt_if_too_many count max_tries in
 
-  let computation = create_patched_exe config orig_proj ~seed in
+  let computation = create_patched_exe config ~seed in
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
