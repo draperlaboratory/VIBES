@@ -145,4 +145,4 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   let+ seed = Seeder.extract_seed obj new_state in
 
   let max_tries = Config.max_tries config in
-  cegis config orig_proj orig_prog new_state ~max_tries ~seed:seed
+  cegis config orig_proj orig_prog new_state ~max_tries ~seed
