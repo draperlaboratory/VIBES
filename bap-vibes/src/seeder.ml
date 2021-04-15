@@ -3,6 +3,7 @@
 open !Core_kernel
 open Bap_knowledge
 open Bap_core_theory
+
 module KB = Knowledge
 open KB.Syntax
 open KB.Let
@@ -46,10 +47,11 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
           let minizinc_solutions =
             KB.Value.get Data.Patch.minizinc_solutions value in
           match KB.Value.get Data.Patch.raw_ir value with
-          | None -> begin
-                    let msg = "No raw_ir in KB to use for seed info" in
-                    Error (Toplevel_error.No_value_in_KB msg)
-                    end
+          | None ->
+            begin
+              let msg = "No raw_ir in KB to use for seed info" in
+              Error (Toplevel_error.No_value_in_KB msg)
+            end
           | Some raw_ir -> Ok { raw_ir; patch_name; minizinc_solutions }
         end
     end
@@ -79,9 +81,8 @@ let create_patches
     ~addr_size
     (ps : Config.patch list)
     : Data.Patch_set.t KB.t =
-  let create_patch (seed : t option) (p : Config.patch)
-      : Data.Patch.t KB.t =
-    KB.Object.create Data.Patch.patch >>= fun obj ->
+  let create_patch (seed : t option) (p : Config.patch) : Data.Patch.t KB.t =
+    let* obj = KB.Object.create Data.Patch.patch in
     let patch_name = Config.patch_name p in
     let* lang =
       Utils.get_lang
@@ -89,17 +90,17 @@ let create_patches
         ~addr_size:addr_size
         ~addr:(Config.patch_point p)
     in
-    Data.Patch.set_patch_name obj (Some patch_name) >>= fun () ->
-    Data.Patch.set_patch_code obj (Some (Config.patch_code p)) >>= fun () ->
-    Data.Patch.set_patch_point obj (Some (Config.patch_point p)) >>= fun () ->
-    Data.Patch.set_patch_size obj (Some (Config.patch_size p)) >>= fun () ->
-    Data.Patch.set_lang obj lang >>= fun () ->
+    let* () = Data.Patch.set_patch_name obj (Some patch_name) in
+    let* () = Data.Patch.set_patch_code obj (Some (Config.patch_code p)) in
+    let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
+    let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
+    let* () = Data.Patch.set_lang obj lang in
     let* () = match patch_with_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed -> 
-          let* () = Data.Patch.union_minizinc_solution
-                    obj patch_seed.minizinc_solutions in
-          Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)
+        let* () = Data.Patch.union_minizinc_solution
+          obj patch_seed.minizinc_solutions in
+        Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)
     in
     KB.return obj
   in
@@ -113,7 +114,7 @@ let init_KB
     (config : Config.t)
     (proj : Bap.Std.Project.t)
   : Data.t KB.t =
-  let exe = Config.exe config in
+  let filename = Config.exe config in
   let patch_list = Config.patches config in
   let func = Config.func config in
   let property = Config.property config in
@@ -121,20 +122,15 @@ let init_KB
   let mzn_model_filepath = Config.minizinc_model_filepath config in
   let target = Bap.Std.Project.target proj in
   let addr_size = Theory.Target.bits target in
-
-  create_patches patch_list ~filename:exe ~addr_size:addr_size ~seed >>= fun patches ->
-  KB.Object.create Data.cls >>= fun obj ->
-    Events.(send @@ Header "Starting exe ingester");
-
-  (* Get the address size of the project and stash it in the KB. *)
-  Data.Original_exe.set_addr_size obj (Some addr_size) >>= fun _ ->
+  let* patches = create_patches patch_list ~filename ~addr_size ~seed in
+  let* obj = KB.Object.create Data.cls in
+  let* () = Data.Original_exe.set_filepath obj (Some filename) in
+  let* () = Data.Patched_exe.set_filepath obj patched_exe_filepath in
+  let* () = Data.Original_exe.set_addr_size obj (Some addr_size) in
+  let* () = Data.Patched_exe.set_patches obj patches in
+  let* () = Data.Solver.set_minizinc_model_filepath
+    obj (Some mzn_model_filepath) in
+  let* () = Data.Verifier.set_func obj (Some func) in
+  let* () = Data.Verifier.set_property obj (Some property) in
   Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));
-
-  Data.Original_exe.set_filepath obj (Some exe) >>= fun () ->
-  Data.Patched_exe.set_filepath obj patched_exe_filepath >>= fun () ->
-  Data.Patched_exe.set_patches obj patches >>= fun () ->
-  Data.Solver.set_minizinc_model_filepath
-    obj (Some mzn_model_filepath) >>= fun () ->
-  Data.Verifier.set_func obj (Some func) >>= fun () ->
-  Data.Verifier.set_property obj (Some property) >>= fun () ->
   KB.return obj

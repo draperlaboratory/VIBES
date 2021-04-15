@@ -19,12 +19,8 @@ let halt_if_too_many (count : int) (max_tries : int option)
     if count > n then Error (Toplevel_error.Max_tries n)
     else Ok ()
 
-(* This function triggers all the steps that produce a patched exe.
-   This sequence of steps is performed inside a KB computation, and
-   so this function is called by [KB.run] below. *)
-let init_vibes (config : Config.t) (proj : project)
-   : Data.t KB.t =
- let* obj = Seeder.init_KB config ~seed:None in
+let init (config : Config.t) (proj : project) : Data.t KB.t =
+ let* obj = Seeder.init_KB config proj ~seed:None in
  let* () = Patch_ingester.ingest obj in
  let* () = Compiler.compile_ir obj in
  KB.return obj
@@ -32,10 +28,9 @@ let init_vibes (config : Config.t) (proj : project)
 (* This function triggers all the steps that produce a patched exe.
    This sequence of steps is performed inside a KB computation, and
    so this function is called by [KB.run] below. *)
-let create_patch ~seed:(seed:Seeder.t) (config : Config.t) (proj : project)
-    : Data.t KB.t =
-  let* obj = Seeder.init_KB config ~seed:(Some seed) in
-  let* () = Patch_ingester.ingest obj in
+let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
+    (proj : project) : Data.t KB.t =
+  let* obj = Seeder.init_KB config proj ~seed:(Some seed) in
   let* () = Compiler.compile_assembly obj in
   let* () = Patcher.patch obj in
   KB.return obj
@@ -102,22 +97,23 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
       let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
-  | Ok (value, state') -> Ok (value, state')
+  | Ok (value, new_state) -> Ok (value, new_state)
 
 (* This is the main CEGIS loop. It computes a patch (via a [KB.run]),
    and it verifies the patch. If the patch is correct, it returns the
    filepath of the patched exe. If incorrect, it runs again. *)
-let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) ~seed:(seed : Seeder.t)
-    (config : Config.t) (orig_proj : project) (orig_prog : Program.t) 
-    (state : KB.state) : (string, Toplevel_error.t) result =
+let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
+    ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
+    (orig_prog : Program.t) (state : KB.state)
+    : (string, Toplevel_error.t) result =
 
   Events.(send @@ Header "Starting CEGIS iteration");
   Events.(send @@ Info (Printf.sprintf "Iteration: %d" count));
 
   let+ _ = halt_if_too_many count max_tries in
 
-  let computation = create_patch config orig_proj ~seed in
-  let+ value, state' = run_KB_computation computation state in
+  let computation = create_patched_exe config orig_proj ~seed in
+  let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
   let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
@@ -129,7 +125,7 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None) ~seed:(seed : Seeder.
   | Ok Verifier.Again ->
     begin
       let new_count = count + 1 in
-      let+ new_seed = Seeder.extract_seed value state' in
+      let+ new_seed = Seeder.extract_seed value new_state in
       cegis config orig_proj orig_prog state
         ~count:new_count ~max_tries ~seed:new_seed
     end
@@ -145,8 +141,9 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   let+ orig_proj, orig_prog = Utils.load_exe filepath in
 
   let state = Toplevel.current () in
+  let computation = init config orig_proj in
+  let+ obj, new_state = run_KB_computation computation state in
+  let+ seed = Seeder.extract_seed obj new_state in
+
   let max_tries = Config.max_tries config in
-  let computation = init_vibes config orig_proj in
-  let+ obj, state = run_KB_computation computation state in
-  let+ seed = Seeder.extract_seed obj state in
-  cegis config orig_proj orig_prog state ~max_tries ~seed:seed
+  cegis config orig_proj orig_prog new_state ~max_tries ~seed:seed
