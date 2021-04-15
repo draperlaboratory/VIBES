@@ -32,6 +32,7 @@ $(PROG): $(SRC)
 
 .PHONY: clean
 clean:
+<<<<<<< HEAD
 	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
 
 
@@ -103,3 +104,35 @@ run.patched-ref: $(PATCHED_REF_PROG)
 
 .PHONY: run.test
 run.test: run.orig run.patched
+=======
+	rm -f main main.patched
+
+patch: main main.patched
+
+main.patched:
+	bap vibes main \
+    --config=config.json \
+    -o main.patched \
+    --verbose
+	chmod +x main.patched
+
+run-orig: main
+	@echo "-----------------------------------------------------------------------"
+	@echo ""
+	@echo "  Running original program - make should say it's ignoring Error 5"
+	@echo ""
+	@echo "-----------------------------------------------------------------------"
+	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main
+	@echo ""
+
+run-patched: patch
+	@echo "-----------------------------------------------------------------------"
+	@echo ""
+	@echo "  Running patched program - make should say it's ignoring Error 3"
+	@echo ""
+	@echo "-----------------------------------------------------------------------"
+	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main.patched
+	@echo ""
+
+test: run-orig run-patched
+>>>>>>> Fixing raw_ir exception
