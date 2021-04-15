@@ -58,7 +58,7 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
 
 (* Given a bundle of [seed] info, find the seed info for the patch with
    the specified [name]. *)
-let patch_with_name (seed : t option) (name : string) : patch option =
+let get_patch_by_name (seed : t option) (name : string) : patch option =
   match seed with
   | None -> None
   | Some t ->
@@ -95,7 +95,7 @@ let create_patches
     let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
     let* () = Data.Patch.set_lang obj lang in
-    let* () = match patch_with_name seed patch_name with
+    let* () = match get_patch_by_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed -> 
         let* () = Data.Patch.union_minizinc_solution
