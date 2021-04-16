@@ -72,9 +72,6 @@ let test_compile_with_no_patch (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Solver.set_minizinc_model_filepath
       obj (Some H.minizinc_model_filepath) >>= fun () ->
-    KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
     Compiler.compile_ir obj >>= fun _ ->
     Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
