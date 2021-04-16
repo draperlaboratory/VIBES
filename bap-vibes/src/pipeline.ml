@@ -30,8 +30,6 @@ let init (config : Config.t) (proj : project) : Data.t KB.t =
 let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
     (proj : project) : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed:(Some seed) in
-    : Data.t KB.t =
-  let* obj = Seeder.init_KB config ~seed:(Some seed) in
   let* () = Compiler.compile_assembly obj in
   let* () = Patcher.patch obj in
   KB.return obj
