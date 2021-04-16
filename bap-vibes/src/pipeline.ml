@@ -52,7 +52,7 @@ let get_tmp_patched_exe_filepath (value : Data.computed)
 (* Extract the patched exe filepath from the [KB.run] result, and
    copy the patched exe to the user-specified location. Return the
    final filepath (or the relevant error). *)
-let finalize_patched_exe (value : Data.computed) 
+let finalize_patched_exe (value : Data.computed)
     : (string, Toplevel_error.t) result =
   let original_exe_filepath : string option =
     KB.Value.get Data.Original_exe.filepath value in
@@ -67,7 +67,7 @@ let finalize_patched_exe (value : Data.computed)
         Option.value user_filepath
           ~default:((Filename.basename orig_path) ^ ".patched") in
       Utils.cp tmp_path patched_exe_filepath;
-      Events.(send @@ Info 
+      Events.(send @@ Info
         (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
       Ok patched_exe_filepath
     end
@@ -92,7 +92,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
     begin
       let msg = Format.asprintf "%a\n" KB.Conflict.pp e in
       Events.(send @@ Info "An error occurred during a KB computation");
-      Events.(send @@ Info msg); 
+      Events.(send @@ Info msg);
       let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
@@ -109,7 +109,7 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
 
   let+ _ = halt_if_too_many count max_tries in
 
-  let computation = create_patched_exe config ~seed in
+  let computation = create_patched_exe config orig_proj ~seed in
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in

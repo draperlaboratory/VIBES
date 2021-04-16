@@ -31,7 +31,7 @@ let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
   let arm_eff = Result.of_option arm_eff
     ~error:(Kb_error.Missing_semantics err) in
-  let ir = 
+  let ir =
     Result.map ~f:Arm.ir arm_eff |>
     Result.map ~f:(Arm.preassign lang)
   in
@@ -48,7 +48,8 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   in
   Events.(send @@ Info info_str);
   Data.Patch.get_bir patch >>= fun bir ->
-  create_vibes_ir bir >>= fun ir ->
+  Data.Patch.get_lang patch >>= fun lang ->
+  create_vibes_ir lang bir >>= fun ir ->
   Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
   Events.(send @@ Info "The patch has the following VIBES IR:\n");
   Events.(send @@ Rule);
@@ -70,7 +71,7 @@ let compile_one_assembly
   Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
   let prev_sols = Set.to_list prev_sols in
   let* lang = Data.Patch.get_lang patch in
-  create_assembly (solver prev_sols) lang bir >>= fun (assembly, new_sol) ->
+  create_assembly (solver prev_sols) ir >>= fun (assembly, new_sol) ->
   Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
   Events.(send @@ Info "The patch has the following assembly:\n");
   Events.(send @@ Rule);
