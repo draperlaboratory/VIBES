@@ -70,7 +70,6 @@ let compile_one_assembly
   Data.Patch.get_raw_ir_exn patch >>= fun ir ->
   Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
   let prev_sols = Set.to_list prev_sols in
-  let* lang = Data.Patch.get_lang patch in
   create_assembly (solver prev_sols) ir >>= fun (assembly, new_sol) ->
   Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
   Events.(send @@ Info "The patch has the following assembly:\n");
