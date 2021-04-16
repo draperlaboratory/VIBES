@@ -77,7 +77,7 @@ let get_text_addr filename : string =
   let open !Core_kernel in
   let command =
     Printf.sprintf
-      "readelf -S %s | grep text | awk '{print $5}'"
+      "objdump -h %s | grep text | awk '{print $4}'"
       filename
   in
   let in_channel = Caml_unix.open_process_in command in
@@ -91,7 +91,7 @@ let get_text_offset filename =
   let open !Core_kernel in
   let command =
     Printf.sprintf
-      "readelf -S %s | grep text | awk '{print $6}'"
+      "objdump -h %s | grep text | awk '{print $6}'"
       filename
   in
   let in_channel = Caml_unix.open_process_in command in
