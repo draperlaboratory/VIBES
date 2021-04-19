@@ -162,7 +162,12 @@ type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
        Implement latency
 
 *)
-let serialize_mzn_params (vir : Ir.t) (prev_sols : sol list): mzn_params_serial * serialization_info =
+let serialize_mzn_params
+    (tgt : Theory.target)
+    (lang : Theory.language)
+    (vir : Ir.t)
+    (prev_sols : sol list)
+  : mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
   let temps = Var.Set.to_list params.temps in
   let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
@@ -183,12 +188,11 @@ let serialize_mzn_params (vir : Ir.t) (prev_sols : sol list): mzn_params_serial 
     | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
     | _ -> failwith "width unimplemented for Mem or Unk"
   in
+  let regs = Arm_selector.gpr tgt lang |> Set.to_list in
+  let regs = List.map ~f:Var.sexp_of_t regs in
+  let regs = List.map ~f:Sexp.to_string regs in
   {
-    reg_t = mzn_enum_def_of_list
-        (List.map
-           ~f:(fun r -> Var.sexp_of_t r |>
-                        Sexp.to_string)
-           (Arm_selector.gpr |> Set.to_list));
+    reg_t = mzn_enum_def_of_list regs;
     opcode_t = mzn_enum_def_of_list opcodes;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
@@ -353,7 +357,13 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
-let run_minizinc (model_filepath : string) (prev_sols : sol list) (vir : Ir.t) : (Ir.t * sol) KB.t =
+let run_minizinc
+    (tgt : Theory.target)
+    (lang : Theory.language)
+    ~filepath:(model_filepath : string)
+    (prev_sols : sol list)
+    (vir : Ir.t)
+  : (Ir.t * sol) KB.t =
   let params_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
   let solution_filepath =
@@ -362,7 +372,7 @@ let run_minizinc (model_filepath : string) (prev_sols : sol list) (vir : Ir.t) :
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let params, name_maps = serialize_mzn_params vir_clean prev_sols in
+  let params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols in
   Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filepath;
