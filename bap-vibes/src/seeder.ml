@@ -29,7 +29,7 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
   match KB.run Data.Patch.patch (KB.return p) s with
   | Error e ->
     begin
-      let msg = Format.asprintf 
+      let msg = Format.asprintf
         "(KB.return patch) failed in KB: %a" KB.Conflict.pp e in
       let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
@@ -90,14 +90,21 @@ let create_patches
         ~addr_size:addr_size
         ~addr:(Config.patch_point p)
     in
+    let* tgt =
+      Utils.get_target
+        ~filename:filename
+        ~addr_size:addr_size
+        ~addr:(Config.patch_point p)
+    in
     let* () = Data.Patch.set_patch_name obj (Some patch_name) in
     let* () = Data.Patch.set_patch_code obj (Some (Config.patch_code p)) in
     let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
     let* () = Data.Patch.set_lang obj lang in
+    let* () = Data.Patch.set_target obj tgt in
     let* () = match get_patch_by_name seed patch_name with
       | None -> KB.return ()
-      | Some patch_seed -> 
+      | Some patch_seed ->
         let* () = Data.Patch.union_minizinc_solution
           obj patch_seed.minizinc_solutions in
         Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)

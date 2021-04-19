@@ -49,7 +49,7 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
    "ir-domain"
 
 (* For storing sets of minizinc solutions *)
-let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t = 
+let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t =
   KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
 
 (* General knowledge info for the package *)
@@ -81,7 +81,7 @@ module Patch = struct
 
   let bir : (patch_cls, Insn.t) KB.slot =
     KB.Class.property ~package patch "patch-bir" bir_domain
-  
+
   let raw_ir : (patch_cls, Ir.t option) KB.slot =
     KB.Class.property ~package patch "patch-raw-ir" ir_domain
 
@@ -96,6 +96,9 @@ module Patch = struct
 
   let lang : (patch_cls, Theory.language) KB.slot =
     KB.Class.property ~package patch "patch-language" Theory.Language.domain
+
+  let target : (patch_cls, Theory.target) KB.slot =
+    KB.Class.property ~package patch "patch-target" Theory.Target.domain
 
   let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
     KB.Class.property ~package patch "minizinc-solutions"
@@ -161,6 +164,12 @@ module Patch = struct
   let get_lang (obj : t) : Theory.language KB.t =
     KB.collect lang obj
 
+  let set_target (obj : t) (data : Theory.target) : unit KB.t =
+    KB.provide target obj data
+
+  let get_target (obj : t) : Theory.target KB.t =
+    KB.collect target obj
+
   let set_raw_ir (obj : t) (data : Ir.t option) : unit KB.t =
     KB.provide raw_ir obj data
 
@@ -185,14 +194,14 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_assembly
     | Some value -> KB.return value
 
-  let get_minizinc_solutions (obj : t) : Minizinc.sol_set KB.t = 
+  let get_minizinc_solutions (obj : t) : Minizinc.sol_set KB.t =
     KB.collect minizinc_solutions obj
-  
-  let add_minizinc_solution (obj : t) (sol : Minizinc.sol) : unit KB.t = 
+
+  let add_minizinc_solution (obj : t) (sol : Minizinc.sol) : unit KB.t =
     KB.provide minizinc_solutions obj (Set.singleton (module Minizinc.Sol) sol)
 
   let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
-      : unit KB.t = 
+      : unit KB.t =
     KB.provide minizinc_solutions obj sol_set
 
 end
