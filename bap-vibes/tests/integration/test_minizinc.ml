@@ -101,6 +101,9 @@ let ex1 : Ir.t = {
   blks = [blk1]
 }
 
+let arm_tgt = Arm_target.LE.v7
+let arm_lang = Arm_target.llvm_a32
+
 (* Ensure minizinc produces the expected output on our sample IR block. *)
 let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
   let model = Cli.minizinc_model_filepath ctxt in
@@ -113,7 +116,12 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
     (* Now run the compiler. *)
-    Minizinc.run_minizinc model [] ex1 >>= fun (vir, _) ->
+    Minizinc.run_minizinc
+      arm_tgt
+      arm_lang
+      ~filepath:model
+      []
+      ex1 >>= fun (vir, _) ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
       blk.data in
     assert_bool "Operations should be in order"

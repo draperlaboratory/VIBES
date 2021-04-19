@@ -59,7 +59,11 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
 
 (* Compile one patch from VIBES IR to assembly *)
 let compile_one_assembly
-    (solver : Minizinc.sol list -> Ir.t -> (Ir.t * Minizinc.sol) KB.t)
+    (solver : Theory.target ->
+     Theory.language ->
+     Minizinc.sol list ->
+     Ir.t ->
+     (Ir.t * Minizinc.sol) KB.t)
     (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
   let info_str =
@@ -69,8 +73,12 @@ let compile_one_assembly
   Events.(send @@ Info info_str);
   Data.Patch.get_raw_ir_exn patch >>= fun ir ->
   Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
+  Data.Patch.get_target patch >>= fun target ->
+  Data.Patch.get_lang patch >>= fun lang ->
   let prev_sols = Set.to_list prev_sols in
-  create_assembly (solver prev_sols) ir >>= fun (assembly, new_sol) ->
+  create_assembly
+    (solver target lang prev_sols)
+    ir >>= fun (assembly, new_sol) ->
   Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
   Events.(send @@ Info "The patch has the following assembly:\n");
   Events.(send @@ Rule);
@@ -100,6 +108,6 @@ let compile_assembly ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t)
   let size : string = string_of_int (Data.Patch_set.length patches) in
   Events.(send @@ Info ("There are " ^ size ^ " patch fragments."));
   Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(compile_one_assembly (solver mzn_model)) >>= fun _ ->
+    ~f:(compile_one_assembly (solver ~filepath:mzn_model)) >>= fun _ ->
   Events.(send @@ Info "Done.");
   KB.return ()

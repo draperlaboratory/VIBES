@@ -42,7 +42,7 @@ val ir : arm_eff -> Ir.t
 val peephole : Ir.t -> Ir.t
 
 (** Returns the set of registers suitable for register allocation on ARM *)
-val gpr : Bap.Std.Var.Set.t
+val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 
 (** Pre-assigns variables according to specific roles (PC, SP, etc) *)
 (* FIXME: make this happen at variable creation time *)

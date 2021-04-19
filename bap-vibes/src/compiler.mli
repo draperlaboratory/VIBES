@@ -5,6 +5,7 @@
     assembly (or something like it) for the target architecture. *)
 
 open Bap_knowledge
+open Bap_core_theory
 module KB = Knowledge
 
 (** [compile_ir obj] converts the patch (which is BIL) associated with the
@@ -17,7 +18,14 @@ module KB = Knowledge
     solution into slots of the patches of the [obj]. [compile_assembly] also takes
     an optional [solver] parameter for unit testing which defaults
     to [Minizinc.run_minizinc] *)
-val compile_assembly : ?solver:(string -> Minizinc.sol list -> Ir.t ->
-  (Ir.t * Minizinc.sol) KB.t) -> Data.t -> unit KB.t
+val compile_assembly :
+  ?solver:(Theory.target ->
+           Theory.language ->
+           filepath:string ->
+           Minizinc.sol list ->
+           Ir.t ->
+           (Ir.t * Minizinc.sol) KB.t) ->
+  Data.t ->
+  unit KB.t
 
 

@@ -38,12 +38,12 @@ let is_thumb (lang : Theory.language) : bool =
     in
     failwith err
 
-let gpr (* (tgt : Theory.target) (lang : Theory.language) *) =
-  let tgt = Arm_target.LE.v7 in
-  let lang = Theory.Language.read ~package:"bap" "llvm-A32" in
+let gpr (tgt : Theory.target) (lang : Theory.language) =
   let roles = [Theory.Role.Register.general] in
   let roles =
-    if is_thumb lang then
+    if not (Theory.Language.is_unknown lang) &&
+       is_thumb lang
+    then
       Theory.Role.read ~package:"arm" "thumb"::roles
     else roles
   in
