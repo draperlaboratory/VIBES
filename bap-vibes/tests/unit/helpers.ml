@@ -172,7 +172,8 @@ let print_bir (bir : Insn.t) =
   Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_unsat (tgt : Theory.target) (_orig_subs : Sub.t Seq.t) 
+  (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.UNSATISFIABLE in
@@ -192,7 +193,8 @@ let verify_unsat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.
   }
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_sat (tgt : Theory.target) (_orig_subs : Sub.t Seq.t)
+  (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.SATISFIABLE in
@@ -212,7 +214,8 @@ let verify_sat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   }
 
 (* A verifier function for testing. It always returns unknown. *)
-let verify_unknown (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
+let verify_unknown (tgt : Theory.target) (_orig_subs : Sub.t Seq.t)
+   (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
   : Verifier.result =
   (* Make dummy field for Verifier.result *)
   let status = Z3.Solver.UNKNOWN in

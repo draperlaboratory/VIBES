@@ -19,7 +19,8 @@ type result = {
 let (let*) x f = Result.bind x ~f
 
 (* The type for a verifier used by the [verify] function. *)
-type verifier = Theory.target -> Sub.t -> Sub.t -> Sexp.t -> result
+type verifier = Theory.target -> Sub.t Seq.t -> Sub.t Seq.t -> 
+                Sub.t -> Sub.t -> Sexp.t -> result
 
 (* The type for a printer used by the [printer] function. *)
 type printer = result -> unit
@@ -31,14 +32,19 @@ type next_step =
 
 (* A verifier that uses CBAT's WP library to verify the correctness
    property of the specified function in the original/patched executables. *)
-let wp_verifier (tgt : Theory.target) (orig_sub : Sub.t) (patch_sub : Sub.t)
-    (property : Sexp.t) : result =
+let wp_verifier (tgt : Theory.target) 
+    (orig_subs  : Sub.t Seq.t) (patch_subs : Sub.t Seq.t)
+    (orig_sub : Sub.t) (patch_sub : Sub.t) (property : Sexp.t) : result =
 
   let z3_ctx = Environment.mk_ctx () in
   let var_gen = Environment.mk_var_gen () in
-
-  let env_1 = Precondition.mk_env ~target:tgt z3_ctx var_gen in
-  let env_2 = Precondition.mk_env ~target:tgt z3_ctx var_gen in
+  let inline_spec : Bap.Std.Sub.t -> Theory.target -> 
+      Environment.fun_spec option = fun _sub _ -> 
+      Some {spec_name = "my_spec" ; spec = Environment.Inline} in
+  let env_1 = Precondition.mk_env ~subs:orig_subs ~specs:[inline_spec]
+              ~target:tgt z3_ctx var_gen in
+  let env_2 = Precondition.mk_env ~subs:patch_subs ~specs:[inline_spec]
+              ~target:tgt z3_ctx var_gen in
   let env_2 = Environment.set_freshen env_2 true in
 
   let vars_1 = Precondition.get_vars env_1 orig_sub in
@@ -56,7 +62,12 @@ let wp_verifier (tgt : Theory.target) (orig_sub : Sub.t) (patch_sub : Sub.t)
       ~original:(orig_sub, env_1) ~modified:(patch_sub, env_2) in
 
   let solver = Z3.Solver.mk_solver z3_ctx None in
-  let status = Precondition.check solver z3_ctx precond in
+  let declsyms_orig = Z3_utils.get_decls_and_symbols env_1 in
+  let declsyms_modif = Z3_utils.get_decls_and_symbols env_2 in
+  let declsyms = List.append declsyms_orig declsyms_modif in
+  let status = Precondition.check  ~ext_solver:("boolector", declsyms)
+               solver z3_ctx precond 
+  in
   { status; solver; precond;
     orig_env = env_1; patch_env = env_2;
     orig_sub; patch_sub }
@@ -91,7 +102,8 @@ let verify ?verifier:(verifier=wp_verifier) ?printer:(printer=naive_printer)
                     ~error:(Toplevel_error.Missing_func_orig func) in
   let* patch_sub = Result.of_option (Utils.get_func patch_prog func)
                      ~error:(Toplevel_error.Missing_func_patched func) in
-  let result = verifier tgt orig_sub patch_sub property in
+  let result = verifier tgt (Term.enum sub_t orig_prog)
+               (Term.enum sub_t patch_prog) orig_sub patch_sub property in
   printer result;
 
   match result.status with

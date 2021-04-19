@@ -27,7 +27,8 @@ type result = {
 (** A [verifier] function takes a target, two subroutines and a
    correctness property, it verifies their correctness, and it returns
    a {!result}. *)
-type verifier = Theory.target -> sub term -> sub term -> Sexp.t -> result
+type verifier = Theory.target -> Sub.t Seq.t -> Sub.t Seq.t ->
+                Sub.t -> Sub.t -> Sexp.t -> result
 
 (** A [printer] function takes a [result] and prints it. *)
 type printer = result -> unit
