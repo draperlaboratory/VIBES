@@ -119,3 +119,15 @@ let get_lang
   let* tid = Theory.Label.for_addr addr in
   let* lang = KB.collect Theory.Label.encoding tid in
   KB.return lang
+
+let get_target
+    ~filename:(filename : string)
+    ~addr_size:(addr_size : int)
+    ~addr:(addr : Bitvec.t)
+  : Theory.target KB.t =
+  (* FIMXE: remove this when we replace offsets with addresses *)
+  let offset = compute_offset_from_addr filename addr_size in
+  let addr = Bitvec.M32.(addr + offset) in
+  let* tid = Theory.Label.for_addr addr in
+  let* tgt = Theory.Label.target tid in
+  KB.return tgt

@@ -56,6 +56,7 @@ module Patch : sig
      distinguish between ARM and Thumb. *)
   (* TODO: add the target as well. *)
   val lang : (patch_cls, Theory.language) KB.slot
+  val target : (patch_cls, Theory.target) KB.slot
   val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
@@ -87,6 +88,9 @@ module Patch : sig
 
   val set_lang : t -> Theory.language -> unit KB.t
   val get_lang : t -> Theory.language KB.t
+
+  val set_target : t -> Theory.target -> unit KB.t
+  val get_target : t -> Theory.target KB.t
 
   val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
   val add_minizinc_solution : t -> Minizinc.sol -> unit KB.t
