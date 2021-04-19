@@ -24,34 +24,50 @@ let arm_pure =
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
-let gpr =
+let is_thumb (lang : Theory.language) : bool =
+  let l = Theory.Language.to_string lang in
+  (* In LLVM-land, A32 designates a variety of ARM 32-bit dialects,
+     and T32 the Thumb 32-bit version.  *)
+  if String.is_substring l ~substring:"A32" then
+    false
+  else if String.is_substring l ~substring:"T32" then
+    true
+  else
+    let err =
+      Format.asprintf "is_thumb: unsupported language: %s" l
+    in
+    failwith err
+
+let gpr (* (tgt : Theory.target) (lang : Theory.language) *) =
   let tgt = Arm_target.LE.v7 in
+  let lang = Theory.Language.read ~package:"bap" "llvm-A32" in
+  let roles = [Theory.Role.Register.general] in
+  let roles =
+    if is_thumb lang then
+      Theory.Role.read ~package:"arm" "thumb"::roles
+    else roles
+  in
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
-    if String.(is_prefix name ~prefix:"R" || name = "FP") then
+    if String.(is_prefix name ~prefix:"R") then
       Some v
     else None
   in
-  Theory.Target.regs tgt |>
+  Theory.Target.regs ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
 let preassign_var (lang : Theory.language) (v : var) : var option =
   if String.(Var.name v = "FP") then
     begin
-      let l = Theory.Language.to_string lang in
-      (* In LLVM-land, A32 designates a variety of ARM 32-bit
-         dialects, and T32 the Thumb 32-bit version. We then assign
-         R11 as the pre-assigned FP register on ARM, and R7 for Thumb,
-         keeping in line with the ABI (as far as i can tell).
-      *)
-      if String.is_substring l ~substring:"A32" then
-        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
-      else if String.is_substring l ~substring:"T32" then
+      (* We assign R11 as the pre-assigned FP register on ARM, and R7
+         for Thumb, keeping in line with the ABI (as far as i can
+         tell).  *)
+      if Theory.Language.is_unknown lang then None
+      else if is_thumb lang then
         Some (Var.create ~is_virtual:false ~fresh:false "R7" (Var.typ v))
-      (* Needed for testing *)
-      else if String.is_substring l ~substring:"unknown" then None
-      else failwith ("Unsupported language: " ^ l)
+      else
+        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     end
   else if String.(Var.name v = "PC") then
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
