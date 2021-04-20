@@ -192,7 +192,7 @@ which boolector > /dev/null 2>&1
 if [[ "${?}" != "0" ]]; then
     echo "Unable to find boolector" > "${MSG_FILE}"
     echo "Halting." > "${REPORT_FILE}"
-    echo "Minizinc does not seem to be installed.." >> "${REPORT_FILE}"
+    echo "Boolector does not seem to be installed.." >> "${REPORT_FILE}"
     echo "Tried 'which boolector' but got nothing." >> "${REPORT_FILE}"
     echo "$(cat "${MSG_FILE}")"
     echo "$(cat "${REPORT_FILE}")"
