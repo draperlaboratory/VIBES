@@ -3,6 +3,7 @@
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
+open Bap_demangle.Std
 module KB = Knowledge
 open KB.Let
 
@@ -70,7 +71,22 @@ let load_exe (filename : string)
 
 let get_func (prog : Program.t) (name : string) : Sub.t option =
   let subs = Term.enum sub_t prog in
-  Seq.find ~f:(fun s -> String.equal (Sub.name s) name) subs
+  let find_with eq =
+    Seq.find ~f:(fun s -> eq (Sub.name s) name) subs
+  in
+  (* FIXME: can we determine the source language here? *)
+  let find_simple =
+    find_with String.equal
+  in
+  if Option.is_none find_simple then
+    (* We try the C++ demangler here *)
+    let d = Demanglers.available () |> List.hd in
+    find_with
+      (fun s n ->
+         let s = Demangler.run d s in
+         String.equal s n)
+  else
+    find_simple
 
 let get_text_addr filename : string =
   (* TODO: Surely there must be a better way *)
