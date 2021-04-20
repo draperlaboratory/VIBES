@@ -45,9 +45,9 @@ let preassign_var (lang : Theory.language) (v : var) : var option =
          R11 as the pre-assigned FP register on ARM, and R7 for Thumb,
          keeping in line with the ABI (as far as i can tell).
       *)
-      if String.is_substring l ~substring:"A32" then
+      if String.is_substring l ~substring:"armv7" then
         Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
-      else if String.is_substring l ~substring:"T32" then
+      else if String.is_substring l ~substring:"thumbv7" then
         Some (Var.create ~is_virtual:false ~fresh:false "R7" (Var.typ v))
       (* Needed for testing *)
       else if String.is_substring l ~substring:"unknown" then None
