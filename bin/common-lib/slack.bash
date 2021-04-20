@@ -51,7 +51,12 @@ build_slack_payload () {
     MESSAGE="$(cat "${MSG_FILE}")"
     BAP="$(cat "${BAP_VERSION_FILE}")"
     COMMIT="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${GIT_COMMIT_FILE}")"
-    DATA="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${REPORT_FILE}")"
+    DATA="$(sed -z \
+        -e 's/\n/\\n/g' \
+        -e 's/\"/\\"/g' \
+        -e 's/'\''/\'\''/g' \
+        -e 's/'\`'/'\`'/g' \
+        "${REPORT_FILE}")"
     TEXT="STATUS: ${MESSAGE}"
     TEXT="${TEXT}\nBAP: ${BAP}"
     TEXT="${TEXT}\nCOMMIT:\n\`\`\`\n${COMMIT}\n\`\`\`"
