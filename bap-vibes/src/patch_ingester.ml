@@ -114,6 +114,14 @@ module CoreParser (Core : Theory.Core) = struct
     | Sexp.List (Sexp.Atom "-" :: _) ->
        Kb_error.fail (named_err st.nm
          "contains an invalid - (- takes exactly 2 arguments)")
+    | Sexp.List [Sexp.Atom ">>"; v1; v2] ->
+       let* v1 = parse_pure st v1 in
+       let* v2 = parse_pure st v2 in
+       (* We implement signed shift by default *)
+       KB.return (shiftr b1 v1 v2)
+    | Sexp.List (Sexp.Atom ">>" :: _) ->
+       Kb_error.fail (named_err st.nm
+         "contains an invalid >> (>> takes exactly 2 arguments)")
     | Sexp.List [Sexp.Atom "+"; v1; v2] ->
        let* v1 = parse_pure st v1 in
        let* v2 = parse_pure st v2 in
@@ -121,6 +129,20 @@ module CoreParser (Core : Theory.Core) = struct
     | Sexp.List (Sexp.Atom "+" :: _) ->
        Kb_error.fail (named_err st.nm
          "contains an invalid + (+ takes exactly 2 arguments)")
+    | Sexp.List [Sexp.Atom "*"; v1; v2] ->
+       let* v1 = parse_pure st v1 in
+       let* v2 = parse_pure st v2 in
+       KB.return (mul v1 v2)
+    | Sexp.List (Sexp.Atom "*" :: _) ->
+       Kb_error.fail (named_err st.nm
+         "contains an invalid * (* takes exactly 2 arguments)")
+    | Sexp.List [Sexp.Atom "/"; v1; v2] ->
+       let* v1 = parse_pure st v1 in
+       let* v2 = parse_pure st v2 in
+       KB.return (sdiv v1 v2)
+    | Sexp.List (Sexp.Atom "/" :: _) ->
+       Kb_error.fail (named_err st.nm
+         "contains an invalid / (/ takes exactly 2 arguments)")
     | _ ->
        Kb_error.fail (named_err st.nm
                       ("contains invalid value " ^ Sexp.to_string p))
