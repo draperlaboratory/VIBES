@@ -184,6 +184,8 @@ module ARM_ops = struct
     let str = op "str"
     let cmp = op "cmp"
     let beq = op "beq"
+    let sdiv = op "sdiv"
+    let udiv = op "udiv"
     (* let bne = op "bne" *)
     (* let ble = op "ble" *)
     (* let blt = op "blt" *)
@@ -274,6 +276,10 @@ module ARM_ops = struct
   let (+) arg1 arg2 = binop Ops.add (Imm 32) arg1 arg2
 
   let (-) arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
+
+  let (/) arg1 arg2 = binop Ops.sdiv (Imm 32) arg1 arg2
+
+  let udiv arg1 arg2 = binop Ops.udiv (Imm 32) arg1 arg2
 
   let shl _signed arg1 arg2 = binop Ops.lsl_ (Imm 32) arg1 arg2
 
@@ -441,6 +447,16 @@ struct
     let- a = a in
     let- b = b in
     pure @@ a - b
+
+  let sdiv a b =
+    let- a = a in
+    let- b = b in
+    pure @@ a / b
+
+  let udiv a b =
+    let- a = a in
+    let- b = b in
+    pure @@ udiv a b
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
     eff @@ b_instr lab
