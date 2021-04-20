@@ -171,6 +171,7 @@ module ARM_ops = struct
     (* let movw = op "movw" *)
     (* let bx = op "bx" *)
     let add = op "add"
+    let mul = op "mul"
     let sub = op "sub"
     let lsl_ = op "lsl"
     let lsr_ = op "lsr"
@@ -274,6 +275,8 @@ module ARM_ops = struct
     {op_val = Ir.Var res; op_eff = sem}
 
   let (+) arg1 arg2 = binop Ops.add (Imm 32) arg1 arg2
+
+  let ( * ) arg1 arg2 = binop Ops.mul (Imm 32) arg1 arg2
 
   let (-) arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
 
@@ -443,6 +446,11 @@ struct
     let- b = b in
     pure @@ a + b
 
+  let mul a b =
+    let- a = a in
+    let- b = b in
+    pure @@ a * b
+
   let sub a b =
     let- a = a in
     let- b = b in
@@ -453,7 +461,7 @@ struct
     let- b = b in
     pure @@ a / b
 
-  let udiv a b =
+  let div a b =
     let- a = a in
     let- b = b in
     pure @@ udiv a b
