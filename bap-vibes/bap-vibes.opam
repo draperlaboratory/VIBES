@@ -13,10 +13,14 @@ bug-reports: "https://github.com/draperlaboratory/VIBES-internal"
 dev-repo: "git://github.com/draperlaboratory/VIBES-internal"
 depends: [
   "bap"
+  "bap-arm"
   "bap_wp"
+  "core_kernel"
   "ounit2"
   "yojson"
   "ppx_deriving_yojson"
+  "ppx_jane"
+  "z3"
 ]
 build: [
   [make]
