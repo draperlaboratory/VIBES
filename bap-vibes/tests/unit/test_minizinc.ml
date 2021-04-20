@@ -12,7 +12,7 @@ open Ir
 let ex1 : Ir.t = Test_ir.vir1
 
 let arm_tgt = Theory.Target.get ~package:"bap" "armv7+le"
-let arm_lang = Theory.Language.read ~package:"bap" "llvm-A32"
+let arm_lang = Theory.Language.read ~package:"bap" "llvm-armv7"
 
 let (mzn_params1 , serial_info1) =
   Minizinc.serialize_mzn_params arm_tgt arm_lang ex1 []

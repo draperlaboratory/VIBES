@@ -26,11 +26,9 @@ let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
 let is_thumb (lang : Theory.language) : bool =
   let l = Theory.Language.to_string lang in
-  (* In LLVM-land, A32 designates a variety of ARM 32-bit dialects,
-     and T32 the Thumb 32-bit version.  *)
-  if String.is_substring l ~substring:"A32" then
+  if String.is_substring l ~substring:"arm" then
     false
-  else if String.is_substring l ~substring:"T32" then
+  else if String.is_substring l ~substring:"thumb" then
     true
   else
     let err =
