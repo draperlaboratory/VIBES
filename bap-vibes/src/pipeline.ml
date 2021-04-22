@@ -100,7 +100,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
 
 (* This is the main CEGIS loop. It constructs a patched exe and verifies it.
    If its correct, it returns the filepath. If not, it runs again. *)
-let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
+let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
     ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
     (orig_prog : Program.t) (state : KB.state)
     : (string, Toplevel_error.t) result =
