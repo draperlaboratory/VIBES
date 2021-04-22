@@ -46,6 +46,13 @@ let verify ?verifier:(verifier=wp_verifier)
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
+  let* func =
+    Result.(
+      func |>
+      Utils.get_func (fst orig_prog) |>
+      Result.of_option ~error:(Toplevel_error.Missing_func_orig func) >>|
+      Sub.name)
+  in
   let param = Params.default func in
   let post = Sexp.to_string property in
   let param =
