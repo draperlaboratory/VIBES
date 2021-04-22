@@ -113,12 +113,15 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
-  let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
 
+  let orig_exe_filepath = Config.exe config in
+  let patched_exe_filepath = tmp_patched_filepath in
   let func = Config.func config in
   let property = Config.property config in
-  let target = Project.target orig_proj in
-  match Verifier.verify target ~func:func property ~orig_prog ~patch_prog with
+
+  let result = Verifier.verify func
+    ~orig_exe_filepath ~patched_exe_filepath ~property in
+  match result with
   | Ok Verifier.Done -> finalize_patched_exe value
   | Ok Verifier.Again ->
     begin

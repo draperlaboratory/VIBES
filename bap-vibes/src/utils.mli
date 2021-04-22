@@ -8,8 +8,13 @@ module KB = Knowledge
 (** [cp src dst] copies the file from the [src] to the [dst] filepath. *)
 val cp : string -> string -> unit
 
-(** [run_process command args] runs [command] with [args] *)
+(** [run_process command args] runs [command] with [args], and ignores
+    the stdout/stderr *)
 val run_process : string -> string list -> (unit, Kb_error.t) Result.t
+
+(** [run_process_2 command] runs [command] in a shell, and returns the
+    stdout/stderr if successful *)
+val run_process_2 : string -> (string, Toplevel_error.t) Result.t
 
 (** [lift_kb_result] transforms a computation in the Result.t monad
     into the KB.t monad. *)

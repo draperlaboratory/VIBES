@@ -1,7 +1,6 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
-open Bap_core_theory
 open Bap_vibes
 open OUnit2
 
@@ -170,69 +169,3 @@ let print_prog_opt opt =
 (* Pretty print BIR. *)
 let print_bir (bir : Insn.t) =
   Format.asprintf "%a" Insn.pp_adt bir
-
-(* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (tgt : Theory.target) (_orig_subs : Sub.t Seq.t) 
-  (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.UNSATISFIABLE in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
-
-(* A verifier function for testing. It always returns sat. *)
-let verify_sat (tgt : Theory.target) (_orig_subs : Sub.t Seq.t)
-  (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.SATISFIABLE in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
-
-(* A verifier function for testing. It always returns unknown. *)
-let verify_unknown (tgt : Theory.target) (_orig_subs : Sub.t Seq.t)
-   (_patch_subs : Sub.t Seq.t) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.UNKNOWN in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
-
-(* A verifier printer function for testing. It does nothing. *)
-let verifier_printer (_ : Verifier.result) : unit = ()

@@ -4,11 +4,25 @@ open OUnit2
 module H = Helpers
 
 (* Some dummy values to use in the tests below. *)
-let orig_proj = H.dummy_proj "orig_exe" ~name:H.func
-let orig_prog = H.prog_exn orig_proj
-let patch_proj = H.dummy_proj "patched_exe" ~name:H.func
-let patch_prog = H.prog_exn patch_proj
-let tgt = Bap_core_theory.Theory.Target.unknown
+let orig_exe_filepath = H.original_exe
+let patched_exe_filepath = H.patched_exe
+let func = H.func
+let property = H.property
+
+(* Some dummy functions to use in the tests below. *)
+let verifier_printer _ = ()
+let verify_unsat
+    ~orig_exe_filepath:(_ : string) ~patched_exe_filepath:(_ : string)
+    ~property:(_ : Core_kernel.Sexp.t) (_ : string) 
+    : Verifier.result = Ok "UNSAT"
+let verify_sat
+    ~orig_exe_filepath:(_ : string) ~patched_exe_filepath:(_ : string)
+    ~property:(_ : Core_kernel.Sexp.t) (_ : string) 
+    : Verifier.result = Ok "SAT"
+let verify_unknown
+    ~orig_exe_filepath:(_ : string) ~patched_exe_filepath:(_ : string)
+    ~property:(_ : Core_kernel.Sexp.t) (_ : string) 
+    : Verifier.result = Ok "UNKNOWN"
 
 (* A helper to print the results. *)
 let res_str r : string =
@@ -21,9 +35,9 @@ let res_str r : string =
 
 (* Test that the verifier works as expected when [WP] returns [UNSAT]. *)
 let test_verify_unsat (_ : test_ctxt) : unit =
-  let result = Verifier.verify tgt ~func:H.func H.property
-    ~orig_prog ~patch_prog
-    ~verifier:H.verify_unsat ~printer:H.verifier_printer
+  let result = Verifier.verify func
+    ~verifier:verify_unsat ~printer:verifier_printer
+    ~orig_exe_filepath ~patched_exe_filepath ~property
   in
   let expected = Ok Verifier.Done in
   let msg = Format.sprintf
@@ -33,9 +47,9 @@ let test_verify_unsat (_ : test_ctxt) : unit =
 
 (* Test that the verifier works as expected when [WP] returns [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
-  let result = Verifier.verify tgt ~func:H.func H.property
-    ~orig_prog ~patch_prog
-    ~verifier:H.verify_sat ~printer:H.verifier_printer
+  let result = Verifier.verify func
+    ~verifier:verify_sat ~printer:verifier_printer
+    ~orig_exe_filepath ~patched_exe_filepath ~property
   in
   let expected = Ok Verifier.Again in
   let msg = Format.sprintf
@@ -45,9 +59,9 @@ let test_verify_sat (_ : test_ctxt) : unit =
 
 (* Test that the verifier works as expected when [WP] returns [UNKNOWN]. *)
 let test_verify_unknown (_ : test_ctxt) : unit =
-  let result = Verifier.verify tgt ~func:H.func H.property
-    ~orig_prog ~patch_prog
-    ~verifier:H.verify_unknown ~printer:H.verifier_printer
+  let result = Verifier.verify func
+    ~verifier:verify_unknown ~printer:verifier_printer
+    ~orig_exe_filepath ~patched_exe_filepath ~property
   in
   let msg = Format.sprintf
     "Expected [Error Toplevel_error.WP_result_unknown], but got %s"

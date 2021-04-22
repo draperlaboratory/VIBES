@@ -10,11 +10,13 @@ open !Core_kernel
 type t =
   | Failed_to_load_proj of string
   | WP_result_unknown of string
+  | WP_unexpected_output of string
   | Max_tries of int
   | No_value_in_KB of string
   | Missing_func_orig of string
   | Missing_func_patched of string
   | KB_error of Kb_error.t
+  | Unix_error of string
   | Other of string
 
 (** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)

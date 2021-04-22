@@ -29,6 +29,8 @@ let lift_kb_result (x : ('a, Kb_error.t) Result.t) : 'a KB.t =
   | Ok x -> KB.return x
   | Error e -> Kb_error.fail e
 
+(* [run_process "ls" ["-l"; "-a"]] will run "ls -l -a" in a shell.
+   It ignores any output, and is concerned only with the exit code. *)
 let run_process (command : string) (args : string list)
     : (unit, Kb_error.t) Result.t =
   let (as_stdout, as_stdin) =
@@ -51,6 +53,39 @@ let run_process (command : string) (args : string list)
       let msg =
         Format.sprintf "%s exited with unknown return status" command in
       Error (Kb_error.Unexpected_exit msg)
+    end
+
+(* [run_process_2 "echo foo"] will run [echo foo] in a shell,
+   collect the output, and return the result. *)
+let run_process_2 (command : string) :
+    (string, Toplevel_error.t) Result.t =
+  let cmd_with_err = Core_kernel.String.concat [command; "2>&1"] ~sep:" " in
+  let in_chan = Unix.open_process_in cmd_with_err in
+  let all_output = Stdio.In_channel.input_lines in_chan in
+  let status = Unix.close_process_in in_chan in
+  let output = Core_kernel.String.concat all_output ~sep:"\n" in
+  match status with
+  | WEXITED 0 -> Ok output
+  | WEXITED n -> 
+    begin
+      let msg =
+        Printf.sprintf "Command: %s\nExit code: %d\nError:\n  %s\n%!"
+        command n output in
+      Error (Toplevel_error.Unix_error msg)
+    end
+  | WSIGNALED n -> 
+    begin
+      let msg =
+        Printf.sprintf "Command: %s\nKilled by signal: %d\nError:\n  %s\n%!"
+        command n output in
+      Error (Toplevel_error.Unix_error msg)
+    end
+  | WSTOPPED n -> 
+    begin
+      let msg =
+        Printf.sprintf "Command: %s\nStopped by signal: %d\nError:\n  %s\n%!"
+        command n output in
+      Error (Toplevel_error.Unix_error msg)
     end
 
 let load_exe (filename : string)
