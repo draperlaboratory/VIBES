@@ -52,14 +52,10 @@ let wp_verifier ~orig_exe_filepath:(orig_exe_filepath : string)
     ~property:(property : Sexp.t) (func : string) 
     : (string, Toplevel_error.t) Result.t =
   let ext_solver = "--ext-solver-path=boolector" in
-  (* TODO
-     @Phil, using --inline=.* makes thumb/arm-simple-cegis fail.
-     What do you think it should be?
-  let inline = "--inline=.*" in *)
-  let inline = "" in
+  let inline = "--inline=.*" in
   let postcond = Sexp.to_string property in
   let wp_cmd = Printf.sprintf
-    "bap wp %s %s --func=%s %s %s--postcond='%s'"
+    "bap wp %s %s --func=%s %s %s --postcond='%s'"
     orig_exe_filepath patched_exe_filepath func ext_solver inline postcond
   in
   Utils.run_process_2 wp_cmd
