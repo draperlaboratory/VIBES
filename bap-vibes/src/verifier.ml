@@ -46,12 +46,13 @@ let verify ?verifier:(verifier=wp_verifier)
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
-  let param = Params.default func in
+  let param = Params.default ~func in
   let post = Sexp.to_string property in
   let param =
     {
       param with
       postcond = post;
+      inline = Some ".*";
       ext_solver_path = Some "boolector"
     }
   in
