@@ -9,6 +9,7 @@ open !Core_kernel
 (** Top-level errors that the VIBES pipeline can raise. *)
 type t =
   | Failed_to_load_proj of string
+  | WP_failure of Bap_main.error
   | WP_result_unknown of string
   | Max_tries of int
   | No_value_in_KB of string

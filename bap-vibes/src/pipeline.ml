@@ -100,7 +100,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
 
 (* This is the main CEGIS loop. It constructs a patched exe and verifies it.
    If its correct, it returns the filepath. If not, it runs again. *)
-let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
+let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
     ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
     (orig_prog : Program.t) (state : KB.state)
     : (string, Toplevel_error.t) result =
@@ -118,7 +118,12 @@ let rec cegis ?count:(count=0) ?max_tries:(max_tries=None)
   let func = Config.func config in
   let property = Config.property config in
   let target = Project.target orig_proj in
-  match Verifier.verify target ~func:func property ~orig_prog ~patch_prog with
+  let verif_res =
+    Verifier.verify target ~func:func property
+      ~orig_prog:(orig_prog, Config.exe config)
+      ~patch_prog:(patch_prog, tmp_patched_filepath)
+  in
+  match verif_res with
   | Ok Verifier.Done -> finalize_patched_exe value
   | Ok Verifier.Again ->
     begin
