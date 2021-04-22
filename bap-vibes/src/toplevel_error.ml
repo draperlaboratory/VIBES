@@ -5,6 +5,7 @@ open !Core_kernel
 (* Errors we want to raise explicitly that occur outside of a [KB.run]. *)
 type t =
   | Failed_to_load_proj of string
+  | WP_failure of Bap_main.error
   | WP_result_unknown of string
   | Max_tries of int
   | No_value_in_KB of string
@@ -17,6 +18,7 @@ type t =
 let pp ppf (e : t) =
   let msg = match e with
     | Failed_to_load_proj s -> s
+    | WP_failure e -> Format.asprintf "%a" Bap_main.Extension.Error.pp e
     | WP_result_unknown s -> s
     | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | No_value_in_KB s -> s
