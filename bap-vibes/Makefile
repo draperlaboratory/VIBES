@@ -27,7 +27,7 @@ INTG_TEST_SRC_FILES := \
 .DEFAULT_GOAL := all
 
 .PHONY: all
-all: 
+all:
 	$(MAKE) clean
 	$(MAKE) build
 
@@ -37,7 +37,7 @@ all:
 #####################################################
 
 .PHONY: clean
-clean: 
+clean:
 	dune clean
 
 
@@ -46,7 +46,7 @@ clean:
 #####################################################
 
 build: $(LIB_SRC_FILES)
-	dune build -p $(LIB)
+	dune build -p $(LIB) @install
 	@echo "" # Force a newline in terminal output
 
 
@@ -56,11 +56,11 @@ build: $(LIB_SRC_FILES)
 
 .PHONY: install
 install:
-	opam install .
+	dune install
 
 .PHONY: uninstall
 uninstall:
-	opam remove .
+	dune uninstall
 
 
 #####################################################

@@ -1,11 +1,13 @@
 (* Implements {!Utils}. *)
 
+open Result
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 open Bap_demangle.Std
 module KB = Knowledge
 open KB.Let
+
 
 let cp (src_filepath : string) (dst_filepath : string) : unit =
   let buffer_size = 1026 in
@@ -24,15 +26,15 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   Unix.close fd_out
 
 (* [lift_kb] lifts the Result monad to the KB monad *)
-let lift_kb_result (x : ('a, Kb_error.t) Result.t) : 'a KB.t =
+let lift_kb_result (x : ('a, Kb_error.t) result) : 'a KB.t =
   match x with
   | Ok x -> KB.return x
   | Error e -> Kb_error.fail e
 
 let run_process (command : string) (args : string list)
-    : (unit, Kb_error.t) Result.t =
+  : (unit, Kb_error.t) result =
   let (as_stdout, as_stdin) =
-  Unix.open_process (String.concat " "  (command :: args)) in
+    Unix.open_process (String.concat " "  (command :: args)) in
   let status = Unix.close_process (as_stdout, as_stdin) in
   match status with
   | WEXITED 0 -> Ok ()
@@ -54,7 +56,7 @@ let run_process (command : string) (args : string list)
     end
 
 let load_exe (filename : string)
-    : (project * Program.t, Toplevel_error.t) result =
+  : (project * Program.t, Toplevel_error.t) result =
   let input = Project.Input.file ~loader:"llvm" ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
