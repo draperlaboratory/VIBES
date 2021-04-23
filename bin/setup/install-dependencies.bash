@@ -142,7 +142,7 @@ if [[ "${?}" != "0" ]]; then
     fi
     curl -L "${MINIZINC_URL}" --output minizinc.tgz
     tar zxvf minizinc.tgz
-    cd "${CURRET_DIR}"
+    cd "${CURRENT_DIR}"
 fi
 
 # Make sure minizinc got installed.
