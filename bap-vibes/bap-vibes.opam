@@ -21,6 +21,7 @@ depends: [
   "ppx_deriving_yojson"
   "ppx_jane"
   "z3"
+  "result"
 ]
 build: [
   [make]
