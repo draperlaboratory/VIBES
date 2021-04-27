@@ -2,10 +2,10 @@
 
 open !Core_kernel
 open Bap.Std
-open Bap_wp
 open Bap_core_theory
 
-module Params = Run_parameters
+module Params = Bap_wp.Run_parameters
+module Runner = Bap_wp.Runner
 
 type status = Z3.Solver.status
 
@@ -13,8 +13,8 @@ let (let*) x f = Result.bind x ~f
 
 
 type verifier =
-  Run_parameters.t
-  -> (program term * Theory.target * string) list
+  Params.t
+  -> Runner.input list
   -> (status, Bap_main.error) result
 
 (* The next step the CEGIS loop should take. *)
@@ -53,7 +53,7 @@ let verify ?verifier:(verifier=wp_verifier)
       Result.of_option ~error:(Toplevel_error.Missing_func_orig func) >>|
       Sub.name)
   in
-  let param = Params.default func in
+  let param = Params.default ~func:func in
   let post = Sexp.to_string property in
   let param =
     {
@@ -64,9 +64,11 @@ let verify ?verifier:(verifier=wp_verifier)
   in
   let (prog1, name1) = orig_prog in
   let (prog2, name2) = patch_prog in
+  let input1 = Runner.{program = prog1; target = tgt; filename = name1} in
+  let input2 = Runner.{program = prog2; target = tgt; filename = name2} in
   let* status =
     verifier param
-      [(prog1, tgt, name1); (prog2, tgt, name2)]
+      [input1; input2]
   |> Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e)
   in
   match status with

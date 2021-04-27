@@ -23,7 +23,7 @@ let res_str r : string =
 let test_verify_unsat (_ : test_ctxt) : unit =
   let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
-    ~verifier:H.verify_unsat ~printer:H.verifier_printer
+    ~verifier:H.verify_unsat
   in
   let expected = Ok Verifier.Done in
   let msg = Format.sprintf
@@ -35,7 +35,7 @@ let test_verify_unsat (_ : test_ctxt) : unit =
 let test_verify_sat (_ : test_ctxt) : unit =
   let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
-    ~verifier:H.verify_sat ~printer:H.verifier_printer
+    ~verifier:H.verify_sat
   in
   let expected = Ok Verifier.Again in
   let msg = Format.sprintf
@@ -47,7 +47,7 @@ let test_verify_sat (_ : test_ctxt) : unit =
 let test_verify_unknown (_ : test_ctxt) : unit =
   let result = Verifier.verify tgt ~func:H.func H.property
     ~orig_prog ~patch_prog
-    ~verifier:H.verify_unknown ~printer:H.verifier_printer
+    ~verifier:H.verify_unknown
   in
   let msg = Format.sprintf
     "Expected [Error Toplevel_error.WP_result_unknown], but got %s"

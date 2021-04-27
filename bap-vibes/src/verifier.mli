@@ -21,7 +21,7 @@ type status = Z3.Solver.status
    a {!result}. *)
 type verifier =
   Run_parameters.t
-  -> (program term * Theory.target * string) list
+  -> Runner.input list
   -> (status, Bap_main.error) result
 
 (** Indicates whether the patching is done, or should be attempted again. *)
