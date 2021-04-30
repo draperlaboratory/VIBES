@@ -54,12 +54,10 @@ build: $(LIB_SRC_FILES)
 # INSTALL
 #####################################################
 
-.PHONY: install
-install:
+install: build
 	dune install
 
-.PHONY: uninstall
-uninstall:
+uninstall: build
 	dune uninstall
 
 
