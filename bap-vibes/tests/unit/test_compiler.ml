@@ -8,7 +8,8 @@ module KB = Knowledge
 module H = Helpers
 
 
-let dummy_solver _ _ vir = KB.return (vir, Test_minizinc.dummy_sol)
+let dummy_solver _ _ ~filepath:_ _ vir =
+  KB.return (vir, Test_minizinc.dummy_sol)
 
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =

@@ -1,10 +1,13 @@
 (* Implements {!Utils}. *)
 
+open Result
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
+open Bap_demangle.Std
 module KB = Knowledge
 open KB.Let
+
 
 let cp (src_filepath : string) (dst_filepath : string) : unit =
   let buffer_size = 1026 in
@@ -23,15 +26,15 @@ let cp (src_filepath : string) (dst_filepath : string) : unit =
   Unix.close fd_out
 
 (* [lift_kb] lifts the Result monad to the KB monad *)
-let lift_kb_result (x : ('a, Kb_error.t) Result.t) : 'a KB.t =
+let lift_kb_result (x : ('a, Kb_error.t) result) : 'a KB.t =
   match x with
   | Ok x -> KB.return x
   | Error e -> Kb_error.fail e
 
 let run_process (command : string) (args : string list)
-    : (unit, Kb_error.t) Result.t =
+  : (unit, Kb_error.t) result =
   let (as_stdout, as_stdin) =
-  Unix.open_process (String.concat " "  (command :: args)) in
+    Unix.open_process (String.concat " "  (command :: args)) in
   let status = Unix.close_process (as_stdout, as_stdin) in
   match status with
   | WEXITED 0 -> Ok ()
@@ -53,7 +56,7 @@ let run_process (command : string) (args : string list)
     end
 
 let load_exe (filename : string)
-    : (project * Program.t, Toplevel_error.t) result =
+  : (project * Program.t, Toplevel_error.t) result =
   let input = Project.Input.file ~loader:"llvm" ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
@@ -70,7 +73,22 @@ let load_exe (filename : string)
 
 let get_func (prog : Program.t) (name : string) : Sub.t option =
   let subs = Term.enum sub_t prog in
-  Seq.find ~f:(fun s -> String.equal (Sub.name s) name) subs
+  let find_with eq =
+    Seq.find ~f:(fun s -> eq (Sub.name s) name) subs
+  in
+  (* FIXME: can we determine the source language here? *)
+  let find_simple =
+    find_with String.equal
+  in
+  if Option.is_none find_simple then
+    (* We try the C++ demangler here *)
+    let d = Demanglers.available () |> List.hd in
+    find_with
+      (fun s n ->
+         let s = Demangler.run d s in
+         String.equal s n)
+  else
+    find_simple
 
 let get_text_addr filename : string =
   (* TODO: Surely there must be a better way *)

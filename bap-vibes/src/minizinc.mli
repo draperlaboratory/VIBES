@@ -1,6 +1,7 @@
 open Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 
 module KB = Knowledge
 
@@ -36,13 +37,22 @@ type sol = {
 } [@@deriving sexp, compare]
 
 (**
-   [run_minzinc minizinc_model_filepath ir] encodes the provided [ir] IR.t
-   to a json file, calls minizinc, and interpets the solution. It uses the
-   provided [minizinc_model_filepath] to run minizinc.
-   It will exclude the solutions in the [sol list] parameter.
+
+   [run_minzinc tgt lang minizinc_model_filepath ir] encodes the
+   provided [ir] IR.t for target [tgt] in language [lang] to a json
+   file, calls minizinc, and interpets the solution. It uses the
+   provided [minizinc_model_filepath] to run minizinc.  It will
+   exclude the solutions in the [sol list] parameter.
+
 *)
 
-val run_minizinc : string -> sol list -> Ir.t -> (Ir.t * sol) KB.t
+val run_minizinc :
+  Theory.target ->
+  Theory.language ->
+  filepath:string ->
+  sol list ->
+  Ir.t ->
+  (Ir.t * sol) KB.t
 
 (** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
@@ -108,7 +118,12 @@ type serialization_info = {
   operands : Var.t list;
 }
 
-val serialize_mzn_params : Ir.t -> sol list -> mzn_params_serial * serialization_info
+val serialize_mzn_params :
+  Theory.target ->
+  Theory.language ->
+  Ir.t ->
+  sol list ->
+  mzn_params_serial * serialization_info
 
 
 

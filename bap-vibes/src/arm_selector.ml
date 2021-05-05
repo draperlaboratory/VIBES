@@ -24,34 +24,48 @@ let arm_pure =
 
 let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
-let gpr =
-  let tgt = Arm_target.LE.v7 in
+let is_thumb (lang : Theory.language) : bool =
+  let l = Theory.Language.to_string lang in
+  if String.is_substring l ~substring:"arm" then
+    false
+  else if String.is_substring l ~substring:"thumb" then
+    true
+  else
+    let err =
+      Format.asprintf "is_thumb: unsupported language: %s" l
+    in
+    failwith err
+
+let gpr (tgt : Theory.target) (lang : Theory.language) =
+  let roles = [Theory.Role.Register.general] in
+  let roles =
+    if not (Theory.Language.is_unknown lang) &&
+       is_thumb lang
+    then
+      Theory.Role.read ~package:"arm" "thumb"::roles
+    else roles
+  in
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
-    if String.(is_prefix name ~prefix:"R" || name = "FP") then
+    if String.(is_prefix name ~prefix:"R") then
       Some v
     else None
   in
-  Theory.Target.regs tgt |>
+  Theory.Target.regs ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
 let preassign_var (lang : Theory.language) (v : var) : var option =
   if String.(Var.name v = "FP") then
     begin
-      let l = Theory.Language.to_string lang in
-      (* In LLVM-land, A32 designates a variety of ARM 32-bit
-         dialects, and T32 the Thumb 32-bit version. We then assign
-         R11 as the pre-assigned FP register on ARM, and R7 for Thumb,
-         keeping in line with the ABI (as far as i can tell).
-      *)
-      if String.is_substring l ~substring:"A32" then
-        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
-      else if String.is_substring l ~substring:"T32" then
+      (* We assign R11 as the pre-assigned FP register on ARM, and R7
+         for Thumb, keeping in line with the ABI (as far as i can
+         tell).  *)
+      if Theory.Language.is_unknown lang then None
+      else if is_thumb lang then
         Some (Var.create ~is_virtual:false ~fresh:false "R7" (Var.typ v))
-      (* Needed for testing *)
-      else if String.is_substring l ~substring:"unknown" then None
-      else failwith ("Unsupported language: " ^ l)
+      else
+        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     end
   else if String.(Var.name v = "PC") then
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
@@ -157,6 +171,7 @@ module ARM_ops = struct
     (* let movw = op "movw" *)
     (* let bx = op "bx" *)
     let add = op "add"
+    let mul = op "mul"
     let sub = op "sub"
     let lsl_ = op "lsl"
     let lsr_ = op "lsr"
@@ -170,6 +185,8 @@ module ARM_ops = struct
     let str = op "str"
     let cmp = op "cmp"
     let beq = op "beq"
+    let sdiv = op "sdiv"
+    let udiv = op "udiv"
     (* let bne = op "bne" *)
     (* let ble = op "ble" *)
     (* let blt = op "blt" *)
@@ -259,7 +276,13 @@ module ARM_ops = struct
 
   let (+) arg1 arg2 = binop Ops.add (Imm 32) arg1 arg2
 
+  let ( * ) arg1 arg2 = binop Ops.mul (Imm 32) arg1 arg2
+
   let (-) arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
+
+  let (/) arg1 arg2 = binop Ops.sdiv (Imm 32) arg1 arg2
+
+  let udiv arg1 arg2 = binop Ops.udiv (Imm 32) arg1 arg2
 
   let shl _signed arg1 arg2 = binop Ops.lsl_ (Imm 32) arg1 arg2
 
@@ -423,10 +446,25 @@ struct
     let- b = b in
     pure @@ a + b
 
+  let mul a b =
+    let- a = a in
+    let- b = b in
+    pure @@ a * b
+
   let sub a b =
     let- a = a in
     let- b = b in
     pure @@ a - b
+
+  let sdiv a b =
+    let- a = a in
+    let- b = b in
+    pure @@ a / b
+
+  let div a b =
+    let- a = a in
+    let- b = b in
+    pure @@ udiv a b
 
   let goto (lab : tid) : Theory.ctrl Theory.eff =
     eff @@ b_instr lab

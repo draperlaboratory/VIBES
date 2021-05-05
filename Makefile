@@ -2,7 +2,9 @@ LIB_DIR := bap-vibes
 PLUGIN_DIR := plugin
 
 VIBES_XDG_APP_DIR := ~/.vibes
-MINIZINC_MODEL := $(VIBES_XDG_APP_DIR)/model.mzn
+MINIZINC_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/model.mzn
+MINIZINC_MODEL_SRC := ./resources/minizinc/model.mzn
+
 
 #####################################################
 # DEFAULT
@@ -10,11 +12,11 @@ MINIZINC_MODEL := $(VIBES_XDG_APP_DIR)/model.mzn
 
 .DEFAULT_GOAL := install
 
-$(MINIZINC_MODEL):
+$(MINIZINC_MODEL_LOCAL): $(MINIZINC_MODEL_SRC)
 	mkdir -p $(VIBES_XDG_APP_DIR)
-	cp resources/minizinc/model.mzn $(MINIZINC_MODEL)
+	cp $(MINIZINC_MODEL_SRC) $(MINIZINC_MODEL_LOCAL)
 
-install: $(MINIZINC_MODEL) 
+install: $(MINIZINC_MODEL_LOCAL) 
 	$(MAKE) library.install
 	$(MAKE) clean -C $(PLUGIN_DIR)
 	$(MAKE) plugin.install

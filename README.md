@@ -12,14 +12,50 @@ The command-line tool is implemented as a BAP command, `bap vibes`. Its
 source code lives in [plugin/](./plugin).
 
 
-## Install the dependencies
+## Install APT dependencies
 
-Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`, and
-`arm-linux-gnueabi-gcc`. For example, on Ubuntu:
+Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
+`arm-linux-gnueabi-gcc`, and `cmake`.  For example, on Ubuntu:
 
-    apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi
+    apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi cmake
 
-Install `minizinc`, for example if you use `snap`:
+
+# Install OCaml and BAP
+
+If you are running in the latest `binaryanalysisplatform/bap:latest` docker
+container, you may skip this section. OCaml and BAP are already installed.
+
+Otherwise, if you don't have a `4.09.1` OCaml switch, create one. 
+
+Install the latest (bleeding edge) version of BAP:
+
+    opam repo add bap-testing git+https://github.com/BinaryAnalysisPlatform/opam-repository#testing
+    opam depext --install -y bap
+
+
+## Get the VIBES source code
+
+Clone this repo wherever you prefer to keep your projects, for example:
+
+    cd ~/code
+    git clone https://github.com/draperlaboratory/VIBES.git
+    cd VIBES
+
+## Install the remaining dependencies
+
+If you have bash on Ubuntu, you can run a script to install the remaining
+dependencies. This script will not overwrite any previous installations, so
+if you want to install, say, `wp` or `minizinc` in a custom way, do that
+before you run this script.
+
+To run the script, from the root of the VIBES repo:
+
+    bash bin/setup/install-dependencies.bash
+    . bin/common-lib/env.bash
+
+To install these dependencies manually, perform the following steps.
+
+First, install `minizinc`. For example, if you use `snap`:
 
     snap install minizinc --classic
 
@@ -31,12 +67,16 @@ Or install it this way:
     export PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/bin":"${PATH}"
     export LD_LIBRARY_PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/lib":"${LD_LIBRARY_PATH}"
 
-If you don't have a `4.09.1` OCaml switch, create one. 
+Then install boolector, e.g.:
 
-Install the latest (bleeding edge) version of BAP:
-
-    opam repo add bap-testing git+https://github.com/BinaryAnalysisPlatform/opam-repository#testing
-    opam depext --install -y bap
+    cd ~
+    git clone https://github.com/boolector/boolector
+    cd boolector
+    ./contrib/setup-lingeling.sh
+    ./contrib/setup-btor2tools.sh
+    ./configure.sh && cd build && make
+    cd bin
+    export PATH=$(pwd):$PATH
 
 Clone [cbat_tools](https://github.com/draperlaboratory/cbat_tools), `cd`
 into the `wp/lib/bap_wp` folder, and install with `make`:
@@ -46,14 +86,6 @@ into the `wp/lib/bap_wp` folder, and install with `make`:
 Install the following opam packages:
 
     opam install ounit2 ppx_deriving_yojson
-
-
-## Getting the code
-
-Clone this repo wherever you prefer to keep your projects, for example:
-
-    cd ~/code
-    git clone https://github.com/draperlaboratory/VIBES.git
 
 
 ## Installing/uninstalling

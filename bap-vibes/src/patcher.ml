@@ -34,8 +34,8 @@ type placed_patch = {
 let tgt_flag (l : Theory.language) : string =
   let l = Theory.Language.to_string l in
   let open String in
-  if is_substring l ~substring:"A32" then ""
-  else if is_substring l ~substring:"T32" then "-mthumb"
+  if is_substring l ~substring:"arm" then ""
+  else if is_substring l ~substring:"thumb" then "-mthumb"
   (* Needed for testing *)
   else if is_substring l ~substring:"unknown" then ""
   else failwith ("Unsupported language: " ^ l)

@@ -14,23 +14,15 @@ open Bap_wp
 open Bap_core_theory
 
 (* A [result] record that a [verifier] function can return. *)
-type result = {
-  status : Z3.Solver.status;
-  solver : Z3.Solver.solver;
-  precond : Constraint.t;
-  orig_env : Environment.t;
-  patch_env : Environment.t;
-  orig_sub : Sub.t;
-  patch_sub : Sub.t;
-}
+type status = Z3.Solver.status
 
 (** A [verifier] function takes a target, two subroutines and a
    correctness property, it verifies their correctness, and it returns
    a {!result}. *)
-type verifier = Theory.target -> sub term -> sub term -> Sexp.t -> result
-
-(** A [printer] function takes a [result] and prints it. *)
-type printer = result -> unit
+type verifier =
+  Run_parameters.t
+  -> Runner.input list
+  -> (status, Bap_main.error) result
 
 (** Indicates whether the patching is done, or should be attempted again. *)
 type next_step = Done | Again
@@ -41,10 +33,9 @@ type next_step = Done | Again
     verifier's results. *)
 val verify :
   ?verifier:(verifier) ->
-  ?printer:(printer) ->
-  orig_prog:Program.t ->
-  patch_prog:Program.t ->
+  orig_prog:(Program.t * string) ->
+  patch_prog:(Program.t * string) ->
   Theory.target ->
   func:string ->
   Sexp.t ->
-  (next_step, Toplevel_error.t) Core_kernel.result
+  (next_step, Toplevel_error.t) result

@@ -1,7 +1,6 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
-open Bap_core_theory
 open Bap_vibes
 open OUnit2
 
@@ -19,7 +18,7 @@ let empty_proj (filename : string) : (Project.t, Error.t) result =
   Project.create input
 
 (* Same as [empty_proj], but fail if loading errors. *)
-let proj_exn (proj : (Project.t, Error.t) result) : Project.t =
+let proj_exn (proj : (Project.t * string, Error.t) result) : Project.t * string =
   match proj with
   | Ok p -> p
   | Error e ->
@@ -29,18 +28,18 @@ let proj_exn (proj : (Project.t, Error.t) result) : Project.t =
     end
 
 (* Create a dummy project with an empty main subroutine *)
-let dummy_proj ?name:(name = "main") filename : (Project.t, Error.t) result =
+let dummy_proj ?name:(name = "main") filename : (Project.t * string, Error.t) result =
   let empty_proj = empty_proj filename in
   let dummy_main = Sub.create ~name:name () in
   let dummy_prog = Program.Builder.create () in
   Program.Builder.add_sub dummy_prog dummy_main;
   let dummy_prog = Program.Builder.result dummy_prog in
-  Result.map empty_proj ~f:(fun p -> Project.with_program p dummy_prog)
+  Result.map empty_proj ~f:(fun p -> (Project.with_program p dummy_prog, filename))
 
 (* Get an empty program that can be used in tests. *)
-let prog_exn (proj : (Project.t, Error.t) result) : Program.t =
-  let p = proj_exn proj in
-  Project.program p
+let prog_exn (proj : (Project.t * string, Error.t) result) : Program.t * string =
+  let p, s = proj_exn proj in
+  (Project.program p, s)
 
 (* Some dummy values that can be used in tests. *)
 let patch = "ret-3"
@@ -172,64 +171,25 @@ let print_bir (bir : Insn.t) =
   Format.asprintf "%a" Insn.pp_adt bir
 
 (* A verifier function for testing. It always returns unsat. *)
-let verify_unsat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.UNSATISFIABLE in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
+let verify_unsat
+    (_ : Bap_wp.Run_parameters.t)
+    (_ : Bap_wp.Runner.input list)
+    : (Verifier.status, Bap_main.error) result =
+  Result.return Z3.Solver.UNSATISFIABLE
 
 (* A verifier function for testing. It always returns sat. *)
-let verify_sat (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.SATISFIABLE in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
+let verify_sat
+    (_ : Bap_wp.Run_parameters.t)
+    (_ : Bap_wp.Runner.input list)
+    : (Verifier.status, Bap_main.error) result =
+  Result.return Z3.Solver.SATISFIABLE
 
 (* A verifier function for testing. It always returns unknown. *)
-let verify_unknown (tgt : Theory.target) (orig : Sub.t) (patch : Sub.t) (_ : Sexp.t)
-  : Verifier.result =
-  (* Make dummy field for Verifier.result *)
-  let status = Z3.Solver.UNKNOWN in
-  let ctx = Bap_wp.Environment.mk_ctx () in
-  let var_gen = Bap_wp.Environment.mk_var_gen () in
-  let solver = Z3.Solver.mk_simple_solver ctx in
-  let precond = Bap_wp.Constraint.mk_clause [] [] in
-  let env = Bap_wp.Precondition.mk_env ~target:tgt ctx var_gen in
-  Verifier.{
-    status = status;
-    solver = solver;
-    precond = precond;
-    orig_env = env;
-    patch_env = env;
-    orig_sub = orig;
-    patch_sub = patch;
-  }
+let verify_unknown
+    (_ : Bap_wp.Run_parameters.t)
+    (_ : Bap_wp.Runner.input list)
+    : (Verifier.status, Bap_main.error) result =
+  Result.return Z3.Solver.UNKNOWN
 
 (* A verifier printer function for testing. It does nothing. *)
-let verifier_printer (_ : Verifier.result) : unit = ()
+let verifier_printer (_ : (_, _) result) : unit = ()

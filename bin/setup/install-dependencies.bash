@@ -162,6 +162,48 @@ else
     echo "- Minizinc is installed." | tee -a "${REPORT_FILE}"
 fi
 
+# If boolector isn't already installed, install it.
+which boolector > /dev/null 2>&1
+if [[ "${?}" != "0" ]]; then
+    CURRENT_DIR="$(pwd)"
+    cd "${HOME}"
+    if [ -d "${BOOLECTOR_DIR}" ]; then
+        echo "Can't git pull the boolector repo" > "${MSG_FILE}"
+	echo "Halting." >> "${REPORT_FILE}"
+	echo "Want to pull the boolector repo, but can't." >> "${REPORT_FILE}"
+	echo "${BOOLECTOR_DIR} already exists." >> "${REPORT_FILE}"
+	echo "$(cat "${MSG_FILE}")"
+	echo "$(cat "${REPORT_FILE}")"
+	if [[ "${REPORT_RESULTS}" == "true" ]]; then
+            report_to_slack
+        fi
+	exit 1
+    fi
+    git clone "${BOOLECTOR_URL}"
+    cd boolector
+    ./contrib/setup-lingeling.sh
+    ./contrib/setup-btor2tools.sh
+    ./configure.sh && cd build && make
+    cd "${CURRENT_DIR}"
+fi
+
+# Make sure boolector got installed.
+which boolector > /dev/null 2>&1
+if [[ "${?}" != "0" ]]; then
+    echo "Unable to find boolector" > "${MSG_FILE}"
+    echo "Halting." > "${REPORT_FILE}"
+    echo "Boolector does not seem to be installed.." >> "${REPORT_FILE}"
+    echo "Tried 'which boolector' but got nothing." >> "${REPORT_FILE}"
+    echo "$(cat "${MSG_FILE}")"
+    echo "$(cat "${REPORT_FILE}")"
+    if [[ "${REPORT_RESULTS}" == "true" ]]; then
+        report_to_slack
+    fi
+    exit 1
+else
+    echo "- Boolector is installed." | tee -a "${REPORT_FILE}"
+fi
+
 # Install OPAM packages.
 opam install -y ounit2 ppx_deriving_yojson >> "${REPORT_FILE}" 2>&1
 if [[ "${?}" != "0" ]]; then

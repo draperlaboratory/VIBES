@@ -1,6 +1,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_vibes
+open Bap_core_theory
 open OUnit2
 
 open Ir
@@ -10,8 +11,11 @@ open Ir
 
 let ex1 : Ir.t = Test_ir.vir1
 
+let arm_tgt = Theory.Target.get ~package:"bap" "armv7+le"
+let arm_lang = Theory.Language.read ~package:"bap" "llvm-armv7"
 
-let (mzn_params1 , serial_info1) =  Minizinc.serialize_mzn_params ex1 []
+let (mzn_params1 , serial_info1) =
+  Minizinc.serialize_mzn_params arm_tgt arm_lang ex1 []
 
 let mzn_params_string = Format.asprintf "%a"
     (Yojson.Safe.pretty_print ~std:true)
