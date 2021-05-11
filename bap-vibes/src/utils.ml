@@ -132,8 +132,8 @@ let get_lang
     ~addr:(addr : Bitvec.t)
   : Theory.language KB.t =
   (* FIMXE: remove this when we replace offsets with addresses *)
-  let offset = compute_offset_from_addr filename addr_size in
-  let addr = Bitvec.M32.(addr + offset) in
+  (* let offset = compute_offset_from_addr filename addr_size in
+  let addr = Bitvec.M32.(addr + offset) in *)
   let* tid = Theory.Label.for_addr addr in
   let* lang = KB.collect Theory.Label.encoding tid in
   KB.return lang
