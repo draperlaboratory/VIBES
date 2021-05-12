@@ -192,5 +192,9 @@ let () =
         if Option.is_none subst then
           Printf.printf "\n\nMatch failed!\n\n"
         else
-          Printf.printf "\n\nMatch success!\n\n"
+          begin
+          Printf.printf "\n\nMatch success!\n\n";
+          Var.Map.iter_keys (Option.value_exn subst)
+            ~f:(fun v -> Format.printf "%a\n" Var.pp v)
+        end
       end)
