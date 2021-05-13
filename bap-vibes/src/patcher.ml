@@ -299,6 +299,7 @@ let place_patches
 
 let reify_patch (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
+  let open Int64 in
   let* patch_point = Data.Patch.get_patch_point_exn patch in
   let* addr = Theory.Label.for_addr patch_point in
   let* unit = KB.collect Theory.Label.unit addr in
@@ -308,13 +309,15 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
     | Some x -> KB.return x
   in
   let* spec = KB.collect Image.Spec.slot unit in
-  let code_region = Ogre.eval (Ogre.require Image.Scheme.code_region) spec in
+  let patch_point = Bitvec.to_int64 patch_point in
+  let code_region = Ogre.eval (Ogre.require
+   ~that:(fun (a,s,_) -> a <= patch_point && patch_point <= a + s)
+  Image.Scheme.code_region) spec in
   let* (addr,_size,offset) = match code_region with
   | Error s -> Kb_error.fail (Kb_error.Other (Core_kernel.Error.to_string_hum s))
   | Ok c -> KB.return c
   in
-  let open Int64 in
-  let patch_file_offset = (Bitvec.to_int64 patch_point) - addr + offset in
+  let patch_file_offset = patch_point - addr + offset in
   let* patch_size = Data.Patch.get_patch_size_exn patch in
   let* assembly = Data.Patch.get_assembly_exn patch in
   KB.return { assembly = assembly;
