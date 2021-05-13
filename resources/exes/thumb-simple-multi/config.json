@@ -7,13 +7,13 @@
      "patch-code" : "(var-decls retvar)
                      (set retvar 3)
                      fallthrough",
-     "patch-point" : "0x3ce",
+     "patch-point" : "0x103ce",
      "patch-size" : 2},
     {"patch-name" : "ret-4",
      "patch-code" : "(var-decls retvar)
                      (set retvar 4)
                      fallthrough",
-     "patch-point" : "0x3da",
+     "patch-point" : "0x103da",
      "patch-size" : 2}
   ]
 }
