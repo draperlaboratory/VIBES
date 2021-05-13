@@ -77,8 +77,6 @@ let extract_seed (value : Data.computed) (s : KB.state)
 (* Create a patch set. *)
 let create_patches
     ?seed:(seed=None)
-    ~filename
-    ~addr_size
     (ps : Config.patch list)
     : Data.Patch_set.t KB.t =
   let create_patch (seed : t option) (p : Config.patch) : Data.Patch.t KB.t =
@@ -86,14 +84,10 @@ let create_patches
     let patch_name = Config.patch_name p in
     let* lang =
       Utils.get_lang
-        ~filename:filename
-        ~addr_size:addr_size
         ~addr:(Config.patch_point p)
     in
     let* tgt =
       Utils.get_target
-        ~filename:filename
-        ~addr_size:addr_size
         ~addr:(Config.patch_point p)
     in
     let* () = Data.Patch.set_patch_name obj (Some patch_name) in
@@ -129,7 +123,7 @@ let init_KB
   let mzn_model_filepath = Config.minizinc_model_filepath config in
   let target = Bap.Std.Project.target proj in
   let addr_size = Theory.Target.bits target in
-  let* patches = create_patches patch_list ~filename ~addr_size ~seed in
+  let* patches = create_patches patch_list ~seed in
   let* obj = KB.Object.create Data.cls in
   let* () = Data.Original_exe.set_filepath obj (Some filename) in
   let* () = Data.Patched_exe.set_filepath obj patched_exe_filepath in
