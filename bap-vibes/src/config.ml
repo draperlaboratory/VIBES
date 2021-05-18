@@ -1,34 +1,88 @@
 (* Implements {!Config}. *)
 
 open !Core_kernel
+module Json = Yojson.Safe
+
+(* Extract the patch code, check it's a non-empty string, and parse
+into a [Sexp.t list] (it should be a valid S-expression). *)
+let patch_code_of_yojson (obj : Json.t)
+ : (Sexp.t list, string) Stdlib.result =
+  match obj with
+  | `String s ->
+  begin
+    if String.length s = 0 then Result.fail "Missing Patch Code"
+    else 
+      begin
+        try Result.return (Sexp.scan_sexps (Lexing.from_string s))
+        with _ -> 
+          let msg =
+            "Code for patch '" ^ s ^ "' is not a valid S-expression" in
+          Result.fail (msg)
+      end
+  end
+  | _ -> Result.fail "Missing Patch Code"
+
+(* Extract the patch point field and parse the hex string into a bitvector, or
+   error. *)
+let patch_point_of_yojson (obj : Json.t) : (Bitvec.t, string) Stdlib.result =
+    match obj with
+    | `String s ->
+       begin
+         try
+           Result.return (Bitvec.of_string s)
+         with Invalid_argument _ ->
+           let msg = Format.sprintf "Invalid hex string: %s" s in
+           Result.fail msg
+       end
+    | _ -> Result.fail "Missing Patch Point"
+
+  (* Extract the property field string and parse it into an S-expression, or
+   error. *)
+let property_of_yojson (obj : Json.t) : (Sexp.t, string) Stdlib.result =
+  match obj with
+  | `String s ->
+     begin
+       try
+         Result.return (Sexp.of_string s)
+       with Failure _ ->
+         let msg = Format.sprintf "Invalid S-expression: %s" s in
+         Result.fail msg
+     end
+  | _ -> Result.fail "Missing Property"
 
 (* A type to represent a patch. *)
 type patch =
   {
     (* The name of the patch to use. *)
-    patch_name : string;
+    patch_name : string [@key "patch-name"];
 
     (* An s-expression version of the patch's core theory code *)
-    patch_code : Sexp.t list;
+    patch_code : Sexp.t list [@key "patch-code"] [@of_yojson patch_code_of_yojson];
 
     (* The address in the original exe to start patching from. *)
-    patch_point : Bitvec.t;
+    patch_point : Bitvec.t [@key "patch-point"] [@of_yojson patch_point_of_yojson];
 
     (* The number of bytes of code that the patch replaces or removes,
        beginning at the patch_point *)
-    patch_size : int
-  }
+    patch_size : int [@key "patch-size"]
+  } [@@deriving of_yojson]
 
 (* The configuration for a run of the VIBES pipeline. *)
 type t = {
-  exe : string; (* The filename (path) of the executable to patch. *)
+  exe : string [@default ""]; (* The filename (path) of the executable to patch. *)
   patches : patch list; (* The list of patches to apply. *)
   func : string; (* The name of the function to check. *)
-  property : Sexp.t; (* Correctness property. *)
-  patched_exe_filepath : string option; (* Optional output location *)
-  max_tries : int option; (* Optional number of CEGIS iterations to allow *)
-  minizinc_model_filepath : string; (* Path to a minizinc model file *)
-}
+  property : Sexp.t [@of_yojson property_of_yojson]; (* Correctness property. *)
+  patched_exe_filepath : string option [@default None]; (* Optional output location *)
+  max_tries : int option 
+    [@key "max-tries"] [@default None]; (* Optional number of CEGIS iterations to allow *)
+  minizinc_model_filepath : string [@key "minizinc-model"] 
+    [@default Constants.default_minizinc_model_filepath]; (* Path to a minizinc model file *)
+} [@@deriving of_yojson]
+
+let t_of_yojson ~exe ~patched_exe_filepath (obj : Json.t) : (t, string) result =
+  Result.map ~f:(fun t -> {t with exe; patched_exe_filepath}) (of_yojson obj)
+
 
 (* Patch accessors. *)
 let patch_name (p : patch) : string = p.patch_name

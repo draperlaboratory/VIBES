@@ -8,6 +8,10 @@ type patch
 (** A type to represent a configuration record. *)
 type t
 
+(** [of_yojson obj] parses a yojson object to type t *)
+val t_of_yojson : exe:string -> patched_exe_filepath:string option ->
+    Yojson.Safe.t -> (t, string) result
+
 (** [patch_name p] returns the name of the patch [p]. *)
 val patch_name : patch -> string
 
