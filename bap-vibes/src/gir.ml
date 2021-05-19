@@ -140,22 +140,21 @@ let mk_tagged_app
     (slot : (Theory.program, 'lab option) Knowledge.slot)
     (lab : 'lab)
     ~string_of_lab:(pp_lab : 'lab -> string)
-    (args : 'lab ast seq)
+    (args : 'lab ast_raw seq)
     (tag : Pattern_node.ir option)
   : 'lab ast =
   let* node_tid = KB.Object.create Theory.Program.cls in
   let node = AST.Node.create node_tid in
   Format.printf "Creating node: %a: %s\n\n%!" Tid.pp node (pp_lab lab);
-  let* graph =
-    KB.Seq.fold args
+  let graph =
+    Seq.fold args
       ~init:AST.empty
       ~f:(fun g n ->
-          let+ n = n in
           Graphlib.union (module AST) g n.graph)
   in
   let graph = AST.Node.insert node graph in
-  let* args =
-    KB.Seq.map args ~f:(fun n -> let+ n = n in n.node)
+  let args =
+    Seq.map args ~f:(fun n -> n.node)
   in
   let edges =
     Seq.mapi args
@@ -264,13 +263,12 @@ let test_tm =
   let const_1 = Ast_node.Const (Word.one 32) in
   let const_2 = Ast_node.Const (Word.of_int ~width:32 2) in
   let add = Ast_node.Operation "add" in
-  let arg_1 = mk_const const_1 in
-  let arg_2 = mk_const const_2 in
-  (* Nice little dag here... *)
+  let* arg_1 = mk_const const_1 in
+  let* arg_2 = mk_const const_2 in
+  let* arg_2' = mk_const const_2 in
+  let* sub_term = mk_app add (Seq.of_list [arg_2; arg_2']) in
   mk_app add
-    (Seq.of_list [arg_1;
-                  mk_app add
-                    (Seq.of_list [arg_2; arg_2])])
+    (Seq.of_list [arg_1; sub_term])
 
 
 (* This could be done with some hidden utilities from Arm_selector *)
@@ -289,17 +287,15 @@ let test_pat =
   let var_y = Var.create "Y" (Imm 32) in
   let var_z = Var.create "Z" (Imm 32) in
   let add = Pattern_node.Concrete (Ast_node.Operation "add") in
-  let arg_x = mk_meta var_x in
-  let arg_y = mk_meta var_y in
-  let arg_z = mk_meta var_z in
+  let* arg_x = mk_meta var_x in
+  let* arg_y = mk_meta var_y in
+  let* arg_z = mk_meta var_z in
+  let* tag = KB.Object.create Theory.Program.cls in
+  let* sub_term = mk_app add (Seq.of_list [arg_y; arg_z]) None in
   mk_app add
     (Seq.of_list
-       [arg_x;
-        mk_app add
-          (Seq.of_list
-             [arg_y; arg_z])
-                   None])
-    (Some { tag = Tid.create (); mk_ir = arm_add })
+       [arg_x; sub_term])
+    (Some { tag = tag; mk_ir = arm_add })
 
 let lift_match o p t = KB.Lift.ternary match_ o p t |> KB.join
 
