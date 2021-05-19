@@ -235,9 +235,9 @@ let external_patch_site
   (jmp_to_patch, placed_patch)
 
 (** [find_site_greedy] goes through a [patch_site] list and finds the
-   first one in which a patch of size [patch_size] can fit. It then
-   returns the address of this site and a modified [patch_site] list
-   with those locations removed.*)
+    first one in which a patch of size [patch_size] can fit. It then
+    returns the address of this site and a modified [patch_site] list
+    with those locations removed.*)
 let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
   : int64 * patch_site list =
   let open Int64 in

@@ -44,9 +44,9 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
     "assembly-domain"
 
 (* Optional Ir domain for storing ir immediately after translation from core_theory *)
-   let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
-   ~equal:Ir.equal
-   "ir-domain"
+let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
+    ~equal:Ir.equal
+    "ir-domain"
 
 (* For storing sets of minizinc solutions *)
 let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t =
@@ -102,7 +102,7 @@ module Patch = struct
 
   let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
     KB.Class.property ~package patch "minizinc-solutions"
-    minizinc_solution_domain
+      minizinc_solution_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -201,7 +201,7 @@ module Patch = struct
     KB.provide minizinc_solutions obj (Set.singleton (module Minizinc.Sol) sol)
 
   let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
-      : unit KB.t =
+    : unit KB.t =
     KB.provide minizinc_solutions obj sol_set
 
 end
@@ -302,7 +302,7 @@ module Solver = struct
     KB.Class.property ~package cls "minizinc-model-filepath" string_domain
 
   let set_minizinc_model_filepath (obj : t) (data : string option)
-      : unit KB.t =
+    : unit KB.t =
     KB.provide minizinc_model_filepath obj data
 
   let get_minizinc_model_filepath (obj : t) : string option KB.t =

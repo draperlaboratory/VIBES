@@ -34,7 +34,7 @@ let simple_var v =
 
 let given_var v ~reg:reg =
   {
-   id = Var.create ~fresh:true "operand" (Var.typ v);
+    id = Var.create ~fresh:true "operand" (Var.typ v);
     temps = [v];
     pre_assign = Some reg
   }

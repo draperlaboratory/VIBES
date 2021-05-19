@@ -17,8 +17,8 @@ open Bap_core_theory
 type status = Z3.Solver.status
 
 (** A [verifier] function takes a target, two subroutines and a
-   correctness property, it verifies their correctness, and it returns
-   a {!result}. *)
+    correctness property, it verifies their correctness, and it returns
+    a {!result}. *)
 type verifier =
   Run_parameters.t
   -> Runner.input list

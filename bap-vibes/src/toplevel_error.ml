@@ -23,13 +23,13 @@ let pp ppf (e : t) =
     | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | No_value_in_KB s -> s
     | Missing_func_orig s ->
-       Format.sprintf
-         "Function %s missing from original binary at verification time."
-         s
+      Format.sprintf
+        "Function %s missing from original binary at verification time."
+        s
     | Missing_func_patched s ->
-       Format.sprintf
-         "Function %s missing from patched binary at verification time."
-         s
+      Format.sprintf
+        "Function %s missing from patched binary at verification time."
+        s
     | KB_error e -> Format.asprintf "%a" Kb_error.pp e
     | Other s -> s
   in

@@ -50,11 +50,11 @@ let patch_to_string (p : patch) : string =
   let code =
     String.concat ~sep:"\n" (List.map p.patch_code ~f:Sexp.to_string) in
   String.concat ~sep:"\n" [
-      Printf.sprintf "  {Patch_name: %s" p.patch_name;
-      Printf.sprintf "   Patch_code: %s" code;
-      Printf.sprintf "   Patch_point: %s" (Bitvec.to_string p.patch_point);
-      Printf.sprintf "   Patch_size: %d}" p.patch_size;
-    ]
+    Printf.sprintf "  {Patch_name: %s" p.patch_name;
+    Printf.sprintf "   Patch_code: %s" code;
+    Printf.sprintf "   Patch_point: %s" (Bitvec.to_string p.patch_point);
+    Printf.sprintf "   Patch_size: %d}" p.patch_size;
+  ]
 
 (* For displaying a list of patches *)
 let patches_to_string (ps : patch list) : string =

@@ -29,6 +29,6 @@ val get_lang : filename:string -> addr_size:int -> addr:Bitvec.t -> Theory.langu
 
 
 (** [get_lang patch] returns the target associated with the
-   patch in the current binary under scutiny, at the location
-   indicated at the patch. *)
+    patch in the current binary under scutiny, at the location
+    indicated at the patch. *)
 val get_target : filename:string -> addr_size:int -> addr:Bitvec.t -> Theory.target KB.t

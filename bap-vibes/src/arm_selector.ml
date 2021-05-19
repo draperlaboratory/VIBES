@@ -73,8 +73,8 @@ let preassign_var (lang : Theory.language) (v : var) : var option =
     None
 
 let preassign (lang : Theory.language) (ir : Ir.t) : Ir.t =
-    Ir.map_op_vars ir
-      ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
+  Ir.map_op_vars ir
+    ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
 
 let (@.) s1 s2 =
   let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
@@ -615,7 +615,7 @@ module Pretty = struct
       Open | Close | Neither | Both
 
   let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
-      : (string, Kb_error.t) result =
+    : (string, Kb_error.t) result =
     let pretty_aux =
       match o with
       | Var v ->
@@ -760,7 +760,7 @@ let is_simple_branch (blk : Ir.blk) : Ir.operand option =
           |[o] -> Some o
           | _ -> None
         end
-        else None
+      else None
     | _ -> None
 
 let is_empty_blk (blk : Ir.blk) : bool =
@@ -930,5 +930,5 @@ let () =
     ~package:"vibes"
     ~name:"arm-gen"
     ~desc:"This theory allows instantiating Program semantics into \
-          a Vibes_ir.t term, using Arm_gen.slot."
+           a Vibes_ir.t term, using Arm_gen.slot."
   @@ KB.return (module ARM_Core : Theory.Core)

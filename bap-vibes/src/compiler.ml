@@ -30,7 +30,7 @@ let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
   let arm_eff = Arm.effect bir in
   let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
   let arm_eff = Result.of_option arm_eff
-    ~error:(Kb_error.Missing_semantics err) in
+      ~error:(Kb_error.Missing_semantics err) in
   let ir =
     Result.map ~f:Arm.ir arm_eff |>
     Result.map ~f:(Arm.preassign lang)
@@ -100,7 +100,7 @@ let compile_ir (obj : Data.t) : unit KB.t =
 
 (* Converts the patch (as IR) to assembly instructions. *)
 let compile_assembly ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t)
-    : unit KB.t =
+  : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
   Events.(send @@ Info ("Using minizinc model: " ^ mzn_model));

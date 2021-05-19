@@ -10,25 +10,25 @@ open Bap_core_theory
 module KB = Knowledge
 
 type patch = {
-    assembly : string list;
-    orig_loc : int64;
-    orig_size : int64;
-  }
+  assembly : string list;
+  orig_loc : int64;
+  orig_size : int64;
+}
 
 type patch_site = {
-    location : int64;
-    size : int64
-  }
+  location : int64;
+  size : int64
+}
 
 (** A [placed_patch] is a patch that has a chosen location to place it in the
     binary. It optionally may have a jump placed after it. *)
 type placed_patch = {
-    assembly : string list;
-    orig_loc : int64;
-    orig_size : int64;
-    patch_loc : int64;
-    jmp : int64 option
-  }
+  assembly : string list;
+  orig_loc : int64;
+  orig_size : int64;
+  patch_loc : int64;
+  jmp : int64 option
+}
 
 (** [patch ~patcher obj] uses the [patcher] function to patch the original
     executable associated with the provided [obj]. *)

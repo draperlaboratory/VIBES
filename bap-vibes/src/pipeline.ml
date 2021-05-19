@@ -11,7 +11,7 @@ let (let+) x f = Result.bind x ~f
 
 (* Fail if the count is more than max_tries. *)
 let halt_if_too_many (count : int) (max_tries : int option)
-    : (unit, Toplevel_error.t) result =
+  : (unit, Toplevel_error.t) result =
   match max_tries with
   | None -> Ok ()
   | Some 0 -> Ok ()
@@ -21,10 +21,10 @@ let halt_if_too_many (count : int) (max_tries : int option)
 
 (* This function parses the patch code and builds the initial patch IR. *)
 let init (config : Config.t) (proj : project) : Data.t KB.t =
- let* obj = Seeder.init_KB config proj ~seed:None in
- let* () = Patch_ingester.ingest obj in
- let* () = Compiler.compile_ir obj in
- KB.return obj
+  let* obj = Seeder.init_KB config proj ~seed:None in
+  let* () = Patch_ingester.ingest obj in
+  let* () = Compiler.compile_ir obj in
+  KB.return obj
 
 (* This function produces a patched exe. *)
 let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
@@ -37,7 +37,7 @@ let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
 (* Each time we produce a patch, we give it a tmp filepath. This function
    retrieves that value from the computed KB result. *)
 let get_tmp_patched_exe_filepath (value : Data.computed)
-    : (string, Toplevel_error.t) result =
+  : (string, Toplevel_error.t) result =
   let tmp_filepath : string option =
     KB.Value.get Data.Patched_exe.tmp_filepath value in
   match tmp_filepath with
@@ -53,7 +53,7 @@ let get_tmp_patched_exe_filepath (value : Data.computed)
    copy the patched exe to the user-specified location. Return the
    final filepath (or the relevant error). *)
 let finalize_patched_exe (value : Data.computed)
-    : (string, Toplevel_error.t) result =
+  : (string, Toplevel_error.t) result =
   let original_exe_filepath : string option =
     KB.Value.get Data.Original_exe.filepath value in
   let tmp_patched_exe_filepath : string option =
@@ -68,7 +68,7 @@ let finalize_patched_exe (value : Data.computed)
           ~default:((Filename.basename orig_path) ^ ".patched") in
       Utils.cp tmp_path patched_exe_filepath;
       Events.(send @@ Info
-        (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
+                (Printf.sprintf "Patched exe: %s\n " patched_exe_filepath));
       Ok patched_exe_filepath
     end
   | (None, _) ->
@@ -85,7 +85,7 @@ let finalize_patched_exe (value : Data.computed)
 
 (* Use [KB.run] to run the provided computation [f] with the given [state]. *)
 let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
-    : (Data.computed * KB.state, Toplevel_error.t) result =
+  : (Data.computed * KB.state, Toplevel_error.t) result =
   let result = KB.run Data.cls f state in
   match result with
   | Error e ->
@@ -103,7 +103,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
 let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
     ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
     (orig_prog : Program.t) (state : KB.state)
-    : (string, Toplevel_error.t) result =
+  : (string, Toplevel_error.t) result =
   Events.(send @@ Header "Starting CEGIS iteration");
   Events.(send @@ Info (Printf.sprintf "Iteration: %d" count));
 

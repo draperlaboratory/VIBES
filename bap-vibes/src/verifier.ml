@@ -36,13 +36,13 @@ let wp_verifier (p : Params.t) inputs =
     - [Done]  Indicates that the patched exe is correct
               and the CEGIS loop is done.
 
-   -  [Again] Indicates that the patched exe is not correct
+    -  [Again] Indicates that the patched exe is not correct
               and the CEGIS loop should try again. *)
 let verify ?verifier:(verifier=wp_verifier)
     ~orig_prog:(orig_prog : Program.t * string)
     ~patch_prog:(patch_prog : Program.t * string)
     (tgt : Theory.target) ~func:(func : string) (property : Sexp.t)
-    : (next_step, Toplevel_error.t) result =
+  : (next_step, Toplevel_error.t) result =
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
@@ -69,7 +69,7 @@ let verify ?verifier:(verifier=wp_verifier)
   let* status =
     verifier param
       [input1; input2]
-  |> Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e)
+    |> Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e)
   in
   match status with
   | Z3.Solver.UNSATISFIABLE ->

@@ -25,12 +25,12 @@ type t = {
 
 (* Extract seed info from a {Data.Patch.t} instance. *)
 let extract_patch (p : Data.Patch.t) (s : KB.state)
-    : (patch, Toplevel_error.t) result =
+  : (patch, Toplevel_error.t) result =
   match KB.run Data.Patch.patch (KB.return p) s with
   | Error e ->
     begin
       let msg = Format.asprintf
-        "(KB.return patch) failed in KB: %a" KB.Conflict.pp e in
+          "(KB.return patch) failed in KB: %a" KB.Conflict.pp e in
       let err = Kb_error.Other msg in
       Error (Toplevel_error.KB_error err)
     end
@@ -67,7 +67,7 @@ let get_patch_by_name (seed : t option) (name : string) : patch option =
 (* Takes a [Data.computed] result and extract the info we want to use
    to seed the KB for a new pipeline run. *)
 let extract_seed (value : Data.computed) (s : KB.state)
-    : (t, Toplevel_error.t) result =
+  : (t, Toplevel_error.t) result =
   let patch_objects = KB.Value.get Data.Patched_exe.patches value in
   let the_list = Data.Patch_set.to_list patch_objects in
   let patch_seeds = List.map the_list ~f:(fun p -> extract_patch p s) in
@@ -80,7 +80,7 @@ let create_patches
     ~filename
     ~addr_size
     (ps : Config.patch list)
-    : Data.Patch_set.t KB.t =
+  : Data.Patch_set.t KB.t =
   let create_patch (seed : t option) (p : Config.patch) : Data.Patch.t KB.t =
     let* obj = KB.Object.create Data.Patch.patch in
     let patch_name = Config.patch_name p in
@@ -106,7 +106,7 @@ let create_patches
       | None -> KB.return ()
       | Some patch_seed ->
         let* () = Data.Patch.union_minizinc_solution
-          obj patch_seed.minizinc_solutions in
+            obj patch_seed.minizinc_solutions in
         Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)
     in
     KB.return obj
@@ -136,7 +136,7 @@ let init_KB
   let* () = Data.Original_exe.set_addr_size obj (Some addr_size) in
   let* () = Data.Patched_exe.set_patches obj patches in
   let* () = Data.Solver.set_minizinc_model_filepath
-    obj (Some mzn_model_filepath) in
+      obj (Some mzn_model_filepath) in
   let* () = Data.Verifier.set_func obj (Some func) in
   let* () = Data.Verifier.set_property obj (Some property) in
   Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));
