@@ -2,9 +2,7 @@ open Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
-
 module KB = Knowledge
-
 
 (** [sol] is a solution returned by minizinc. 
     It is unlikely that you need introspect inside this data type outside the minizinc
@@ -34,7 +32,8 @@ type sol = {
   temp : Var.t Var.Map.t;
   active : bool Tid.Map.t;
   issue : int Tid.Map.t;
-} [@@deriving sexp, compare]
+}
+[@@deriving sexp, compare]
 
 (**
 
@@ -56,37 +55,51 @@ val run_minizinc :
 
 (** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
-  module S :
-  sig
+  module S : sig
     type t = sol
+
     val compare : sol -> sol -> int
+
     val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
   end
+
   type t = sol
+
   val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
+
   val compare : S.t -> S.t -> int
+
   type comparator_witness = Base__Comparable.Make(S).comparator_witness
+
   val comparator : (S.t, comparator_witness) Base__.Comparator.comparator
 end
 
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
-
-
-
 (**/**)
+
 (* Exposed for unit testing. *)
 
-type 'a mznset = {set : 'a list}  [@@deriving yojson]
-type ('a ,'b) mznmap = 'b list
+type 'a mznset = { set : 'a list } [@@deriving yojson]
 
-type mzn_enum = {e : string} [@@deriving yojson]
-type mzn_enum_def = mzn_enum mznset [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
+type ('a, 'b) mznmap = 'b list
+
+type mzn_enum = { e : string } [@@deriving yojson]
+
+type mzn_enum_def = mzn_enum mznset [@@deriving yojson]
+
+(* https://github.com/MiniZinc/libminizinc/issues/441 *)
+
 type operand = mzn_enum [@@deriving yojson]
+
 type operation = mzn_enum [@@deriving yojson]
+
 type block = mzn_enum [@@deriving yojson]
+
 type temp = mzn_enum [@@deriving yojson]
+
 type opcode = mzn_enum [@@deriving yojson]
+
 type reg = mzn_enum [@@deriving yojson]
 
 type mzn_params_serial = {
@@ -103,13 +116,15 @@ type mzn_params_serial = {
   temp_block : (temp, block) mznmap;
   copy : operation mznset;
   width : (temp, int) mznmap;
-  preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
+  preassign : (operand, reg mznset) mznmap;
+  (* Set should either be empty or have 1 element. *)
   congruent : (operand, operand mznset) mznmap;
   operation_opcodes : (operation, opcode mznset) mznmap;
   latency : (opcode, int) mznmap;
   number_excluded : int;
-  exclude_reg : (int, (temp, reg) mznmap) mznmap
-} [@@deriving yojson]
+  exclude_reg : (int, (temp, reg) mznmap) mznmap;
+}
+[@@deriving yojson]
 
 type serialization_info = {
   temps : Var.t list;
@@ -124,7 +139,5 @@ val serialize_mzn_params :
   Ir.t ->
   sol list ->
   mzn_params_serial * serialization_info
-
-
 
 val apply_sol : Ir.t -> sol -> Ir.t

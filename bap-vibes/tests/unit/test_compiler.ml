@@ -1,19 +1,15 @@
-open !Core_kernel
+open! Core_kernel
 open Bap_knowledge
 open Knowledge.Syntax
 open Bap_vibes
 open OUnit2
-
 module KB = Knowledge
 module H = Helpers
 
-
-let dummy_solver _ _ ~filepath:_ _ vir =
-  KB.return (vir, Test_minizinc.dummy_sol)
+let dummy_solver _ _ ~filepath:_ _ vir = KB.return (vir, Test_minizinc.dummy_sol)
 
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
-
   (* Skip this test for now. *)
   H.skip_test "Doesn't work without the dummy solver";
 
@@ -21,21 +17,20 @@ let test_compile (_ : test_ctxt) : unit =
   let computation =
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Solver.set_minizinc_model_filepath
-      obj (Some H.minizinc_model_filepath) >>= fun () ->
+    Data.Solver.set_minizinc_model_filepath obj (Some H.minizinc_model_filepath)
+    >>= fun () ->
     Patches.get_bir H.patch 32 >>= fun bil ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_bir patch bil >>= fun _ ->
-    Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
-
+    Data.Patched_exe.set_patches obj (Data.Patch_set.singleton patch)
+    >>= fun _ ->
     (* Now run the compiler. *)
     Compiler.compile_ir obj >>= fun _ ->
     Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
-    | (p :: []) -> KB.return p
+    | [ p ] -> KB.return p
     | _ -> assert_failure "Multiple patches returned when one expected."
   in
 
@@ -50,7 +45,6 @@ let test_compile (_ : test_ctxt) : unit =
 (* Test that [Compiler.compile] errors when no minizinc model filepath
    is stashed in the KB. *)
 let test_compile_with_no_minizinc_model_filepath (_ : test_ctxt) : unit =
-
   (* Run the compiler. *)
   let computation =
     H.obj () >>= fun obj ->
@@ -66,33 +60,29 @@ let test_compile_with_no_minizinc_model_filepath (_ : test_ctxt) : unit =
 
 (* Test that [Compiler.compile] handles no patch (BIR) in the KB. *)
 let test_compile_with_no_patch (_ : test_ctxt) : unit =
-
   (* Run the compiler. *)
   let computation =
     (* At the start, the KB is empty. No patch (BIR) is stashed in it. *)
     H.obj () >>= fun obj ->
-    Data.Solver.set_minizinc_model_filepath
-      obj (Some H.minizinc_model_filepath) >>= fun () ->
+    Data.Solver.set_minizinc_model_filepath obj (Some H.minizinc_model_filepath)
+    >>= fun () ->
     Compiler.compile_ir obj >>= fun _ ->
     Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> Kb_error.fail Kb_error.Missing_patch_code
-    | (p :: _) -> KB.return p
+    | p :: _ -> KB.return p
   in
   let result = KB.run Data.Patch.patch computation KB.empty in
-  let expected =
-    Kb_error.Problem Kb_error.Missing_patch_code in
+  let expected = Kb_error.Problem Kb_error.Missing_patch_code in
 
-  H.assert_error
-    ~printer:H.print_string_list_opt
-    Data.Patch.assembly
-    expected
+  H.assert_error ~printer:H.print_string_list_opt Data.Patch.assembly expected
     result
 
-let suite = [
-  "Test Compiler.compile" >:: test_compile;
-  "Test Compiler.compile: no minizinc model filepath" >::
-    test_compile_with_no_minizinc_model_filepath;
-  "Test Compiler.compile: no patch (BIR)" >:: test_compile_with_no_patch;
-]
+let suite =
+  [
+    "Test Compiler.compile" >:: test_compile;
+    "Test Compiler.compile: no minizinc model filepath"
+    >:: test_compile_with_no_minizinc_model_filepath;
+    "Test Compiler.compile: no patch (BIR)" >:: test_compile_with_no_patch;
+  ]

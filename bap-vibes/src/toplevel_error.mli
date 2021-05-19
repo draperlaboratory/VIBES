@@ -4,7 +4,7 @@
     computations. The {!Kb_errors} module handles errors that occur inside
     of KB computations. *)
 
-open !Core_kernel
+open! Core_kernel
 
 (** Top-level errors that the VIBES pipeline can raise. *)
 type t =
@@ -18,5 +18,5 @@ type t =
   | KB_error of Kb_error.t
   | Other of string
 
-(** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
 val pp : Format.formatter -> t -> unit
+(** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)

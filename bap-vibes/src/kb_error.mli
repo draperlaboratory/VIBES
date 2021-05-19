@@ -33,11 +33,11 @@ type t =
   | Minizinc_deserialization of string
   | Other of string
 
-(** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
 val pp : Format.formatter -> t -> unit
+(** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
 
 (** These errors are subsumed under KB conflicts. *)
 type KB.Conflict.t += Problem of t
 
-(** Triggers a failure in the VIBES pipeline. *)
 val fail : t -> 'a KB.t
+(** Triggers a failure in the VIBES pipeline. *)

@@ -1,7 +1,6 @@
 (* Implements {!Kb_error}. *)
 
 open Bap_knowledge
-
 module KB = Knowledge
 
 (* Errors we want to raise explicitly during a [KB.run]. *)
@@ -33,21 +32,22 @@ type t =
 
 (* A pretty-printer for these errors. *)
 let pp ppf (e : t) =
-  let msg = match e with
+  let msg =
+    match e with
     | Failed_to_load_proj s -> s
     | Not_implemented s -> s
     | Missing_minizinc_model_filepath ->
-      "No filepath for a minizinc model was stashed in KB"
+        "No filepath for a minizinc model was stashed in KB"
     | Missing_patch_name -> "No patch name was stashed in KB"
     | Missing_patch_code -> "No patch code was stashed in KB"
     | Missing_assembly -> "No patch assembly was stashed in KB"
     | Missing_original_exe_filepath ->
-      "No filepath for the original exe was stashed in KB"
+        "No filepath for the original exe was stashed in KB"
     | Missing_addr_size -> "No address size was stashed in KB"
     | Missing_patched_exe_filepath ->
-      "No filepath for the patched exe was stashed in KB"
+        "No filepath for the patched exe was stashed in KB"
     | Missing_tmp_patched_exe_filepath ->
-      "No filepath for the temporary patched exe was stashed in KB"
+        "No filepath for the temporary patched exe was stashed in KB"
     | Missing_patch_point -> "No patch point was stashed in KB"
     | Missing_patch_size -> "No patch size was stashed in KB"
     | Missing_func -> "No function name to verify was stashed in KB"
@@ -67,10 +67,12 @@ let pp ppf (e : t) =
 
 (* Encorprate these errors into the KB error type (a conflict). *)
 type KB.Conflict.t += Problem of t
+
 let printer (e : KB.Conflict.t) =
   match e with
   | Problem err -> Some (Format.asprintf "%a" pp err)
   | _ -> failwith "Unexpected Conflict Type"
+
 let () = KB.Conflict.register_printer printer
 
 (* Report an error and fail. *)

@@ -33,79 +33,74 @@ open Bap.Std
 
 type opcode [@@deriving compare, equal, sexp]
 
-module Opcode :
-sig
-
+module Opcode : sig
   type t = opcode
 
   val create : ?arch:string -> string -> opcode
 
   val name : opcode -> string
 
-  val (=) : opcode -> opcode -> bool
-
+  val ( = ) : opcode -> opcode -> bool
 end
 
-
+type op_var = { id : var; temps : var list; pre_assign : var option }
+[@@deriving compare, equal, sexp]
 (** [operand]s have unique ids, a list of potential temporaries that
     can be used to implement the operand and may be optionally
     pre-assigned to registers for calling conventions or other reasons. *)
-type op_var = {
-  id : var;
-  temps : var list;
-  pre_assign : var option
-} [@@deriving compare, equal, sexp]
 
 val simple_var : var -> op_var
 
 val given_var : var -> reg:var -> op_var
 
-type operand = Var of op_var
-             | Const of word
-             | Label of tid
-             | Void
-             | Offset of word [@@deriving compare, equal, sexp]
+type operand =
+  | Var of op_var
+  | Const of word
+  | Label of tid
+  | Void
+  | Offset of word
+[@@deriving compare, equal, sexp]
 
-(** An [operation] has
-    a *unique* id
-    an assigned lhs,
-    a set of instructions to choose from,
-    a flag of whether the operation is optional,
-    a list of operands. *)
 type operation = {
   id : tid;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
   operands : operand list;
-} [@@deriving compare, equal, sexp]
+}
+[@@deriving compare, equal, sexp]
+(** An [operation] has
+    a *unique* id
+    an assigned lhs,
+    a set of instructions to choose from,
+    a flag of whether the operation is optional,
+    a list of operands. *)
 
 val simple_op : opcode -> operand -> operand list -> operation
 
-(** A [vibes_blk] has an id,
-    a set of operations,
-    a set of input temporaries assumed to exists at the beginning of the block,
-    a set of output temporaries assumed to persist out the end of the block,
-    an estimated execution frequency. *)
 type blk = {
   id : tid;
   data : operation list;
   ctrl : operation list;
   ins : operation;
   outs : operation;
-  frequency : int
-} [@@deriving compare, equal, sexp]
+  frequency : int;
+}
+[@@deriving compare, equal, sexp]
+(** A [vibes_blk] has an id,
+    a set of operations,
+    a set of input temporaries assumed to exists at the beginning of the block,
+    a set of output temporaries assumed to persist out the end of the block,
+    an estimated execution frequency. *)
 
+val simple_blk : tid -> data:operation list -> ctrl:operation list -> blk
 (** Create a block given a [tid] and a list of [operation]s, filling
     in default values for the other fields. *)
-val simple_blk : tid -> data:(operation list) -> ctrl:(operation list) -> blk
 
+type t = { blks : blk list; congruent : (op_var * op_var) list }
+[@@deriving compare, equal, sexp]
 (** The [vibes_ir] type has a list of blocks and a set of operands
     which are congruent. *)
-type t = {
-  blks : blk list;
-  congruent : (op_var * op_var) list
-} [@@deriving compare, equal, sexp]
 
 val empty : t
 
@@ -113,42 +108,48 @@ val union : t -> t -> t
 
 val add : blk -> t -> t
 
-
 val map_blks : f:(blk -> blk) -> t -> t
+
 val map_op_vars : f:(op_var -> op_var) -> t -> t
+
 val map_operations : f:(operation -> operation) -> t -> t
 
 val operation_to_string : operation -> string
+
 val op_var_to_string : op_var -> string
 
 val all_temps : t -> Var.Set.t
+
 val all_operands : t -> Var.Set.t
 
+val preassign_map : t -> var option Var.Map.t
 (** [preassign_map] builds a total dictionary from op_var ids to
     pre assigned registers. *)
-val preassign_map : t -> (var option) Var.Map.t
 
+val definer_map : t -> op_var Var.Map.t
 (** [definer_map] takes a subroutine and builds a Map from all
     temporaries to the unique lhs operand where that temporary is
     defined.*)
-val definer_map : t -> op_var Var.Map.t
 
+val users_map : t -> op_var list Var.Map.t
 (** [users_map] takes a subroutine and builds a Map from all
     temporaries to the operands that may use that temporary. *)
-val users_map : t -> (op_var list) Var.Map.t
 
+val temp_blk : t -> Tid.t Var.Map.t
 (** [temp_blk] builds a Map from temporaries to the unique block in
     which they are defined and used. *)
-val temp_blk : t -> Tid.t Var.Map.t
 
 val operation_opcodes : t -> opcode list Tid.Map.t
+
 val operand_operation : t -> operation Var.Map.t
+
 val pretty_ir : t -> string
+
 (* Alias of pretty_ir *)
 val to_string : t -> string
 
 val op_var_exn : operand -> op_var
 
+val dummy_reg_alloc : t -> t
 (** Populate the [pre_assign] field with [`R0] if it is not already
     assigned. Useful for testing purposes. *)
-val dummy_reg_alloc : t -> t
