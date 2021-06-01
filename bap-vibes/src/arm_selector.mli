@@ -18,6 +18,7 @@
  *************************************************************)
 open Bap_knowledge
 open Bap_core_theory
+open Bap.Std
 
 (** The ARM implementation of Theory.Core.
 
@@ -53,4 +54,9 @@ module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
   val arm_ir_pretty : Ir.t -> (string list, Kb_error.t) result
+end
+
+module ARM_Gen :
+sig
+  val select : blk term list -> Ir.t
 end

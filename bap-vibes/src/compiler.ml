@@ -48,6 +48,13 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   in
   Events.(send @@ Info info_str);
   Data.Patch.get_bir patch >>= fun bir ->
+
+  let ir = KB.Value.get Term.slot bir in
+  let pretty = List.to_string ~f:(fun b -> Format.asprintf "%a" Blk.pp b) in
+  Printf.printf "IR:\n%s\n\n" (pretty ir);
+  let asm = Arm.ARM_Gen.select ir in
+  Printf.printf "ASM:\n%s\n\n" (Ir.pretty_ir asm);
+
   Data.Patch.get_lang patch >>= fun lang ->
   create_vibes_ir lang bir >>= fun ir ->
   Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
