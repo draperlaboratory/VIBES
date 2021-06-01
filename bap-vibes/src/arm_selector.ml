@@ -85,6 +85,9 @@ let (@.) s1 s2 =
     other_blks = Ir.union blks1 blks2
   }
 
+let (@>) eff data =
+  { data with op_eff = eff @. data.op_eff }
+
 let arm_eff_domain =
   KB.Domain.optional
     ~inspect:sexp_of_arm_eff
@@ -301,20 +304,20 @@ module ARM_ops = struct
     else
       binop Ops.lsr_ (Imm 32) arg1 arg2
 
+  let ldr_op bits =
+    if bits = 32 then
+      Ops.ldr
+    else if bits = 16 then
+      Ops.ldrh
+    else if bits = 8 then
+      Ops.ldrb
+    else
+      failwith "Arm_selector.ldr: Loading a bit-width that is not 8, 16 or 32!"
+
   let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
-    let l_instr =
-      if bits = 32 then
-        Ops.ldr
-      else if bits = 16 then
-        Ops.ldrh
-      else if bits = 8 then
-        Ops.ldrb
-      else
-        failwith "Arm_selector.ldr: Loading a bit-width that is not 8, 16 or 32!"
-    in
-    uop l_instr (Imm 32) loc
+    uop (ldr_op bits) (Imm 32) loc
 
   let ldr32 mem loc = ldr 32 mem loc
 
@@ -371,9 +374,185 @@ module ARM_ops = struct
       other_blks = blks
     }
 
+  (* A simpler branch which takes in tids *)
+  let br cond tgt alt =
+    let {op_val = cond_val; op_eff = cond_eff} = cond in
+    (* the order of operations here is actually important! *)
+    let cmp = Ir.simple_op Ops.cmp Void
+        [cond_val; Const (Word.of_int ~width:32 0)] in
+    let beq = Ir.simple_op Ops.beq Void [Label tgt] in
+    let b = Ir.simple_op Ops.b Void [Label alt] in
+    let blks = cond_eff.other_blks in
+    {
+      current_data = cmp :: cond_eff.current_data;
+      current_ctrl = [beq; b];
+      other_blks = blks
+    }
+
 
 end
 
+module ARM_Gen =
+struct
+  open ARM_ops
+
+  let sel_binop (o : binop) : arm_pure -> arm_pure -> arm_pure =
+    match o with
+    | PLUS -> (+)
+    | MINUS -> (-)
+    | TIMES -> ( * )
+    | DIVIDE -> udiv
+    | SDIVIDE -> (/)
+    | MOD
+    | SMOD
+    | LSHIFT -> (binop Ops.lsl_ (Imm 32))
+    | RSHIFT -> (binop Ops.lsr_ (Imm 32))
+    | ARSHIFT -> (binop Ops.asr_ (Imm 32))
+    | AND -> (&&)
+    | OR -> (||)
+    | XOR -> xor
+    | EQ
+    | NEQ
+    | LT
+    | LE
+    | SLT
+    | SLE ->
+      let err =
+        Format.sprintf "sel_binop: unsupported operation %s"
+          (Bil.string_of_binop o)
+      in
+      failwith err
+
+  let get_dsts (jmp : jmp term) : (tid * tid) option =
+    match Jmp.dst jmp, Jmp.alt jmp with
+    | Some dst, Some alt ->
+      begin
+        match Jmp.resolve dst, Jmp.resolve alt with
+        | First dst, First alt -> Some (dst, alt)
+        | _ -> None
+      end
+    | _ -> None
+
+
+  let sel_unop (o : unop) : arm_pure -> arm_pure =
+    match o with
+    | NOT -> assert false
+    | NEG -> assert false
+
+  let rec select_exp (e : Bil.exp) : arm_pure =
+    match e with
+    | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
+      let mem = select_mem mem in
+      let a = select_exp a in
+      let w = const w in
+      mem @> binop (ldr_op @@ Size.in_bits size) (Imm 32) a w
+    | Load (mem, loc, _, size) ->
+      let mem = select_exp mem in
+      let loc = select_exp loc in
+      ldr (Size.in_bits size) mem loc
+    | Store (mem, loc, value, _, _size) ->
+      let mem = select_exp mem in
+      let loc = select_exp loc in
+      let value = select_exp value in
+      (* We have to swap the arguments here, since ARM likes the value
+       first, and the location second *)
+      str mem value loc
+    (* FIXME: this is amost certainly wrong *)
+    | BinOp (PLUS, a, b) when Exp.(a = b) ->
+      let a = select_exp a in
+      let zero = const (Word.zero 32) in
+      let one = const (Word.one 32) in
+      shl zero a one
+    | BinOp (o, a, b) ->
+      let a = select_exp a in
+      let b = select_exp b in
+      sel_binop o a b
+    | UnOp (_, _) -> assert false
+    (* Handle memory variables specially? *)
+    | Var v -> var v
+    | Int w -> const w
+    | Cast (_, _, _) -> failwith "select_exp: Cast is unsupported!"
+    | Let (_, _, _) -> failwith "select_exp: Let is unsupported!"
+    | Unknown (_, _) -> failwith "select_exp: Unknown is unsupported!"
+    | Ite (_, _, _) -> failwith "select_exp: Ite is unsupported!"
+    | Extract (_, _, _) -> failwith "select_exp: Extract is unsupported!"
+    | Concat (_, _) -> failwith "select_exp: Concat is unsupported!"
+
+  and select_mem (m : Bil.exp) : arm_eff =
+    let m = select_exp m in
+    m.op_eff
+
+  and select_stmt (s : Blk.elt) : arm_eff =
+    match s with
+    | `Def t ->
+      let lhs = Def.lhs t in
+      let rhs = Def.rhs t in
+      begin
+        match Var.typ lhs with
+        | Imm _ | Unk ->
+          let lhs = Ir.Var (Ir.simple_var lhs) in
+          let rhs = select_exp rhs in
+          lhs := rhs
+        | Mem _ ->
+          let rhs = select_exp rhs in
+          rhs.op_eff
+      end
+    | `Jmp jmp ->
+      let cond = Jmp.cond jmp in
+      begin
+        match cond with
+        (* FIXME: do some non-trivial pattern matching at this point *)
+        | cond ->
+          let cond = select_exp cond in
+          begin
+            match get_dsts jmp with
+            | Some (dst, alt) -> br cond dst alt
+            | None ->
+              let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
+              failwith err
+          end
+      end
+    | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
+
+  and select_elts (elts : Blk.elt list) : arm_eff =
+    match elts with
+    | [] -> empty_eff
+    (* We only select 1 instruction at a time for now *)
+    | s :: ss ->
+      let s = select_stmt s in
+      let ss = select_elts ss in
+      s @. ss
+
+  and select_blk (b : blk term) : arm_eff =
+    let b_eff = Blk.elts b |> Seq.to_list |> select_elts in
+    let {current_data; current_ctrl; other_blks} = b_eff in
+    let new_blk =
+      Ir.simple_blk (Term.tid b)
+        ~data:current_data
+        ~ctrl:current_ctrl
+    in
+    let all_blks = Ir.add new_blk other_blks in
+    {
+      current_data = [];
+      current_ctrl = [];
+      other_blks = all_blks
+    }
+
+  and select_blks (bs : blk term list) : arm_eff =
+    match bs with
+    | [] -> empty_eff
+    | b :: bs ->
+      let b = select_blk b in
+      b @. (select_blks bs)
+
+  let select (bs : blk term list) : Ir.t =
+    let bs = select_blks bs in
+    assert Core_kernel.(List.is_empty bs.current_data
+                        && List.is_empty bs.current_ctrl);
+    bs.other_blks
+
+
+end
 
 module ARM_Core : Theory.Core =
 struct
