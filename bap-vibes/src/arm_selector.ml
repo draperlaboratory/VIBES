@@ -574,7 +574,9 @@ struct
           (* No need to explicitely assign here, we don't use the
              "mem" variables when generating Ir. *)
           | Some arg -> eff arg.op_eff
-          | None -> assert false
+          | None ->
+            let v = Format.asprintf "%a" Theory.Var.pp v in
+            Kb_error.fail (Kb_error.Missing_semantics v)
         end)
 
 

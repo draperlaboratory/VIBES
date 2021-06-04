@@ -9,6 +9,11 @@ open Knowledge.Syntax
 
 module KB = Knowledge
 
+let unit_domain : unit KB.Domain.t = KB.Domain.flat
+    ~empty:()
+    ~equal:Unit.equal
+    "unit-domain"
+
 (* Optional string domain *)
 let string_domain : String.t option KB.Domain.t = KB.Domain.optional
     ~equal:String.(=)
@@ -59,6 +64,13 @@ type computed = (cls, unit) KB.cls KB.value
 let package = "vibes"
 let name = "data"
 let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
+
+let force : (cls, unit) KB.slot =
+  KB.Class.property ~package cls "force" unit_domain
+
+let promise (callback : t -> unit KB.t) : unit =
+  KB.promise force callback
+
 
 (* Properties pertaining to the patch code *)
 module Patch = struct
@@ -152,8 +164,8 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_size
     | Some value -> KB.return value
 
-  let set_bir (obj : t) (data : Insn.t) : unit KB.t =
-    KB.provide bir obj data
+  let promise_bir (data : t -> Insn.t KB.t) : unit =
+    KB.promise bir data
 
   let get_bir (obj : t) : Insn.t KB.t =
     KB.collect bir obj
