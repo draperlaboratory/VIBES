@@ -227,39 +227,40 @@ module CoreParser (Core : Theory.Core) = struct
          List.fold_right ~init:(perform Effect.Sort.bot) ~f:seq data
        in
        let* ctrl_blk = parse_ctrl st ctrl_sexp in
-       let l = Bap.Std.Tid.for_name "patch" in
+       let* l = KB.Object.create Theory.Program.cls in
        blk l data_blk ctrl_blk
 
 end
 
-
-(* Loads the BIR version of a patch. For now, we select from a hand-written
-   set of patches defined in the {!Patches} module. *)
-let ingest_one (addr_size : int) (n : int KB.t) (patch : Data.Patch.t)
-    : int KB.t =
-  Theory.instance ~context:["vibes"] ~requires:["bil"; "vibes:arm-gen"] () >>=
+let provide_bil (addr_size : int) : unit =
+  Data.Patch.promise_bir @@ fun patch ->
+  Theory.instance () >>=
   Theory.require >>= fun (module Core) ->
   let module SexpParser = CoreParser(Core) in
-  n >>= fun patch_num ->
   Data.Patch.get_patch_name_exn patch >>= fun name ->
   Data.Patch.get_patch_code_exn patch >>= fun code ->
-  Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
   Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
 
   (* Get the patch (as BIL). *)
-  SexpParser.parse_bir name addr_size code >>= fun bir ->
-
-  (* Stash the BIL in the KB. *)
-  Data.Patch.set_bir patch bir >>= fun () ->
+  let* bir = SexpParser.parse_bir name addr_size code in
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
   let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
   Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
-  KB.return (patch_num+1)
+  KB.return bir
 
-let ingest (obj : Data.t) : unit KB.t =
+(* Loads the BIR version of a patch. For now, we select from a hand-written
+   set of patches defined in the {!Patches} module. *)
+let ingest_one (addr_size : int) (patch_num : int)
+    : int =
+  Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
+  provide_bil addr_size;
+  patch_num+1
+
+let ingest () : unit =
+  Data.promise @@ fun obj ->
   Events.(send @@ Header "Starting patch ingester");
   Events.(send @@ Info "Using hand-written BIL patches");
 
@@ -268,8 +269,9 @@ let ingest (obj : Data.t) : unit KB.t =
   Data.Patched_exe.get_patches obj >>= fun patches ->
   Events.(send @@ Info (Printf.sprintf "There are %d patches"
                           (Data.Patch_set.length patches)));
-  Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(ingest_one addr_size) >>= fun _ ->
+  let _ : int =
+    Data.Patch_set.fold patches ~init:0
+      ~f:(fun i _ -> ingest_one addr_size i) in
 
   Events.(send @@ Info "Patch ingest complete");
   Events.(send @@ Rule);

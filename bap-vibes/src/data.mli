@@ -15,6 +15,7 @@ val bitvec_domain    : Bitvec.t option KB.Domain.t
 val sexp_domain      : Sexp.t option KB.Domain.t
 val sexp_list_domain : Sexp.t list option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
+val unit_domain      : unit KB.Domain.t
 
 (** These are the top-level class definitions.
 
@@ -30,6 +31,9 @@ type computed = (cls, unit) KB.cls KB.value
 val package : string
 val name : string
 val cls : (cls, unit) KB.cls
+
+(** Register a generic promise contigent on the creation of a data class. *)
+val promise : (t -> unit KB.t) -> unit
 
 (** The patch module defines an additional class holding all properties
     related to a specific patch fragment - a contiguous region of code that
@@ -75,7 +79,7 @@ module Patch : sig
   val get_patch_size : t -> int option KB.t
   val get_patch_size_exn : t -> int KB.t
 
-  val set_bir : t -> insn -> unit KB.t
+  val promise_bir : (t -> insn KB.t) -> unit
   val get_bir : t -> insn KB.t
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t

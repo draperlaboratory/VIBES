@@ -6,6 +6,7 @@
 open Bap_knowledge
 module KB = Knowledge
 
-(** [ingest obj] loads the patch code (i.e., lifs it to BIR) which is
-    associated with the provided [obj]. *)
-val ingest : Data.t -> unit KB.t
+(** [ingest ()] registers the callback which loads the patch code
+   (i.e., lifs it to BIR) which is associated with the provided
+   toplevel [Data.cls]. *)
+val ingest : unit -> unit

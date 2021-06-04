@@ -36,7 +36,9 @@ let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
     Result.map ~f:(Arm.preassign lang)
   in
   match ir with
-  | Ok ir -> KB.return ir
+  | Ok ir ->
+    Printf.printf "old IR:\n%s\n\n%!" (Ir.to_string ir);
+    KB.return ir
   | Error e -> Kb_error.fail e
 
 (* Compile one patch from BIR to VIBES IR *)
@@ -49,9 +51,13 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   Events.(send @@ Info info_str);
   Data.Patch.get_bir patch >>= fun bir ->
 
-  let ir = KB.Value.get Term.slot bir in
-  let pretty = List.to_string ~f:(fun b -> Format.asprintf "%a" Blk.pp b) in
-  Printf.printf "IR:\n%s\n\n" (pretty ir);
+  Format.printf "\nPatch: %a\n\n%!" KB.Value.pp bir;
+  let ir = Blk.from_insn bir in
+  Format.printf "\n%i blocks\n\n" (List.length ir);
+  let blk = List.hd_exn ir in
+  let elts = Blk.elts blk in
+  Format.printf "\n%i elements in block\n\n" (Seq.length elts);
+  Format.printf "\nIR:\n%a\n\n" Blk.pp_seq (Seq.of_list ir);
   let asm = Arm.ARM_Gen.select ir in
   Printf.printf "ASM:\n%s\n\n" (Ir.pretty_ir asm);
 
