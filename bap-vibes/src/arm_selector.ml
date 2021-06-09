@@ -403,14 +403,14 @@ struct
     | TIMES -> ( * )
     | DIVIDE -> udiv
     | SDIVIDE -> (/)
-    | MOD
-    | SMOD
     | LSHIFT -> (binop Ops.lsl_ (Imm 32))
     | RSHIFT -> (binop Ops.lsr_ (Imm 32))
     | ARSHIFT -> (binop Ops.asr_ (Imm 32))
     | AND -> (&&)
     | OR -> (||)
     | XOR -> xor
+    | MOD
+    | SMOD
     | EQ
     | NEQ
     | LT

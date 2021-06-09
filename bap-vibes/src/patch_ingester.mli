@@ -6,7 +6,7 @@
 open Bap_knowledge
 module KB = Knowledge
 
-(** [ingest ()] registers the callback which loads the patch code
+(** [register ()] registers the callback which loads the patch code
    (i.e., lifs it to BIR) which is associated with the provided
    toplevel [Data.cls]. *)
-val ingest : unit -> unit
+val register : unit -> unit

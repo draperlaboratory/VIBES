@@ -35,6 +35,9 @@ val cls : (cls, unit) KB.cls
 (** Register a generic promise contigent on the creation of a data class. *)
 val promise : (t -> unit KB.t) -> unit
 
+(** Trigger all the generic promises registered with [promise] *)
+val force : t -> unit KB.t
+
 (** The patch module defines an additional class holding all properties
     related to a specific patch fragment - a contiguous region of code that
     is being patched into the binary. The outer class defined above holds a

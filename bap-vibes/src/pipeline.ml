@@ -19,12 +19,13 @@ let halt_if_too_many (count : int) (max_tries : int option)
     if count > n then Error (Toplevel_error.Max_tries n)
     else Ok ()
 
+
 (* This function parses the patch code and builds the initial patch IR. *)
 let init (config : Config.t) (proj : project) : Data.t KB.t =
- let* obj = Seeder.init_KB config proj ~seed:None in
- let* () = Patch_ingester.ingest obj in
- let* () = Compiler.compile_ir obj in
- KB.return obj
+  let* obj = Seeder.init_KB config proj ~seed:None in
+  let* () = Data.force obj in
+  let* () = Compiler.compile_ir obj in
+  KB.return obj
 
 (* This function produces a patched exe. *)
 let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
@@ -143,6 +144,7 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
   let+ orig_proj, orig_prog = Utils.load_exe filepath in
 
+  Patch_ingester.register ();
   let state = Toplevel.current () in
   let computation = init config orig_proj in
   let+ obj, new_state = run_KB_computation computation state in
