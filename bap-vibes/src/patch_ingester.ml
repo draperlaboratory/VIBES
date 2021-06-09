@@ -241,7 +241,7 @@ let provide_bil (addr_size : int) : unit =
   Data.Patch.get_patch_code_exn patch >>= fun code ->
   Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
 
-  (* Get the patch (as BIL). *)
+  (* Get the patch (as BIR). *)
   let* bir = SexpParser.parse_bir name addr_size code in
 
   Events.(send @@ Info "The patch has the following BIL:");
@@ -259,7 +259,7 @@ let ingest_one (addr_size : int) (patch_num : int)
   provide_bil addr_size;
   patch_num+1
 
-let ingest () : unit =
+let register () : unit =
   Data.promise @@ fun obj ->
   Events.(send @@ Header "Starting patch ingester");
   Events.(send @@ Info "Using hand-written BIL patches");
