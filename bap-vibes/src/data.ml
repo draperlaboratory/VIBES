@@ -14,6 +14,10 @@ let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~equal:Unit.equal
     "unit-domain"
 
+let lab_domain : Theory.label option KB.Domain.t = KB.Domain.optional
+    ~equal:Theory.Label.equal
+    "label-domain"
+
 (* Optional string domain *)
 let string_domain : String.t option KB.Domain.t = KB.Domain.optional
     ~equal:String.(=)
@@ -93,8 +97,8 @@ module Patch = struct
   let patch_code : (patch_cls, Sexp.t list option) KB.slot =
     KB.Class.property ~package patch "patch-code" sexp_list_domain
 
-  let bir : (patch_cls, Insn.t) KB.slot =
-    KB.Class.property ~package patch "patch-bir" bir_domain
+  let patch_label : (patch_cls, Theory.label option) KB.slot =
+    KB.Class.property ~package patch "patch-label" lab_domain
 
   let raw_ir : (patch_cls, Ir.t option) KB.slot =
     KB.Class.property ~package patch "patch-raw-ir" ir_domain
@@ -166,11 +170,21 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_size
     | Some value -> KB.return value
 
-  let promise_bir (data : t -> Insn.t KB.t) : unit =
-    KB.promise bir data
+  let init_sem (obj : t) : unit KB.t =
+    KB.Object.create Theory.Program.cls >>= fun lab ->
+    KB.provide patch_label obj (Some lab)
+
+  let set_bir (obj : t) (sem : Insn.t) : unit KB.t =
+    KB.collect patch_label obj >>= fun olab ->
+    (* FIXME: fail more gracefully *)
+    let lab = Option.value_exn olab in
+    KB.provide Theory.Semantics.slot lab sem
 
   let get_bir (obj : t) : Insn.t KB.t =
-    KB.collect bir obj
+    KB.collect patch_label obj >>= fun olab ->
+    (* FIXME: fail more gracefully *)
+    let lab = Option.value_exn olab in
+    KB.collect Theory.Semantics.slot lab
 
   let set_lang (obj : t) (data : Theory.language) : unit KB.t =
     KB.provide lang obj data
