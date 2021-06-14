@@ -232,11 +232,11 @@ module CoreParser (Core : Theory.Core) = struct
 
 end
 
-let provide_bil (addr_size : int) : unit =
-  Data.Patch.promise_bir @@ fun patch ->
+let provide_bil (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Theory.instance () >>=
   Theory.require >>= fun (module Core) ->
   let module SexpParser = CoreParser(Core) in
+  Data.Patch.init_sem patch >>= fun () ->
   Data.Patch.get_patch_name_exn patch >>= fun name ->
   Data.Patch.get_patch_code_exn patch >>= fun code ->
   Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
@@ -249,18 +249,18 @@ let provide_bil (addr_size : int) : unit =
   let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
   Events.(send @@ Info bir_str);
   Events.(send @@ Rule);
-  KB.return bir
+  Data.Patch.set_bir patch bir
 
 (* Loads the BIR version of a patch. For now, we select from a hand-written
    set of patches defined in the {!Patches} module. *)
-let ingest_one (addr_size : int) (patch_num : int)
-    : int =
+let ingest_one (addr_size : int) (patch_num : int KB.t) (patch : Data.Patch.t)
+    : int KB.t =
+  patch_num >>= fun patch_num ->
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
-  provide_bil addr_size;
-  patch_num+1
+  provide_bil addr_size patch >>= fun () ->
+  KB.return @@ patch_num+1
 
-let register () : unit =
-  Data.promise @@ fun obj ->
+let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patch ingester");
   Events.(send @@ Info "Using hand-written BIL patches");
 
@@ -269,9 +269,10 @@ let register () : unit =
   Data.Patched_exe.get_patches obj >>= fun patches ->
   Events.(send @@ Info (Printf.sprintf "There are %d patches"
                           (Data.Patch_set.length patches)));
-  let _ : int =
-    Data.Patch_set.fold patches ~init:0
-      ~f:(fun i _ -> ingest_one addr_size i) in
+
+  Data.Patch_set.fold patches
+    ~init:(KB.return 1)
+    ~f:(ingest_one addr_size) >>= fun _ ->
 
   Events.(send @@ Info "Patch ingest complete");
   Events.(send @@ Rule);

@@ -389,6 +389,17 @@ module ARM_ops = struct
       other_blks = blks
     }
 
+  let br_one cond tgt =
+    let {op_val = cond_val; op_eff = cond_eff} = cond in
+    let cmp = Ir.simple_op Ops.cmp Void
+        [cond_val; Const (Word.of_int ~width:32 0)] in
+    let beq = Ir.simple_op Ops.beq Void [tgt] in
+    let blks = cond_eff.other_blks in
+    {
+      current_data = cmp :: cond_eff.current_data;
+      current_ctrl = [beq];
+      other_blks = blks
+    }
 
 end
 
@@ -408,10 +419,10 @@ struct
     | ARSHIFT -> (binop Ops.asr_ (Imm 32))
     | AND -> (&&)
     | OR -> (||)
+    | EQ -> (-)
     | XOR -> xor
     | MOD
     | SMOD
-    | EQ
     | NEQ
     | LT
     | LE
@@ -423,13 +434,22 @@ struct
       in
       failwith err
 
-  let get_dsts (jmp : jmp term) : (tid * tid) option =
+  let get_const (v : 'a Theory.Bitv.t Theory.value) : word option =
+    let bil = KB.Value.get Exp.slot v in
+    match bil with
+    | Int w -> Some w
+    | _ -> None
+
+  let get_dst (jmp : jmp term) : Ir.operand option =
     match Jmp.dst jmp, Jmp.alt jmp with
-    | Some dst, Some alt ->
+    | Some dst, None ->
       begin
-        match Jmp.resolve dst, Jmp.resolve alt with
-        | First dst, First alt -> Some (dst, alt)
-        | _ -> None
+        match Jmp.resolve dst with
+        | First dst -> Some (Ir.Label dst)
+        | Second c ->
+          Option.map
+            ~f:(fun w -> Ir.Offset w)
+            (get_const c)
       end
     | _ -> None
 
@@ -505,8 +525,8 @@ struct
         | cond ->
           let cond = select_exp cond in
           begin
-            match get_dsts jmp with
-            | Some (dst, alt) -> br cond dst alt
+            match get_dst jmp with
+            | Some dst -> br_one cond dst
             | None ->
               let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
               failwith err
@@ -521,14 +541,16 @@ struct
     | s :: ss ->
       let s = select_stmt s in
       let ss = select_elts ss in
-      s @. ss
+      ss @. s
 
   and select_blk (b : blk term) : arm_eff =
     let b_eff = Blk.elts b |> Seq.to_list |> select_elts in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
       Ir.simple_blk (Term.tid b)
-        ~data:current_data
+        (* data instructions are emitted in reverse chronological
+           order *)
+        ~data:(List.rev current_data)
         ~ctrl:current_ctrl
     in
     let all_blks = Ir.add new_blk other_blks in
