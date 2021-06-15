@@ -374,22 +374,9 @@ module ARM_ops = struct
       other_blks = blks
     }
 
-  (* A simpler branch which takes in tids *)
-  let br cond tgt alt =
-    let {op_val = cond_val; op_eff = cond_eff} = cond in
-    (* the order of operations here is actually important! *)
-    let cmp = Ir.simple_op Ops.cmp Void
-        [cond_val; Const (Word.of_int ~width:32 0)] in
-    let beq = Ir.simple_op Ops.beq Void [Label tgt] in
-    let b = Ir.simple_op Ops.b Void [Label alt] in
-    let blks = cond_eff.other_blks in
-    {
-      current_data = cmp :: cond_eff.current_data;
-      current_ctrl = [beq; b];
-      other_blks = blks
-    }
-
-  let br_one cond tgt =
+  (* Simpler branch which just takes a condition and a target label,
+     falls through if the condition is not met. *)
+  let br cond tgt =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     let cmp = Ir.simple_op Ops.cmp Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
@@ -544,7 +531,9 @@ struct
       let a = select_exp a in
       let b = select_exp b in
       sel_binop o a b
-    | UnOp (_, _) -> assert false
+    | UnOp (o, a) ->
+      let a = select_exp a in
+      sel_unop o a
     (* Handle memory variables specially? *)
     | Var v -> var v
     | Int w -> const w
@@ -585,7 +574,7 @@ struct
         in
           begin
             match get_dst jmp with
-            | Some dst -> br_one cond dst
+            | Some dst -> br cond dst
             | None ->
               let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
               failwith err
