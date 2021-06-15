@@ -28,10 +28,8 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
   let ir = Blk.from_insn bir in
-  Format.printf "\nIR:\n%a\n\n" Blk.pp_seq (Seq.of_list ir);
   let ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign lang ir in
-  Printf.printf "ASM:\n%s\n\n" (Ir.pretty_ir ir);
   KB.return ir
 
 (* Compile one patch from BIR to VIBES IR *)

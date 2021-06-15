@@ -403,6 +403,54 @@ module ARM_ops = struct
 
 end
 
+let add_in_vars_blk (b : Ir.blk) : Ir.blk =
+  (* We only grab data here, since control effects don't influence
+     dependencies. *)
+  let ops = b.data in
+  let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
+  let collect_vars_op_list l =
+    List.fold l ~init:Var.Set.empty
+      ~f:(fun set o ->
+          match o with
+          | Ir.Var v -> add_list set v.temps
+          | _ -> set)
+  in
+  (* Simultaneously collect defined and undefined vars *)
+  let _, undefined =
+    List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
+      ~f:(fun (defined, undefined) o ->
+          let undef = collect_vars_op_list o.operands in
+          let undef = Var.Set.diff undef defined in
+          let def = collect_vars_op_list o.lhs in
+          Var.Set.union defined def, Var.Set.union undefined undef)
+  in
+  let ins = Var.Set.fold undefined ~init:[]
+      ~f:(fun ins v -> Ir.Var (Ir.simple_var v)::ins)
+  in
+  (* We add dummy operation with no instructions and as lhs all the
+     [ins] variables *)
+  let ins = {
+    Ir.id = Tid.create ();
+    Ir.lhs = ins;
+    Ir.opcodes = [];
+    Ir.optional = false;
+    Ir.operands = [];
+  } in
+  {b with ins = ins}
+
+(* Collect all the variables appearing on rhs that are not defined by
+   an rhs before-hand. *)
+let add_in_vars (t : Ir.t) : Ir.t =
+  { t with blks = List.map ~f:add_in_vars_blk t.blks }
+
+(* We assume that a block is always created *)
+let ir (t : arm_eff) : Ir.t =
+  assert Core_kernel.(List.is_empty t.current_data
+                      && List.is_empty t.current_ctrl);
+  let blks = t.other_blks in
+  add_in_vars blks
+
+
 module ARM_Gen =
 struct
   open ARM_ops
@@ -465,6 +513,11 @@ struct
       let mem = select_mem mem in
       let a = select_exp a in
       let w = const w in
+      mem @> binop (ldr_op @@ Size.in_bits size) (Imm 32) a w
+    | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
+      let mem = select_mem mem in
+      let a = select_exp a in
+      let w = const (Word.neg w) in
       mem @> binop (ldr_op @@ Size.in_bits size) (Imm 32) a w
     | Load (mem, loc, _, size) ->
       let mem = select_exp mem in
@@ -575,10 +628,7 @@ struct
 
   let select (bs : blk term list) : Ir.t =
     let bs = select_blks bs in
-    assert Core_kernel.(List.is_empty bs.current_data
-                        && List.is_empty bs.current_ctrl);
-    bs.other_blks
-
+    ir bs
 
 end
 
@@ -762,53 +812,6 @@ struct
 
 end
 
-let add_in_vars_blk (b : Ir.blk) : Ir.blk =
-  (* We only grab data here, since control effects don't influence
-     dependencies. *)
-  let ops = b.data in
-  let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
-  let collect_vars_op_list l =
-    List.fold l ~init:Var.Set.empty
-      ~f:(fun set o ->
-          match o with
-          | Ir.Var v -> add_list set v.temps
-          | _ -> set)
-  in
-  (* Simultaneously collect defined and undefined vars *)
-  let _, undefined =
-    List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
-      ~f:(fun (defined, undefined) o ->
-          let undef = collect_vars_op_list o.operands in
-          let undef = Var.Set.diff undef defined in
-          let def = collect_vars_op_list o.lhs in
-          Var.Set.union defined def, Var.Set.union undefined undef)
-  in
-  let ins = Var.Set.fold undefined ~init:[]
-      ~f:(fun ins v -> Ir.Var (Ir.simple_var v)::ins)
-  in
-  (* We add dummy operation with no instructions and as lhs all the
-     [ins] variables *)
-  let ins = {
-    Ir.id = Tid.create ();
-    Ir.lhs = ins;
-    Ir.opcodes = [];
-    Ir.optional = false;
-    Ir.operands = [];
-  } in
-  {b with ins = ins}
-
-(* Collect all the variables appearing on rhs that are not defined by
-   an rhs before-hand. *)
-let add_in_vars (t : Ir.t) : Ir.t =
-  { t with blks = List.map ~f:add_in_vars_blk t.blks }
-
-(* We assume that a block is always created *)
-let ir (t : arm_eff) : Ir.t =
-  assert Core_kernel.(List.is_empty t.current_data
-                      && List.is_empty t.current_ctrl);
-  let blks = t.other_blks in
-  add_in_vars blks
-
 
 module Pretty = struct
 
@@ -816,9 +819,19 @@ module Pretty = struct
     Result.return @@ Ir.Opcode.name i
 
   (* We use this function when generating ARM, since the assembler
-     doesn't like % or @ in labels. *)
+     doesn't like leading digits, % or @ in labels. *)
   let tid_to_string (t : tid) : string =
-    Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@')
+    let name = Tid.name t in
+    let name =
+      String.strip ~drop:Char.(fun c -> c = '%' || c = '@') name
+    in
+    let fst = String.get name 0 in
+    let name =
+      if Char.is_digit fst then
+        "blk" ^ name
+      else name
+    in
+    name
 
   type bracket =
       Open | Close | Neither | Both
@@ -953,163 +966,6 @@ let is_nop (op : Ir.operation) : bool =
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
   List.filter ops ~f:(fun o -> not (is_nop o))
 
-(* Returns [None] if the control is fall-through or a conditional jump,
-   or if the data section is non-empty. Otherwise, if it is an
-   unconditional jump to label [l], returns [Some l]. *)
-let is_simple_branch (blk : Ir.blk) : Ir.operand option =
-  let open ARM_ops.Ops in
-  if not (List.is_empty blk.data) then None
-  else
-    match blk.ctrl with
-    | [{ Ir.opcodes; Ir.operands; _}] ->
-      let opcode = List.hd_exn opcodes in
-      if Ir.Opcode.(opcode = b) then
-        begin
-          match operands with
-          |[o] -> Some o
-          | _ -> None
-        end
-        else None
-    | _ -> None
-
-let is_empty_blk (blk : Ir.blk) : bool =
-  (List.is_empty blk.data) && (List.is_empty blk.ctrl)
-
-(* Returns the pair of labels from a [beq l1; b l2] control operation
-   in a block, and [None] if not applicable. *)
-let get_eq_branches (blk : Ir.blk) : (tid * tid) option =
-  let open ARM_ops.Ops in
-  match blk.ctrl with
-  | [{ Ir.opcodes = ops1; Ir.operands = args1; _};
-     { Ir.opcodes = ops2; Ir.operands = args2; _}] ->
-    let op1 = List.hd_exn ops1 in
-    let op2 = List.hd_exn ops2 in
-    if Ir.Opcode.(op1 = beq && op2 = b) then
-      begin
-        match args1, args2 with
-        |[Label l1], [Label l2] -> Some (l1, l2)
-        | _ -> None
-      end
-    else None
-  | _ -> None
-
-
-(*
-   Takes a block and a set of blocks, and if the block is of the form:
-
-     beq l1
-     b l2
-
-   and the [l1] and [l2] bloks are, respectively:
-
-   l1:
-     b l3
-
-   and
-
-   l2: //empty
-
-   then turn the first block into
-
-     beq l3
-
-   and mark the other two blocks for deletion.
-
-
-*)
-(* FIXME: clean this up *)
-let opt_jmp_helper (blk : Ir.blk) (blks : Ir.blk list) : (Ir.blk * tid list) option =
-  match get_eq_branches blk with
-  | None -> None
-  | Some (l_true, l_false) ->
-    let true_dest =
-      List.find blks
-        ~f:(fun blk -> Tid.(blk.id = l_true)) |>
-      Option.bind ~f:is_simple_branch
-    in
-    let false_fall =
-      List.find blks
-        ~f:(fun blk -> Tid.(blk.id = l_false)) |>
-      Option.map ~f:is_empty_blk
-    in
-    begin
-      match true_dest, false_fall with
-      | Some dest, Some true ->
-        let new_blk =
-          { blk with
-            ctrl =
-              [
-                Ir.simple_op ARM_ops.Ops.beq Ir.Void [dest]
-              ]
-          }
-        in
-        Some (new_blk, [l_true; l_false])
-      | _ -> None
-    end
-
-
-let opt_jmp (blks : Ir.blk list) : Ir.blk list =
-  let new_blks, to_remove = List.fold blks
-      ~init:([], [])
-      ~f:(fun (new_blks, to_remove) b ->
-          match opt_jmp_helper b blks with
-          | None -> (b :: new_blks, to_remove)
-          | Some (b_new, new_remove) ->
-            (b_new :: new_blks, new_remove @ to_remove))
-  in
-  List.filter new_blks
-    ~f:(fun b -> not @@
-         List.mem to_remove b.id ~equal:Tid.equal)
-
-
-let add_load (op1 : Ir.operation) (op2 : Ir.operation) : Ir.operation option =
-  let opc1, opc2 =
-    op1.opcodes |> List.hd_exn, op2.opcodes |> List.hd_exn
-  in
-  if ARM_ops.Ops.(
-      (opc1 = add || opc1 = sub)
-      &&
-      (opc2 = ldr || opc2 = ldrh || opc2 = ldrb))
-  then begin
-    match op1.lhs, op1.operands, op2.operands with
-    (* We are in the case:
-       v1 := v2 +/- c; _ := ldr(b|h) x [v3]
-    *)
-    | [Var v1], [Var v2; Const c], [Var v3] ->
-      begin
-        let v1 = Option.value_exn v1.pre_assign in
-        let v3 = Option.value_exn v3.pre_assign in
-        if Var.(v1 = v3) then
-          (* Invert c if op1 is a subtraction *)
-          let c =
-            if ARM_ops.Ops.(opc1 = sub) then
-              Word.neg c
-            else c
-          in
-          let res =
-            {op2 with
-             operands = [Var v2; Const c]
-            }
-          in
-          Some res
-        else None
-      end
-    | _ -> None
-  end
-  else
-    None
-
-let rec opt_add_loads (ops : Ir.operation list) : Ir.operation list =
-  match ops with
-  | o1 :: o2 :: os ->
-    begin
-      match add_load o1 o2 with
-      | Some o -> o :: (opt_add_loads os)
-      | None -> o1 :: (opt_add_loads (o2 :: os))
-    end
-  | _ -> ops
-
-
 let peephole (ir : Ir.t) : Ir.t =
   let filter_nops blk =
     let {Ir.data; Ir.ctrl; _} = blk in
@@ -1120,16 +976,7 @@ let peephole (ir : Ir.t) : Ir.t =
       ctrl = ctrl;
     }
   in
-  let opt_add_loads blk =
-    let {Ir.data; _} = blk in
-    let data = opt_add_loads data in
-    { blk with
-      data = data
-    }
-  in
   let ir = Ir.map_blks ir ~f:filter_nops in
-  let ir = Ir.map_blks ir ~f:opt_add_loads in
-  let ir = { ir with blks = opt_jmp ir.blks } in
   ir
 
 
