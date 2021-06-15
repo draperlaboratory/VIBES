@@ -33,9 +33,6 @@ let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
     ~equal:Bitvec.equal
     "bitvec-domain"
 
-(* The domain of BIR programs *)
-let bir_domain : Insn.t KB.domain = Theory.Semantics.domain
-
 (* Optional s-expression domain (e.g., for correctness properties) *)
 let sexp_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
     ~equal:Sexp.equal
