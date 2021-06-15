@@ -9,4 +9,4 @@ module KB = Knowledge
 (** [register ()] registers the callback which loads the patch code
    (i.e., lifs it to BIR) which is associated with the provided
    toplevel [Data.cls]. *)
-val register : unit -> unit
+val ingest : Data.t -> unit KB.t
