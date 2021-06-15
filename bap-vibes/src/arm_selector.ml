@@ -477,6 +477,10 @@ struct
       (* We have to swap the arguments here, since ARM likes the value
        first, and the location second *)
       str mem value loc
+    | BinOp (PLUS, a, Int w) when Word.(w = zero 32) ->
+      select_exp a
+    | BinOp (MINUS, a, Int w) when Word.(w = zero 32) ->
+      select_exp a
     (* FIXME: this is amost certainly wrong *)
     | BinOp (PLUS, a, b) when Exp.(a = b) ->
       let a = select_exp a in
@@ -520,10 +524,12 @@ struct
     | `Jmp jmp ->
       let cond = Jmp.cond jmp in
       begin
-        match cond with
-        (* FIXME: do some non-trivial pattern matching at this point *)
-        | cond ->
-          let cond = select_exp cond in
+        let cond =
+          match cond with
+          (* FIXME: do some non-trivial pattern matching at this point *)
+          | BinOp(EQ, a, Int w) when Word.(w = zero 32) -> select_exp a
+          | cond -> select_exp cond
+        in
           begin
             match get_dst jmp with
             | Some dst -> br_one cond dst

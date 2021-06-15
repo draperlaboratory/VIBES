@@ -27,19 +27,12 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
-  let arm_eff = Arm.effect bir in
-  let err = Format.asprintf "arm_eff not found in:%a%!" KB.Value.pp bir in
-  let arm_eff = Result.of_option arm_eff
-    ~error:(Kb_error.Missing_semantics err) in
-  let ir =
-    Result.map ~f:Arm.ir arm_eff |>
-    Result.map ~f:(Arm.preassign lang)
-  in
-  match ir with
-  | Ok ir ->
-    Printf.printf "old IR:\n%s\n\n%!" (Ir.to_string ir);
-    KB.return ir
-  | Error e -> Kb_error.fail e
+  let ir = Blk.from_insn bir in
+  Format.printf "\nIR:\n%a\n\n" Blk.pp_seq (Seq.of_list ir);
+  let ir = Arm.ARM_Gen.select ir in
+  let ir = Arm.preassign lang ir in
+  Printf.printf "ASM:\n%s\n\n" (Ir.pretty_ir ir);
+  KB.return ir
 
 (* Compile one patch from BIR to VIBES IR *)
 let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
@@ -52,14 +45,6 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   Data.Patch.get_bir patch >>= fun bir ->
 
   Format.printf "\nPatch: %a\n\n%!" KB.Value.pp bir;
-  let ir = Blk.from_insn bir in
-  Format.printf "\n%i blocks\n\n" (List.length ir);
-  let blk = List.hd_exn ir in
-  let elts = Blk.elts blk in
-  Format.printf "\n%i elements in block\n\n" (Seq.length elts);
-  Format.printf "\nIR:\n%a\n\n" Blk.pp_seq (Seq.of_list ir);
-  let asm = Arm.ARM_Gen.select ir in
-  Printf.printf "ASM:\n%s\n\n" (Ir.pretty_ir asm);
 
   Data.Patch.get_lang patch >>= fun lang ->
   create_vibes_ir lang bir >>= fun ir ->

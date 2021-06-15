@@ -56,7 +56,7 @@ module Patch : sig
   val patch_code : (patch_cls, Sexp.t list option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
-  val bir : (patch_cls, insn) KB.slot
+  val patch_label : (patch_cls, Theory.label option) KB.slot
   val raw_ir : (patch_cls, Ir.t option) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   (* The language/encoding of the assembly, typically used to
@@ -82,7 +82,8 @@ module Patch : sig
   val get_patch_size : t -> int option KB.t
   val get_patch_size_exn : t -> int KB.t
 
-  val promise_bir : (t -> insn KB.t) -> unit
+  val init_sem : t -> unit KB.t
+  val set_bir : t -> insn -> unit KB.t
   val get_bir : t -> insn KB.t
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t
