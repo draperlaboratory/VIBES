@@ -82,6 +82,9 @@ module Patch : sig
   val get_patch_size : t -> int option KB.t
   val get_patch_size_exn : t -> int KB.t
 
+  (* This initializes the semantics slot by creating a program label
+     that will contain the semantics. This *must* be called before
+     set_bir! *)
   val init_sem : t -> unit KB.t
   val set_bir : t -> insn -> unit KB.t
   val get_bir : t -> insn KB.t
