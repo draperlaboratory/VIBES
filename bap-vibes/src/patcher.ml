@@ -296,7 +296,12 @@ let place_patches
       ~f:process_patch
   in
   placed_patches
-
+(** [reify_patch] gets out of the knowledge base all the information to fill the
+    [patch] data type. It performs some translation of address space numbers to
+    file offsets.
+    See https://gitter.im/BinaryAnalysisPlatform/vibes?at=6011cca5aa6a6f319de9381d
+    for more discussion of this.
+*)
 let reify_patch (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
   let open Int64 in
@@ -305,19 +310,22 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
   let* unit = KB.collect Theory.Label.unit addr in
   let* unit = match unit with
     | None -> Kb_error.fail (Kb_error.Other
-      (Format.asprintf "Missing unit in reify_patch for patch_point %a" Bitvec.pp patch_point))
+      (Format.asprintf "Patcher.reify_patch: Missing unit in reify_patch for patch_point %a"
+        Bitvec.pp patch_point))
     | Some x -> KB.return x
   in
   let* spec = KB.collect Image.Spec.slot unit in
   let patch_point = Bitvec.to_int64 patch_point in
   let code_region = Ogre.eval (Ogre.require
-   ~that:(fun (a,s,_) -> a <= patch_point && patch_point <= a + s)
+   ~that:(fun (addr,size,_) -> addr <= patch_point && patch_point <= addr + size)
   Image.Scheme.code_region) spec in
-  let* (addr,_size,offset) = match code_region with
+  let* (region_addr,_size,region_offset) = match code_region with
   | Error s -> Kb_error.fail (Kb_error.Other (Core_kernel.Error.to_string_hum s))
   | Ok c -> KB.return c
   in
-  let patch_file_offset = patch_point - addr + offset in
+  (* The distance of patch address from region start address is calculated
+     and then added to the region file offset to get the patch file offset *)
+  let patch_file_offset = patch_point - region_addr + region_offset in
   let* patch_size = Data.Patch.get_patch_size_exn patch in
   let* assembly = Data.Patch.get_assembly_exn patch in
   KB.return { assembly = assembly;
