@@ -296,6 +296,7 @@ let place_patches
       ~f:process_patch
   in
   placed_patches
+
 (** [reify_patch] gets out of the knowledge base all the information to fill the
     [patch] data type. It performs some translation of address space numbers to
     file offsets.
