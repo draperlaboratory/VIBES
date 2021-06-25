@@ -3,8 +3,13 @@ open Bap.Std
 open Bap_core_theory
 
 type arm_eff = {
+  (* These are the move/load/store operations in the current block *)
   current_data : Ir.operation list;
+  (* These are the jump/goto operations in the current block *)
   current_ctrl : Ir.operation list;
+  (* This is the list of blocks which encode the semantics of the
+     operation, except those contained in [current_data] and
+     [current_ctrl] *)
   other_blks : Ir.t}
 [@@deriving compare, equal, sexp]
 
@@ -12,17 +17,6 @@ let empty_eff = {current_data = []; current_ctrl = []; other_blks = Ir.empty}
 
 type arm_pure = {op_val : Ir.operand; op_eff : arm_eff}
 [@@deriving compare, equal, sexp]
-
-(* We use this domain both for ['a pure] and ['s bitv] *)
-let arm_pure_domain =
-  KB.Domain.optional
-    ~inspect:sexp_of_arm_pure
-    ~equal:equal_arm_pure "arm-pure"
-
-let arm_pure =
-  KB.Class.property Theory.Value.cls "arm-pure" arm_pure_domain
-
-let reify_var (v : 'a Theory.var) : Bil.var = Var.reify v
 
 let is_thumb (lang : Theory.language) : bool =
   let l = Theory.Language.to_string lang in
@@ -88,79 +82,6 @@ let (@.) s1 s2 =
 let (@>) eff data =
   { data with op_eff = eff @. data.op_eff }
 
-let arm_eff_domain =
-  KB.Domain.optional
-    ~inspect:sexp_of_arm_eff
-    ~equal:equal_arm_eff
-    "arm-eff"
-
-let arm_eff = KB.Class.property Theory.Effect.cls "arm-eff" arm_eff_domain
-
-let effect v = KB.Value.get arm_eff v
-
-let arm_mem = KB.Class.property Theory.Value.cls "arm-mem" arm_pure_domain
-
-let (let=) v f = KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_eff v with
-       | None ->
-         let v_str = Format.asprintf "arm_eff: %a" KB.Value.pp v in
-         Kb_error.fail (Kb_error.Missing_semantics v_str)
-       | Some v -> f v)
-
-let (let-) v f =
-  KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_pure v with
-       | None ->
-         let v_str = Format.asprintf "arm_pure: %a" KB.Value.pp v in
-         Kb_error.fail (Kb_error.Missing_semantics v_str)
-       | Some v -> f v)
-
-let (let/) v f =
-  KB.(>>=) v
-    (fun v ->
-       match KB.Value.get arm_mem v with
-       | None ->
-         let v_str = Format.asprintf "arm_mem: %a" KB.Value.pp v in
-         Kb_error.fail (Kb_error.Missing_semantics v_str)
-       | Some v -> f v)
-
-let eff d =
-  KB.return @@
-  KB.Value.put arm_eff
-    (Theory.Effect.empty Theory.Effect.Sort.bot)
-    (Some d)
-
-type 'a bitv_sort = 'a Theory.Bitv.t Theory.Value.sort
-
-(* We make this polymorphic, so that it can be instantiated in any
-   setting, despite being a fixed given size. We add a [unit] argument
-   to avoid the value restriction. *)
-(* TODO: fix this, so that s32 is of type r32 sort *)
-let s32 (_ : unit) : 'a bitv_sort = Theory.Bitv.define 32
-
-let memory m =
-  KB.return @@
-  KB.Value.put arm_mem
-    (Theory.Value.empty (Theory.Mem.define (s32 ()) (s32 ())))
-    (Some m)
-
-let pure v =
-  KB.return @@
-  KB.Value.put arm_pure
-    (* This means we only have 32 bit vectors as our values *)
-    (* TODO: extend this arbitrary sizes *)
-    (Theory.Value.empty (s32 ()))
-    (Some v)
-
-let bool b =
-  KB.return @@
-  KB.Value.put arm_pure
-    (* This means we only have 32 bit vectors as our values *)
-    (* TODO: extend this arbitrary sizes *)
-    (Theory.Value.empty Theory.Bool.t)
-    (Some b)
 
 module ARM_ops = struct
 
@@ -171,8 +92,8 @@ module ARM_ops = struct
     let op s = create ~arch:"arm" s
 
     let mov = op "mov"
-    (* let movw = op "movw" *)
-    (* let bx = op "bx" *)
+    let _movw = op "movw"
+    let _bx = op "bx"
     let add = op "add"
     let mul = op "mul"
     let sub = op "sub"
@@ -190,10 +111,10 @@ module ARM_ops = struct
     let beq = op "beq"
     let sdiv = op "sdiv"
     let udiv = op "udiv"
-    (* let bne = op "bne" *)
-    (* let ble = op "ble" *)
-    (* let blt = op "blt" *)
-    let b = op "b"
+    let _bne = op "bne"
+    let _ble = op "ble"
+    let _blt = op "blt"
+    let _b = op "b"
 
   end
 
@@ -209,7 +130,7 @@ module ARM_ops = struct
   let instr i sem =
     {sem with current_data = i::sem.current_data}
 
-  let control j sem =
+  let _control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
   (* Some cowboy type checking here, to check which kind of mov to
@@ -228,34 +149,6 @@ module ARM_ops = struct
     instr mov arg2_sem
 
   let ( := ) x y = arm_mov x y
-
-  let b_instr addr =
-    let i = Ir.simple_op Ops.b Void [Ir.Label addr] in
-    control i empty_eff
-
-  let jmp arg =
-    let {op_val = arg_tgt; op_eff = arg_sem} = arg in
-    let pc = Var.create "PC" (Imm 32) in
-    let pc = Ir.Var (Ir.simple_var pc) in
-    let jmp_data, jmp_ctrl =
-      match arg_tgt with
-      | Var _ ->
-        [], Ir.simple_op Ops.mov pc [arg_tgt]
-      | Const w ->
-        [], Ir.simple_op Ops.b Void [Offset w]
-      | _ ->
-        let err = Format.asprintf "%s"
-            (Ir.sexp_of_operand arg_tgt |>
-             Sexp.to_string)
-        in
-        failwith @@ "jmp: unexpected operand " ^ err
-    in
-    {
-      arg_sem with
-      current_data = jmp_data @ arg_sem.current_data;
-      current_ctrl = jmp_ctrl::arg_sem.current_ctrl
-    }
-
 
   let var v = {op_val = Ir.Var (Ir.simple_var v); op_eff = empty_eff}
 
@@ -319,8 +212,6 @@ module ARM_ops = struct
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
     uop (ldr_op bits) (Imm 32) loc
 
-  let ldr32 mem loc = ldr 32 mem loc
-
   let str mem value loc =
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
@@ -337,47 +228,21 @@ module ARM_ops = struct
 
   let xor a b = binop Ops.eor (Imm 32) a b
 
-  (* Generally, boolean operations will be handled by a normal (word
-     size) value, with value 0 if false and non-zero if true. It will
-     be the job of branching operations to call [cmp ? ?] and check
-     the appropriate flags. *)
   let equals arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
 
   (* Intuitively we want to generate:
 
      ..cond.. //fills variable [cond_val]
      CMP cond_val 0
-     BEQ
-     ..branch1... //this should just be a single jump instruction
-     ..branch2... //same, but less important
-
+     BEQ tgt
   *)
-  let beq cond branch1 branch2 =
-    let {op_val = cond_val; op_eff = cond_eff} = cond in
-    (* the order of operations here is actually important! *)
-    let cmp = Ir.simple_op Ops.cmp Void
-        [cond_val; Const (Word.of_int ~width:32 0)] in
-    let {current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = branch1 in
-    let {current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = branch2 in
-    let tid1 = Tid.for_name "true_branch" in
-    let tid2 = Tid.for_name "false_branch" in
-    let blk1 = Ir.simple_blk tid1 ~data:(List.rev data1) ~ctrl:ctrl1 in
-    let blk2 = Ir.simple_blk tid2 ~data:(List.rev data2) ~ctrl:ctrl2 in
-    let beq = Ir.simple_op Ops.beq Void [Label tid1] in
-    let b = Ir.simple_op Ops.b Void [Label tid2] in
-    let blks = cond_eff.other_blks in
-    let blks = Ir.union blks1 @@ Ir.union blks2 blks in
-    let blks = Ir.add blk1 @@ Ir.add blk2 blks in
-    {
-      current_data = cmp :: cond_eff.current_data;
-      current_ctrl = [beq; b];
-      other_blks = blks
-    }
-
-  (* Simpler branch which just takes a condition and a target label,
-     falls through if the condition is not met. *)
+  (* Generally, boolean operations will be handled by a normal (word
+     size) value, with value 0 if false and non-zero if true. It will
+     be the job of branching operations to call [cmp ? ?] and check
+     the appropriate flags. *)
   let br cond tgt =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
+    (* the order of operations here is actually important! *)
     let cmp = Ir.simple_op Ops.cmp Void
         [cond_val; Const (Word.of_int ~width:32 0)] in
     let beq = Ir.simple_op Ops.beq Void [tgt] in
@@ -449,12 +314,12 @@ struct
     | TIMES -> ( * )
     | DIVIDE -> udiv
     | SDIVIDE -> (/)
-    | LSHIFT -> (binop Ops.lsl_ (Imm 32))
-    | RSHIFT -> (binop Ops.lsr_ (Imm 32))
-    | ARSHIFT -> (binop Ops.asr_ (Imm 32))
+    | LSHIFT -> shl (const (Word.zero 32))
+    | RSHIFT -> shr (const (Word.zero 32))
+    | ARSHIFT ->  shr (const (Word.one 32))
     | AND -> (&&)
     | OR -> (||)
-    | EQ -> (-)
+    | EQ -> equals
     | XOR -> xor
     | MOD
     | SMOD
@@ -568,7 +433,7 @@ struct
       begin
         let cond =
           match cond with
-          (* FIXME: do some non-trivial pattern matching at this point *)
+          (* FIXME: handle trivial (unconditional) cases *)
           | BinOp(EQ, a, Int w) when Word.(w = zero 32) -> select_exp a
           | cond -> select_exp cond
         in
@@ -621,185 +486,6 @@ struct
 
 end
 
-module ARM_Core : Theory.Core =
-struct
-  include Theory.Empty
-  include ARM_ops
-
-  let set v arg =
-    let arg_v =
-      let r_var = v |> Var.reify in
-      Ir.simple_var r_var
-    in
-    KB.(
-      arg >>= fun arg ->
-      match Value.get arm_pure arg with
-      | Some arg -> eff ((Ir.Var arg_v) := arg)
-      | None ->
-        begin
-          match Value.get arm_mem arg with
-          (* No need to explicitely assign here, we don't use the
-             "mem" variables when generating Ir. *)
-          | Some arg -> eff arg.op_eff
-          | None ->
-            let v = Format.asprintf "%a" Theory.Var.pp v in
-            Kb_error.fail (Kb_error.Missing_semantics v)
-        end)
-
-
-  let seq s1 s2 =
-    let= s1 = s1 in
-    let= s2 = s2 in
-    eff @@ s1 @. s2
-
-  (* Both [data] and [ctrl] effects can have both kinds of effects,
-     AFAIKT, so we treat them (almost) identically. *)
-  let blk lab data ctrl =
-    let= data = data in
-    let= ctrl = ctrl in
-    (* We add instructions by consing to the front of the list, so we
-       need to reverse before finalizing the block. *)
-    let new_data = ctrl.current_data @ data.current_data |> List.rev in
-    (* Currently we generate ctrl in the correct order, since
-       there are rougly only 2 or 3 instructions. *)
-    let new_ctrl = ctrl.current_ctrl @ data.current_ctrl in
-    let new_blk = Ir.simple_blk lab ~data:new_data ~ctrl:new_ctrl in
-    let all_blocks =
-      Ir.add new_blk @@ Ir.union data.other_blks ctrl.other_blks in
-    eff {current_data = []; current_ctrl = []; other_blks = all_blocks}
-
-  let var (v : 'a Theory.var) : 'a Theory.pure =
-    let sort = Theory.Var.sort v in
-    let v = reify_var v in
-    let slot =
-      match Theory.Value.Sort.forget sort |> Theory.Mem.refine with
-      | None -> arm_pure
-      | Some _ -> arm_mem
-    in
-    KB.return @@ KB.Value.put slot (Theory.Value.empty sort)
-      (Some (var v))
-
-  let unk _sort = Kb_error.fail (Kb_error.Not_implemented "Arm_gen.unk")
-
-  let let_ _v _e _b = Kb_error.fail (Kb_error.Not_implemented "Arm_gen.let_")
-
-  let int _sort (w : Theory.word) : 's Theory.bitv =
-    (* FIXME: we're assuming every constant is exactly 32
-       bits. *)
-    let w = Bitvec.to_int32 w in
-    pure @@ const @@ Word.of_int32 ~width:32 w
-
-  let add a b =
-    let- a = a in
-    let- b = b in
-    pure @@ a + b
-
-  let mul a b =
-    let- a = a in
-    let- b = b in
-    pure @@ a * b
-
-  let sub a b =
-    let- a = a in
-    let- b = b in
-    pure @@ a - b
-
-  let sdiv a b =
-    let- a = a in
-    let- b = b in
-    pure @@ a / b
-
-  let div a b =
-    let- a = a in
-    let- b = b in
-    pure @@ udiv a b
-
-  let goto (lab : tid) : Theory.ctrl Theory.eff =
-    eff @@ b_instr lab
-
-  let jmp addr =
-    let- addr_bitv = addr in
-    eff @@ jmp addr_bitv
-
-  let repeat _cond _body =
-    Kb_error.fail (Kb_error.Not_implemented "Arm_gen.repeat")
-
-  let load mem loc =
-    let/ mem = mem in
-    let- loc = loc in
-    pure @@ ldr32 mem loc
-
-  (* FIXME: check the endian is always false? *)
-  let loadw sort _endian mem loc =
-    let/ mem = mem in
-    let- loc = loc in
-    let size = Theory.Bitv.size sort in
-    pure @@ ldr size mem loc
-
-  let store mem loc value =
-    let/ mem = mem in
-    let- loc = loc in
-    let- value = value in
-    (* We have to swap the arguments here, since ARM likes the value
-       first, and the location second *)
-    memory @@ str mem value loc
-
-  let perform _sort =
-    eff empty_eff
-
-  let shiftl sign l r =
-    let- sign = sign in
-    let- l = l in
-    let- r = r in
-    pure @@ shl sign l r
-
-  let shiftr sign l r =
-    let- sign = sign in
-    let- l = l in
-    let- r = r in
-    pure @@ shr sign l r
-
-  let and_ a b =
-    let- a = a in
-    let- b = b in
-    bool (a && b)
-
-  let or_ a b =
-    let- a = a in
-    let- b = b in
-    bool (a || b)
-
-  let logand a b =
-    let- a = a in
-    let- b = b in
-    pure (a && b)
-
-  let logor a b =
-    let- a = a in
-    let- b = b in
-    pure (a || b)
-
-  let logxor a b =
-    let- a = a in
-    let- b = b in
-    pure @@ xor a b
-
-  let eq a b =
-    let- a = a in
-    let- b = b in
-    bool @@ equals a b
-
-  let b0 = bool @@ const @@ Word.of_int ~width:32 0
-
-  let b1 = bool @@ const @@ Word.of_int ~width:32 1
-
-  let branch cond branch1 branch2 =
-    let- cond = cond in
-    let= branch1 = branch1 in
-    let= branch2 = branch2 in
-    eff @@ beq cond branch1 branch2
-
-end
 
 
 module Pretty = struct
@@ -915,8 +601,6 @@ module Pretty = struct
 
 end
 
-let slot = arm_eff
-
 (* Returns [true] if an instruction has no effect on data or
    control, is an overaproximation, of course. *)
 let is_nop (op : Ir.operation) : bool =
@@ -967,13 +651,3 @@ let peephole (ir : Ir.t) : Ir.t =
   in
   let ir = Ir.map_blks ir ~f:filter_nops in
   ir
-
-
-let () =
-  Theory.declare
-    ~context:["vibes"]
-    ~package:"vibes"
-    ~name:"arm-gen"
-    ~desc:"This theory allows instantiating Program semantics into \
-          a Vibes_ir.t term, using Arm_gen.slot."
-  @@ KB.return (module ARM_Core : Theory.Core)

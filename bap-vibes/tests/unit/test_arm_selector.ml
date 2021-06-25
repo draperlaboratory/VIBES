@@ -1,316 +1,190 @@
 open !Core_kernel
 open Bap_knowledge
 open Bap_vibes
-open Bap_core_theory
+open Bap.Std
 
 module KB = Knowledge
 
-open KB.Let
-module H = Helpers
-
 open OUnit2
 
-open Theory
+let v1 = Var.create "v1" (Imm 32)
+let v2 = Var.create "v2" (Imm 32)
+let v3 = Var.create "v3" (Imm 32)
+let v = Var.create "v" (Imm 1)
+let mem = Var.create "mem" (Mem (`r32, `r32))
+let add_goto sub tgt =
+  Term.map blk_t sub ~f:(fun blk ->
+  let blk = Blk.Builder.init blk in
+  Blk.Builder.add_jmp blk @@ Jmp.create @@ Goto (Label.direct tgt);
+  Blk.Builder.result blk)
 
-module Prog1 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog1 = struct
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 + var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+      let bil =
+        Bil.([v1 := var v2 + var v3])
+      in
+      Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
 
-module Prog2 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog2 = struct
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 + (var v3 + var v1)] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v1 := var v2 + (var v3 + var v1)] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog3 (S : Core) = struct
+module Prog3 = struct
 
-  open S
-  open Core_notations.Make(S)
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 << var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v1 := var v2 lsl var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 
 end
 
-module Prog4 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog4 = struct
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 >> var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v1 := var v2 lsr var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog5 (S : Core) = struct
+module Prog5 = struct
 
-  open S
-  open Core_notations.Make(S)
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 & var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v1 := var v2 land var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog6 (S : Core) = struct
+module Prog6 = struct
 
-  open S
-  open Core_notations.Make(S)
 
   let prog =
-    let v1 = Var.define (Bitv.define 32) "v1" in
-    let v2 = Var.define (Bitv.define 32) "v2" in
-    let v3 = Var.define (Bitv.define 32) "v3" in
-    let data = data_body [v1 := var v2 |$ var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v1 := var v2 lor var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog7 (S : Core) = struct
 
-  open S
-  open Core_notations.Make(S)
-
-  let prog =
-    let v1 = Var.define Bool.t "v1" in
-    let v2 = Var.define Bool.t "v2" in
-    let v3 = Var.define Bool.t "v3" in
-    let data = data_body [v1 := var v2 && var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
-
-end
-
-module Prog8 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
-
-  let prog =
-    let v1 = Var.define Bool.t "v1" in
-    let v2 = Var.define Bool.t "v2" in
-    let v3 = Var.define Bool.t "v3" in
-    let data = data_body [v1 := var v2 || var v3] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
-
-end
-
-module Prog9 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog9 = struct
 
   let prog =
     let tgt = Bap.Std.Tid.for_name "tgt" in
-    let data = data_body [] in
-    let control = ctrl_body [goto tgt] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = [] in
+    let prog = Bap_wp.Bil_to_bir.bil_to_sub bil in
+    add_goto prog tgt
 
 end
 
 
-module Prog10 (S : Core) = struct
+module Prog10 = struct
 
-  open S
-  open Core_notations.Make(S)
 
   let prog =
-    let b32 = Bitv.define 32 in
-    let mem_ty = Mem.define b32 b32 in
-    let v1 = Var.define b32 "v1" in
-    let v2 = Var.define b32 "v2" in
-    let mem = Var.define mem_ty "mem" in
-    let data = data_body [mem := store (var mem) (var v1) (var v2)] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[mem := store ~mem:(var mem) ~addr:(var v1) (var v2) BigEndian `r32] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog11 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog11 = struct
 
   let prog =
-    let b32 = Bitv.define 32 in
-    let mem_ty = Mem.define b32 b32 in
-    let v1 = Var.define b32 "v1" in
-    let v2 = Var.define b32 "v2" in
-    let mem = Var.define mem_ty "mem" in
-    let data = data_body [v2 := load (var mem) (var v1)] in
-    let control = ctrl_body [] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[v2 := load ~mem:(var mem) ~addr:(var v1) BigEndian `r32] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-module Prog12 (S : Core) = struct
-
-  open S
-  open Core_notations.Make(S)
+module Prog12 = struct
 
   let prog =
-    let v = Var.define Bool.t "v" in
-    let tgt = Bap.Std.Tid.for_name "tgt" in
-    let data = data_body [] in
-    let fall = perform Effect.Sort.fall in
-    let control = ctrl_body [branch (var v) (goto tgt) fall] in
-    let l = Bap.Std.Tid.for_name "entry" in
-    blk l data control
+    let bil = Bil.[if_ (var v) [] []] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
 module Arm = Arm_selector
 
-module Prog1_inst = Prog1(Arm.ARM_Core)
 
-module Prog2_inst = Prog2(Arm.ARM_Core)
-
-module Prog3_inst = Prog3(Arm.ARM_Core)
-
-module Prog4_inst = Prog4(Arm.ARM_Core)
-
-module Prog5_inst = Prog5(Arm.ARM_Core)
-
-module Prog6_inst = Prog6(Arm.ARM_Core)
-
-module Prog7_inst = Prog7(Arm.ARM_Core)
-
-module Prog8_inst = Prog8(Arm.ARM_Core)
-
-module Prog9_inst = Prog9(Arm.ARM_Core)
-
-module Prog10_inst = Prog10(Arm.ARM_Core)
-
-module Prog11_inst = Prog11(Arm.ARM_Core)
-
-module Prog12_inst = Prog12(Arm.ARM_Core)
-
-let test_ir (_ : test_ctxt) (v : unit eff) (expected : string list) : unit =
-  let computation =
-    let* v = v in
-    let v = Arm.effect v in
-    let asm =
-      v |> Option.map ~f:Arm.ir
-        |> Option.map ~f:Ir.dummy_reg_alloc
-        |> Option.map ~f:Arm.Pretty.arm_ir_pretty
-        |> Option.map ~f:Result.ok (* We turn an [Error foo] into a [None] *)
-        |> Option.join (* And we squash the Options *)
-    in
-    let* patch = KB.Object.create Data.Patch.patch in
-    let* _ = Data.Patch.set_assembly patch asm in
-    KB.return patch
+let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
+  let result =
+    v |> Term.to_sequence blk_t
+    |> Seq.to_list
+    |> Arm.ARM_Gen.select
+    |> Ir.dummy_reg_alloc
+    |> Arm.Pretty.arm_ir_pretty
+    |> Result.ok
   in
-  let result = KB.run Data.Patch.patch computation KB.empty in
-  let rexpected = List.map ~f:Str.regexp expected in
-  let rexpected = Some rexpected in
   let cmp expected input =
+    let rexpected =
+      Option.map expected
+        ~f:(List.map ~f:Str.regexp) in
     begin
-      match input, expected with
+      match input, rexpected with
       | Some input, Some expected ->
-         let pairs = List.zip_exn expected input in
-         let matches = List.map pairs
-                         ~f:(fun (pat, str) -> Str.string_match pat str 0) in
-         List.for_all ~f:(fun b -> b) matches
+        let pairs = List.zip expected input in
+        begin
+          match pairs with
+          | Ok pairs ->
+            let matches = List.map pairs
+                ~f:(fun (pat, str) -> Str.string_match pat str 0) in
+            List.for_all ~f:(fun b -> b) matches
+          | Unequal_lengths -> false
+        end
       | _ -> false
     end
   in
-  let print_regex_list_opt _ = H.print_string_list_opt (Some expected) in
-  H.assert_property
+  let print_opt_str_list l =
+    match l with
+    | None -> "None"
+    | Some l -> List.to_string ~f:ident l
+  in
+  assert_equal
     ~cmp:cmp
-    ~p_res:H.print_string_list_opt
-    ~p_expected:print_regex_list_opt
-    Data.Patch.assembly rexpected result
+    ~printer:print_opt_str_list
+    (Some expected) result
 
 (* FIXME: we currently don't check to see if the variable names are
    consistent! *)
 let test_ir1 ctxt =
-  test_ir ctxt Prog1_inst.prog ["entry:"; "add R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog1.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "add R0, R0, R0"; "mov R0, R0"]
 
 let test_ir2 ctxt =
-  test_ir ctxt Prog2_inst.prog
-    ["entry:"; "add R0, R0, R0"; "add R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog2.prog
+    ["blk\\([0-9]\\|[a-f]\\)*:"; "add R0, R0, R0"; "add R0, R0, R0"; "mov R0, R0"]
 
 let test_ir3 ctxt =
-  test_ir ctxt Prog3_inst.prog ["entry:"; "lsl R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog3.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "lsl R0, R0, R0"; "mov R0, R0"]
 
 let test_ir4 ctxt =
-  test_ir ctxt Prog4_inst.prog ["entry:"; "lsr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog4.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "lsr R0, R0, R0"; "mov R0, R0"]
 
 let test_ir5 ctxt =
-  test_ir ctxt Prog5_inst.prog ["entry:"; "and R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog5.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "and R0, R0, R0"; "mov R0, R0"]
 
 let test_ir6 ctxt =
-  test_ir ctxt Prog6_inst.prog ["entry:"; "orr R0, R0, R0"; "mov R0, R0"]
-
-let test_ir7 ctxt =
-  test_ir ctxt Prog7_inst.prog ["entry:"; "and R0, R0, R0"; "mov R0, R0"]
-
-let test_ir8 ctxt =
-  test_ir ctxt Prog8_inst.prog ["entry:"; "orr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog6.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "orr R0, R0, R0"; "mov R0, R0"]
 
 let test_ir9 ctxt =
-  test_ir ctxt Prog9_inst.prog ["entry:"; "b tgt"]
+  test_ir ctxt Prog9.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "b tgt"]
 
 let test_ir10 ctxt =
-  test_ir ctxt Prog10_inst.prog ["entry:"; "str R0, R0"]
+  test_ir ctxt Prog10.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "str R0, R0"]
 
 let test_ir11 ctxt =
-  test_ir ctxt Prog11_inst.prog ["entry:"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
+  test_ir ctxt Prog11.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
 
 let test_ir12 ctxt =
-  test_ir ctxt Prog12_inst.prog
+  test_ir ctxt Prog12.prog
     [
-      "entry:";
+      "blk\\([0-9]\\|[a-f]\\)*:";
       "cmp R0, #0";
       "beq true_branch";
       "b false_branch";
@@ -327,8 +201,6 @@ let suite =
     "Test Arm.ir 4" >:: test_ir4;
     "Test Arm.ir 5" >:: test_ir5;
     "Test Arm.ir 6" >:: test_ir6;
-    "Test Arm.ir 7" >:: test_ir7;
-    "Test Arm.ir 8" >:: test_ir8;
     "Test Arm.ir 9" >:: test_ir9;
     "Test Arm.ir 10" >:: test_ir10;
     "Test Arm.ir 11" >:: test_ir11;
