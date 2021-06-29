@@ -104,8 +104,10 @@ end
 
 module Prog12 = struct
 
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
   let prog =
-    let bil = Bil.[if_ (var v) [] []] in
+    let bil = Bil.[if_ (var v) [v1 := !!3] [v1 := !!4]] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end

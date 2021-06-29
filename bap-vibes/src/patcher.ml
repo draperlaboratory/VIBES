@@ -296,6 +296,8 @@ let place_patches
       ~f:process_patch
   in
   placed_patches
+
+
 (** [reify_patch] gets out of the knowledge base all the information to fill the
     [patch] data type. It performs some translation of address space numbers to
     file offsets.
@@ -319,7 +321,7 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
   let code_region = Ogre.eval (Ogre.require
    ~that:(fun (addr,size,_) -> addr <= patch_point && patch_point <= addr + size)
   Image.Scheme.code_region) spec in
-  let* (region_addr,_size,region_offset) = match code_region with
+  let* (region_addr, _size, region_offset) = match code_region with
   | Error s -> Kb_error.fail (Kb_error.Other (Core_kernel.Error.to_string_hum s))
   | Ok c -> KB.return c
   in

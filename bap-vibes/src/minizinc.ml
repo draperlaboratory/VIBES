@@ -119,7 +119,7 @@ type serialization_info = {
   temp_map : Var.t String.Map.t;
   operations : Tid.t list;
   operands : Var.t list;
-} 
+}
 
 (**
    [sol] is produced by processing [sol_serial]
@@ -140,7 +140,7 @@ type sol = {
   issue : int Tid.Map.t;
 } [@@deriving sexp, compare]
 
-module Sol = struct 
+module Sol = struct
   module S = struct
     type t = sol
     let compare = compare_sol
@@ -263,10 +263,10 @@ let serialize_mzn_params
         operations;
     latency = List.map ~f:(fun _ -> 10) opcodes; (* TODO *)
     number_excluded = List.length prev_sols;
-    exclude_reg = List.map prev_sols 
+    exclude_reg = List.map prev_sols
         ~f:(fun sol ->  List.map temps
                ~f:(fun t -> Var.Map.find_exn sol.reg t |> mzn_enum_of_var)
-           ) 
+           )
   },
   {
     temps = temps;
