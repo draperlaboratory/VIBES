@@ -114,7 +114,7 @@ module ARM_ops = struct
     let _bne = op "bne"
     let _ble = op "ble"
     let _blt = op "blt"
-    let _b = op "b"
+    let b = op "b"
 
   end
 
@@ -130,7 +130,7 @@ module ARM_ops = struct
   let instr i sem =
     {sem with current_data = i::sem.current_data}
 
-  let _control j sem =
+  let control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
   (* Some cowboy type checking here, to check which kind of mov to
@@ -252,6 +252,10 @@ module ARM_ops = struct
       current_ctrl = [beq];
       other_blks = blks
     }
+
+  (* Unconditional jump *)
+  let goto tgt = control (Ir.simple_op Ops.b Void [tgt]) empty_eff
+
 
 end
 
@@ -431,18 +435,21 @@ struct
     | `Jmp jmp ->
       let cond = Jmp.cond jmp in
       begin
-        let cond =
-          match cond with
-          (* FIXME: handle trivial (unconditional) cases *)
-          | BinOp(EQ, a, Int w) when Word.(w = zero 32) -> select_exp a
-          | cond -> select_exp cond
-        in
+        match get_dst jmp with
+        | None ->
+          let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
+          failwith err
+        (* NOTE: branches if cond is zero *)
+        | Some dst ->
           begin
-            match get_dst jmp with
-            | Some dst -> br cond dst
-            | None ->
-              let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
-              failwith err
+            match cond with
+            | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
+              let cond = select_exp cond in
+              br cond dst
+            | Int w when Word.(w <> zero 32) -> goto dst
+            | cond ->
+              let cond = select_exp cond in
+              br cond dst
           end
       end
     | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"

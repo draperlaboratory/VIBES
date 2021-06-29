@@ -53,6 +53,7 @@ let assembly = ["patch:"; "mov R0, #3"]
 let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
 let minizinc_model_filepath = "/path/to/model.mzn"
+let unit = KB.Object.create Bap_core_theory.Theory.Unit.cls
 let proj = dummy_proj original_exe
 let prog = prog_exn proj
 

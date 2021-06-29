@@ -1,5 +1,6 @@
 open !Core_kernel
 open Bap_knowledge
+open Bap_core_theory
 open Knowledge.Syntax
 open Bap_vibes
 open OUnit2
@@ -59,6 +60,10 @@ let patcher _ _ _ = H.patched_exe
 (* Test that [Patcher.patch] works as expected. *)
 let test_patch (_ : test_ctxt) : unit =
 
+
+  H.skip_test "Currently reify_patch invokes computation on the \
+               Image.Spec.slot Ogre slot, which we do not yet mock.";
+
   (* Run the patcher. *)
   let computation =
 
@@ -69,6 +74,9 @@ let test_patch (_ : test_ctxt) : unit =
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Data.Patch.set_assembly patch (Some H.assembly) >>= fun _ ->
+    Theory.Label.for_addr H.patch_point >>= fun patch_tid ->
+    H.unit >>= fun unit ->
+    KB.provide Theory.Label.unit patch_tid (Some unit) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
@@ -131,6 +139,9 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
 (* Test that [Patcher.patch] errors if there's no assembly in the KB. *)
 let test_patch_with_no_assembly (_ : test_ctxt) : unit =
 
+  H.skip_test "Currently reify_patch invokes computation on the \
+               Image.Spec.slot Ogre slot, which we do not yet mock.";
+
   (* Run the patcher. *)
   let computation =
 
@@ -140,6 +151,9 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_point patch (Some H.patch_point) >>= fun _ ->
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
+    Theory.Label.for_addr H.patch_point >>= fun patch_tid ->
+    H.unit >>= fun unit ->
+    KB.provide Theory.Label.unit patch_tid (Some unit) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
