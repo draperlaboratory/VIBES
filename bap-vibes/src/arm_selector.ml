@@ -122,14 +122,11 @@ module ARM_ops = struct
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
     Ir.simple_var
 
-  (* let create_temp' reg =
-   *   let v = Var.create ~is_virtual:true ~fresh:true "tmp" (Imm 32) in
-   *   Ir.given_var v reg *)
-
   (* defaults to data instructions, since they are way more common *)
   let instr i sem =
     {sem with current_data = i::sem.current_data}
 
+  (* Create a control statement. *)
   let control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
@@ -471,7 +468,7 @@ struct
         (* data instructions are emitted in reverse chronological
            order *)
         ~data:(List.rev current_data)
-        ~ctrl:current_ctrl
+        ~ctrl:(List.rev current_ctrl)
     in
     let all_blks = Ir.add new_blk other_blks in
     {

@@ -153,46 +153,56 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
     ~printer:print_opt_str_list
     (Some expected) result
 
+
+let blk_pat = "blk\\([0-9]\\|[a-f]\\)*"
+
 (* FIXME: we currently don't check to see if the variable names are
    consistent! *)
 let test_ir1 ctxt =
-  test_ir ctxt Prog1.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "add R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog1.prog [blk_pat ^ ":"; "add R0, R0, R0"; "mov R0, R0"]
 
 let test_ir2 ctxt =
   test_ir ctxt Prog2.prog
-    ["blk\\([0-9]\\|[a-f]\\)*:"; "add R0, R0, R0"; "add R0, R0, R0"; "mov R0, R0"]
+    [blk_pat ^ ":"; "add R0, R0, R0"; "add R0, R0, R0"; "mov R0, R0"]
 
 let test_ir3 ctxt =
-  test_ir ctxt Prog3.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "lsl R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog3.prog [blk_pat ^ ":"; "lsl R0, R0, R0"; "mov R0, R0"]
 
 let test_ir4 ctxt =
-  test_ir ctxt Prog4.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "lsr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog4.prog [blk_pat ^ ":"; "lsr R0, R0, R0"; "mov R0, R0"]
 
 let test_ir5 ctxt =
-  test_ir ctxt Prog5.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "and R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog5.prog [blk_pat ^ ":"; "and R0, R0, R0"; "mov R0, R0"]
 
 let test_ir6 ctxt =
-  test_ir ctxt Prog6.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "orr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog6.prog [blk_pat ^ ":"; "orr R0, R0, R0"; "mov R0, R0"]
 
 let test_ir9 ctxt =
-  test_ir ctxt Prog9.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "b tgt"]
+  test_ir ctxt Prog9.prog [blk_pat ^ ":"; "b tgt"]
 
 let test_ir10 ctxt =
-  test_ir ctxt Prog10.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "str R0, R0"]
+  test_ir ctxt Prog10.prog [blk_pat ^ ":"; "str R0, R0"]
 
 let test_ir11 ctxt =
-  test_ir ctxt Prog11.prog ["blk\\([0-9]\\|[a-f]\\)*:"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
+  test_ir ctxt Prog11.prog [blk_pat ^ ":"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
 
 let test_ir12 ctxt =
   test_ir ctxt Prog12.prog
     [
-      "blk\\([0-9]\\|[a-f]\\)*:";
+      blk_pat ^ ":";
       "cmp R0, #0";
-      "beq true_branch";
-      "b false_branch";
-      "true_branch:";
-      "b tgt";
-      "false_branch:";
+      "beq " ^ blk_pat;
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #3";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #4";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
     ]
 
 let suite =
