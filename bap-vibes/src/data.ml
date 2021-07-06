@@ -66,15 +66,6 @@ let package = "vibes"
 let name = "data"
 let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
 
-let force_slot : (cls, unit) KB.slot =
-  KB.Class.property ~package cls "force" unit_domain
-
-let promise (callback : t -> unit KB.t) : unit =
-  KB.promise force_slot callback
-
-let force (obj : t) : unit KB.t =
-  KB.collect force_slot obj
-
 (* Properties pertaining to the patch code *)
 module Patch = struct
 

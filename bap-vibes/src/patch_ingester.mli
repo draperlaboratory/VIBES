@@ -6,7 +6,7 @@
 open Bap_knowledge
 module KB = Knowledge
 
-(** [register ()] registers the callback which loads the patch code
-   (i.e., lifs it to BIR) which is associated with the provided
-   toplevel [Data.cls]. *)
+(** Processes the whole patch associated with the [Data.t] argument,
+    populating all the relevant KB slots with semantic data associated
+    with the patch syntax. *)
 val ingest : Data.t -> unit KB.t

@@ -42,7 +42,8 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   Events.(send @@ Info info_str);
   Data.Patch.get_bir patch >>= fun bir ->
 
-  Format.printf "\nPatch: %a\n\n%!" KB.Value.pp bir;
+  let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp bir in
+  Events.(send @@ Info info_str);
 
   Data.Patch.get_lang patch >>= fun lang ->
   create_vibes_ir lang bir >>= fun ir ->
