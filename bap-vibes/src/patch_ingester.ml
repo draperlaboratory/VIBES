@@ -232,7 +232,7 @@ module CoreParser (Core : Theory.Core) = struct
 
 end
 
-let provide_bil (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
+let provide_bir (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Theory.instance () >>=
   Theory.require >>= fun (module Core) ->
   let module SexpParser = CoreParser(Core) in
@@ -251,15 +251,19 @@ let provide_bil (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Events.(send @@ Rule);
   Data.Patch.set_bir patch bir
 
-(* Loads the BIR version of a patch. For now, we select from a hand-written
-   set of patches defined in the {!Patches} module. *)
+(* Ingests a single patch, populating the relevant fields of the KB,
+   most notably the semantics field of the corresponding patch. (and
+   increments the [patch_num] counter). *)
 let ingest_one (addr_size : int) (patch_num : int KB.t) (patch : Data.Patch.t)
     : int KB.t =
   patch_num >>= fun patch_num ->
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
-  provide_bil addr_size patch >>= fun () ->
+  provide_bir addr_size patch >>= fun () ->
   KB.return @@ patch_num+1
 
+(* Processes the whole patch associated with [obj], populating all the
+   relevant KB slots with semantic data associated with the patch
+   syntax. *)
 let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patch ingester");
   Events.(send @@ Info "Using hand-written BIL patches");

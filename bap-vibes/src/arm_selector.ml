@@ -2,6 +2,25 @@ open !Core_kernel
 open Bap.Std
 open Bap_core_theory
 
+(*-------------------------------------------------------
+*
+* Instruction selection works in the "standard" maximal munch
+* manner: we match against a portion of the AST, call the selector
+* recursively and generate opcodes.
+*
+* The generated code is a bunch of blocks, along with the "current"
+* block, which is unfinished while data operations are still being
+* munched, and turned into a block and added to the set.
+*
+* Note that a given BIR instruction may itself give rise to several
+* blocks, which forces us to pass along that set in the output
+* datatypes, [arm_eff] and [arm_pure], though at the moment no
+* instructions make use of this (ite is a potential example though).
+*
+*
+*
+*---------------------------------------------------------*)
+
 type arm_eff = {
   (* These are the move/load/store operations in the current block *)
   current_data : Ir.operation list;
@@ -70,7 +89,9 @@ let preassign (lang : Theory.language) (ir : Ir.t) : Ir.t =
     Ir.map_op_vars ir
       ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
 
-let (@.) s1 s2 =
+(* Appends the effects of s2 to those of s1, respecting the order if they
+   are not in seperate blocks. *)
+let (@.) (s1 : arm_eff) (s2 : arm_eff) : arm_eff =
   let { current_data = data1; current_ctrl = ctrl1; other_blks = blks1} = s1 in
   let { current_data = data2; current_ctrl = ctrl2; other_blks = blks2} = s2 in
   {
@@ -79,7 +100,10 @@ let (@.) s1 s2 =
     other_blks = Ir.union blks1 blks2
   }
 
-let (@>) eff data =
+(* Same as [@.], but the second argument is data, so it contains a
+   variable refering to a piece of data, which is carried over to the
+   result. *)
+let (@>) (eff : arm_eff) (data : arm_pure) : arm_pure =
   { data with op_eff = eff @. data.op_eff }
 
 
