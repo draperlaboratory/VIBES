@@ -205,7 +205,7 @@ else
 fi
 
 # Install OPAM packages.
-opam install -y ounit2 ppx_deriving_yojson >> "${REPORT_FILE}" 2>&1
+opam install -y z3 ounit2 ppx_deriving_yojson >> "${REPORT_FILE}" 2>&1
 if [[ "${?}" != "0" ]]; then
     echo "Unable to install OPAM packages." > "${MSG_FILE}"
     echo "...." >> "${REPORT_FILE}"
