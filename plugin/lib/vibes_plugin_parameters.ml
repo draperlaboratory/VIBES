@@ -35,7 +35,6 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
    into a [Sexp.t list] (it should be a valid S-expression). *)
 let validate_patch_code (nm : string) (obj : Json.t)
     : (Sexp.t list, error) Stdlib.result =
-  Printexc.record_backtrace true;
   match Json.Util.member "patch-code" obj with
   | `String s ->
     begin
