@@ -5,6 +5,7 @@ open Monads.Std
 
 module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
+module Parse_c = Bap_vibes.Parse_c
 module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
@@ -34,12 +35,17 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
    into a [Sexp.t list] (it should be a valid S-expression). *)
 let validate_patch_code (nm : string) (obj : Json.t)
     : (Sexp.t list, error) Stdlib.result =
+  Printexc.record_backtrace true;
   match Json.Util.member "patch-code" obj with
   | `String s ->
     begin
      if String.length s = 0 then Err.fail Errors.Missing_patch_code
      else 
        begin
+         let s = match Parse_c.c_patch_to_sexp_string s with
+                 | Ok s1 -> s1
+                 | Error _ -> s
+         in
          try Err.return (Sexp.scan_sexps (Lexing.from_string s))
          with _ -> 
            let msg =

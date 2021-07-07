@@ -9,6 +9,7 @@ let suite = "Full suite" >::: [
     "Verifier" >::: Test_verifier.suite;
     "Arm_selector" >::: Test_arm_selector.suite;
     "Bir_opt" >::: Test_bir_opt.suite;
+    "C Parser" >::: Test_parse_c.suite;
   ]
 
 let _ = run_test_tt_main suite
