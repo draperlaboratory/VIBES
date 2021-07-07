@@ -81,15 +81,15 @@ git_commit
 
 echo ""
 
-
 # Install OPAM packages.
-opam install -y z3 ounit2 ppx_deriving_yojson >> "${REPORT_FILE}" 2>&1
-if [[ "${?}" != "0" ]]; then
+opam install -j 3 -y z3 ounit2 ppx_deriving_yojson >> "${REPORT_FILE}" 2>&1
+OPAM_RESULT="${?}"
+if [[ "${OPAM_RESULT}" != "0" ]]; then
     echo "Unable to install OPAM packages." > "${MSG_FILE}"
     echo "...." >> "${REPORT_FILE}"
     echo "Halting." >> "${REPORT_FILE}"
     echo "Tried to install opam packages." >> "${REPORT_FILE}"
-    echo "The attempt returned a non-zero exit code." >> "${REPORT_FILE}"
+    echo "The attempt returned a non-zero exit code: ${OPAM_RESULT}." >> "${REPORT_FILE}"
     echo "$(cat "${MSG_FILE}")"
     echo "$(cat "${REPORT_FILE}")"
     if [[ "${REPORT_RESULTS}" == "true" ]]; then
@@ -99,7 +99,6 @@ if [[ "${?}" != "0" ]]; then
 else
     echo "- OPAM packages installed." | tee -a "${REPORT_FILE}"
 fi
-
 
 # If WP is not installed, install it.
 WP_IS_INSTALLED="$(bap list plugins | grep wp | grep 'weakest precondition')"
