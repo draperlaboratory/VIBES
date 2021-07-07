@@ -1,0 +1,13 @@
+{
+  "max-tries": 3,
+  "func": "main",
+  "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "int retvar;
+                     retvar = 3;
+                     goto fallthrough;",
+     "patch-point" : "0x10400",
+     "patch-size" : 4}
+  ]
+}

@@ -76,8 +76,27 @@ test_arm_simple_multi () {
     run_arm_exe "${TEST_PATCH_EXE}" 1
 }
 
+test_arm_simple_c_patch () {
+    local TEST_DIR="${EXES_DIR}/arm-simple-c-patch"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
+
+    print_header "Checking ${TEST_DIR}"
+
+    # Check the precompiled executables.
+    run_arm_exe "${MAIN_EXE}" 5
+    run_arm_exe "${PATCH_EXE}" 3
+
+    # Check that vibes patches correctly.
+    run_make "make clean -C ${TEST_DIR}" 0
+    run_make "make patch.reference -C ${TEST_DIR}" 0
+    run_arm_exe "${TEST_PATCH_EXE}" 3
+}
+
 # Run these tests:
 test_arm_simple
 test_arm_simple_cegis
 test_arm_simple_compiled
 test_arm_simple_multi
+test_arm_simple_c_patch
