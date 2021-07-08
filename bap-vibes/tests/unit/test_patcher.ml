@@ -18,7 +18,8 @@ let dummy_patch n m : Patcher.patch = {
   orig_size = m
 }
 
-
+let dummy_compute_region ~loc:_ _ =
+  Or_error.return Patcher.{ region_addr = 0L; region_offset = 0L }
 
 let test_patch_placer_exact_fit _ =
   let lang = Arm_target.llvm_a32 in
@@ -55,14 +56,11 @@ let test_patch_placer_loose_fit _ =
     | _ -> assert_failure "List is wrong size"
 
 (* A dummy patcher, that returns a fixed filename. *)
-let patcher _ _ _ = H.patched_exe
+let patcher _ ~filename:_ _ = H.patched_exe
 
 (* Test that [Patcher.patch] works as expected. *)
 let test_patch (_ : test_ctxt) : unit =
 
-
-  H.skip_test "Currently reify_patch invokes computation on the \
-               Image.Spec.slot Ogre slot, which we do not yet mock.";
 
   (* Run the patcher. *)
   let computation =
@@ -81,7 +79,9 @@ let test_patch (_ : test_ctxt) : unit =
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
-    Patcher.patch obj ~patcher:patcher >>= fun _ ->
+    Patcher.patch obj
+      ~patcher:patcher
+      ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in
@@ -100,7 +100,8 @@ let test_patch_with_no_original_exe (_ : test_ctxt) : unit =
   let computation =
     (* The KB starts with no filepath for the original_exe stashed in it. *)
     H.obj () >>= fun obj ->
-    Patcher.patch obj >>= fun _ ->
+    Patcher.patch obj
+      ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in
@@ -125,7 +126,7 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
     (* Now run the patcher. *)
-    Patcher.patch obj >>= fun _ ->
+    Patcher.patch obj ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
 
   in
@@ -138,9 +139,6 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
 
 (* Test that [Patcher.patch] errors if there's no assembly in the KB. *)
 let test_patch_with_no_assembly (_ : test_ctxt) : unit =
-
-  H.skip_test "Currently reify_patch invokes computation on the \
-               Image.Spec.slot Ogre slot, which we do not yet mock.";
 
   (* Run the patcher. *)
   let computation =
@@ -158,7 +156,7 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
-    Patcher.patch obj >>= fun _ ->
+    Patcher.patch obj ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
 
   in
