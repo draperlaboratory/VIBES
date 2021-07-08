@@ -136,7 +136,7 @@ let patch_size (l : Theory.language) (patch : patch)
 (** [patch_file] takes a filename and a list of patch binaries and
     locations and returns the filename of a patched file *)
 let patch_file (lang : Theory.language)
-    (original_exe_filename : string)
+    ~filename:(original_exe_filename : string)
     (patches : placed_patch list)
   : string =
   let tmp_patched_exe_filename =
@@ -298,15 +298,35 @@ let place_patches
   placed_patches
 
 
+(* A datatype that encodes the code region that shall contain the placed patch.
+   Usually computed by an invocation to ogre on the [Image.Scheme.code_region]
+   associated to the code unit.
+*)
+type patch_region = { region_addr : int64; region_offset : int64 }
+
+let ogre_compute_region ~loc:(patch_point : int64) (spec : Ogre.doc) : patch_region Or_error.t =
+  let code_region =
+    Ogre.eval
+      (Ogre.require
+         ~that:Int64.(fun (addr,size,_) ->
+             addr <= patch_point && patch_point <= addr + size)
+   Image.Scheme.code_region) spec
+  in
+  Or_error.map code_region
+    ~f:(fun (addr, _size, offset) ->
+        { region_addr = addr; region_offset = offset })
+
+
 (** [reify_patch] gets out of the knowledge base all the information to fill the
     [patch] data type. It performs some translation of address space numbers to
     file offsets.
     See https://gitter.im/BinaryAnalysisPlatform/vibes?at=6011cca5aa6a6f319de9381d
     for more discussion of this.
 *)
-let reify_patch (patch : Data.Patch.t) : patch KB.t =
+let reify_patch
+    ~compute_region:(compute_region)
+    (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
-  let open Int64 in
   let* patch_point = Data.Patch.get_patch_point_exn patch in
   let* addr = Theory.Label.for_addr patch_point in
   let* unit = KB.collect Theory.Label.unit addr in
@@ -318,16 +338,14 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
   in
   let* spec = KB.collect Image.Spec.slot unit in
   let patch_point = Bitvec.to_int64 patch_point in
-  let code_region = Ogre.eval (Ogre.require
-   ~that:(fun (addr,size,_) -> addr <= patch_point && patch_point <= addr + size)
-  Image.Scheme.code_region) spec in
-  let* (region_addr, _size, region_offset) = match code_region with
+  let patch_region = compute_region ~loc:patch_point spec in
+  let* {region_addr; region_offset} = match patch_region with
   | Error s -> Kb_error.fail (Kb_error.Other (Core_kernel.Error.to_string_hum s))
   | Ok c -> KB.return c
   in
   (* The distance of patch address from region start address is calculated
      and then added to the region file offset to get the patch file offset *)
-  let patch_file_offset = patch_point - region_addr + region_offset in
+  let patch_file_offset = Int64.(patch_point - region_addr + region_offset) in
   let* patch_size = Data.Patch.get_patch_size_exn patch in
   let* assembly = Data.Patch.get_assembly_exn patch in
   KB.return { assembly = assembly;
@@ -335,7 +353,10 @@ let reify_patch (patch : Data.Patch.t) : patch KB.t =
               orig_size = Int64.of_int patch_size}
 
 (* Patches the original exe, to produce a patched exe. *)
-let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
+let patch
+    ?compute_region:(compute_region=ogre_compute_region)
+    ?patcher:(patcher=patch_file)
+    (obj : Data.t) : unit KB.t =
   let open KB.Let in
   Events.(send @@ Header "Starting patcher");
   (* Get patch information (the address to start patching and the number
@@ -345,6 +366,7 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   let* original_exe_filename = Data.Original_exe.get_filepath_exn obj in
   let* patches = Data.Patched_exe.get_patches obj in
   let patch_list = Data.Patch_set.to_list patches in
+  let reify_patch = reify_patch ~compute_region:compute_region in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
   let* lang =
@@ -358,7 +380,7 @@ let patch ?patcher:(patcher=patch_file) (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Patch Placement Solution:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_placed_patch placed_patches));
   Events.(send @@ Info "Patching file...");
-  let tmp_patched_exe_filename = patcher lang original_exe_filename placed_patches in
+  let tmp_patched_exe_filename = patcher lang ~filename:original_exe_filename placed_patches in
 
   (* Stash the filepath in the KB. *)
   let* _ = Data.Patched_exe.set_tmp_filepath obj (Some tmp_patched_exe_filename) in
