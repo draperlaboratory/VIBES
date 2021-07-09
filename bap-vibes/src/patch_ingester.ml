@@ -227,7 +227,7 @@ module CoreParser (Core : Theory.Core) = struct
          List.fold_right ~init:(perform Effect.Sort.bot) ~f:seq data
        in
        let* ctrl_blk = parse_ctrl st ctrl_sexp in
-       let* l = KB.Object.create Theory.Program.cls in
+       let l = KB.Object.null Theory.Program.cls in
        blk l data_blk ctrl_blk
 
 end
@@ -242,6 +242,7 @@ let provide_bir (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
 
   (* Get the patch (as BIR). *)
+
   let* bir = SexpParser.parse_bir name addr_size code in
 
   Events.(send @@ Info "The patch has the following BIL:");
