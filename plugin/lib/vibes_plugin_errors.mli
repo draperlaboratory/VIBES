@@ -13,6 +13,13 @@ type t =
   | Missing_property
   | Missing_size
   | Missing_minizinc_model_filepath
+  | Missing_higher_var_name
+  | Missing_higher_var_stored_in
+  | Missing_higher_var_reg
+  | Missing_higher_var_fp
+  | Missing_higher_var_offset
+  | Missing_higher_var_at_entry
+  | Missing_higher_var_at_exit
   | Config_not_parsed of string
   | Invalid_hex of string
   | Invalid_property of string

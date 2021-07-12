@@ -241,8 +241,19 @@ let provide_bir (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Data.Patch.get_patch_code_exn patch >>= fun code ->
   Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
 
+  (* Replace higher variables with lower-level locations. *)
+  Data.Patch.get_patch_vars_exn patch >>= fun h_vars ->
+  Substituter.substitute h_vars code >>= fun lower_code ->
+  Data.Patch.set_lower_patch_code patch (Some lower_code) >>= fun () ->
+  Events.(send @@ Info "Lower patch code (with higher vars dereferenced):");
+  let lower_code_str = String.concat ~sep:"\n"
+    (List.map lower_code ~f:Sexp.to_string) in
+  Events.(send @@ Rule);
+  Events.(send @@ Info lower_code_str);
+  Events.(send @@ Rule);
+
   (* Get the patch (as BIR). *)
-  let* bir = SexpParser.parse_bir name addr_size code in
+  let* bir = SexpParser.parse_bir name addr_size lower_code in
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
@@ -252,14 +263,14 @@ let provide_bir (addr_size : int) (patch : Data.Patch.t) : unit KB.t =
   Data.Patch.set_bir patch bir
 
 (* Ingests a single patch, populating the relevant fields of the KB,
-   most notably the semantics field of the corresponding patch. (and
+   most notably the semantics field of the corresponding patch (and
    increments the [patch_num] counter). *)
 let ingest_one (addr_size : int) (patch_num : int KB.t) (patch : Data.Patch.t)
     : int KB.t =
   patch_num >>= fun patch_num ->
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
   provide_bir addr_size patch >>= fun () ->
-  KB.return @@ patch_num+1
+  KB.return @@ patch_num + 1
 
 (* Processes the whole patch associated with [obj], populating all the
    relevant KB slots with semantic data associated with the patch
@@ -279,5 +290,4 @@ let ingest (obj : Data.t) : unit KB.t =
     ~f:(ingest_one addr_size) >>= fun _ ->
 
   Events.(send @@ Info "Patch ingest complete");
-  Events.(send @@ Rule);
   KB.return ()

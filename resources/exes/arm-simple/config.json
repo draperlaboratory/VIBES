@@ -8,6 +8,27 @@
                      (set retvar 3)
                      fallthrough",
      "patch-point" : "0x10400",
-     "patch-size" : 4}
+     "patch-size" : 4,
+     "patch-vars": [
+       {"name": "x",
+	"at-entry": {
+          "stored-in": "register",
+	  "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R0"
+        }},
+       {"name": "y",
+        "at-entry": {
+          "stored-in": "memory",
+          "frame-pointer": "F11",
+          "offset": "0x04"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R2"
+        }}
+       ]}
   ]
 }
