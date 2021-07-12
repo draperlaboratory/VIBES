@@ -38,10 +38,10 @@ let sexp_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
     ~equal:Sexp.equal
     "sexp-domain"
 
-(* Optional s-expression list domain (e.g., for patch code) *)
-let sexp_list_domain : Sexp.t list option KB.Domain.t = KB.Domain.optional
-    ~equal:(fun x y -> List.equal Sexp.equal x y)
-    "sexp-list-domain"
+(* Optional C definition domain for the patch code. *)
+let source_domain : Cabs.definition option KB.Domain.t = KB.Domain.optional
+    ~equal:Poly.equal
+    "source-domain"
 
 (* Optional string list domain (for assembly). But as per
    Ivan's suggestion, we'll probably make this a powerset domain. *)
@@ -82,8 +82,8 @@ module Patch = struct
   let patch_name : (patch_cls, string option) KB.slot =
     KB.Class.property ~package patch "patch-name" string_domain
 
-  let patch_code : (patch_cls, Sexp.t list option) KB.slot =
-    KB.Class.property ~package patch "patch-code" sexp_list_domain
+  let patch_code : (patch_cls, Cabs.definition option) KB.slot =
+    KB.Class.property ~package patch "patch-code" source_domain
 
   let patch_label : (patch_cls, Theory.label option) KB.slot =
     KB.Class.property ~package patch "patch-label" lab_domain
@@ -122,13 +122,13 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_name
     | Some value -> KB.return value
 
-  let set_patch_code (obj : t) (data : Sexp.t list option) : unit KB.t =
+  let set_patch_code (obj : t) (data : Cabs.definition option) : unit KB.t =
     KB.provide patch_code obj data
 
-  let get_patch_code (obj : t) : Sexp.t list option KB.t =
+  let get_patch_code (obj : t) : Cabs.definition option KB.t =
     KB.collect patch_code obj
 
-  let get_patch_code_exn (obj : t) : Sexp.t list KB.t =
+  let get_patch_code_exn (obj : t) : Cabs.definition KB.t =
     get_patch_code obj >>= fun result ->
     match result with
     | None -> Kb_error.fail Kb_error.Missing_patch_code
@@ -232,9 +232,9 @@ module Original_exe = struct
     KB.Class.property ~package cls "original-exe-filepath"
       string_domain
 
-  let addr_size : (cls, int option) KB.slot =
-    KB.Class.property ~package cls "original-exe-address-size"
-      int_domain
+  let target : (cls, Theory.target) KB.slot =
+    KB.Class.property ~package cls "original-exe-target"
+      Theory.Target.domain
 
   let set_filepath (obj : t) (data : string option) : unit KB.t =
     KB.provide filepath obj data
@@ -248,17 +248,18 @@ module Original_exe = struct
     | None -> Kb_error.fail Kb_error.Missing_original_exe_filepath
     | Some value -> KB.return value
 
-  let set_addr_size (obj : t) (data : int option) : unit KB.t =
-    KB.provide addr_size obj data
+  let set_target (obj : t) (data : Theory.target) : unit KB.t =
+    KB.provide target obj data
 
-  let get_addr_size (obj : t) : int option KB.t =
-    KB.collect addr_size obj
+  let get_target (obj : t) : Theory.target KB.t =
+    KB.collect target obj
 
-  let get_addr_size_exn (obj : t) : int KB.t =
-    get_addr_size obj >>= fun result ->
-    match result with
-    | None -> Kb_error.fail Kb_error.Missing_addr_size
-    | Some value -> KB.return value
+  let get_target_exn (obj : t) : Theory.target KB.t =
+    get_target obj >>= fun tgt ->
+    if KB.Domain.is_empty Theory.Target.domain tgt then
+      Kb_error.fail Kb_error.Missing_target
+    else
+      KB.return tgt
 
 end
 

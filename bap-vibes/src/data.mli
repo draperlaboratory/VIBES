@@ -13,7 +13,7 @@ val string_domain    : string option KB.Domain.t
 val int_domain       : int option KB.Domain.t
 val bitvec_domain    : Bitvec.t option KB.Domain.t
 val sexp_domain      : Sexp.t option KB.Domain.t
-val sexp_list_domain : Sexp.t list option KB.Domain.t
+val source_domain    : Cabs.definition option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
 val unit_domain      : unit KB.Domain.t
 
@@ -47,7 +47,7 @@ module Patch : sig
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
-  val patch_code : (patch_cls, Sexp.t list option) KB.slot
+  val patch_code : (patch_cls, Cabs.definition option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val patch_label : (patch_cls, Theory.label option) KB.slot
@@ -64,9 +64,9 @@ module Patch : sig
   val get_patch_name : t -> string option KB.t
   val get_patch_name_exn : t -> string KB.t
 
-  val set_patch_code : t -> Sexp.t list option -> unit KB.t
-  val get_patch_code : t -> Sexp.t list option KB.t
-  val get_patch_code_exn : t -> Sexp.t list KB.t
+  val set_patch_code : t -> Cabs.definition option -> unit KB.t
+  val get_patch_code : t -> Cabs.definition option KB.t
+  val get_patch_code_exn : t -> Cabs.definition KB.t
 
   val set_patch_point : t -> Bitvec.t option -> unit KB.t
   val get_patch_point : t -> Bitvec.t option KB.t
@@ -109,15 +109,17 @@ module Patch_set : Set.S with type Elt.t = Patch.t
 (** Properties pertaining to the original executable *)
 module Original_exe : sig
   val filepath : (cls, string option) KB.slot
-  val addr_size : (cls, int option) KB.slot
+  val target : (cls, Theory.target) KB.slot
 
   val set_filepath : t -> string option -> unit KB.t
   val get_filepath : t -> string option KB.t
   val get_filepath_exn : t -> string KB.t
 
-  val set_addr_size : t -> int option -> unit KB.t
-  val get_addr_size : t -> int option KB.t
-  val get_addr_size_exn : t -> int KB.t
+  val set_target : t -> Theory.target -> unit KB.t
+  val get_target : t -> Theory.target KB.t
+
+  (** Raises if the target is empty *)
+  val get_target_exn : t -> Theory.target KB.t
 
 end
 
