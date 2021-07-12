@@ -2,6 +2,8 @@
 
 open !Core_kernel
 
+module Hvar = Higher_var
+
 (** A type to represent an individual patch fragment. *)
 type patch
 
@@ -19,6 +21,9 @@ val patch_point : patch -> Bitvec.t
 
 (** [patch_size p] returns the number of bytes to replace with patch [p]. *)
 val patch_size : patch -> int
+
+(** [patch_vars p] returns the higher vars declared for the patch [p]. *)
+val patch_vars : patch -> Hvar.t list
 
 (** [exe config] returns the filepath of the original exe to patch. *)
 val exe : t -> string
@@ -46,18 +51,15 @@ val minizinc_model_filepath : t -> string
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
 
-(** [create ~patch_name ~patch_code ~patch_point ~patch_size]
+(** [create ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars]
     will create a patch record, where:
     - [~patch_name] is the name of the patch
     - [~patch_code] is the code of the patch
     - [~patch_point] is the addres in the original exe to start patching at
-    - [~patch_size] is the number of bytes to replace in the original exe *)
-val create_patch :
-  patch_name:string
-  -> patch_code:Cabs.definition
-  -> patch_point:Bitvec.t
-  -> patch_size:int
-  -> patch
+    - [~patch_size] is the number of bytes to replace in the original exe
+    - [~patch_vars] are higher variables declared for the patch *)
+val create_patch : patch_name:string -> patch_code:Sexp.t list ->
+  patch_point:Bitvec.t -> patch_size:int -> patch_vars:Hvar.t list -> patch
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath
     ~minizinc_model_filepath] will create a configuration record, where:

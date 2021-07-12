@@ -6,6 +6,7 @@ open Monads.Std
 module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
 module Parse_c = Bap_vibes.Parse_c
+module Hvar = Bap_vibes.Higher_var
 module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
@@ -22,6 +23,33 @@ let is_not_empty (value : string) (e : Errors.t)
   match String.length value with
   | 0 -> Err.fail e
   | _ -> Err.return value
+
+(* Find the value of a field in a Json association list. *)
+let value_of_field (field : string) (data : (string * Json.t) list)
+    : Json.t option =
+  match List.find data ~f:(fun (k, _) -> String.equal k field) with
+  | Some (_, obj) -> Some obj
+  | _ -> None
+
+(* Validate a bitvector field in a Json association list. *)
+let validate_bitvec_field (field : string) (data : (string * Json.t) list)
+    (e : error) : (Bitvec.t, error) Stdlib.result =
+  match value_of_field field data with
+  | Some (`String s) ->
+    begin
+      try Err.return (Bitvec.of_string s)
+      with Invalid_argument _ -> Err.fail e
+    end
+  | _ -> Err.fail e
+
+(* Validate a string field in a Json association list. *)
+let validate_string_field (field : string) (data : (string * Json.t) list)
+    (e : error) : (string, error) Stdlib.result =
+  match value_of_field field data with
+  | Some (`String s) ->
+    if (String.length s) > 0 then Err.return s
+    else Err.fail e
+  | _ -> Err.fail e
 
 (* Extract the patch name and check it is non-empty string. *)
 let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
@@ -61,6 +89,49 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
   | `Int i -> Err.return i
   | _ -> Err.fail Errors.Missing_size
 
+(* Extract the name of a higher variable, or error. *)
+let validate_h_var_name (obj : Json.t) : (string, error) Stdlib.result =
+  match Json.Util.member "name" obj with
+  | `String s -> is_not_empty s (Errors.Missing_higher_var_name)
+  | _ -> Err.fail Errors.Missing_higher_var_name
+
+(* Extract where a higher variable is stored, or error. *)
+let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
+    : (Hvar.stored_in, error) Stdlib.result =
+  match Json.Util.member field obj with
+  | `Assoc data ->
+    begin
+      match value_of_field "stored-in" data with
+      | Some (`String "register") ->
+        validate_string_field 
+          "register" data Errors.Missing_higher_var_reg >>= fun reg ->
+        Err.return (Hvar.Register reg)
+      | Some (`String "memory") ->
+        validate_string_field
+          "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
+        validate_bitvec_field
+          "offset" data Errors.Missing_higher_var_offset >>= fun offset ->
+        Err.return (Hvar.Memory (fp, offset))
+      | _ -> Err.fail Errors.Missing_higher_var_stored_in
+    end
+  | _ -> Err.fail e
+
+(* Extract a higher variable, or error. *)
+let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
+  validate_h_var_name obj >>= fun name ->
+  validate_h_var_stored_in
+    obj "at-entry" Errors.Missing_higher_var_at_entry >>= fun at_entry ->
+  validate_h_var_stored_in
+    obj "at-exit" Errors.Missing_higher_var_at_exit >>= fun at_exit ->
+  Err.return (Hvar.create name at_entry at_exit)
+
+(* Extract the patch vars (which may be an empty list), or error. *)
+let validate_patch_vars (obj : Json.t)
+    : (Hvar.t list, error) Stdlib.result =
+  match Json.Util.member "patch-vars" obj with
+  | `List h_vars -> Err.all (List.map ~f:validate_h_var h_vars)
+  | _ -> Err.return []
+
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t)
     : (Vibes_config.patch, error) Stdlib.result =
@@ -68,8 +139,9 @@ let validate_patch (obj : Json.t)
   validate_patch_code patch_name obj >>= fun patch_code ->
   validate_patch_point obj >>= fun patch_point ->
   validate_patch_size obj >>= fun patch_size ->
+  validate_patch_vars obj >>= fun patch_vars ->
   let p = Vibes_config.create_patch
-    ~patch_name ~patch_code ~patch_point ~patch_size in
+    ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars in
   Err.return p
 
 (* Extract and validate the patch fragment list, or error. *)

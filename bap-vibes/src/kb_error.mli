@@ -20,6 +20,8 @@ type t =
   | Missing_tmp_patched_exe_filepath
   | Missing_patch_point
   | Missing_patch_size
+  | Missing_lower_patch_code
+  | Missing_patch_vars
   | Missing_func
   | Missing_property
   | Missing_raw_ir
@@ -27,6 +29,7 @@ type t =
   | Command_not_found of string
   | Patch_code_not_parsed of string
   | Incorrect_patch_point of string
+  | Higher_vars_not_substituted of string
   | Exit_code of string
   | Unexpected_exit of string
   | WP_result_unknown of string

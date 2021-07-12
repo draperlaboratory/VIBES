@@ -18,6 +18,8 @@ type t =
   | Missing_tmp_patched_exe_filepath
   | Missing_patch_point
   | Missing_patch_size
+  | Missing_lower_patch_code
+  | Missing_patch_vars
   | Missing_func
   | Missing_property
   | Missing_raw_ir
@@ -25,6 +27,7 @@ type t =
   | Command_not_found of string
   | Patch_code_not_parsed of string
   | Incorrect_patch_point of string
+  | Higher_vars_not_substituted of string
   | Exit_code of string
   | Unexpected_exit of string
   | WP_result_unknown of string
@@ -52,6 +55,8 @@ let pp ppf (e : t) =
       "No filepath for the temporary patched exe was stashed in KB"
     | Missing_patch_point -> "No patch point was stashed in KB"
     | Missing_patch_size -> "No patch size was stashed in KB"
+    | Missing_lower_patch_code -> "No lower patch code was stashed in KB"
+    | Missing_patch_vars -> "No patch vars were stashed in KB"
     | Missing_func -> "No function name to verify was stashed in KB"
     | Missing_property -> "No correctness property was stashed in KB"
     | Missing_raw_ir -> "Raw Ir compiled from core_theory not found in KB"
@@ -61,6 +66,8 @@ let pp ppf (e : t) =
     | Incorrect_patch_point s ->
       Format.sprintf
         "Provided patch point %s is not an executable location" s
+    | Higher_vars_not_substituted s ->
+      "Failed to substitute higher variables into patch code: " ^ s
     | Exit_code s -> s
     | Unexpected_exit s -> s
     | WP_result_unknown s -> s

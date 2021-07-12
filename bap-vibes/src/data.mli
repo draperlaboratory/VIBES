@@ -6,7 +6,7 @@ open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 
-module KB = Knowledge
+module Hvar = Higher_var
 
 (** We define "domains" for the types used in our properties. *)
 val string_domain    : string option KB.Domain.t
@@ -16,6 +16,7 @@ val sexp_domain      : Sexp.t option KB.Domain.t
 val source_domain    : Cabs.definition option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
 val unit_domain      : unit KB.Domain.t
+val higher_vars_domain : Hvar.t list option KB.Domain.t
 
 (** These are the top-level class definitions.
 
@@ -59,6 +60,10 @@ module Patch : sig
   val lang : (patch_cls, Theory.language) KB.slot
   val target : (patch_cls, Theory.target) KB.slot
   val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
+  (* Patch code with higher variables dereferenced *)
+  val lower_patch_code : (patch_cls, Sexp.t list option) KB.slot
+  (* Higher variables for the patch *)
+  val patch_vars : (patch_cls, Hvar.t list option) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
   val get_patch_name : t -> string option KB.t
@@ -100,6 +105,14 @@ module Patch : sig
   val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
   val add_minizinc_solution : t -> Minizinc.sol -> unit KB.t
   val union_minizinc_solution : t -> Minizinc.sol_set -> unit KB.t
+
+  val set_lower_patch_code : t -> Sexp.t list option -> unit KB.t
+  val get_lower_patch_code : t -> Sexp.t list option KB.t
+  val get_lower_patch_code_exn : t -> Sexp.t list KB.t
+
+  val set_patch_vars : t -> Hvar.t list option -> unit KB.t
+  val get_patch_vars : t -> Hvar.t list option KB.t
+  val get_patch_vars_exn : t -> Hvar.t list KB.t
 
 end
 
