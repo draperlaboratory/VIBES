@@ -7,7 +7,7 @@ open Bap_knowledge
 open Bap_core_theory
 open Knowledge.Syntax
 
-module KB = Knowledge
+module Hvar = Higher_var
 
 let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~empty:()
@@ -49,14 +49,20 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
     ~equal:(fun x y -> List.equal String.equal x y)
     "assembly-domain"
 
-(* Optional Ir domain for storing ir immediately after translation from core_theory *)
-   let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
+(* Optional Ir domain for storing ir immediately after translation
+   from core_theory *)
+let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
    ~equal:Ir.equal
    "ir-domain"
 
 (* For storing sets of minizinc solutions *)
 let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t =
   KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
+
+(* For storing higher variables *)
+let higher_vars_domain : Hvar.t list option KB.Domain.t = KB.Domain.optional
+  ~equal:(fun x y -> List.equal Hvar.equal x y)
+  "higher-vars-domain" 
 
 (* General knowledge info for the package *)
 type cls
@@ -109,6 +115,12 @@ module Patch = struct
   let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
     KB.Class.property ~package patch "minizinc-solutions"
     minizinc_solution_domain
+
+  let lower_patch_code : (patch_cls, Sexp.t list option) KB.slot =
+    KB.Class.property ~package patch "lower-patch-code" sexp_list_domain
+
+  let patch_vars : (patch_cls, Hvar.t list option) KB.slot =
+    KB.Class.property ~package patch "patch-vars" higher_vars_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -219,6 +231,30 @@ module Patch = struct
   let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
       : unit KB.t =
     KB.provide minizinc_solutions obj sol_set
+
+  let set_lower_patch_code (obj : t) (data : Sexp.t list option) : unit KB.t =
+    KB.provide lower_patch_code obj data
+
+  let get_lower_patch_code (obj : t) : Sexp.t list option KB.t =
+    KB.collect lower_patch_code obj
+
+  let get_lower_patch_code_exn (obj : t) : Sexp.t list KB.t =
+    get_lower_patch_code obj >>= fun result ->
+    match result with
+    | None -> Kb_error.fail Kb_error.Missing_lower_patch_code
+    | Some value -> KB.return value
+
+  let set_patch_vars (obj : t) (data : Hvar.t list option) : unit KB.t =
+    KB.provide patch_vars obj data
+
+  let get_patch_vars (obj : t) : Hvar.t list option KB.t =
+    KB.collect patch_vars obj
+
+  let get_patch_vars_exn (obj : t) : Hvar.t list KB.t =
+    get_patch_vars obj >>= fun result ->
+    match result with
+    | None -> Kb_error.fail Kb_error.Missing_patch_vars
+    | Some value -> KB.return value
 
 end
 

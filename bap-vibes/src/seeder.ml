@@ -96,6 +96,7 @@ let create_patches
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
     let* () = Data.Patch.set_lang obj lang in
     let* () = Data.Patch.set_target obj tgt in
+    let* () = Data.Patch.set_patch_vars obj (Some (Config.patch_vars p)) in
     let* () = match get_patch_by_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed ->
