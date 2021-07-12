@@ -13,7 +13,7 @@ type t =
   | Missing_patch_code
   | Missing_assembly
   | Missing_original_exe_filepath
-  | Missing_addr_size
+  | Missing_target
   | Missing_patched_exe_filepath
   | Missing_tmp_patched_exe_filepath
   | Missing_patch_point
@@ -43,7 +43,7 @@ let pp ppf (e : t) =
     | Missing_assembly -> "No patch assembly was stashed in KB"
     | Missing_original_exe_filepath ->
       "No filepath for the original exe was stashed in KB"
-    | Missing_addr_size -> "No address size was stashed in KB"
+    | Missing_target -> "No target was stashed in KB"
     | Missing_patched_exe_filepath ->
       "No filepath for the patched exe was stashed in KB"
     | Missing_tmp_patched_exe_filepath ->

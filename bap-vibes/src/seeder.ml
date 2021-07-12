@@ -127,7 +127,7 @@ let init_KB
   let* obj = KB.Object.create Data.cls in
   let* () = Data.Original_exe.set_filepath obj (Some filename) in
   let* () = Data.Patched_exe.set_filepath obj patched_exe_filepath in
-  let* () = Data.Original_exe.set_addr_size obj (Some addr_size) in
+  let* () = Data.Original_exe.set_target obj target in
   let* () = Data.Patched_exe.set_patches obj patches in
   let* () = Data.Solver.set_minizinc_model_filepath
     obj (Some mzn_model_filepath) in
