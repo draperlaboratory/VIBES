@@ -22,7 +22,7 @@
        {"name": "y",
         "at-entry": {
           "stored-in": "memory",
-          "frame-pointer": "F11",
+          "frame-pointer": "R11",
           "offset": "0x04"
         },
         "at-exit": {
