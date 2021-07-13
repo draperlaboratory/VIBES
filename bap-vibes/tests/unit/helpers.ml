@@ -2,6 +2,7 @@ open !Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_vibes
+open Bap_core_theory
 open OUnit2
 
 module KB = Knowledge
@@ -40,6 +41,12 @@ let dummy_proj ?name:(name = "main") filename : (Project.t * string, Error.t) re
 let prog_exn (proj : (Project.t * string, Error.t) result) : Program.t * string =
   let p, s = proj_exn proj in
   (Project.program p, s)
+
+let dummy_target =
+  Theory.Target.declare
+    ~bits:32
+    ~byte:8
+    "dummy_tgt"
 
 (* Some dummy values that can be used in tests. *)
 let patch = "ret-3"

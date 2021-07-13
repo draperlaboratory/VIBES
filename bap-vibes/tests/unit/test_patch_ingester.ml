@@ -15,7 +15,7 @@ let test_ingest (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_addr_size obj (Some 32) >>= fun _ ->
+    Data.Original_exe.set_target obj H.dummy_target >>= fun _ ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
     Data.Patched_exe.set_patches obj
@@ -50,7 +50,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
   (* Run the ingester. *)
   let computation =
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_addr_size obj (Some 32) >>= fun () ->
+    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
     (* Create a patch but don't fill its properties. *)
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
@@ -85,7 +85,7 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should diverge with the appropriate error. *)
-  let expected = Kb_error.Problem Kb_error.Missing_addr_size in
+  let expected = Kb_error.Problem Kb_error.Missing_target in
   H.assert_error Data.Patched_exe.patches expected result
 
 let suite = [
