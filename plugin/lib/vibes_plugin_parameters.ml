@@ -32,26 +32,13 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
   | _ -> Err.fail Errors.Missing_patch_name
 
 (* Extract the patch code, check it's a non-empty string, and parse
-   into a [Sexp.t list] (it should be a valid S-expression). *)
+   into a [Cabs.definition] *)
 let validate_patch_code (nm : string) (obj : Json.t)
-    : (Sexp.t list, error) Stdlib.result =
+  : (Cabs.definition, error) Stdlib.result =
   match Json.Util.member "patch-code" obj with
   | `String s ->
-    begin
-     if String.length s = 0 then Err.fail Errors.Missing_patch_code
-     else 
-       begin
-         let s = match Parse_c.c_patch_to_sexp_string s with
-                 | Ok s1 -> s1
-                 | Error _ -> s
-         in
-         try Err.return (Sexp.scan_sexps (Lexing.from_string s))
-         with _ -> 
-           let msg =
-             "Code for patch '" ^ nm ^ "' is not a valid S-expression" in
-           Err.fail (Errors.Invalid_patch_code msg)
-       end
-    end
+    let code = Parse_c.parse_c_patch s in
+    Result.map_error code ~f:(fun msg -> Errors.Invalid_patch_code msg)
   | _ -> Err.fail Errors.Missing_patch_code
 
 (* Extract the patch point field and parse the hex string into a bitvector, or
@@ -75,7 +62,7 @@ let validate_patch_size (obj : Json.t) : (int, error) Stdlib.result =
   | _ -> Err.fail Errors.Missing_size
 
 (* Validate a specific patch fragment within the list, or error *)
-let validate_patch (obj : Json.t) 
+let validate_patch (obj : Json.t)
     : (Vibes_config.patch, error) Stdlib.result =
   validate_patch_name obj >>= fun patch_name ->
   validate_patch_code patch_name obj >>= fun patch_code ->
@@ -126,7 +113,7 @@ let validate_max_tries (obj : Json.t) : (int option, error) Stdlib.result =
 (* Extract the minizinc model filepathi value (or use the default), and make
    sure the file really exists. *)
 let validate_minizinc_model_filepath (obj : Json.t)
-    : (string, error) Stdlib.result = 
+    : (string, error) Stdlib.result =
   match Json.Util.member "minizinc-model" obj with
   | `String s ->
     begin
@@ -165,7 +152,7 @@ let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
   validate_max_tries config_json >>= fun max_tries ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
-  let result = Vibes_config.create 
+  let result = Vibes_config.create
     ~exe ~patches ~func ~property ~patched_exe_filepath ~max_tries
     ~minizinc_model_filepath in
   Ok result
