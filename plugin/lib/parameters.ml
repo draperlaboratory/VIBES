@@ -1,4 +1,4 @@
-(* Implements {!Vibes_plugin_parameters}. *)
+(* Implements {!Parameters}. *)
 
 open !Core_kernel
 open Monads.Std
@@ -6,7 +6,6 @@ open Monads.Std
 module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
 module Hvar = Bap_vibes.Higher_var
-module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
 module Err = Monad.Result.Make (Errors) (Monad.Ident)
@@ -14,7 +13,7 @@ open Err.Syntax
 type error = Errors.t Err.error
 
 (* Get the default minizinc model filepath. *)
-let minizinc_model_filepath = Vibes_plugin_constants.minizinc_model_filepath
+let minizinc_model_filepath = Constants.minizinc_model_filepath
 
 (* Error if a string is empty. *)
 let is_not_empty (value : string) (e : Errors.t)
@@ -199,7 +198,7 @@ let validate_minizinc_model_filepath (obj : Json.t)
     begin
       if (String.length s) > 0 then
         begin
-          let realpath = Vibes_plugin_utils.realpath s in
+          let realpath = Utils.realpath s in
           match realpath with
           | Ok path -> Err.return path
           | Error e -> Err.fail e
@@ -208,7 +207,7 @@ let validate_minizinc_model_filepath (obj : Json.t)
     end
   | _ ->
     begin
-      let realpath = Vibes_plugin_utils.realpath minizinc_model_filepath in
+      let realpath = Utils.realpath minizinc_model_filepath in
       match realpath with
       | Ok path -> Err.return path
       | Error e -> Err.fail e

@@ -194,3 +194,8 @@ let verify_unknown
 
 (* A verifier printer function for testing. It does nothing. *)
 let verifier_printer (_ : (_, _) result) : unit = ()
+
+(* Parse a [string] of a sexp list into a [Sexp.t list]. *)
+let sexps_of (s : string) : Sexp.t list =
+  try Sexp.scan_sexps (Lexing.from_string s)
+  with _ -> failwith "Failed to parse sexps"

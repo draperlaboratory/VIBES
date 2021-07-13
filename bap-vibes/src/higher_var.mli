@@ -30,7 +30,7 @@ val at_entry : t -> stored_in
 val at_exit : t -> stored_in
 
 (** [create name at_entry at_exit] creates a new higher variable record. *)
-val create : register -> stored_in -> stored_in -> t
+val create : string -> stored_in -> stored_in -> t
 
 (** [equal t1 t2] checks if higher var records [t1] and [t2] are equal. *)
 val equal : t -> t -> bool

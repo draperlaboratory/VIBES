@@ -9,8 +9,6 @@
 open !Core_kernel
 open Monads.Std
 
-module Errors = Vibes_plugin_errors
-
 (* Error results are derived from the {!Errors} module. *)
 type error = Errors.t Monad.Result.Make (Errors) (Monad.Ident).error
 

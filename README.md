@@ -166,20 +166,41 @@ The top-level object must include the following fields:
 * `"func" : "NAME"` - 
   Specifies the name of the function you want to verify.
 * `"property" : "S-EXP"` -
-  Specifies the correctness property (as an S-expression in a JSON string)
+  Specifies the correctness property (as an S-expression string)
   that VIBES should use to verify the correctness of FUNC in the patched exe.
 * `"patches" : [PATCH-OBJECTS]"` -
   Specifies the patches to apply as an array of patch fragment description
   objects.  Each object in the array describes a change to a single contiguous
   piece of assembly code.  The objects have three fields:
   * `"patch-name" : "NAME"` -
-    Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
-    The first patch returns 3, and the second returns 4.
+    A unique name (as a string) that identifies this patch.
   * `"patch-point" : "HEX"` -
     Specifies the address in the EXE to start patching.  Must be a valid hex
     number in a JSON string, e.g., `"0x54"`.
   * `"patch-size" : INT` -
     Specifies the number of bytes to overwrite with the patch.
+  * `"patch-code" : "S-EXP LIST"` -
+    A string that consists of patch code, written as a list of S-expressions.
+    The first S-expression must be a list of variable declarations, e.g.
+    `(var-decls x y z)`, that you will use in the patch,
+    then one or more assignment statements `(set x 0x3)(set R8 x)...`,
+    and then finally a control-flow command,
+    e.g., `(branch (== x R8) (jmp 0x1004e) fallthrough)`.
+  * `"patch-vars": [HIGHER-VARS]"` -
+    Specifies any higher variables (from C code or decompiled C-like code)
+    and where those variables are stored in the low-level code at the
+    entrance and at the exit of the patch. Each higher variable includes
+    the following objects:
+    * `"name": "NAME"` - The higher variable name, e.g., `x`.
+    * `"at-entry":`
+      Either:
+      * `"stored-in" : "register"`
+      * `"register": "NAME"`
+      Or:
+      * `"stored-in": "memory"`
+      * `"frame-pointer": "NAME"` (e.g., `R11`)
+      * `"offset": "0x14"`
+    Note that higher variable names can be used in the `patch-code`.
 
 The top-level object may include the following optional field:
 
@@ -197,16 +218,37 @@ Here is an example of a valid configuration file, taken from the
 ```
 {
   "func": "main",
-  "property" : "(assert true)",
+  "property" : "(assert (= true true))",
   "patches" : [
-    {"patch" : "ret-3",
-     "patch-point" : "0x54",
-     "patch-size" : 8}
+    {
+      "patch" : "my-patch-1",
+      "patch-point" : "0x54",
+      "patch-size" : 8,
+      "patch-code" :
+        "(var-decls x temp)
+         (set x 0x3)
+         (set temp R2)
+         (branch (== x temp) (jmp 0x5e) fallthrough)",
+      "patch-vars" : [
+        {
+          "name": "x",
+          "at-entry": {
+            "stored-in": "register",
+            "register": "R8"
+          },
+          "at-exit": {
+            "stored-in": "memory",
+            "frame-pointer": "R11",
+            "offset": "0x18"
+          }
+        }
+      ]
+    }
   ]
 }
 ```
 
-This tells VIBES to use hand-written patch named `ret-3`. There is one patch,
+This tells VIBES to use the patches specified in this file. There is one patch,
 which should be inserted starting at address `0x54` in `resources/simple/main`,
 and `8` bytes should be replaced.  The correctness property to use to check 
 the function `main` is `(assert true)`.

@@ -20,7 +20,7 @@ let name t = t.name
 let at_entry t = t.at_entry
 let at_exit t = t.at_exit
 
-let create (name : register) (at_entry : stored_in) (at_exit : stored_in) : t =
+let create (name : string) (at_entry : stored_in) (at_exit : stored_in) : t =
   { name; at_entry; at_exit; }
 
 let equal_stored_in (v1 : stored_in) (v2 : stored_in) : bool =
@@ -49,8 +49,6 @@ let sexp_of (v : stored_in) : Sexp.t =
     let offset = Bitvec.to_string bitv in
     let loc = Sexp.List [Sexp.Atom "-"; Sexp.Atom fp; Sexp.Atom offset] in
     Sexp.List [Sexp.Atom "load"; loc]
-
-let sexp_of_entry t : Sexp.t = sexp_of t.at_entry
 
 let is_reg (v : stored_in) : bool =
   match v with

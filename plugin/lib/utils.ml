@@ -1,4 +1,4 @@
-(* Implements {!Vibes_plugin_utils}. *)
+(* Implements {!Utils}. *)
 
 (* [input_lines ic] reads all lines from [ic] and returns the string list. *)
 let rec input_lines ?acc:(acc = []) (ic : in_channel) : string list =
@@ -14,7 +14,7 @@ let shell (cmd : string) : string list =
   input_lines ic
 
 (* [realpath path] returns the Unix realpath of [path], or an error. *)
-let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
+let realpath (path : string) : (string, Errors.t) result =
   let cmd = "realpath " ^ path in
   let shell_output = shell cmd in
   let path =
@@ -22,4 +22,4 @@ let realpath (path : string) : (string, Vibes_plugin_errors.t) result =
     else path
   in
   if Sys.file_exists path then Ok path
-  else Error (Vibes_plugin_errors.No_such_file ("No such file: " ^ path))
+  else Error (Errors.No_such_file ("No such file: " ^ path))

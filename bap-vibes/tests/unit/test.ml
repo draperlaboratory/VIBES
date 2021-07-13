@@ -8,6 +8,7 @@ let suite = "Full suite" >::: [
     "Patcher" >::: Test_patcher.suite;
     "Verifier" >::: Test_verifier.suite;
     "Arm_selector" >::: Test_arm_selector.suite;
+    "Substituter" >::: Test_substituter.suite;
   ]
 
 let _ = run_test_tt_main suite

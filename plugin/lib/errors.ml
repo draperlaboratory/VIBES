@@ -1,4 +1,4 @@
-(* Implements {!Vibes_plugin_errors}. *)
+(* Implements {!Errors}. *)
 
 type t =
   | Missing_exe

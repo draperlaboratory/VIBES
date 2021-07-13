@@ -1,3 +1,5 @@
+(** Implements {!Substituter}. *)
+
 open !Core_kernel
 
 module KB = Bap_knowledge.Knowledge
@@ -63,23 +65,23 @@ let rec subst_in_expr (h_vars : Hvar.t list) (expr : Sexp.t) : Sexp.t KB.t =
   | Sexp.List [Sexp.Atom "+"; e1; e2] ->
     let* new_e1 = subst_in_expr h_vars e1 in
     let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "+"; e1; e2]
+    KB.return @@ Sexp.List [Sexp.Atom "+"; new_e1; new_e2]
   | Sexp.List [Sexp.Atom "-"; e1; e2] ->
     let* new_e1 = subst_in_expr h_vars e1 in
     let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "-"; e1; e2]
+    KB.return @@ Sexp.List [Sexp.Atom "-"; new_e1; new_e2]
   | Sexp.List [Sexp.Atom "*"; e1; e2] ->
     let* new_e1 = subst_in_expr h_vars e1 in
     let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "*"; e1; e2]
+    KB.return @@ Sexp.List [Sexp.Atom "*"; new_e1; new_e2]
   | Sexp.List [Sexp.Atom "/"; e1; e2] ->
     let* new_e1 = subst_in_expr h_vars e1 in
     let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "/"; e1; e2]
+    KB.return @@ Sexp.List [Sexp.Atom "/"; new_e1; new_e2]
   | Sexp.List [Sexp.Atom ">>"; e1; e2] ->
     let* new_e1 = subst_in_expr h_vars e1 in
     let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom ">>"; e1; e2]
+    KB.return @@ Sexp.List [Sexp.Atom ">>"; new_e1; new_e2]
   | _ -> err @@ Format.sprintf "invalid expression: '%s'" (str_of expr)
 
 let subst_in_var_assignment
