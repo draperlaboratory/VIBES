@@ -35,6 +35,7 @@ module Eval(T : Theory.Core) = struct
   open Theory
   open T
   open KB.Let
+  open KB.Syntax
 
 
   type ('a, 'b) tgt_info = {
@@ -144,41 +145,67 @@ module Eval(T : Theory.Core) = struct
 
   let expr_to_pure info (e : Cabs.expression) (var_map : var_map) : unit pure =
     let rec aux e =
-    match e with
-    | UNARY (op, a) ->
-      let a = aux a in
-      unop_to_pure info op a
-    | BINARY (op, a, b) ->
-      let a = aux a in
-      let b = aux b in
-      bop_to_pure info op a b
-    | INDEX (a, i) ->
-      (* Some minor hackery here: turn a[i] into *(a + i) *)
-      let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
-      aux index_exp
-    | VARIABLE x -> var (String.Map.find_exn var_map x)
-    | CONSTANT c -> constant_to_pure info c
-    | _ -> Cprint.print_expression e 0;
-      failwith "FrontC produced expression unsupported by VIBES"
+      match e with
+      | UNARY (op, a) ->
+        Format.printf "\n\nHERE!!\n\n%!";
+        let* a = aux a in
+        unop_to_pure info op !!a
+      | BINARY (op, a, b) ->
+        Format.printf "\n\nHERE!!\n\n%!";
+        let* a = aux a in
+        let* b = aux b in
+        bop_to_pure info op !!a !!b
+      | INDEX (a, i) ->
+        Format.printf "\n\nHERE!!\n\n%!";
+        (* Some minor hackery here: turn a[i] into *(a + i) *)
+        let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
+        aux index_exp
+      | VARIABLE x ->
+        Format.printf "\n\nHERE!!\n\n%!";
+        let v = String.Map.find_exn var_map x in
+        let* vv = var v in
+        Format.printf "\n\nTHERE!!\n\n%!";
+        Format.printf "\n\nValue for var %s:%a\n\n%!" (Theory.Var.name v) KB.Value.pp vv;
+        !!vv
+      | CONSTANT c ->
+        Format.printf "\n\nHERE!!\n\n%!";
+        constant_to_pure info c
+      | _ -> Cprint.print_expression e 0;
+        failwith "FrontC produced expression unsupported by VIBES"
     in
     aux e
 
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
-    let empty_data = Effect.empty (Effect.Sort.data "C_sem") |> KB.return in
-    let empty_ctrl = Effect.empty Effect.Sort.fall |> KB.return in
-    let empty_top = Effect.empty Effect.Sort.top |> KB.return in
+    let* empty_data = perform (Effect.Sort.data "C_sem") in
+    let* empty_ctrl = perform Effect.Sort.fall in
+    let* empty_top = perform Effect.Sort.top in
     (* We pass in a triple of "continuation" effect, to more easliy
        handle interleaving of data and control effects. *)
-    let rec aux s (data : data eff) (ctrl : ctrl eff) (unit : unit eff) =
+    let rec aux s (data : data eff) (ctrl : ctrl eff) (eff : unit eff)
+      : (data effect * ctrl effect * unit effect) KB.t =
       match s with
-      | NOP -> (data, ctrl, unit)
+      | NOP ->
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
+        Printf.printf "\n\nHitting NOP!\n\n%!";
+        KB.return (data, ctrl, eff)
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
+        Printf.printf "\n\nHitting COMPUTATION!\n\n%!";
+
         let lval = String.Map.find_exn var_map lval in
-        let rval = expr_to_pure info rval var_map in
-        (seq data @@ set lval rval, ctrl, unit)
+        let* rval = expr_to_pure info rval var_map in
+        let* data = seq !!data @@ set lval !!rval in
+        KB.return (data, ctrl, eff)
       (* FIXME: currently true_br and false_br *must* end in jumps *)
       | IF (c, true_br, false_br) ->
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
         (* FIXME: allow for non "block" effects? *)
         let c = expr_to_pure info c var_map in
         (* Downcast [c] to Bool.t *)
@@ -186,28 +213,42 @@ module Eval(T : Theory.Core) = struct
             ~f:(fun c ->
                 Value.resort (fun _ -> Some Bool.t) c |> Option.value_exn)
         in
-        let (_, _, true_eff) = aux true_br data ctrl unit in
-        let (_, _, false_eff) = aux false_br data ctrl unit in
-        let branch = branch c true_eff false_eff in
-        (data, ctrl, seq unit branch)
+        let* (_, _, true_eff) = aux true_br !!data !!ctrl !!eff in
+        let* (_, _, false_eff) = aux false_br !!data !!ctrl !!eff in
+        let branch = branch c !!true_eff !!false_eff in
+        let* eff = seq !!eff branch in
+        KB.return (data, ctrl, eff)
       | SEQUENCE (s1,s2) ->
-        let (data1, ctrl1, unit1) = aux s1 data ctrl unit in
-        aux s2 data1 ctrl1 unit1
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
+        let* (data1, ctrl1, eff1) = aux s1 !!data !!ctrl !!eff in
+        aux s2 !!data1 !!ctrl1 !!eff1
       | GOTO label ->
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
         let label = Label.for_name label in
         let goto = KB.(label >>= goto) in
-        (data, seq ctrl goto, unit)
+        let* ctrl = seq !!ctrl goto in
+        KB.return (data, ctrl, eff)
       | BLOCK ([],s) ->
-        let (data, ctrl, unit) = aux s data ctrl unit in
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
+        Printf.printf "\n\nHitting BLOCK!\n\n%!";
+        let* (data, ctrl, eff) = aux s !!data !!ctrl !!eff in
         let lab = Label.null in
-        let new_blk = blk lab data ctrl in
-        (empty_data, empty_ctrl, seq new_blk unit)
+        let new_blk = blk lab !!data !!ctrl in
+        let* eff = seq new_blk !!eff in
+        KB.return (empty_data, empty_ctrl, eff)
       (* TODO: Probably not right. Deal with variable declarations. Do blocks has sexp syntax? *)
       | _ -> Cprint.print_statement s;
         failwith "stmt_to_eff: statement unsupported by VIBES"
     in
-    let (_, _, eff) = aux s empty_data empty_ctrl empty_top in
-    eff
+    let* (_, _, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
+    KB.return eff
+
 
   let add_def info (def : Cabs.definition) (var_map : var_map) : var_map =
     match def with
