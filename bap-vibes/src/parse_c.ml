@@ -81,6 +81,7 @@ module Eval(T : Theory.Core) = struct
     | SHR  -> lift_bitv arshift
     | EQ  -> lift_bitv eq
     | NE  -> lift_bitv neq
+    (* FIXME: use unsigned by default? *)
     | LT  -> lift_bitv slt
     | GT  -> lift_bitv sgt
     | LE  -> lift_bitv sle
@@ -147,28 +148,21 @@ module Eval(T : Theory.Core) = struct
     let rec aux e =
       match e with
       | UNARY (op, a) ->
-        Format.printf "\n\nHERE!!\n\n%!";
         let* a = aux a in
         unop_to_pure info op !!a
       | BINARY (op, a, b) ->
-        Format.printf "\n\nHERE!!\n\n%!";
         let* a = aux a in
         let* b = aux b in
         bop_to_pure info op !!a !!b
       | INDEX (a, i) ->
-        Format.printf "\n\nHERE!!\n\n%!";
         (* Some minor hackery here: turn a[i] into *(a + i) *)
         let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
         aux index_exp
       | VARIABLE x ->
-        Format.printf "\n\nHERE!!\n\n%!";
         let v = String.Map.find_exn var_map x in
         let* vv = var v in
-        Format.printf "\n\nTHERE!!\n\n%!";
-        Format.printf "\n\nValue for var %s:%a\n\n%!" (Theory.Var.name v) KB.Value.pp vv;
         !!vv
       | CONSTANT c ->
-        Format.printf "\n\nHERE!!\n\n%!";
         constant_to_pure info c
       | _ -> Cprint.print_expression e 0;
         failwith "FrontC produced expression unsupported by VIBES"
@@ -188,15 +182,12 @@ module Eval(T : Theory.Core) = struct
         let* data = data in
         let* ctrl = ctrl in
         let* eff = eff in
-        Printf.printf "\n\nHitting NOP!\n\n%!";
         KB.return (data, ctrl, eff)
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
         let* data = data in
         let* ctrl = ctrl in
         let* eff = eff in
-        Printf.printf "\n\nHitting COMPUTATION!\n\n%!";
-
         let lval = String.Map.find_exn var_map lval in
         let* rval = expr_to_pure info rval var_map in
         let* data = seq !!data @@ set lval !!rval in
@@ -213,10 +204,12 @@ module Eval(T : Theory.Core) = struct
             ~f:(fun c ->
                 Value.resort (fun _ -> Some Bool.t) c |> Option.value_exn)
         in
-        let* (_, _, true_eff) = aux true_br !!data !!ctrl !!eff in
-        let* (_, _, false_eff) = aux false_br !!data !!ctrl !!eff in
+        let* (_, _, true_eff) =
+          aux true_br !!empty_data !!empty_ctrl !!eff in
+        let* (_, _, false_eff) =
+          aux false_br !!empty_data !!empty_ctrl !!eff in
         let branch = branch c !!true_eff !!false_eff in
-        let* eff = seq !!eff branch in
+        let* eff = branch in
         KB.return (data, ctrl, eff)
       | SEQUENCE (s1,s2) ->
         let* data = data in
@@ -235,18 +228,22 @@ module Eval(T : Theory.Core) = struct
       | BLOCK ([],s) ->
         let* data = data in
         let* ctrl = ctrl in
-        let* eff = eff in
-        Printf.printf "\n\nHitting BLOCK!\n\n%!";
-        let* (data, ctrl, eff) = aux s !!data !!ctrl !!eff in
+        let* _ = eff in
+        let lab = Label.null in
+        let current_blk = blk lab !!data !!ctrl in
+        let* (data, ctrl, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
         let lab = Label.null in
         let new_blk = blk lab !!data !!ctrl in
-        let* eff = seq new_blk !!eff in
+        let* eff = seq current_blk (seq new_blk !!eff) in
         KB.return (empty_data, empty_ctrl, eff)
       (* TODO: Probably not right. Deal with variable declarations. Do blocks has sexp syntax? *)
       | _ -> Cprint.print_statement s;
         failwith "stmt_to_eff: statement unsupported by VIBES"
     in
-    let* (_, _, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
+    let* (data, ctrl, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
+    let lab = Label.null in
+    let new_blk = blk lab !!data !!ctrl in
+    let* eff = seq new_blk !!eff in
     KB.return eff
 
 
