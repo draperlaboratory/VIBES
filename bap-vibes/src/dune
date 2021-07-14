@@ -1,5 +1,5 @@
 (library
    (name bap_vibes)
    (public_name bap-vibes)
-   (libraries bap bap-arm bap-demangle bap_wp core_kernel z3 FrontC)
+   (libraries findlib.dynload bap bap-arm bap-demangle bap_wp core_kernel z3 FrontC)
    (preprocess (pps ppx_jane ppx_deriving_yojson)))
