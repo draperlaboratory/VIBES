@@ -16,7 +16,9 @@ let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   Data.Patch.init_sem patch >>= fun () ->
   Data.Patch.get_patch_name_exn patch >>= fun name ->
   Data.Patch.get_patch_code_exn patch >>= fun code ->
-  Events.(send @@ Info (Printf.sprintf "Patch named %s" name));
+  Events.(send @@ Info (Printf.sprintf "Patch %s" name));
+  let code_str = Utils.print_c Cprint.print_def code in
+  Events.(send @@ Info (Printf.sprintf "%s" code_str));
 
   (* Get the patch (as BIR). *)
   let* bir = CParser.c_patch_to_eff tgt code in
@@ -43,7 +45,6 @@ let ingest_one (tgt : Theory.target) (patch_num : int KB.t) (patch : Data.Patch.
    syntax. *)
 let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patch ingester");
-  Events.(send @@ Info "Using hand-written BIL patches");
 
   Events.(send @@ Info "Retreiving data from KB...");
   Data.Original_exe.get_target_exn obj >>= fun tgt ->
