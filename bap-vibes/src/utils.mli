@@ -29,6 +29,13 @@ val get_lang : addr:Bitvec.t -> Theory.language KB.t
 
 
 (** [get_lang patch] returns the target associated with the
-   patch in the current binary under scutiny, at the location
-   indicated at the patch. *)
+    patch in the current binary under scutiny, at the location
+    indicated at the patch. *)
 val get_target : addr:Bitvec.t -> Theory.target KB.t
+
+(** [print_c Cprint.print_foo foo] will correctly invoke an
+    appropriate FrontC printer to print to a string buffer, and free
+    the ressources involved.  Observationally, it simply invokes the
+    first argument on the second, and returns whatever string is in the
+    [Cprint.out] channel.  *)
+val print_c : ('a -> unit) -> 'a -> string

@@ -45,25 +45,9 @@ let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
 
-(* A little tediousness to print FrontC defs *)
-let print_c (def : Cabs.definition) : string =
-  let (tmp_file, chan) = Caml.Filename.open_temp_file "frontc" ".out" in
-  let old_chan = !Cprint.out in
-  Cprint.out := chan;
-  Cprint.print_def def;
-  Cprint.flush ();
-  let res =
-    In_channel.read_lines tmp_file
-    |> String.concat ~sep:"\n"
-  in
-  Out_channel.close chan;
-  Cprint.out := old_chan;
-  Sys.remove tmp_file;
-  res
-
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
-  let code = print_c p.patch_code in
+  let code = Utils.print_c Cprint.print_def p.patch_code in
   String.concat ~sep:"\n" [
       Printf.sprintf "  {Patch_name: %s" p.patch_name;
       Printf.sprintf "   Patch_code: %s" code;
@@ -100,7 +84,7 @@ let create_patch ~patch_name:(patch_name : string)
 let create ~exe:(exe : string) ~patches:(patches : patch list)
     ~func:(func : string) ~property:(property : Sexp.t)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
-    ~max_tries:(max_tries : int option) 
+    ~max_tries:(max_tries : int option)
     ~minizinc_model_filepath:(minizinc_model_filepath : string) : t =
   { exe; patches; func; property; patched_exe_filepath;
     max_tries; minizinc_model_filepath }

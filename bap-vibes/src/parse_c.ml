@@ -5,6 +5,7 @@ open Bap_core_theory
 
 type var_map = unit Theory.var String.Map.t
 
+
 (* Parses a string into a Cabs.file *)
 let parse_c_file (input : string) : (Cabs.file, string) result =
   let open Clexer in
@@ -12,11 +13,11 @@ let parse_c_file (input : string) : (Cabs.file, string) result =
     init_lexicon ();
     Ok (Cparser.file initial (Lexing.from_string input))
   with
-    (* | Cparser.Error -> Error "Cparser.Error" *)
-    | Parsing.Parse_error -> Error "Error"
-    | Cabs.BadType -> Error "BadType"
-    | Cabs.BadModifier -> Error "BadModifier"
-    | Invalid_argument s -> Error s
+  (* | Cparser.Error -> Error "Cparser.Error" *)
+  | Parsing.Parse_error -> Error "Error"
+  | Cabs.BadType -> Error "BadType"
+  | Cabs.BadModifier -> Error "BadModifier"
+  | Invalid_argument s -> Error s
 
 (* Parses a sequence of C statements (a body) by wrapping it in a
    dummy function, parsing that as a file and then extracting the
@@ -24,10 +25,11 @@ let parse_c_file (input : string) : (Cabs.file, string) result =
 let parse_c_patch (input : string) : (Cabs.definition, string) result =
   let (let*) = Result.(>>=) in
   let p = Printf.sprintf "int FRONTC_PARSING_DUMMY_FUNCTION(){\n%s\n}" input in
+  Printf.printf "\n\n\n\ninput:\n%s\n\n\n\n\n%!" input;
   let* parse_result = parse_c_file p in
   match parse_result with
-    | def::_ -> Ok def
-    | _ -> Error "VIBES: Unexpected Form in FrontC Parse"
+  | def::[] -> Ok def
+  | _ -> Error "VIBES: Unexpected Form in FrontC Parse"
 
 
 module Eval(T : Theory.Core) = struct
@@ -192,6 +194,14 @@ module Eval(T : Theory.Core) = struct
         let* rval = expr_to_pure info rval var_map in
         let* data = seq !!data @@ set lval !!rval in
         KB.return (data, ctrl, eff)
+      | COMPUTATION (CALL (CONSTANT(CONST_INT s), [])) ->
+        let* data = data in
+        let* ctrl = ctrl in
+        let* eff = eff in
+        let dst = int info.word_sort Bitvec.(!$ s) in
+        let jmp = jmp dst in
+        let* ctrl = seq !!ctrl jmp in
+        KB.return (data, ctrl, eff)
       (* FIXME: currently true_br and false_br *must* end in jumps *)
       | IF (c, true_br, false_br) ->
         let* data = data in
@@ -236,7 +246,7 @@ module Eval(T : Theory.Core) = struct
         let new_blk = blk lab !!data !!ctrl in
         let* eff = seq current_blk (seq new_blk !!eff) in
         KB.return (empty_data, empty_ctrl, eff)
-      (* TODO: Probably not right. Deal with variable declarations. Do blocks has sexp syntax? *)
+      (* FIXME: Print more informative failures *)
       | _ -> Cprint.print_statement s;
         failwith "stmt_to_eff: statement unsupported by VIBES"
     in
@@ -264,7 +274,6 @@ module Eval(T : Theory.Core) = struct
   let defs_to_map info (defs : Cabs.definition list) : var_map =
     List.fold defs ~init:String.Map.empty
       ~f:(fun map def -> add_def info def map)
-
 
   let body_to_eff info ((defs, stmt) : Cabs.body) : unit eff =
     let var_map = defs_to_map info defs in
