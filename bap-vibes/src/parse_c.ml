@@ -25,7 +25,6 @@ let parse_c_file (input : string) : (Cabs.file, string) result =
 let parse_c_patch (input : string) : (Cabs.definition, string) result =
   let (let*) = Result.(>>=) in
   let p = Printf.sprintf "int FRONTC_PARSING_DUMMY_FUNCTION(){\n%s\n}" input in
-  Printf.printf "\n\n\n\ninput:\n%s\n\n\n\n\n%!" input;
   let* parse_result = parse_c_file p in
   match parse_result with
   | def::[] -> Ok def
@@ -174,87 +173,58 @@ module Eval(T : Theory.Core) = struct
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
     let* empty_data = perform (Effect.Sort.data "C_sem") in
     let* empty_ctrl = perform Effect.Sort.fall in
-    let* empty_top = perform Effect.Sort.top in
-    (* We pass in a triple of "continuation" effect, to more easliy
-       handle interleaving of data and control effects. *)
-    let rec aux s (data : data eff) (ctrl : ctrl eff) (eff : unit eff)
-      : (data effect * ctrl effect * unit effect) KB.t =
+    let data d = blk Label.null !!d !!empty_ctrl in
+    let ctrl c = blk Label.null !!empty_data !!c in
+    let rec aux s : unit eff =
       match s with
-      | NOP ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
-        KB.return (data, ctrl, eff)
+      | NOP -> data empty_data
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
         let lval = String.Map.find_exn var_map lval in
         let* rval = expr_to_pure info rval var_map in
-        let* data = seq !!data @@ set lval !!rval in
-        KB.return (data, ctrl, eff)
+        let* assign = set lval !!rval in
+        data assign
       | COMPUTATION (CALL (CONSTANT(CONST_INT s), [])) ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
         let dst = int info.word_sort Bitvec.(!$ s) in
-        let jmp = jmp dst in
-        let* ctrl = seq !!ctrl jmp in
-        KB.return (data, ctrl, eff)
+        let* jmp = jmp dst in
+        ctrl jmp
       (* FIXME: currently true_br and false_br *must* end in jumps *)
       | IF (c, true_br, false_br) ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
         (* FIXME: allow for non "block" effects? *)
         let c = expr_to_pure info c var_map in
         (* Downcast [c] to Bool.t *)
         let c = KB.map c
             ~f:(fun c ->
-                Value.resort (fun _ -> Some Bool.t) c |> Option.value_exn)
+                Value.resort (fun _ -> Some Bool.t) c
+                |> Option.value_exn)
         in
-        let* (_, _, true_eff) =
-          aux true_br !!empty_data !!empty_ctrl !!eff in
-        let* (_, _, false_eff) =
-          aux false_br !!empty_data !!empty_ctrl !!eff in
-        let branch = branch c !!true_eff !!false_eff in
-        let* eff = branch in
-        KB.return (data, ctrl, eff)
+        let* true_eff = aux true_br in
+        let* false_eff = aux false_br in
+        let* branch = branch c !!true_eff !!false_eff in
+        KB.return branch
       | SEQUENCE (s1,s2) ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
-        let* (data1, ctrl1, eff1) = aux s1 !!data !!ctrl !!eff in
-        aux s2 !!data1 !!ctrl1 !!eff1
+        let* eff1 = aux s1 in
+        let* eff2 = aux s2 in
+        let* eff = seq !!eff1 !!eff2 in
+        KB.return eff
       | GOTO label ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* eff = eff in
         let label = Label.for_name label in
-        let goto = KB.(label >>= goto) in
-        let* ctrl = seq !!ctrl goto in
-        KB.return (data, ctrl, eff)
+        let* goto = KB.(label >>= goto) in
+        ctrl goto
+      (* FIXME: allow additional var defs? *)
       | BLOCK ([],s) ->
-        let* data = data in
-        let* ctrl = ctrl in
-        let* _ = eff in
-        let lab = Label.null in
-        let current_blk = blk lab !!data !!ctrl in
-        let* (data, ctrl, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
-        let lab = Label.null in
-        let new_blk = blk lab !!data !!ctrl in
-        let* eff = seq current_blk (seq new_blk !!eff) in
-        KB.return (empty_data, empty_ctrl, eff)
-      (* FIXME: Print more informative failures *)
-      | _ -> Cprint.print_statement s;
-        failwith "stmt_to_eff: statement unsupported by VIBES"
+        let* eff = aux s in
+        KB.return eff
+      | _ ->
+        let s_str = Utils.print_c Cprint.print_statement s in
+        let err =
+          Format.asprintf "stmt_to_eff: statement %s unsupported by VIBES" s_str
+        in
+        failwith err
     in
-    let* (data, ctrl, eff) = aux s !!empty_data !!empty_ctrl !!empty_top in
-    let lab = Label.null in
-    let new_blk = blk lab !!data !!ctrl in
-    let* eff = seq new_blk !!eff in
+    let* eff = aux s in
     KB.return eff
+
 
 
   let add_def info (def : Cabs.definition) (var_map : var_map) : var_map =
