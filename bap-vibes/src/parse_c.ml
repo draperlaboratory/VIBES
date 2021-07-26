@@ -171,13 +171,15 @@ module Eval(T : Theory.Core) = struct
     aux e
 
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
-    let* empty_data = perform (Effect.Sort.data "C_sem") in
-    let* empty_ctrl = perform Effect.Sort.fall in
+    let empty_data = Effect.empty (Effect.Sort.data "C_NOP") in
+    let empty_ctrl = Effect.empty Effect.Sort.fall in
+    let* empty_blk = blk Label.null !!empty_data !!empty_ctrl in
     let data d = blk Label.null !!d !!empty_ctrl in
     let ctrl c = blk Label.null !!empty_data !!c in
     let rec aux s : unit eff =
       match s with
-      | NOP -> data empty_data
+      | NOP ->
+        KB.return empty_blk
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
         let lval = String.Map.find_exn var_map lval in
@@ -188,9 +190,7 @@ module Eval(T : Theory.Core) = struct
         let dst = int info.word_sort Bitvec.(!$ s) in
         let* jmp = jmp dst in
         ctrl jmp
-      (* FIXME: currently true_br and false_br *must* end in jumps *)
       | IF (c, true_br, false_br) ->
-        (* FIXME: allow for non "block" effects? *)
         let c = expr_to_pure info c var_map in
         (* Downcast [c] to Bool.t *)
         let c = KB.map c

@@ -191,6 +191,7 @@ let serialize_mzn_params
   let regs = Arm_selector.gpr tgt lang |> Set.to_list in
   let regs = List.map ~f:Var.sexp_of_t regs in
   let regs = List.map ~f:Sexp.to_string regs in
+  assert(List.length regs <> 0);
   {
     reg_t = mzn_enum_def_of_list regs;
     opcode_t = mzn_enum_def_of_list opcodes;
