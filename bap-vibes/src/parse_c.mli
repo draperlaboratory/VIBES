@@ -13,15 +13,10 @@ module Eval(T : Theory.Core) : sig
       outputs a [unit eff] representing the semantics of the code.
 
       Some restrictions on the input:
-      - `int x, y, z;` at the top of your patch to convert to `(var-decls x y z)`
-      -  Only if then elses of the form `if(cond_expr){goto l1;}else{goto l2;};` ->
-        `(branch sexp_of_cond_expr (goto l1) (goto l2))`
-      - `goto foo;` -> `(goto foo)`
-      - `goto fallthrough;` -> `fallthrough`
+      - `int x, y, z;` at the top of your patch to declare variables `x y z` (as machine words)
+      -  Only if then elses of the form `if(cond_expr){goto l1;}else{goto l2;};`
+      - `(0xdeadbeef)();` gets translated into a goto statement
       - Supports operators +, -, *,, /, = <<, ++, !=, <, >, <=, >=
-      - Dereferencing `*a` -> `(load a)`
-      - Array indexing `a[j]` -> `(load (+ a j))`
-      - Constants like 0x7 are maintained as unadultered strings
 
       Here is an example of supported C:
 
