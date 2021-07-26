@@ -90,7 +90,6 @@ let get_func (prog : Program.t) (name : string) : Sub.t option =
   else
     find_simple
 
-
 let get_lang
     ~addr:(addr : Bitvec.t)
   : Theory.language KB.t =
