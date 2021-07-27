@@ -3,9 +3,12 @@
   "property" : "(assert true)",
   "patches" : [
     {"patch-name" : "ret-3",
-     "patch-code" : "(var-decls temp)
-                     (branch (== temp 0) (jmp 0x3ec) fallthrough)",
-     "patch-point" : "0x3dc",
+     "patch-code" : "int temp;
+                     if (temp == 0)
+                        { (0x3ec)(); }
+                     else
+                        { goto fallthrough; }",
+     "patch-point" : "0x103dc",
      "patch-size" : 8}
   ]
 }
