@@ -25,7 +25,7 @@ let assert_parse_eq s1 s2 =
         begin
           Theory.instance () >>=
           Theory.require >>= fun (module T) ->
-          let module Eval = Parse_c.Eval(T) in
+          let module Eval = Core_c.Eval(T) in
           let* sem = Eval.c_patch_to_eff Helpers.dummy_target ast in
           let sem_str = sem_str sem in
           KB.return @@
@@ -37,16 +37,18 @@ let test_var_decl _ = assert_parse_eq "int x, y, z;" "()"
 
 let test_assign _ = assert_parse_eq "int x, y; x = y;" "(((set x y)))"
 
+let test_seq _ = assert_parse_eq "int x, y, z; x = y; y = z;" "((((set x y)(set y z))))"
+
 let test_ite _ =
   assert_parse_eq
     "int cond_expr; if(cond_expr){goto l1;}else{goto l2;};"
     "(((if cond_expr(goto l1)(goto l2))))"
 
 let test_fallthrough _ =
-  skip_if true "Still a bug in the fallthrough case";
+  (* skip_if true "Still a bug in the fallthrough case"; *)
   assert_parse_eq
     "int x, y, z; if (x) { goto l; } else { x = y; } x = z; "
-    "(((goto fallthrough)))"
+    "((((if x(goto l)(set x y))(set x z))))"
 
 let test_array _ =
   assert_parse_eq
@@ -68,14 +70,13 @@ let test_compound _ = assert_parse_eq
 let test_call_hex _ = assert_parse_eq
   "int temp;
    if (temp == 0)
-    { (0x3ec)(); }
-    else
-    { goto falltrhough; }"
-  "(((if(= temp 0x0)(goto 0x3ec)(goto fallthrough))))"
+    { (0x3ec)(); }"
+  "(((if(= temp 0x0)(goto 0x3ec)())))"
 
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
+  "Test seq" >:: test_seq;
   "Test ite" >:: test_ite;
   "Test array" >:: test_array;
   "Test fallthrough" >:: test_fallthrough;
