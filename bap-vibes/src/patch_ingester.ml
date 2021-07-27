@@ -12,7 +12,7 @@ open KB.Let
 let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   Theory.instance () >>=
   Theory.require >>= fun (module Core) ->
-  let module CParser = Parse_c.Eval(Core) in
+  let module CParser = Core_c.Eval(Core) in
   Data.Patch.init_sem patch >>= fun () ->
   Data.Patch.get_patch_name_exn patch >>= fun name ->
   Data.Patch.get_patch_code_exn patch >>= fun code ->
