@@ -227,8 +227,7 @@ module CoreParser (Core : Theory.Core) = struct
          List.fold_right ~init:(perform Effect.Sort.bot) ~f:seq data
        in
        let* ctrl_blk = parse_ctrl st ctrl_sexp in
-       let l = KB.Object.null Theory.Program.cls in
-       blk l data_blk ctrl_blk
+       blk Theory.Label.null data_blk ctrl_blk
 
 end
 
