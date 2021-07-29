@@ -2,7 +2,6 @@
 
 open !Core_kernel
 open Bap.Std
-open Bap_core_theory
 
 type opt = blk term list -> blk term list
 
