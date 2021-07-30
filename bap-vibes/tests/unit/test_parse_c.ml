@@ -6,14 +6,14 @@ open Bap_knowledge
 open Knowledge.Syntax
 open Knowledge.Let
 
-let sem_str sem =
-  let full_str = Format.asprintf "%a" KB.Value.pp sem in
-  let sexp = Sexp.of_string full_str in
-  match sexp with
-  | List (List (Atom s::hd)::_) when String.is_substring s ~substring:"core:" ->
-    Sexp.to_string (List hd)
-  | _ -> "()"
+let eff_to_str sem =
+  Format.asprintf "%a" (KB.Value.pp_slots ["bap:bil"]) sem |>
+  String.filter ~f:(fun c -> not Char.(c = '\"'))
 
+(* Our "golden inputs" compared ignoring whitespace. *)
+let compare_sem sem str =
+  let strip s = String.filter s ~f:(Fn.non Char.is_whitespace) in
+  String.equal (strip sem) (strip str)
 
 let assert_parse_eq s1 s2 =
   match Parse_c.parse_c_patch s1 with
@@ -27,33 +27,43 @@ let assert_parse_eq s1 s2 =
           Theory.require >>= fun (module T) ->
           let module Eval = Core_c.Eval(T) in
           let* sem = Eval.c_patch_to_eff Helpers.dummy_target ast in
-          let sem_str = sem_str sem in
+          let sem_str = eff_to_str sem in
           KB.return @@
-          assert_equal ~cmp:String.equal ~printer:ident sem_str s2
+          assert_equal ~cmp:compare_sem ~printer:ident sem_str s2
         end
 
 
-let test_var_decl _ = assert_parse_eq "int x, y, z;" "()"
+let test_var_decl _ = assert_parse_eq "int x, y, z;" "(())"
 
-let test_assign _ = assert_parse_eq "int x, y; x = y;" "(((set x y)))"
+let test_assign _ = assert_parse_eq "int x, y; x = y;" "{ x := y }"
 
-let test_seq _ = assert_parse_eq "int x, y, z; x = y; y = z;" "((((set x y)(set y z))))"
+let test_seq _ = assert_parse_eq "int x, y, z; x = y; y = z;" "{ x := y y := z }"
 
 let test_ite _ =
   assert_parse_eq
     "int cond_expr; if(cond_expr){goto l1;}else{goto l2;};"
-    "(((if cond_expr(goto l1)(goto l2))))"
+    "{
+     if (cond_expr) {
+      bap:call(l1)
+     } else {
+       bap:call(l2)
+      }
+     }"
 
 let test_fallthrough _ =
-  (* skip_if true "Still a bug in the fallthrough case"; *)
   assert_parse_eq
-    "int x, y, z; if (x) { goto l; } else { x = y; } x = z; "
-    "((((if x(goto l)(set x y))(set x z))))"
+    "int x, y, z; if (x) { goto l; } x = z; "
+    "{
+   if (x) {
+     bap:call(l)
+   }
+   x := z
+   }"
 
 let test_array _ =
   assert_parse_eq
     "int a, y; y = a[7];"
-    "(((set y(loadw 32 0 mem(+ a 0x7)))))"
+    "{ y := mem[a + 7, el]:u32 }"
 
 let test_compound _ = assert_parse_eq
   "int x, y, z;
@@ -65,13 +75,25 @@ let test_compound _ = assert_parse_eq
    } else {
        goto larry;
    }"
-  "(((((set x 0x7)(set x(loadw 32 0 mem y)))(if(s> x 0x0)(goto fred)(goto larry)))))"
+  "{
+   x := 7
+   x := mem[y, el]:u32
+   if (0 <$ x) {
+      bap:call(fred)
+    } else {
+      bap:call(larry)
+     }
+    }"
 
 let test_call_hex _ = assert_parse_eq
   "int temp;
    if (temp == 0)
     { (0x3ec)(); }"
-  "(((if(= temp 0x0)(goto 0x3ec)())))"
+  "{
+   if (temp = 0) {
+     jmp 0x3EC
+   }
+ }"
 
 let suite = [
   "Test vardecls" >:: test_var_decl;
