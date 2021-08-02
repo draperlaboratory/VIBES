@@ -4,9 +4,7 @@
   "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
   "patches" : [
     {"patch-name" : "ret-3",
-     "patch-code" : "(var-decls retvar)
-                     (set retvar 3)
-                     fallthrough",
+     "patch-code" : "int retvar; retvar = 3;",
      "patch-point" : "0x103d4",
      "patch-size" : 8}
   ]
