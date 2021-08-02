@@ -5,8 +5,7 @@
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar;
-                     retvar = 3;
-                     goto fallthrough;",
+                     retvar = 3;",
      "patch-point" : "0x10400",
      "patch-size" : 4}
   ]
