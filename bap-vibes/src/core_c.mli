@@ -11,8 +11,9 @@ module Eval(T : Theory.Core) : sig
 
       Some restrictions on the input:
       - `int x, y, z;` at the top of your patch to declare variables `x y z` (as machine words)
-      -  Only if then elses of the form `if(cond_expr){goto l1;}else{goto l2;};`
-      - `(0xdeadbeef)();` gets translated into a goto statement
+      - No local scopes
+      - No structured loops (for the moment)
+      - `(0xdead)();` gets translated into a goto statement
       - Supports operators +, -, *,, /, = <<, ++, !=, <, >, <=, >=
 
       Here is an example of supported C:
@@ -22,9 +23,9 @@ module Eval(T : Theory.Core) : sig
       x = 0x7;
       x = *y;
       if(x > 0){
-        goto fred;
+        y = z;
       } else{
-        goto larry;
+        (0xdead)();
       }
       ```
 
