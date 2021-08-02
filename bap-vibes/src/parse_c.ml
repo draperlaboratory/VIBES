@@ -18,7 +18,7 @@ let parse_c_file (input : string) : (Cabs.file, string) result =
    first def from the result *)
 let parse_c_patch (input : string) : (Cabs.definition, string) result =
   let (let*) = Result.(>>=) in
-  let p = Printf.sprintf "int FRONTC_PARSING_DUMMY_FUNCTION(){\n%s\n}" input in
+  let p = Printf.sprintf "int VIBES_PATCH_WRAPPER_FUN(){\n%s\n}" input in
   let* parse_result = parse_c_file p in
   match parse_result with
   | def::[] -> Ok def
