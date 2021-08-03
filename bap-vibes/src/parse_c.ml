@@ -8,10 +8,11 @@ let parse_c_file (input : string) : (Cabs.file, string) result =
     Ok (Cparser.file initial (Lexing.from_string input))
   with
   (* | Cparser.Error -> Error "Cparser.Error" *)
-  | Parsing.Parse_error -> Error "Error"
-  | Cabs.BadType -> Error "BadType"
-  | Cabs.BadModifier -> Error "BadModifier"
-  | Invalid_argument s -> Error s
+  | Parsing.Parse_error -> Error "Parsing.Parse_error"
+  | Cabs.BadType -> Error "Cabs.BadType"
+  | Cabs.BadModifier -> Error "Cabs.BadModifier"
+  (* Workaround due to a FrontC bug *)
+  | Invalid_argument _ -> Error "Some FrontC parse error"
 
 (* Parses a sequence of C statements (a body) by wrapping it in a
    dummy function, parsing that as a file and then extracting the
