@@ -70,7 +70,7 @@ let test_compound _ = assert_parse_eq
    char q;
    x = 0x7;
    x = *y;
-   if(x > 0){
+   if((signed int)x > (signed int)0){
        goto fred;
    } else {
        goto larry;
