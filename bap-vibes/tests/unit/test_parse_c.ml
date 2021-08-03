@@ -95,6 +95,11 @@ let test_call_hex _ = assert_parse_eq
    }
  }"
 
+let test_load_short _ = assert_parse_eq
+  "int x, y;
+   x = * (short *) y;"
+  "{ x := mem[y, el]:u16 }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -104,4 +109,5 @@ let suite = [
   "Test fallthrough" >:: test_fallthrough;
   "Test compound" >:: test_compound;
   "Test call hex" >:: test_call_hex;
+  "Test load short" >:: test_load_short;
 ]

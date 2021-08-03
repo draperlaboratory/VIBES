@@ -16,7 +16,8 @@ module Eval(T : Theory.Core) = struct
   type ('a, 'b) tgt_info = {
     word_sort : 'a Bitv.t Value.sort;
     byte_sort : 'b Bitv.t Value.sort;
-    mem_var   : ('a, 'b) Mem.t var
+    mem_var   : ('a, 'b) Mem.t var;
+    endianness : Theory.endianness;
   }
 
   let mk_tgt_info (tgt : Theory.target) : ('a, 'b) tgt_info =
@@ -28,11 +29,38 @@ module Eval(T : Theory.Core) = struct
     {
       word_sort = word_sort;
       byte_sort = byte_sort;
-      mem_var = Target.data tgt
+      mem_var = Target.data tgt;
+      endianness = Target.endianness tgt;
     }
 
+  let char_ty = Theory.Bitv.define 8
+  let short_ty = Theory.Bitv.define 16
+  let long_ty = Theory.Bitv.define 32
+  let long_long_ty = Theory.Bitv.define 64
 
-  let bop_to_pure info (op : Cabs.binary_operator) : unit pure -> unit pure -> unit pure =
+  let ty_of_base_type info (c_ty : base_type) : _ Theory.Bitv.t Value.sort =
+    match c_ty with
+    | CHAR _ -> char_ty
+    | INT (SHORT, _) -> short_ty
+    | INT (LONG, _) -> long_ty
+    | INT (LONG_LONG, _) -> long_long_ty
+    | _ -> info.word_sort
+
+  let ty_op_pointer_type info (c_ty : base_type) : _ Theory.Bitv.t Value.sort =
+    match c_ty with
+    | PTR ty -> ty_of_base_type info ty
+    | _ -> info.word_sort
+
+  (* TODO: we'll need to pass around some additional info here. *)
+  let infer (exp : expression) : base_type =
+    match exp with
+    | CAST (ty, _) -> ty
+    | _ -> NO_TYPE
+
+  let bop_to_pure info (op : Cabs.binary_operator)
+      (_ty_a : base_type)
+      (_ty_b : base_type)
+    : unit pure -> unit pure -> unit pure =
     let lift_bop op sort_a sort_b (a : unit pure) (b : unit pure) : unit pure =
       let error = "Incorrect argument sort!" in
       let resort sort v =
@@ -80,7 +108,9 @@ module Eval(T : Theory.Core) = struct
     | ASSIGN
       -> failwith "bop_to_pure: binary operator unsupported by VIBES"
 
-  let unop_to_pure info (op : Cabs.unary_operator) : unit pure -> unit pure =
+  let unop_to_pure info (op : Cabs.unary_operator)
+      (ty : base_type)
+    : unit pure -> unit pure =
     let lift_uop op sort_a (a : unit pure) : unit pure =
       let error = "Incorrect argument sort!" in
       let resort sort v =
@@ -95,7 +125,9 @@ module Eval(T : Theory.Core) = struct
     let lift_bitv op = lift_uop op info.word_sort in
     match op with
     | MEMOF ->
-      let load : _ bitv -> _ bitv = loadw info.word_sort b0 (var info.mem_var) in
+      (* FIXME: use endianness here *)
+      let ty = ty_op_pointer_type info ty in
+      let load : _ bitv -> _ bitv = loadw ty b0 (var info.mem_var) in
       lift_bitv load
     | MINUS
     | PLUS
@@ -123,12 +155,15 @@ module Eval(T : Theory.Core) = struct
     let rec aux e =
       match e with
       | UNARY (op, a) ->
+        let ty_a = infer a in
         let* a = aux a in
-        unop_to_pure info op !!a
+        unop_to_pure info op ty_a !!a
       | BINARY (op, a, b) ->
+        let ty_a = infer a in
+        let ty_b = infer b in
         let* a = aux a in
         let* b = aux b in
-        bop_to_pure info op !!a !!b
+        bop_to_pure info op ty_a ty_b !!a !!b
       | INDEX (a, i) ->
         (* Some minor hackery here: turn a[i] into *(a + i) *)
         let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
@@ -139,6 +174,8 @@ module Eval(T : Theory.Core) = struct
         !!vv
       | CONSTANT c ->
         constant_to_pure info c
+      (* FIXME: for now, casts are simply for tagging subterms *)
+      | CAST (_, e) -> aux e
       | _ -> Cprint.print_expression e 0;
         failwith "FrontC produced expression unsupported by VIBES"
     in
