@@ -24,6 +24,7 @@ type t =
   | Missing_semantics of string
   | Command_not_found of string
   | Patch_code_not_parsed of string
+  | Incorrect_patch_point of string
   | Exit_code of string
   | Unexpected_exit of string
   | WP_result_unknown of string
@@ -56,6 +57,9 @@ let pp ppf (e : t) =
     | Missing_semantics s -> Format.sprintf "Semantics for %s not found in KB" s
     | Command_not_found s -> s
     | Patch_code_not_parsed s -> "Failed to parse patch code: " ^ s
+    | Incorrect_patch_point s ->
+      Format.sprintf
+        "Provided patch point %s is not an executable location" s
     | Exit_code s -> s
     | Unexpected_exit s -> s
     | WP_result_unknown s -> s

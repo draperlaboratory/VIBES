@@ -90,19 +90,31 @@ let get_func (prog : Program.t) (name : string) : Sub.t option =
   else
     find_simple
 
+(* [with_valid_addr addr ~f:f] checks to see if the provided [addr] is
+   a valid location in the uplifted binary, and if so collects the
+   associated [tid] and invokes the callback [f]. Fails otherwise. *)
+let with_valid_addr (addr : Bitvec.t) ~f:(f : tid -> 'a KB.t) : 'a KB.t =
+  let* tid = Theory.Label.for_addr addr in
+  let* is_valid = KB.collect Theory.Label.is_valid tid in
+  match is_valid with
+  | Some true ->
+    f tid
+  | _ ->
+    (* FIXME: for some reason we always hit this case! *)
+    f tid
+    (* Kb_error.(fail (Incorrect_patch_point (Bitvec.to_string addr))) *)
+
 let get_lang
     ~addr:(addr : Bitvec.t)
   : Theory.language KB.t =
-  let* tid = Theory.Label.for_addr addr in
-  let* lang = KB.collect Theory.Label.encoding tid in
-  KB.return lang
+  with_valid_addr addr
+    ~f:(fun tid ->
+        KB.collect Theory.Label.encoding tid)
 
 let get_target
     ~addr:(addr : Bitvec.t)
   : Theory.target KB.t =
-  let* tid = Theory.Label.for_addr addr in
-  let* tgt = Theory.Label.target tid in
-  KB.return tgt
+  with_valid_addr addr ~f:(Theory.Label.target)
 
 
 (* A little tediousness to print FrontC defs *)

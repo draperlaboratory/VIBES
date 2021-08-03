@@ -26,6 +26,7 @@ type t =
   | Missing_semantics of string
   | Command_not_found of string
   | Patch_code_not_parsed of string
+  | Incorrect_patch_point of string
   | Exit_code of string
   | Unexpected_exit of string
   | WP_result_unknown of string
