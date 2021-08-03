@@ -57,9 +57,15 @@ module Eval(T : Theory.Core) = struct
     | CAST (ty, _) -> ty
     | _ -> NO_TYPE
 
+  let is_signed (ty : base_type) : sign =
+    match ty with
+    | CHAR s -> s
+    | INT (_, s) -> s
+    | _ -> NO_SIGN
+
   let bop_to_pure info (op : Cabs.binary_operator)
-      (_ty_a : base_type)
-      (_ty_b : base_type)
+      (ty_a : base_type)
+      (ty_b : base_type)
     : unit pure -> unit pure -> unit pure =
     let lift_bop op sort_a sort_b (a : unit pure) (b : unit pure) : unit pure =
       let error = "Incorrect argument sort!" in
@@ -81,14 +87,58 @@ module Eval(T : Theory.Core) = struct
     | DIV -> lift_bitv div
     | SHL -> lift_bitv lshift
     (* Use arithmetic shift by default *)
-    | SHR  -> lift_bitv arshift
+    | SHR  ->
+      begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv arshift
+        | UNSIGNED -> lift_bitv rshift
+        | NO_SIGN ->
+          failwith "bop_to_pure: argument must be explicitely cast \
+                    to a signed or unsigned type!"
+      end
     | EQ  -> lift_bitv eq
     | NE  -> lift_bitv neq
     (* FIXME: use unsigned by default? *)
-    | LT  -> lift_bitv slt
-    | GT  -> lift_bitv sgt
-    | LE  -> lift_bitv sle
-    | GE  -> lift_bitv sge
+    | LT  ->
+      begin
+        match is_signed ty_a, is_signed ty_b with
+        | SIGNED, SIGNED -> lift_bitv slt
+        | UNSIGNED, UNSIGNED -> lift_bitv ult
+        | _ ->
+          failwith
+            "bop_to_pure: arguments must be explicitely cast \
+             to equal signed or unsigned types!"
+      end
+    | GT  ->
+      begin
+        match is_signed ty_a, is_signed ty_b with
+        | SIGNED, SIGNED -> lift_bitv sgt
+        | UNSIGNED, UNSIGNED -> lift_bitv ugt
+        | _ ->
+          failwith
+            "bop_to_pure: arguments must be explicitely cast \
+             to equal signed or unsigned types!"
+      end
+    | LE  ->
+      begin
+        match is_signed ty_a, is_signed ty_b with
+        | SIGNED, SIGNED -> lift_bitv sle
+        | UNSIGNED, UNSIGNED -> lift_bitv ule
+        | _ ->
+          failwith
+            "bop_to_pure: arguments must be explicitely cast \
+             to equal signed or unsigned types!"
+      end
+    | GE  ->
+      begin
+        match is_signed ty_a, is_signed ty_b with
+        | SIGNED, SIGNED -> lift_bitv sge
+        | UNSIGNED, UNSIGNED -> lift_bitv uge
+        | _ ->
+          failwith
+            "bop_to_pure: arguments must be explicitely cast \
+             to equal signed or unsigned types!"
+      end
     | AND
     | OR
     | MOD
