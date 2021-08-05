@@ -68,6 +68,7 @@ let apply_list (opts : opt list) ir =
     ~f:(fun current_ir opt -> opt current_ir)
     opts
 
-let apply ir =
+let apply (ir : blk term list) : blk term list =
+  (* This list contains all the optimizations we currently apply *)
   let opts = [short_circ] in
   apply_list opts ir
