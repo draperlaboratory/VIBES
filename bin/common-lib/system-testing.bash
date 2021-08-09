@@ -65,6 +65,10 @@ print_summary () {
     echo "|| Passed: ${TESTS_PASSED}," \
 	 "Failed: ${TESTS_FAILED}" | tee -a "${REPORT}"
     rule | tee -a "${REPORT}"
+
+    echo "SYSTEM TESTS ${TESTS_FINAL_STATUS}" > "${SUMMARY}"
+    echo "${TESTS_TALLY}" >> "${SUMMARY}"
+    echo "Passed: ${TESTS_PASSED}, Failed: ${TESTS_FAILED}" >> "${SUMMARY}"
 }
 
 # DESC

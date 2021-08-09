@@ -39,6 +39,8 @@ there_is_a_SLACK_URL () {
 # DESC
 #   Build a slack payload (a JSON file) to send.
 #   The contents are constructed from ${MSG_FILE} and ${REPORT_FILE}.
+# ARGS
+# - 1: If "quiet" then only report a summary and errors.
 # RETURNS
 #   The exit code of the attempt to write the file.
 build_slack_payload () {
@@ -46,21 +48,36 @@ build_slack_payload () {
     local BAP
     local BRANCH
     local COMMIT
-    local DATA
+    local FULL_REPORT
+    local JUST_THE_SUMMARY
     local TEXT
+    local VERBOSITY
+    VERBOSITY="${1}"
     MESSAGE="$(cat "${MSG_FILE}")"
     BAP="$(cat "${BAP_VERSION_FILE}")"
+    BRANCH="$(cat "${GIT_BRANCH_FILE}")"
     COMMIT="$(sed -z -e 's/\n/\\n/g' -e 's/\"/\\"/g' "${GIT_COMMIT_FILE}")"
-    DATA="$(sed -z \
+    FULL_REPORT="$(sed -z \
         -e 's/\n/\\n/g' \
         -e 's/\"/\\"/g' \
         -e 's/'\''/\'\''/g' \
         -e 's/'\`'/'\`'/g' \
         "${REPORT_FILE}")"
+    JUST_THE_SUMMARY="$(sed -z \
+        -e 's/\n/\\n/g' \
+        -e 's/\"/\\"/g' \
+        -e 's/'\''/\'\''/g' \
+        -e 's/'\`'/'\`'/g' \
+        "${SUMMARY_FILE}")"
     TEXT="STATUS: ${MESSAGE}"
     TEXT="${TEXT}\nBAP: ${BAP}"
+    TEXT="${TEXT}\nBRANCH: ${BRANCH}"
     TEXT="${TEXT}\nCOMMIT:\n\`\`\`\n${COMMIT}\n\`\`\`"
-    TEXT="${TEXT}\nOUTPUT:\n\`\`\`\n${DATA}\n\`\`\`"
+    if [[ "${VERBOSITY}" == "quiet" ]]; then
+        TEXT="${TEXT}\nOUTPUT:\n\`\`\`\n${JUST_THE_SUMMARY}\n\`\`\`"
+    else
+        TEXT="${TEXT}\nOUTPUT:\n\`\`\`\n${FULL_REPORT}\n\`\`\`"
+    fi
     echo "{
         \"username\":\"${SLACK_USERNAME}\",
         \"text\":\"${TEXT}\"
@@ -86,9 +103,11 @@ post_to_slack () {
 
 # DESC
 #   Report the current status of things to slack.
+# ARGS
+# - 1: If "quiet" then only report a summary and errors.
 # RETURNS
 #   The exit code of the attempt to send the message to slack.
 report_to_slack () {
-    build_slack_payload
+    build_slack_payload "${1}"
     post_to_slack
 }

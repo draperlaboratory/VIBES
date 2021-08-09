@@ -76,6 +76,7 @@ REPORT="$(report_file "${REPORT_RESULTS}")"
 
 # Record some useful info.
 bap_version
+git_branch
 git_commit
 
 echo ""
@@ -84,7 +85,7 @@ echo ""
 make clean -C "${REPO_ROOT}"/bap-vibes 2>&1 | tee "${REPORT_FILE}"
 
 # Run the unit tests.
-make test.unit -C "${REPO_ROOT}" 2>&1 | tee -a "${REPORT_FILE}"
+make test.unit -C "${REPO_ROOT}" 2>&1 >> "${REPORT_FILE}"
 TEST_RESULT="${?}"
 echo "REPORT:"
 cat "${REPORT_FILE}"

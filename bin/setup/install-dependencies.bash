@@ -77,6 +77,7 @@ REPORT="$(report_file "${REPORT_RESULTS}")"
 
 # Record some useful info.
 bap_version
+git_branch
 git_commit
 
 echo ""
