@@ -1,146 +1,120 @@
 open !Core_kernel
+open Bap.Std
 
 module KB = Bap_knowledge.Knowledge
 module Hvar = Higher_var
 
-open KB.Let
+open Bap_core_theory
 
 let err msg = Kb_error.fail @@ Kb_error.Higher_vars_not_substituted msg
-let str_of = Sexp.to_string
 
-let subst_in_decls (h_vars : Hvar.t list) (decls : Sexp.t) : Sexp.t KB.t =
-  let* vars = match decls with
-    | Sexp.List ((Sexp.Atom "var-decls") :: vars) -> KB.return vars
-    | Sexp.Atom "var-decls" -> KB.return []
-    | _ -> err "invalid or missing var-decls"
-  in
-  let filtered_vars = List.filter vars ~f:(fun sexp ->
-    match sexp with
-    | Sexp.Atom v ->
-      begin
-        match Hvar.find v h_vars with
-        | Some h_var ->
-          let at_entry = Hvar.at_entry h_var in
-          Hvar.is_reg at_entry
-        | None -> true
-      end
-    | _ -> false)
-  in
-  let* new_vars = KB.all @@ List.map filtered_vars ~f:(fun sexp ->
-    match sexp with
-    | Sexp.Atom v ->
-      begin
-        match Hvar.find v h_vars with
-        | Some h_var ->
-          let at_entry = Hvar.at_entry h_var in
-          if Hvar.is_reg at_entry then 
-            KB.return @@ Hvar.sexp_of at_entry
-          else 
-            err @@ Format.sprintf
-              "uh-oh, '%s' should have been removed" (str_of sexp)
-        | None -> KB.return sexp
-      end
-    | _ -> err @@ Format.sprintf "invalid var-decl '%s'" (str_of sexp))
-  in
-  KB.return @@ Sexp.List (Sexp.Atom "var-decls" :: new_vars)
+(* We use an exception here to avoid annoying monadic piping. *)
+exception Subst_err of string
 
-let rec subst_in_expr (h_vars : Hvar.t list) (expr : Sexp.t) : Sexp.t KB.t =
-  match expr with
-  | Sexp.Atom s ->
+(* Find a register with a given name in a target arch. *)
+let get_reg tgt name =
+  let regs = Theory.Target.regs tgt ~roles:[Theory.Role.Register.general] in
+  let reg = Set.find regs ~f:(fun v -> String.(Theory.Var.name v = name)) in
+  match reg with
+  | Some r -> Var.reify r
+  | None -> raise
+              (Subst_err
+                 (Format.sprintf "Register %s not found in target arch!" name))
+
+let get_mem tgt =
+  let mem = Theory.Target.data tgt in
+  Var.reify mem
+
+let size_of_typ (typ : typ) (name : string) =
+    match typ with
+    | Bil.Imm n -> Size.of_int n |> Or_error.ok_exn
+    | _ ->
+      raise
+        (Subst_err
+           (Format.sprintf "Unexpected type for variable: %s" name))
+
+(* This replaces a variable with either the register or the memory
+   read it corresponds to *)
+let subst_var (tgt : Theory.target) (h_vars : Hvar.t list) (v : var) : exp =
+  let name = Var.name v in
+  let typ = Var.typ v in
+  match Hvar.find name h_vars with
+  | Some t ->
     begin
-      match Hvar.find s h_vars with
-      | Some h_var ->
-        let at_entry = Hvar.at_entry h_var in
-        KB.return @@ Hvar.sexp_of at_entry
-      | None -> KB.return expr
+      match Hvar.at_entry t with
+      | Register name -> Bil.var @@ get_reg tgt name
+      | Memory(loc, off) ->
+        let mem = get_mem tgt |> Bil.var in
+        let endianness =
+          let e = Theory.Target.endianness tgt in
+          if Theory.Endianness.(e = le) then
+            LittleEndian
+          else
+            BigEndian
+        in
+        let size = size_of_typ typ name in
+        let loc = get_reg tgt loc in
+        Bil.load ~mem:mem ~addr:Bil.(var loc + int off) endianness size
     end
-  | Sexp.List [Sexp.Atom "load"; src] ->
-    let* new_src = subst_in_expr h_vars src in
-    KB.return @@ Sexp.List [Sexp.Atom "load"; new_src]
-  | Sexp.List [Sexp.Atom "loadw"; Sexp.Atom bits; src] ->
-    let* new_src = subst_in_expr h_vars src in
-    KB.return @@ Sexp.List [Sexp.Atom "loadw"; Sexp.Atom bits; new_src]
-  | Sexp.List [Sexp.Atom "+"; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "+"; e1; e2]
-  | Sexp.List [Sexp.Atom "-"; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "-"; e1; e2]
-  | Sexp.List [Sexp.Atom "*"; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "*"; e1; e2]
-  | Sexp.List [Sexp.Atom "/"; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "/"; e1; e2]
-  | Sexp.List [Sexp.Atom ">>"; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom ">>"; e1; e2]
-  | _ -> err @@ Format.sprintf "invalid expression: '%s'" (str_of expr)
+  | _ -> Var v
 
-let subst_in_var_assignment
-    (h_vars : Hvar.t list) (dest : string) (expr : Sexp.t) : Sexp.t KB.t =
-  let* new_expr = subst_in_expr h_vars expr in
-  match Hvar.find dest h_vars with
-  | Some h_var ->
-    let at_entry = Hvar.at_entry h_var in
-    if Hvar.is_reg at_entry then
-      let new_dest = Hvar.sexp_of at_entry in
-      KB.return @@ Sexp.List [Sexp.Atom "set"; new_dest; new_expr]
-    else
-      let loc = Hvar.sexp_of_loc at_entry in
-      let value =
-        Sexp.List [Sexp.Atom "store"; Sexp.Atom "mem"; loc; new_expr]
-      in
-      KB.return @@ Sexp.List [Sexp.Atom "set"; Sexp.Atom "mem"; value]
-  | None -> KB.return @@ Sexp.List [Sexp.Atom "set"; Sexp.Atom dest; new_expr] 
+let subst_exp (tgt : Theory.target) (h_vars : Hvar.t list) (e : exp) : exp =
+  match e with
+  | Var v -> subst_var tgt h_vars v
+  | _ -> e
 
-let subst_in_stmt (h_vars : Hvar.t list) (stmt : Sexp.t) : Sexp.t KB.t =
-  match stmt with
-  | Sexp.List [Sexp.Atom "set"; Sexp.Atom dest; expr] ->
-    subst_in_var_assignment h_vars dest expr
-  | _ -> err @@ Format.sprintf "invalid statement '%s'" (str_of stmt)
+let subst_def
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (ir : def term)
+  : def term =
+  let lhs = Def.lhs ir in
+  let typ = Var.typ lhs in
+  let rhs = Def.rhs ir |> subst_exp tgt h_vars in
+  let name = Var.name lhs in
+  match Hvar.find name h_vars with
+  | None -> Def.with_rhs ir rhs
+  | Some t ->
+    begin
+      match Hvar.at_entry t with
+      | Register name ->
+        let lhs = get_reg tgt name in
+        Def.create ~tid:(Term.tid ir) lhs rhs
+      | Memory (loc, off) ->
+        let mem = get_mem tgt in
+        let lhs = mem in
+        let loc = get_reg tgt loc in
+        let endianness =
+          let e = Theory.Target.endianness tgt in
+          if Theory.Endianness.(e = le) then
+            LittleEndian
+          else
+            BigEndian
+        in
+        let size = size_of_typ typ name in
+        let rhs =
+          Bil.
+            (store ~mem:(var mem) ~addr:(var loc + int off) rhs endianness size)
+        in
+        Def.create ~tid:(Term.tid ir) lhs rhs
+    end
 
-let subst_in_bool (h_vars : Hvar.t list) (expr : Sexp.t) : Sexp.t KB.t =
-  match expr with
-  | Sexp.List [Sexp.Atom "=="; e1; e2] ->
-    let* new_e1 = subst_in_expr h_vars e1 in
-    let* new_e2 = subst_in_expr h_vars e2 in
-    KB.return @@ Sexp.List [Sexp.Atom "=="; new_e1; new_e2]
-  | _ ->
-    err @@ Format.sprintf "invalid boolean expression: '%s'" (str_of expr)
+let subst_jmp (tgt : Theory.target) (h_vars : Hvar.t list) (ir : jmp term) : jmp term =
+  Jmp.map_exp ir ~f:(subst_exp tgt h_vars)
 
-let rec subst_in_cmd (h_vars : Hvar.t list) (cmd : Sexp.t) : Sexp.t KB.t =
-  match cmd with
-  | Sexp.Atom "fallthrough" -> KB.return cmd
-  | Sexp.List [Sexp.Atom "branch"; cond; branch1; branch2] ->
-    let* new_cond = subst_in_bool h_vars cond in
-    let* new_branch1 = subst_in_cmd h_vars branch1 in
-    let* new_branch2 = subst_in_cmd h_vars branch2 in
-    KB.return @@
-      Sexp.List [Sexp.Atom "branch"; new_cond; new_branch1; new_branch2]
-  | Sexp.List [Sexp.Atom "jmp"; dest] ->
-    let* new_dest = subst_in_expr h_vars dest in
-    KB.return @@ Sexp.List [Sexp.Atom "jmp"; new_dest]
-  | _ -> err @@ Format.sprintf "invalid command: '%s'" (str_of cmd)
+let subst_blk (tgt : Theory.target) (h_vars : Hvar.t list) (ir : blk term) : blk term =
+  Blk.map_elts ir
+    ~phi:(fun _ -> failwith "subst_blk: Unexpected Phi node!")
+    ~def:(fun d -> subst_def tgt h_vars d)
+    ~jmp:(fun j -> subst_jmp tgt h_vars j)
+
 
 let substitute
-    (h_vars : Hvar.t list) (sexps : Sexp.t list) : Sexp.t list KB.t =
-  match sexps with
-  | [] -> err "empty patch code"
-  | decls :: sexps ->
-    begin
-      match List.split_n sexps (List.length sexps - 1) with
-      | (stmts, [cmd]) ->
-        let* new_decls = subst_in_decls h_vars decls in
-        let* new_stmts = KB.all
-          (List.map stmts ~f:(fun stmt -> subst_in_stmt h_vars stmt))
-        in
-        let* new_cmd = subst_in_cmd h_vars cmd in
-        KB.return @@ new_decls :: (List.append new_stmts [new_cmd])
-      | _ -> err "invalid patch code, expecting statements and command"
-    end
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (ir : blk term list)
+  : blk term list KB.t =
+  try
+    KB.return @@ List.map ~f:(subst_blk tgt h_vars) ir
+  with
+  | Subst_err msg -> err msg

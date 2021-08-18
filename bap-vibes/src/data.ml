@@ -116,9 +116,6 @@ module Patch = struct
     KB.Class.property ~package patch "minizinc-solutions"
     minizinc_solution_domain
 
-  let lower_patch_code : (patch_cls, Sexp.t list option) KB.slot =
-    KB.Class.property ~package patch "lower-patch-code" sexp_list_domain
-
   let patch_vars : (patch_cls, Hvar.t list option) KB.slot =
     KB.Class.property ~package patch "patch-vars" higher_vars_domain
 
@@ -231,18 +228,6 @@ module Patch = struct
   let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
       : unit KB.t =
     KB.provide minizinc_solutions obj sol_set
-
-  let set_lower_patch_code (obj : t) (data : Sexp.t list option) : unit KB.t =
-    KB.provide lower_patch_code obj data
-
-  let get_lower_patch_code (obj : t) : Sexp.t list option KB.t =
-    KB.collect lower_patch_code obj
-
-  let get_lower_patch_code_exn (obj : t) : Sexp.t list KB.t =
-    get_lower_patch_code obj >>= fun result ->
-    match result with
-    | None -> Kb_error.fail Kb_error.Missing_lower_patch_code
-    | Some value -> KB.return value
 
   let set_patch_vars (obj : t) (data : Hvar.t list option) : unit KB.t =
     KB.provide patch_vars obj data

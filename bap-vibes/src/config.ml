@@ -57,7 +57,7 @@ let string_of_hvar (v : Hvar.t) : string =
     match v_loc with
     | Hvar.Register reg -> reg
     | Hvar.Memory (fp, offset) ->
-      Format.sprintf "%s - %s" fp (Bitvec.to_string offset)
+      Format.sprintf "[%s + %s]" fp (Bap.Std.Word.to_string offset)
   in
   let part_1 = Format.sprintf
     "      {\n        name: %s,\n        at-entry: %s\n"
@@ -72,6 +72,9 @@ let string_of_hvar (v : Hvar.t) : string =
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
   let code = Utils.print_c Cprint.print_def p.patch_code in
+  let h_vars =
+    String.concat ~sep:"\n" (List.map p.patch_vars ~f:string_of_hvar)
+  in
   String.concat ~sep:"\n" [
       Printf.sprintf "  {";
       Printf.sprintf "    Patch_name: %s" p.patch_name;
