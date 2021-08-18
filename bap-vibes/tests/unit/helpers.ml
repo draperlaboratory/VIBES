@@ -37,6 +37,14 @@ let dummy_proj ?name:(name = "main") filename : (Project.t * string, Error.t) re
   let dummy_prog = Program.Builder.result dummy_prog in
   Result.map empty_proj ~f:(fun p -> (Project.with_program p dummy_prog, filename))
 
+(* Create a dummy C function declaration with empty everything *)
+let dummy_code : Cabs.definition =
+  let open Cabs in
+  let name = ("dummy", NO_TYPE, [], NOTHING) in
+  let single_name = (NO_TYPE, NO_STORAGE, name) in
+  let body = ([], NOP) in
+  FUNDEF (single_name, body)
+
 (* Get an empty program that can be used in tests. *)
 let prog_exn (proj : (Project.t * string, Error.t) result) : Program.t * string =
   let p, s = proj_exn proj in
