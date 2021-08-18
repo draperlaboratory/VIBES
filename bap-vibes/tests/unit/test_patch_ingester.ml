@@ -88,6 +88,34 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
   let expected = Kb_error.Problem Kb_error.Missing_target in
   H.assert_error Data.Patched_exe.patches expected result
 
+(* Test that [Patch_ingester.ingest] errors with no patch_vars in the KB. *)
+let test_ingest_with_no_patch_vars (_ : test_ctxt) : unit =
+
+  (* Run the ingester. *)
+  let computation =
+
+    (* Set up the KB. *)
+    H.obj () >>= fun obj ->
+    Data.Original_exe.set_target obj H.dummy_target >>= fun _ ->
+    KB.Object.create Data.Patch.patch >>= fun patch ->
+
+    let code = H.dummy_code in
+    Data.Patch.set_patch_code patch (Some code) >>= fun _ ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patched_exe.set_patches obj
+      (Data.Patch_set.singleton patch) >>= fun _ ->
+
+    (* Now run the ingester. *)
+    Patch_ingester.ingest obj >>= fun _ ->
+    KB.return obj
+
+  in
+  let result = KB.run Data.cls computation KB.empty in
+
+  (* The ingester should diverge with the appropriate error. *)
+  let expected = Kb_error.Problem Kb_error.Missing_patch_vars in
+  H.assert_error Data.Patched_exe.patches expected result
+
 let suite = [
   "Test Patch_ingester.ingest" >:: test_ingest;
   "Test Patch_ingester.ingest: no patch" >::
