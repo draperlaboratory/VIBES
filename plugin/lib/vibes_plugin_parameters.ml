@@ -42,6 +42,17 @@ let validate_bitvec_field (field : string) (data : (string * Json.t) list)
     end
   | _ -> Err.fail e
 
+(* Validate a word field in a Json association list. *)
+let validate_word_field (field : string) (data : (string * Json.t) list)
+    (e : error) : (Bap.Std.Word.t, error) Stdlib.result =
+  match value_of_field field data with
+  | Some (`String s) ->
+    begin
+      try Err.return (Bap.Std.Word.of_string s)
+      with Invalid_argument _ -> Err.fail e
+    end
+  | _ -> Err.fail e
+
 (* Validate a string field in a Json association list. *)
 let validate_string_field (field : string) (data : (string * Json.t) list)
     (e : error) : (string, error) Stdlib.result =
@@ -109,7 +120,7 @@ let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
       | Some (`String "memory") ->
         validate_string_field
           "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
-        validate_bitvec_field
+        validate_word_field
           "offset" data Errors.Missing_higher_var_offset >>= fun offset ->
         Err.return (Hvar.Memory (fp, offset))
       | _ -> Err.fail Errors.Missing_higher_var_stored_in
