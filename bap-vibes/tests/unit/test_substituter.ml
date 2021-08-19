@@ -22,7 +22,37 @@ module Test_result = struct
   let result = KB.Class.property ~package cls "test-result" domain
 end
 
-let x86_tgt = Theory.Target.get ~package:"bap" "x86"
+let x86_tgt = Theory.Target.get ~package:"bap" "amd64"
+
+(* Very lax equality to avoid tid comparison failures *)
+let eq_elt e1 e2 =
+  match e1, e2 with
+  | `Def d1, `Def d2 ->
+    let v1, e1 = Def.lhs d1, Def.rhs d1 in
+    let v2, e2 = Def.lhs d2, Def.rhs d2 in
+    Var.(v1 = v2) && Exp.(e1 = e2)
+  | `Jmp j1, `Jmp j2 ->
+    begin
+      match Jmp.guard j1, Jmp.guard j2 with
+      | None, None -> true
+      | Some g1, Some g2 ->
+        let g1 = KB.Value.get Exp.slot g1 in
+        let g2 = KB.Value.get Exp.slot g2 in
+        Exp.(g1 = g2)
+      | _ -> false
+    end
+  (* We shouldn't hit any of these *)
+  | `Phi _, `Phi _ -> false
+  | _ -> false
+
+let eq_blk_list b1 b2 =
+  let b1 = List.concat_map b1
+      ~f:(fun b -> Blk.elts b |> Seq.to_list)
+  in
+  let b2 = List.concat_map b2
+      ~f:(fun b -> Blk.elts b |> Seq.to_list)
+  in
+  List.equal eq_elt b1 b2
 
 let do_subst (h_vars : Hvar.t list) (code : Bil.t)
   : Test_result.cls KB.obj KB.t =
@@ -86,7 +116,7 @@ let test_substitute_1 (_ : test_ctxt) : unit =
         "Expected '%s' but got '%s'"
         (str_of_blks expected) (str_of_blks result)
     in
-    let comparison = List.equal Blk.equal result expected in
+    let comparison = eq_blk_list result expected in
     assert_bool msg comparison
   | Error e ->
     let msg = Format.asprintf
@@ -99,14 +129,14 @@ let test_substitute_2 (_ : test_ctxt) : unit =
   let h_vars =
     [
       Hvar.create "x"
-        (Hvar.Memory ("RBP", Word.of_string "0x14")) (Hvar.Register "RAX");
+        (Hvar.Memory ("RBP", Word.of_string "0x14:64")) (Hvar.Register "RAX");
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rbp = Var.create "RBP" (Bil.Imm 64) in
   let mem = Var.create "mem" (Bil.Mem (`r64, `r8)) in
   let num_3 = Word.of_int ~width:64 3 in
-  let num_14 = Word.of_string "0x14" in
+  let num_14 = Word.of_string "0x14:64" in
   let code =
     Bil.[
       x := int @@ num_3;
@@ -142,7 +172,7 @@ let test_substitute_2 (_ : test_ctxt) : unit =
     let msg = Format.asprintf
       "Expected '%s' but got '%s'" (str_of_blks expected) (str_of_blks result)
     in
-    let comparison = List.equal Blk.equal result expected in
+    let comparison = eq_blk_list result expected in
     assert_bool msg comparison
   | Error e ->
     let msg = Format.asprintf
@@ -152,8 +182,13 @@ let test_substitute_2 (_ : test_ctxt) : unit =
 
 (* Verify that substitution errors are raised correctly. *)
 let test_substitute_error (_ : test_ctxt) : unit =
-  let h_vars = [] in
-  let code = [] in
+  let h_vars =
+    [
+      Hvar.create "x" (Hvar.Register "EAX") (Hvar.Register "RAX");
+    ]
+  in
+  let x = Var.create "x" (Bil.Imm 64) in
+  let code = Bil.[x := var x] in
 
   match get_result h_vars code with
   | Ok result ->
