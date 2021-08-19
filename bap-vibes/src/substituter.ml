@@ -13,8 +13,10 @@ exception Subst_err of string
 
 (* Find a register with a given name in a target arch. *)
 let get_reg tgt name =
-  let regs = Theory.Target.regs tgt ~roles:[Theory.Role.Register.general] in
-  let reg = Set.find regs ~f:(fun v -> String.(Theory.Var.name v = name)) in
+  let regs = Theory.Target.regs tgt in
+  let reg = Set.find regs
+      ~f:(fun v -> String.(Theory.Var.name v = name))
+  in
   match reg with
   | Some r -> Var.reify r
   | None -> raise
@@ -59,9 +61,14 @@ let subst_var (tgt : Theory.target) (h_vars : Hvar.t list) (v : var) : exp =
   | _ -> Var v
 
 let subst_exp (tgt : Theory.target) (h_vars : Hvar.t list) (e : exp) : exp =
-  match e with
-  | Var v -> subst_var tgt h_vars v
-  | _ -> e
+  let subst_obj =
+    object
+      inherit Exp.mapper
+      method! map_var v =
+        subst_var tgt h_vars v
+    end
+  in
+  subst_obj#map_exp e
 
 let subst_def
     (tgt : Theory.target)
