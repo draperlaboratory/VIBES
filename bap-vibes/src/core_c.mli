@@ -18,16 +18,16 @@ module Eval(T : Theory.Core) : sig
 
       Here is an example of supported C:
 
-      ```
+      {[
       int x, y, z;
       x = 0x7;
       x = *y;
       if(x > 0){
         y = z;
-      } else{
+      } else {
         (0xdead)();
       }
-      ```
+      ]}
 
       If a construct (as parsed by FrontC) is not supported,
       [failwith] is called and crashes the program.
