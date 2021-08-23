@@ -30,6 +30,7 @@ type t =
   | WP_result_unknown of string
   | Max_tries of int
   | Minizinc_deserialization of string
+  | Core_c_error of string
   | Other of string
 
 (* A pretty-printer for these errors. *)
@@ -65,6 +66,8 @@ let pp ppf (e : t) =
     | WP_result_unknown s -> s
     | Max_tries n -> Format.sprintf "Tried %d times. Giving up" n
     | Minizinc_deserialization s -> s
+    | Core_c_error s ->
+      Format.sprintf "Core C failed with error: %s" s
     | Other s -> s
   in
   Format.fprintf ppf "@[%s@]@." msg

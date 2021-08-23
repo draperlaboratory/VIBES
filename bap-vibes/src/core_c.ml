@@ -2,6 +2,9 @@ open Core_kernel
 open Bap_core_theory
 open Cabs
 
+
+module Err = Kb_error
+
 type var_map = unit Theory.var String.Map.t
 
 
@@ -92,9 +95,10 @@ module Eval(T : Theory.Core) = struct
         match is_signed ty_a with
         | SIGNED -> lift_bitv arshift
         | UNSIGNED -> lift_bitv rshift
-        | NO_SIGN ->
-          failwith "binop_to_pure: argument must be explicitely cast \
-                    to a signed or unsigned type!"
+        | NO_SIGN -> fun _ _ ->
+          Err.fail @@ Err.Core_c_error
+            "binop_to_pure: argument must be explicitely cast \
+             to a signed or unsigned type!"
       end
     | EQ  -> lift_bitv eq
     | NE  -> lift_bitv neq
@@ -104,8 +108,8 @@ module Eval(T : Theory.Core) = struct
         match is_signed ty_a, is_signed ty_b with
         | SIGNED, SIGNED -> lift_bitv slt
         | UNSIGNED, UNSIGNED -> lift_bitv ult
-        | _ ->
-          failwith
+        | _ -> fun _ _ ->
+          Err.fail @@ Err.Core_c_error
             "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
@@ -114,8 +118,8 @@ module Eval(T : Theory.Core) = struct
         match is_signed ty_a, is_signed ty_b with
         | SIGNED, SIGNED -> lift_bitv sgt
         | UNSIGNED, UNSIGNED -> lift_bitv ugt
-        | _ ->
-          failwith
+        | _ -> fun _ _ ->
+          Err.fail @@ Err.Core_c_error
             "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
@@ -124,8 +128,8 @@ module Eval(T : Theory.Core) = struct
         match is_signed ty_a, is_signed ty_b with
         | SIGNED, SIGNED -> lift_bitv sle
         | UNSIGNED, UNSIGNED -> lift_bitv ule
-        | _ ->
-          failwith
+        | _ -> fun _ _ ->
+          Err.fail @@ Err.Core_c_error
             "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
@@ -134,8 +138,8 @@ module Eval(T : Theory.Core) = struct
         match is_signed ty_a, is_signed ty_b with
         | SIGNED, SIGNED -> lift_bitv sge
         | UNSIGNED, UNSIGNED -> lift_bitv uge
-        | _ ->
-          failwith
+        | _ -> fun _ _ ->
+          Err.fail @@ Err.Core_c_error
             "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
@@ -156,7 +160,9 @@ module Eval(T : Theory.Core) = struct
     | SHL_ASSIGN
     | SHR_ASSIGN
     | ASSIGN
-      -> failwith "binop_to_pure: binary operator unsupported by VIBES"
+      -> fun _ _ ->
+        Err.fail @@
+        Err.Core_c_error "binop_to_pure: binary operator unsupported by VIBES"
 
   let unop_to_pure info (op : Cabs.unary_operator)
       (ty : base_type)
@@ -182,7 +188,9 @@ module Eval(T : Theory.Core) = struct
     | PREDECR
     | POSINCR
     | POSDECR
-      -> failwith "unop_to_pure: unary operator unsupported by VIBES"
+      -> fun _ ->
+        Err.fail @@
+        Err.Core_c_error "unop_to_pure: unary operator unsupported by VIBES"
 
   let constant_to_pure info (c :Cabs.constant) : unit pure =
     match c with
@@ -193,7 +201,7 @@ module Eval(T : Theory.Core) = struct
     | CONST_CHAR _
     | CONST_STRING _
     | CONST_COMPOUND _ ->
-      failwith "constant_to_pure: constant unsupported by VIBES"
+      Err.fail @@ Err.Core_c_error "constant_to_pure: constant unsupported by VIBES"
 
   let expr_to_pure info (e : Cabs.expression) (var_map : var_map) : unit pure =
     let rec aux e =
@@ -221,7 +229,7 @@ module Eval(T : Theory.Core) = struct
       (* FIXME: for now, casts are simply for tagging subterms *)
       | CAST (_, e) -> aux e
       | _ -> Cprint.print_expression e 0;
-        failwith "FrontC produced expression unsupported by VIBES"
+        Err.fail @@ Err.Core_c_error "FrontC produced expression unsupported by VIBES"
     in
     aux e
 
@@ -275,7 +283,7 @@ module Eval(T : Theory.Core) = struct
         let err =
           Format.asprintf "stmt_to_eff: statement %s unsupported by VIBES" s_str
         in
-        failwith err
+        Err.fail @@ Err.Core_c_error err
     in
     let* eff = aux s in
     KB.return eff
@@ -308,6 +316,7 @@ module Eval(T : Theory.Core) = struct
     let info = mk_tgt_info tgt in
     match patch with
     | FUNDEF (_, b) -> body_to_eff info b
-    | _ -> failwith "c_patch_to_eff: unexpected patch shape; expected a single fundef!"
+    | _ -> Err.fail @@
+      Err.Core_c_error "c_patch_to_eff: unexpected patch shape; expected a single fundef!"
 
 end
