@@ -1,4 +1,4 @@
-(* Errors for the plugin. 
+(** Errors for the plugin.
 
    Mostly these are errors that arise when parsing the CLI arguments and
    configuration file provided by the user. *)

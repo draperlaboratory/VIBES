@@ -1,4 +1,4 @@
-(* Handles parsing of plugin parameters (provided at the command line). 
+(** Handles parsing of plugin parameters (provided at the command line).
 
    The primary goal is to set up a [Bap_vibes.Config.t] configuration record,
    which is needed to run the [Bap_vibes] pipeline.
@@ -11,10 +11,10 @@ open Monads.Std
 
 module Errors = Vibes_plugin_errors
 
-(* Error results are derived from the {!Errors} module. *)
+(** Error results are derived from the {!Errors} module. *)
 type error = Errors.t Monad.Result.Make (Errors) (Monad.Ident).error
 
-(* [create ~exe ~config_filepath ~patched_exe_filepath] will create
+(** [create ~exe ~config_filepath ~patched_exe_filepath] will create
    a [Bap_vibes.Config.t] configuration record from a JSON config file, where:
    - [~exe] is the filepath to the original executable
    - [~config_filepath] is the filepath to the JSON config file
