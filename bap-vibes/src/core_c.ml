@@ -63,23 +63,23 @@ module Eval(T : Theory.Core) = struct
     | INT (_, s) -> s
     | _ -> NO_SIGN
 
-  let bop_to_pure info (op : Cabs.binary_operator)
+  let resort sort v =
+    let error = "Incorrect argument sort!" in
+    Value.resort (fun _ -> Some sort) v
+    |> Option.value_exn ~message:error
+    |> KB.return
+
+  let binop_to_pure info (op : Cabs.binary_operator)
       (ty_a : base_type)
       (ty_b : base_type)
     : unit pure -> unit pure -> unit pure =
-    let lift_bop op sort_a sort_b (a : unit pure) (b : unit pure) : unit pure =
-      let error = "Incorrect argument sort!" in
-      let resort sort v =
-        Value.resort (fun _ -> Some sort) v
-        |> Option.value_exn ~message:error
-        |> KB.return
-      in
+    let lift_binop op sort_a sort_b (a : unit pure) (b : unit pure) : unit pure =
       let* a = a in
       let* b = b in
       let* res = op (resort sort_a a) (resort sort_b b) in
       KB.return @@ Value.forget res
     in
-    let lift_bitv op = lift_bop op info.word_sort info.word_sort in
+    let lift_bitv op = lift_binop op info.word_sort info.word_sort in
     match op with
     | ADD -> lift_bitv add
     | SUB -> lift_bitv sub
@@ -93,7 +93,7 @@ module Eval(T : Theory.Core) = struct
         | SIGNED -> lift_bitv arshift
         | UNSIGNED -> lift_bitv rshift
         | NO_SIGN ->
-          failwith "bop_to_pure: argument must be explicitely cast \
+          failwith "binop_to_pure: argument must be explicitely cast \
                     to a signed or unsigned type!"
       end
     | EQ  -> lift_bitv eq
@@ -106,7 +106,7 @@ module Eval(T : Theory.Core) = struct
         | UNSIGNED, UNSIGNED -> lift_bitv ult
         | _ ->
           failwith
-            "bop_to_pure: arguments must be explicitely cast \
+            "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
     | GT  ->
@@ -116,7 +116,7 @@ module Eval(T : Theory.Core) = struct
         | UNSIGNED, UNSIGNED -> lift_bitv ugt
         | _ ->
           failwith
-            "bop_to_pure: arguments must be explicitely cast \
+            "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
     | LE  ->
@@ -126,7 +126,7 @@ module Eval(T : Theory.Core) = struct
         | UNSIGNED, UNSIGNED -> lift_bitv ule
         | _ ->
           failwith
-            "bop_to_pure: arguments must be explicitely cast \
+            "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
     | GE  ->
@@ -136,7 +136,7 @@ module Eval(T : Theory.Core) = struct
         | UNSIGNED, UNSIGNED -> lift_bitv uge
         | _ ->
           failwith
-            "bop_to_pure: arguments must be explicitely cast \
+            "binop_to_pure: arguments must be explicitely cast \
              to equal signed or unsigned types!"
       end
     | AND
@@ -156,18 +156,12 @@ module Eval(T : Theory.Core) = struct
     | SHL_ASSIGN
     | SHR_ASSIGN
     | ASSIGN
-      -> failwith "bop_to_pure: binary operator unsupported by VIBES"
+      -> failwith "binop_to_pure: binary operator unsupported by VIBES"
 
   let unop_to_pure info (op : Cabs.unary_operator)
       (ty : base_type)
     : unit pure -> unit pure =
     let lift_uop op sort_a (a : unit pure) : unit pure =
-      let error = "Incorrect argument sort!" in
-      let resort sort v =
-        Value.resort (fun _ -> Some sort) v
-        |> Option.value_exn ~message:error
-        |> KB.return
-      in
       let* a = a in
       let* res = op (resort sort_a a) in
       KB.return @@ Value.forget res
@@ -213,7 +207,7 @@ module Eval(T : Theory.Core) = struct
         let ty_b = infer b in
         let* a = aux a in
         let* b = aux b in
-        bop_to_pure info op ty_a ty_b !!a !!b
+        binop_to_pure info op ty_a ty_b !!a !!b
       | INDEX (a, i) ->
         (* Some minor hackery here: turn a[i] into *(a + i) *)
         let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
