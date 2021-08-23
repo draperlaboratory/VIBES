@@ -71,6 +71,11 @@ let freshen_operand o =
   | _ -> o
 
 
+let preassign_var v =
+  if Var.is_physical v
+  then Some v
+  else None
+
 let op_var_exn (x : operand) : op_var =
   match x with
   | Var o -> o
@@ -402,3 +407,7 @@ let dummy_reg_alloc t =
         | None ->
           let var = List.hd_exn v.temps in
           {v with pre_assign = Some (Var.create "R0" (Var.typ var))})
+
+let preassign (ir : t) : t =
+  map_op_vars ir
+    ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var})

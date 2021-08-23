@@ -80,14 +80,17 @@ let preassign_var (lang : Theory.language) (v : var) : var option =
       else
         Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     end
+    (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
   else if String.(Var.name v = "PC") then
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
   else
     None
 
 let preassign (lang : Theory.language) (ir : Ir.t) : Ir.t =
-    Ir.map_op_vars ir
+  let ir = Ir.preassign ir in
+  let ir = Ir.map_op_vars ir
       ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
+  in ir
 
 (* Appends the effects of s2 to those of s1, respecting the order if they
    are not in seperate blocks. *)
