@@ -15,14 +15,14 @@ let test_ingest (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_target obj H.dummy_target >>= fun _ ->
+    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
     Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun () ->
 
     (* Now run the ingester. *)
-    Patch_ingester.ingest obj >>= fun _ ->
+    Patch_ingester.ingest obj >>= fun () ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
@@ -54,8 +54,8 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
     (* Create a patch but don't fill its properties. *)
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
-    Patch_ingester.ingest obj >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun () ->
+    Patch_ingester.ingest obj >>= fun () ->
     KB.return obj
   in
   let result = KB.run Data.cls computation KB.empty in
@@ -73,12 +73,12 @@ let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
     (* Add a patch with a name, but no address size, to the KB. *)
     H.obj () >>= fun obj ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
     Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun () ->
 
     (* Now run the ingester. *)
-    Patch_ingester.ingest obj >>= fun _ ->
+    Patch_ingester.ingest obj >>= fun () ->
     KB.return obj
 
   in
@@ -96,17 +96,23 @@ let test_ingest_with_no_patch_vars (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_target obj H.dummy_target >>= fun _ ->
+    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
 
     let code = H.dummy_code in
-    Data.Patch.set_patch_code patch (Some code) >>= fun _ ->
-    Data.Patch.set_patch_name patch (Some H.patch) >>= fun _ ->
+    Data.Patch.set_patch_code patch (Some code) >>= fun () ->
+    Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
     Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun () ->
 
     (* Now run the ingester. *)
-    Patch_ingester.ingest obj >>= fun _ ->
+    Patch_ingester.ingest obj >>= fun () ->
+    Data.Patched_exe.get_patches obj >>= fun patches ->
+    Data.Patch_set.fold patches
+      ~init:(KB.return ())
+      ~f:(fun _ p ->
+          Data.Patch.get_patch_vars_exn p >>| fun _ -> ())
+    >>= fun () ->
     KB.return obj
 
   in
