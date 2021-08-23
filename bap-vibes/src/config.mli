@@ -58,8 +58,13 @@ val pp : Format.formatter -> t -> unit
     - [~patch_point] is the addres in the original exe to start patching at
     - [~patch_size] is the number of bytes to replace in the original exe
     - [~patch_vars] are higher variables declared for the patch *)
-val create_patch : patch_name:string -> patch_code:Sexp.t list ->
-  patch_point:Bitvec.t -> patch_size:int -> patch_vars:Hvar.t list -> patch
+val create_patch :
+  patch_name:string
+  -> patch_code:Cabs.definition
+  -> patch_point:Bitvec.t
+  -> patch_size:int
+  -> patch_vars:Hvar.t list
+  -> patch
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath
     ~minizinc_model_filepath] will create a configuration record, where:
