@@ -124,6 +124,10 @@ val op_var_to_string : op_var -> string
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
+(** [preassign ir] sets all the variables which are set to physical
+   registers as being the preassigned location for those variables. *)
+val preassign : t -> t
+
 (** [preassign_map] builds a total dictionary from op_var ids to
     pre assigned registers. *)
 val preassign_map : t -> (var option) Var.Map.t
