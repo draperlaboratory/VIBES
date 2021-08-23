@@ -8,7 +8,6 @@ open Bap_core_theory
 
 let err msg = Kb_error.fail @@ Kb_error.Higher_vars_not_substituted msg
 
-(* We use an exception here to avoid annoying monadic piping. *)
 exception Subst_err of string
 
 (* Find a register with a given name in a target arch. *)

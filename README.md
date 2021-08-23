@@ -5,10 +5,10 @@ This is the main external VIBES (DARPA AMP TA2) repository.
 The VIBES tool is comprised of two components:
 
 * An OCaml library.
-* A command-line tool, which serves a front-end to the library. 
+* A command-line tool, which serves a front-end to the library.
 
-The library is called `bap-vibes`. Its source code lives in [lib/](./lib). 
-The command-line tool is implemented as a BAP command, `bap vibes`. Its 
+The library is called `bap-vibes`. Its source code lives in [lib/](./lib).
+The command-line tool is implemented as a BAP command, `bap vibes`. Its
 source code lives in [plugin/](./plugin).
 
 
@@ -25,7 +25,7 @@ Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
 If you are running in the latest `binaryanalysisplatform/bap:latest` docker
 container, you may skip this section. OCaml and BAP are already installed.
 
-Otherwise, if you don't have a `4.09.1` OCaml switch, create one. 
+Otherwise, if you don't have a `4.09.1` OCaml switch, create one.
 
 Install the latest (bleeding edge) version of BAP:
 
@@ -163,7 +163,7 @@ optional parameters.  It is a JSON file with a single top level object.
 
 The top-level object must include the following fields:
 
-* `"func" : "NAME"` - 
+* `"func" : "NAME"` -
   Specifies the name of the function you want to verify.
 * `"property" : "S-EXP"` -
   Specifies the correctness property (as an S-expression in a JSON string)
@@ -171,10 +171,10 @@ The top-level object must include the following fields:
 * `"patches" : [PATCH-OBJECTS]"` -
   Specifies the patches to apply as an array of patch fragment description
   objects.  Each object in the array describes a change to a single contiguous
-  piece of assembly code.  The objects have three fields:
-  * `"patch-name" : "NAME"` -
-    Currently, there are two hand-written patches, named `ret-3` and `ret-4`.
-    The first patch returns 3, and the second returns 4.
+  piece of assembly code.  The objects have four main fields:
+  * `"patch-name" : "NAME"` - The name of the current patch. This
+    doesn't affect the operation of the tool.
+  * `"patch-code" : "CODE"` - The patch code, which uses a C-like syntax.
   * `"patch-point" : "HEX"` -
     Specifies the address in the EXE to start patching.  Must be a valid hex
     number in a JSON string, e.g., `"0x54"`.
@@ -192,14 +192,15 @@ The top-level object may include the following optional field:
   for you automatically when you run `make` or `make install`).
 
 Here is an example of a valid configuration file, taken from the
-`resources/simple` example:
+`resources/exes/arm-simple` example:
 
 ```
 {
   "func": "main",
   "property" : "(assert true)",
   "patches" : [
-    {"patch" : "ret-3",
+    {"patch-name" : "ret-3",
+     "patch-code" : "int ret; ret = 3;"
      "patch-point" : "0x54",
      "patch-size" : 8}
   ]
@@ -208,5 +209,5 @@ Here is an example of a valid configuration file, taken from the
 
 This tells VIBES to use hand-written patch named `ret-3`. There is one patch,
 which should be inserted starting at address `0x54` in `resources/simple/main`,
-and `8` bytes should be replaced.  The correctness property to use to check 
+and `8` bytes should be replaced.  The correctness property to use to check
 the function `main` is `(assert true)`.
