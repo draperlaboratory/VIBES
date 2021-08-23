@@ -1,4 +1,5 @@
-(** Replaces higher variables with lower-level locations in s-exp patches. *)
+(** Replaces higher variables with lower-level locations in patches at
+   the BIR level. *)
 
 open !Core_kernel
 open Bap_core_theory

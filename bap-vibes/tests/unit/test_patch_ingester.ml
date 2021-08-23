@@ -65,12 +65,12 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
   H.assert_error Data.Patched_exe.patches expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
-let test_ingest_with_no_addr_size (_ : test_ctxt) : unit =
+let test_ingest_with_no_target (_ : test_ctxt) : unit =
 
   (* Run the ingester. *)
   let computation =
 
-    (* Add a patch with a name, but no address size, to the KB. *)
+    (* Add a patch with a name, but no target, to the KB. *)
     H.obj () >>= fun obj ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
@@ -126,6 +126,6 @@ let suite = [
   "Test Patch_ingester.ingest" >:: test_ingest;
   "Test Patch_ingester.ingest: no patch" >::
   test_ingest_with_no_patch;
-  "Test Patch_ingester.ingest: no address size" >::
-  test_ingest_with_no_addr_size;
+  "Test Patch_ingester.ingest: no target" >::
+  test_ingest_with_no_target;
 ]
