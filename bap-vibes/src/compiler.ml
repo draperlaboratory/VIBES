@@ -9,6 +9,7 @@ open Knowledge.Let
 
 module KB = Knowledge
 module Arm = Arm_selector
+module Subst = Substituter
 
 (* Applies the peephole optimizer to the output of a given solver. *)
 let optimized solver =
@@ -26,9 +27,14 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   | Error e -> Kb_error.fail e
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
-let create_vibes_ir (lang : Theory.language) (bir : Insn.t) : Ir.t KB.t =
+let create_vibes_ir
+    (tgt: Theory.target)
+    (lang : Theory.language)
+    (hvars : Higher_var.t list)
+    (bir : Insn.t) : Ir.t KB.t =
   let ir = Blk.from_insn bir in
   let ir = Bir_opt.apply ir in
+  let* ir = Subst.substitute tgt hvars ir in
   let ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign lang ir in
   KB.return ir
@@ -47,7 +53,9 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   Events.(send @@ Info info_str);
 
   Data.Patch.get_lang patch >>= fun lang ->
-  create_vibes_ir lang bir >>= fun ir ->
+  Data.Patch.get_target patch >>= fun tgt ->
+  Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
+  create_vibes_ir tgt lang hvars bir >>= fun ir ->
   Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
   Events.(send @@ Info "The patch has the following VIBES IR:\n");
   Events.(send @@ Rule);
