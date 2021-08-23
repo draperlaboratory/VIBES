@@ -20,23 +20,8 @@ let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   let code_str = Utils.print_c Cprint.print_def code in
   Events.(send @@ Info (Printf.sprintf "%s" code_str));
 
-  (* Replace higher variables with lower-level locations. *)
-  Data.Patch.get_patch_vars_exn patch >>= fun h_vars ->
-  Substituter.substitute h_vars code >>= fun lower_code ->
-  Data.Patch.set_lower_patch_code patch (Some lower_code) >>= fun () ->
-  Events.(send @@ Info "Lower patch code (with higher vars dereferenced):");
-  let lower_code_str = String.concat ~sep:"\n"
-    (List.map lower_code ~f:Sexp.to_string) in
-  Events.(send @@ Rule);
-  Events.(send @@ Info lower_code_str);
-  Events.(send @@ Rule);
-
   (* Get the patch (as BIR). *)
-<<<<<<< HEAD
   let* bir = CParser.c_patch_to_eff tgt code in
-=======
-  let* bir = SexpParser.parse_bir name addr_size lower_code in
->>>>>>> 5ddcccd... Higher level variables can be used in patch code
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
