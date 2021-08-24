@@ -68,7 +68,11 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
   Theory.Target.regs ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
-let preassign_var (lang : Theory.language) (v : var) : var option =
+let preassign_var
+    (lang : Theory.language)
+    (pre : var option)
+    (v : var)
+  : var option =
   if String.(Var.name v = "FP") then
     begin
       (* We assign R11 as the pre-assigned FP register on ARM, and R7
@@ -84,12 +88,20 @@ let preassign_var (lang : Theory.language) (v : var) : var option =
   else if String.(Var.name v = "PC") then
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
   else
-    None
+    pre
 
-let preassign (lang : Theory.language) (ir : Ir.t) : Ir.t =
-  let ir = Ir.preassign ir in
+let preassign
+    (tgt : Theory.target)
+    (lang : Theory.language)
+    (ir : Ir.t)
+  : Ir.t =
+  let ir = Ir.preassign tgt ir in
   let ir = Ir.map_op_vars ir
-      ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var lang})
+      ~f:(fun v ->
+          {v with
+           pre_assign =
+             List.hd_exn v.temps |>
+             preassign_var lang v.pre_assign})
   in ir
 
 (* Appends the effects of s2 to those of s1, respecting the order if they

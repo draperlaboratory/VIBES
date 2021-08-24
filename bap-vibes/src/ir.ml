@@ -1,6 +1,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
+open Bap_core_theory
 
 type opcode = Knowledge.Name.t [@@deriving compare, equal, sexp]
 
@@ -69,12 +70,6 @@ let freshen_operand o =
       } in
     Var fresh_v
   | _ -> o
-
-
-let preassign_var v =
-  if Var.is_physical v
-  then Some v
-  else None
 
 let op_var_exn (x : operand) : op_var =
   match x with
@@ -408,6 +403,24 @@ let dummy_reg_alloc t =
           let var = List.hd_exn v.temps in
           {v with pre_assign = Some (Var.create "R0" (Var.typ var))})
 
-let preassign (ir : t) : t =
+let preassign_var tgt v =
+  let regs = Theory.Target.regs tgt |> Set.to_sequence in
+  let regs = Seq.map regs ~f:Var.reify in
+  if Seq.mem ~equal:Var.equal regs v
+  then Some v
+  else None
+
+(* We freshen temporaries so that they do not clash with register
+   names in the Minizinc model. *)
+let freshen_temps v =
+  let name = Var.name v in
+  let typ = Var.typ v in
+  Var.create ("__Vibes_tmp_" ^ name) typ
+
+let preassign (tgt : Theory.target) (ir : t) : t =
   map_op_vars ir
-    ~f:(fun v -> {v with pre_assign = List.hd_exn v.temps |> preassign_var})
+    ~f:(fun v ->
+        {v with
+         temps = List.map ~f:freshen_temps v.temps;
+         pre_assign = List.hd_exn v.temps |> preassign_var tgt
+        })

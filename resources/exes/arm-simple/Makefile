@@ -41,7 +41,7 @@ clean:
 # PATCH
 #####################################################
 
-$(PATCHED_PROG): $(PROG)
+$(PATCHED_PROG): $(PROG) config.json
 	bap vibes $(PROG) \
 		--config=config.json \
 		-o $(PATCHED_PROG) \

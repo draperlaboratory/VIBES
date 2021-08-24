@@ -31,7 +31,7 @@ val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 
 (** Pre-assigns variables according to specific roles (PC, SP, etc) *)
 (* FIXME: make this happen at variable creation time *)
-val preassign : Theory.language -> Ir.t -> Ir.t
+val preassign : Theory.target -> Theory.language -> Ir.t -> Ir.t
 
 
 module Pretty :

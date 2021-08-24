@@ -1,3 +1,4 @@
+
 open Bap.Std
 open Core_kernel
 
@@ -169,8 +170,6 @@ let serialize_mzn_params
     (prev_sols : sol list)
   : mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
-  let temps = Var.Set.to_list params.temps in
-  let temp_names = List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps in
   let opcodes = Tid.Map.data params.operation_opcodes |>
                 List.concat_map
                   ~f:(fun is ->
@@ -188,9 +187,17 @@ let serialize_mzn_params
     | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
     | _ -> failwith "width unimplemented for Mem or Unk"
   in
-  let regs = Arm_selector.gpr tgt lang |> Set.to_list in
-  let regs = List.map ~f:Var.sexp_of_t regs in
-  let regs = List.map ~f:Sexp.to_string regs in
+  let reg_set = Arm_selector.gpr tgt lang in
+  let regs =
+    reg_set |>
+    Set.to_list |>
+    List.map ~f:Var.sexp_of_t |>
+    List.map ~f:Sexp.to_string
+  in
+  let temps = params.temps |> Var.Set.to_list in
+  let temp_names =
+    List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
+  in
   assert(List.length regs <> 0);
   {
     reg_t = mzn_enum_def_of_list regs;
