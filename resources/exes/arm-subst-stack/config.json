@@ -1,0 +1,32 @@
+{
+  "max-tries": 1,
+  "func": "main",
+  "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "int temp, retvar; temp = 3; retvar = temp;",
+     "patch-point" : "0x105c8",
+     "patch-size" : 4,
+     "patch-vars": [
+         {"name": "temp",
+	  "at-entry": {
+              "stored-in": "memory",
+	      "frame-pointer": "R11",
+              "offset": "0x4:32"
+          },
+          "at-exit": {
+              "stored-in": "register",
+	      "register": "R12"
+          }},
+         {"name": "retvar",
+	  "at-entry": {
+              "stored-in": "register",
+              "register": "R0"
+          },
+          "at-exit": {
+              "stored-in": "register",
+	      "register": "R12"
+          }}
+     ]}
+  ]
+}
