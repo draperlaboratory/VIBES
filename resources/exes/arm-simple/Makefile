@@ -55,7 +55,7 @@ patch: $(PATCHED_PROG)
 # PATCH THE REFERENCE EXECUTABLE
 #####################################################
 
-$(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
+$(PATCHED_PROG_FOR_TESTING): $(REF_PROG) config.json
 	bap vibes $(REF_PROG) \
 		--config=config.json \
 		-o $(PATCHED_PROG_FOR_TESTING) \
@@ -77,7 +77,7 @@ $(PATCHED_REF_PROG):
 	$(MAKE) patch.reference
 	cp $(PATCHED_PROG_FOR_TESTING) $(PATCHED_REF_PROG)
 
-reference: 
+reference:
 	rm -rf $(REF_PROG) $(PATCHED_REF_PROG)
 	$(MAKE) $(REF_PROG)
 	$(MAKE) $(PATCHED_REF_PROG)
