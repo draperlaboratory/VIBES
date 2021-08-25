@@ -64,7 +64,7 @@ val given_var : var -> reg:var -> op_var
 type operand = Var of op_var
              | Const of word
              | Label of tid
-             | Void
+             | Void of op_var
              | Offset of word [@@deriving compare, equal, sexp]
 
 (** An [operation] has

@@ -185,7 +185,8 @@ let serialize_mzn_params
   let operands = Var.Set.to_list params.operands(* Var.Map.keys params.operand_operation *) in
   let width t = match Var.typ t with
     | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
-    | _ -> failwith "width unimplemented for Mem or Unk"
+    | Mem _ -> 0
+    | Unk -> failwith "width unimplemented for Unk"
   in
   let reg_set = Arm_selector.gpr tgt lang in
   let regs =
@@ -388,6 +389,7 @@ let run_minizinc
                        "-d"; params_filepath;
                        "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
                        "--search-complete-msg";"\"\"";
+                       "--solver"; "chuffed";
                        model_filepath ] in
   Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
   let sol_serial = Yojson.Safe.from_file solution_filepath |> sol_serial_of_yojson  in

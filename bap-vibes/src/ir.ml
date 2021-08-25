@@ -44,7 +44,7 @@ type operand =
     Var of op_var
   | Const of Word.t
   | Label of Tid.t
-  | Void
+  | Void of op_var
   | Offset of Word.t [@@deriving compare, equal, sexp]
 
 type shift = [
@@ -151,8 +151,8 @@ let op_var_to_string (o : op_var) = Var.to_string o.id
 let var_operands (ops : operand list) : op_var list =
   List.fold ~f:(fun acc o ->
       match o with
-      | Var v -> v :: acc
-      | Const _ | Label _ | Void | Offset _ -> acc
+      | Var v | Void v -> v :: acc
+      | Const _ | Label _ | Offset _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -191,8 +191,8 @@ module Blk = struct
     List.concat_map (all_operands blk)
       ~f:(fun op ->
           match op with
-          | Const _ | Label _ | Void | Offset _ -> []
-          | Var op -> op.temps) |>
+          | Const _ | Label _ | Offset _ -> []
+          | Var op | Void op -> op.temps) |>
     Var.Set.of_list
 
   let definer_map (blk : blk) : op_var Var.Map.t =
@@ -366,9 +366,15 @@ let pretty_operand o =
       ((Option.map
           ~f:(Var.to_string) o.pre_assign) |>
        Option.value ~default:"N/A")
+  | Void o ->
+    sprintf "(void) %s : %s < %s"
+      (Var.to_string o.id)
+      (List.map ~f:Var.to_string o.temps |> String.concat ~sep:"::")
+      ((Option.map
+          ~f:(Var.to_string) o.pre_assign) |>
+       Option.value ~default:"N/A")
   | Const c -> Word.to_string c
   | Label l -> Tid.to_string l
-  | Void -> ""
   | Offset c -> Format.asprintf "Offset(%d)" (Word.to_int_exn c)
 
 let pretty_operand_list l =
