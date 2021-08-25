@@ -16,12 +16,10 @@
     .global main
     .type main, %function
 
-vibes_dummy:
-    .rept 128
-     nop
-    .endr
-
 main:
     mov r0, #5
+    .rept 32
+     nop
+    .endr
     bx lr
     .size main, .-main

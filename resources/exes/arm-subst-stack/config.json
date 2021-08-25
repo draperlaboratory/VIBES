@@ -5,8 +5,8 @@
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int temp, retvar; temp = 3; retvar = temp;",
-     "patch-point" : "0x105c8",
-     "patch-size" : 4,
+     "patch-point" : "0x103c8",
+     "patch-size" : 32,
      "patch-vars": [
          {"name": "temp",
 	  "at-entry": {
