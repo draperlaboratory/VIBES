@@ -107,7 +107,7 @@ let pp (ppf : Format.formatter) t : unit =
 let create_patch ~patch_name:(patch_name : string)
     ~patch_code:(patch_code : Cabs.definition)
     ~patch_point:(patch_point : Bitvec.t)
-    ~patch_size:(patch_size : int) 
+    ~patch_size:(patch_size : int)
     ~patch_vars:(patch_vars : Hvar.t list) : patch =
   { patch_name; patch_code; patch_point; patch_size; patch_vars; }
 
