@@ -114,7 +114,7 @@ let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
     begin
       match value_of_field "stored-in" data with
       | Some (`String "register") ->
-        validate_string_field 
+        validate_string_field
           "register" data Errors.Missing_higher_var_reg >>= fun reg ->
         Err.return (Hvar.Register reg)
       | Some (`String "memory") ->
