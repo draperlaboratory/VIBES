@@ -7,26 +7,6 @@
      "patch-code" : "int retvar; retvar = 3;",
      "patch-point" : "0x10400",
      "patch-size" : 4,
-     "patch-vars": [
-       {"name": "x",
-	"at-entry": {
-          "stored-in": "register",
-	  "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	  "register": "R0"
-        }},
-       {"name": "y",
-        "at-entry": {
-          "stored-in": "memory",
-          "frame-pointer": "R11",
-          "offset": "0x04:64"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	  "register": "R2"
-        }}
-       ]}
+     "patch-vars": []}
   ]
 }
