@@ -37,6 +37,10 @@ let empty_eff = {current_data = []; current_ctrl = []; other_blks = Ir.empty}
 type arm_pure = {op_val : Ir.operand; op_eff : arm_eff}
 [@@deriving compare, equal, sexp]
 
+(* The default type for memory words *)
+let word_ty = Bil.Types.Imm 32
+let mem_ty = Bil.Types.Mem (`r32, `r8)
+
 let is_thumb (lang : Theory.language) : bool =
   let l = Theory.Language.to_string lang in
   if String.is_substring l ~substring:"arm" then
@@ -206,17 +210,17 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
-  let (+) arg1 arg2 = binop Ops.add (Imm 32) arg1 arg2
+  let (+) arg1 arg2 = binop Ops.add word_ty arg1 arg2
 
-  let ( * ) arg1 arg2 = binop Ops.mul (Imm 32) arg1 arg2
+  let ( * ) arg1 arg2 = binop Ops.mul word_ty arg1 arg2
 
-  let (-) arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
+  let (-) arg1 arg2 = binop Ops.sub word_ty arg1 arg2
 
-  let (/) arg1 arg2 = binop Ops.sdiv (Imm 32) arg1 arg2
+  let (/) arg1 arg2 = binop Ops.sdiv word_ty arg1 arg2
 
-  let udiv arg1 arg2 = binop Ops.udiv (Imm 32) arg1 arg2
+  let udiv arg1 arg2 = binop Ops.udiv word_ty arg1 arg2
 
-  let shl _signed arg1 arg2 = binop Ops.lsl_ (Imm 32) arg1 arg2
+  let shl _signed arg1 arg2 = binop Ops.lsl_ word_ty arg1 arg2
 
   let shr signed arg1 arg2 =
     let b =
@@ -229,9 +233,9 @@ module ARM_ops = struct
       | _ -> failwith "Arm_gen.shr: arg2 non-constant"
     in
     if b then
-      binop Ops.asr_ (Imm 32) arg1 arg2
+      binop Ops.asr_ word_ty arg1 arg2
     else
-      binop Ops.lsr_ (Imm 32) arg1 arg2
+      binop Ops.lsr_ word_ty arg1 arg2
 
   let ldr_op bits =
     if bits = 32 then
@@ -246,25 +250,41 @@ module ARM_ops = struct
   let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
     let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
-    uop (ldr_op bits) (Imm 32) loc
+    uop (ldr_op bits) word_ty loc
 
   let str mem value loc =
+    let res = create_temp mem_ty in
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
-    let {op_val = mem_val; op_eff = mem_sem} = mem in
-    let op = Ir.simple_op Ops.str loc_val [value_val] in
+    let {op_val = _; op_eff = mem_sem} = mem in
+    let ops =
+      begin
+        match value_val with
+        | Var _ ->
+          let op = Ir.simple_op Ops.str Void [value_val; loc_val] in
+          [op]
+        | Const w ->
+          let tmp = Ir.Var (create_temp word_ty) in
+          let mov = Ir.simple_op Ops.mov tmp [value_val] in
+          let op = Ir.simple_op Ops.str Void [tmp; loc_val] in
+          [op; mov]
+        | _ ->
+          let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
+          failwith @@ Format.sprintf "str: unsupported operand %s" op_str
+      end
+    in
     (* Again, a little cowboy instruction ordering *)
     let sem = loc_sem @. value_sem @. mem_sem in
-    let sem = {sem with current_data = op::sem.current_data} in
-    {op_val = mem_val; op_eff = sem}
+    let sem = {sem with current_data = ops @ sem.current_data} in
+    {op_val = Var res; op_eff = sem}
 
-  let (&&) a b = binop Ops.and_ (Imm 32) a b
+  let (&&) a b = binop Ops.and_ word_ty a b
 
-  let (||) a b = binop Ops.orr (Imm 32) a b
+  let (||) a b = binop Ops.orr word_ty a b
 
-  let xor a b = binop Ops.eor (Imm 32) a b
+  let xor a b = binop Ops.eor word_ty a b
 
-  let equals arg1 arg2 = binop Ops.sub (Imm 32) arg1 arg2
+  let equals arg1 arg2 = binop Ops.sub word_ty arg1 arg2
 
   (* Intuitively we want to generate:
 
@@ -405,12 +425,12 @@ struct
       let mem = select_mem mem in
       let a = select_exp a in
       let w = const w in
-      mem @> binop (ldr_op @@ Size.in_bits size) (Imm 32) a w
+      mem @> binop (ldr_op @@ Size.in_bits size) word_ty a w
     | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
       let mem = select_mem mem in
       let a = select_exp a in
       let w = const (Word.neg w) in
-      mem @> binop (ldr_op @@ Size.in_bits size) (Imm 32) a w
+      mem @> binop (ldr_op @@ Size.in_bits size) word_ty a w
     | Load (mem, loc, _, size) ->
       let mem = select_exp mem in
       let loc = select_exp loc in
@@ -596,7 +616,7 @@ module Pretty = struct
   let mk_loc_list (op : string) (args : 'a list) : bracket list =
     let len = List.length args in
     let init_neither len = List.init len ~f:(fun _ -> Neither) in
-    if String.(op = "ldr" || op = "ldrh" || op = "ldrb") then
+    if String.(op = "ldr" || op = "ldrh" || op = "ldrb" || op = "str") then
       begin
         if len = 2 then
           [Neither; Both]
