@@ -39,6 +39,7 @@ type arm_pure = {op_val : Ir.operand; op_eff : arm_eff}
 
 (* The default type for memory words *)
 let word_ty = Bil.Types.Imm 32
+let bit_ty = Bil.Types.Imm 1
 let mem_ty = Bil.Types.Mem (`r32, `r8)
 
 let is_thumb (lang : Theory.language) : bool =
@@ -119,12 +120,6 @@ let (@.) (s1 : arm_eff) (s2 : arm_eff) : arm_eff =
     other_blks = Ir.union blks1 blks2
   }
 
-(* Same as [@.], but the second argument is data, so it contains a
-   variable refering to a piece of data, which is carried over to the
-   result. *)
-let (@>) (eff : arm_eff) (data : arm_pure) : arm_pure =
-  { data with op_eff = eff @. data.op_eff }
-
 
 module ARM_ops = struct
 
@@ -191,10 +186,11 @@ module ARM_ops = struct
   let ( := ) x y = arm_mov x y
 
   let var v = {op_val = Ir.Var (Ir.simple_var v); op_eff = empty_eff}
+  let mem v = {op_val = Ir.Void (Ir.simple_var v); op_eff = empty_eff}
 
   let const c = {op_val = Ir.Const c; op_eff = empty_eff}
 
-  let uop o ty arg =
+  let _uop o ty arg =
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
     let op = Ir.simple_op o (Ir.Var res) [arg_val] in
@@ -207,6 +203,16 @@ module ARM_ops = struct
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
     let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
+    let sem = {sem with current_data = op::sem.current_data} in
+    {op_val = Ir.Var res; op_eff = sem}
+
+  let ternop o ty arg1 arg2 arg3 =
+    let res = create_temp ty in
+    let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
+    let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let {op_val = arg3_val; op_eff = arg3_sem} = arg3 in
+    let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val; arg3_val] in
+    let sem = arg1_sem @. arg2_sem @. arg3_sem in
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
@@ -249,24 +255,23 @@ module ARM_ops = struct
 
   let ldr bits mem loc =
     (* Update the semantics of loc with those of mem *)
-    let loc = {loc with op_eff = loc.op_eff @. mem.op_eff} in
-    uop (ldr_op bits) word_ty loc
+    binop (ldr_op bits) word_ty mem loc
 
   let str mem value loc =
     let res = create_temp mem_ty in
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
-    let {op_val = _; op_eff = mem_sem} = mem in
+    let {op_val = mem_val; op_eff = mem_sem} = mem in
     let ops =
       begin
         match value_val with
         | Var _ ->
-          let op = Ir.simple_op Ops.str Void [value_val; loc_val] in
+          let op = Ir.simple_op Ops.str mem_val [value_val; loc_val] in
           [op]
-        | Const w ->
+        | Const _ ->
           let tmp = Ir.Var (create_temp word_ty) in
           let mov = Ir.simple_op Ops.mov tmp [value_val] in
-          let op = Ir.simple_op Ops.str Void [tmp; loc_val] in
+          let op = Ir.simple_op Ops.str mem_val [tmp; loc_val] in
           [op; mov]
         | _ ->
           let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
@@ -276,7 +281,7 @@ module ARM_ops = struct
     (* Again, a little cowboy instruction ordering *)
     let sem = loc_sem @. value_sem @. mem_sem in
     let sem = {sem with current_data = ops @ sem.current_data} in
-    {op_val = Var res; op_eff = sem}
+    {op_val = Void res; op_eff = sem}
 
   let (&&) a b = binop Ops.and_ word_ty a b
 
@@ -299,9 +304,12 @@ module ARM_ops = struct
   let br cond tgt =
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
-    let cmp = Ir.simple_op Ops.cmp Void
+    let tmp_flag, tmp_taken =
+      create_temp bit_ty, create_temp bit_ty
+    in
+    let cmp = Ir.simple_op Ops.cmp (Void tmp_flag)
         [cond_val; Const (Word.of_int ~width:32 0)] in
-    let beq = Ir.simple_op Ops.beq Void [tgt] in
+    let beq = Ir.simple_op Ops.beq (Void tmp_taken) [tgt] in
     let blks = cond_eff.other_blks in
     {
       current_data = cmp :: cond_eff.current_data;
@@ -310,7 +318,9 @@ module ARM_ops = struct
     }
 
   (* Unconditional jump *)
-  let goto tgt = control (Ir.simple_op Ops.b Void [tgt]) empty_eff
+  let goto tgt =
+    let tmp_branch = create_temp bit_ty in
+    control (Ir.simple_op Ops.b (Void tmp_branch) [tgt]) empty_eff
 
 
 end
@@ -425,12 +435,12 @@ struct
       let mem = select_mem mem in
       let a = select_exp a in
       let w = const w in
-      mem @> binop (ldr_op @@ Size.in_bits size) word_ty a w
+      ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
     | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
       let mem = select_mem mem in
       let a = select_exp a in
       let w = const (Word.neg w) in
-      mem @> binop (ldr_op @@ Size.in_bits size) word_ty a w
+      ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
     | Load (mem, loc, _, size) ->
       let mem = select_exp mem in
       let loc = select_exp loc in
@@ -459,8 +469,16 @@ struct
     | UnOp (o, a) ->
       let a = select_exp a in
       sel_unop o a
-    (* Handle memory variables specially? *)
-    | Var v -> var v
+    | Var v ->
+      begin
+        match Var.typ v with
+        | Imm _ -> var v
+        | Mem _ -> mem v
+        | Unk ->
+          failwith @@
+          Format.asprintf
+            "select_exp: encountered variable %a of unknown type" Var.pp v
+      end
     | Int w -> const w
     | Cast (_, _, _) -> failwith "select_exp: Cast is unsupported!"
     | Let (_, _, _) -> failwith "select_exp: Let is unsupported!"
@@ -469,9 +487,8 @@ struct
     | Extract (_, _, _) -> failwith "select_exp: Extract is unsupported!"
     | Concat (_, _) -> failwith "select_exp: Concat is unsupported!"
 
-  and select_mem (m : Bil.exp) : arm_eff =
-    let m = select_exp m in
-    m.op_eff
+  and select_mem (m : Bil.exp) : arm_pure =
+    select_exp m
 
   and select_stmt (s : Blk.elt) : arm_eff =
     match s with
@@ -592,7 +609,7 @@ module Pretty = struct
         (* A little calisthenics to get this to look nice *)
         Result.return @@ Format.asprintf "#%a" Word.pp_dec w
       | Label l -> Result.return @@ tid_to_string l
-      | Void -> Result.return ""
+      | Void _ -> Result.fail @@ Kb_error.Other "Tried printing a Void operand!"
       | Offset c ->
         (* Special printing of offsets to jump back from patched locations *)
         Result.return @@
@@ -610,6 +627,9 @@ module Pretty = struct
           | Both -> Format.asprintf "[%s]" p
         )
 
+  let rm_void_args (args : Ir.operand list) : Ir.operand list =
+    List.filter args
+      ~f:(function | Void _ -> false | _ -> true)
 
   (* FIXME: Absolute hack *)
   (* We mark where the bracket location start and end in the argument list. *)
@@ -627,14 +647,10 @@ module Pretty = struct
     else
       init_neither len
 
-  let arm_operands_pretty (op : string) (hd : Ir.operand) (l : Ir.operand list)
+  let arm_operands_pretty (op : string) (lhs : Ir.operand list) (rhs : Ir.operand list)
     : (string, Kb_error.t) result =
     (* Don't print the head of the operand if it's void. *)
-    let l =
-      match hd with
-      | Void -> l
-      | _ -> hd::l
-    in
+    let l = rm_void_args (lhs @ rhs) in
     let is_loc_list = mk_loc_list op l in
     let l = List.zip_exn is_loc_list l in
     let all_str =
@@ -649,7 +665,7 @@ module Pretty = struct
     let op = List.hd_exn t.opcodes in
     Result.(opcode_pretty op >>= fun op ->
             arm_operands_pretty op
-              (List.hd_exn t.lhs)
+              t.lhs
               t.operands >>= (fun operands ->
                   return (Format.asprintf "%s %s" op operands)))
 
