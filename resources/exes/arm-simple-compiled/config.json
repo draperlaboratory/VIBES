@@ -6,6 +6,18 @@
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar; retvar = 3;",
      "patch-point" : "0x103d4",
-     "patch-size" : 8}
+     "patch-size" : 8,
+     "patch-vars": [
+         {"name": "retvar",
+	  "at-entry": {
+              "stored-in": "register",
+              "register": "R0"
+          },
+          "at-exit": {
+              "stored-in": "register",
+	      "register": "R12"
+          }}
+     ]
+    }
   ]
 }

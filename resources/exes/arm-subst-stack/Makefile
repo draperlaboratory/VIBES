@@ -55,7 +55,7 @@ patch: $(PATCHED_PROG)
 # PATCH THE REFERENCE EXECUTABLE
 #####################################################
 
-$(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
+$(PATCHED_PROG_FOR_TESTING): $(REF_PROG) config.json
 	bap vibes $(REF_PROG) \
 		--config=config.json \
 		-o $(PATCHED_PROG_FOR_TESTING) \
