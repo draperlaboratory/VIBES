@@ -5,7 +5,7 @@
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int temp, retvar; temp = 3; retvar = temp;",
-     "patch-point" : "0x103c8",
+     "patch-point" : "0x103cc",
      "patch-size" : 32,
      "patch-vars": [
          {"name": "temp",
@@ -16,7 +16,7 @@
           },
           "at-exit": {
               "stored-in": "register",
-	      "register": "R12"
+	      "register": "R11"
           }},
          {"name": "retvar",
 	  "at-entry": {
@@ -25,7 +25,7 @@
           },
           "at-exit": {
               "stored-in": "register",
-	      "register": "R12"
+	      "register": "R0"
           }}
      ]}
   ]

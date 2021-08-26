@@ -14,11 +14,11 @@ clean:
 
 patch: main main.patched
 
-main.patched:
+main.patched: main config.json
 	bap vibes main \
-    --config=config.json \
-    -o main.patched \
-    --verbose
+	--config=config.json \
+	-o main.patched \
+	--verbose
 	chmod +x main.patched
 
 run-orig: main
