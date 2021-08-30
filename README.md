@@ -12,7 +12,19 @@ The command-line tool is implemented as a BAP command, `bap vibes`. Its
 source code lives in [plugin/](./plugin).
 
 
-## Install APT dependencies
+## One-stop shop with Docker
+
+To build a docker image that has the VIBES tool installed and ready to go,
+see [resources/docker/README.md](resources/docker/README.md).
+
+To run the container, mount any directories that contain executables or
+config files that you might need. For instance:
+
+    docker run --rm -ti -v /Users:/Users -v $(pwd):/srv -w /srv vibes:latest bap vibes --help
+
+## Installing locally
+
+### Install APT dependencies
 
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
 `arm-linux-gnueabi-gcc`, and `cmake`.  For example, on Ubuntu:
@@ -20,20 +32,16 @@ Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
     apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi cmake
 
 
-# Install OCaml and BAP
+### Install OCaml and BAP
 
-If you are running in the latest `binaryanalysisplatform/bap:latest` docker
-container, you may skip this section. OCaml and BAP are already installed.
-
-Otherwise, if you don't have a `4.09.1` OCaml switch, create one. 
-
-Install the latest (bleeding edge) version of BAP:
+If you don't have a `4.09.1` OCaml switch, create one. Then install
+the latest (bleeding edge) version of BAP:
 
     opam repo add bap-testing git+https://github.com/BinaryAnalysisPlatform/opam-repository#testing
     opam depext --install -y bap
 
 
-## Get the VIBES source code
+### Get the VIBES source code
 
 Clone this repo wherever you prefer to keep your projects, for example:
 
@@ -41,7 +49,8 @@ Clone this repo wherever you prefer to keep your projects, for example:
     git clone https://github.com/draperlaboratory/VIBES.git
     cd VIBES
 
-## Install the remaining dependencies
+
+### Install the remaining dependencies
 
 If you have bash on Ubuntu, you can run a script to install the remaining
 dependencies. This script will not overwrite any previous installations, so
@@ -88,10 +97,12 @@ Install the following opam packages:
     opam install ounit2 ppx_deriving_yojson
 
 
-## Installing/uninstalling
+### Installing/uninstalling VIBES
 
-To install the tool (the library and the command-line front-end), `cd` into
-the root of the project:
+Once the previous dependencies are installed, you can install the VIBES tool.
+
+To install the full tool (the library and the command-line front-end), `cd` 
+into the root of the project:
 
     cd VIBES
 
@@ -108,7 +119,7 @@ To run all tests:
     make test
 
 
-## Just the library
+### Just the library
 
 If you want just the library (without the command-line front-end), follow
 the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
@@ -116,7 +127,8 @@ the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
 
 ## Usage
 
-The basic form of the command is this:
+The basic form of the command is this (possibly prefixed with
+a docker invocation):
 
     bap vibes /path/to/pre-patched/exe [PARAMS] [OPTIONS]
 
