@@ -325,52 +325,12 @@ module ARM_ops = struct
 
 end
 
-let add_in_vars_blk (b : Ir.blk) : Ir.blk =
-  (* We only grab data here, since control effects don't influence
-     dependencies. *)
-  let ops = b.data in
-  let add_list set l = List.fold l ~init:set ~f:Var.Set.add in
-  let collect_vars_op_list l =
-    List.fold l ~init:Var.Set.empty
-      ~f:(fun set o ->
-          match o with
-          | Ir.Var v -> add_list set v.temps
-          | _ -> set)
-  in
-  (* Simultaneously collect defined and undefined vars *)
-  let _, undefined =
-    List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
-      ~f:(fun (defined, undefined) o ->
-          let undef = collect_vars_op_list o.operands in
-          let undef = Var.Set.diff undef defined in
-          let def = collect_vars_op_list o.lhs in
-          Var.Set.union defined def, Var.Set.union undefined undef)
-  in
-  let ins = Var.Set.fold undefined ~init:[]
-      ~f:(fun ins v -> Ir.Var (Ir.simple_var v)::ins)
-  in
-  (* We add dummy operation with no instructions and as lhs all the
-     [ins] variables *)
-  let ins = {
-    Ir.id = Tid.create ();
-    Ir.lhs = ins;
-    Ir.opcodes = [];
-    Ir.optional = false;
-    Ir.operands = [];
-  } in
-  {b with ins = ins}
-
-(* Collect all the variables appearing on rhs that are not defined by
-   an rhs before-hand. *)
-let add_in_vars (t : Ir.t) : Ir.t =
-  { t with blks = List.map ~f:add_in_vars_blk t.blks }
-
 (* We assume that a block is always created *)
 let ir (t : arm_eff) : Ir.t =
   assert Core_kernel.(List.is_empty t.current_data
                       && List.is_empty t.current_ctrl);
   let blks = t.other_blks in
-  add_in_vars blks
+  Ir.add_in_vars blks
 
 
 module ARM_Gen =

@@ -69,6 +69,17 @@ let freshen_operand o =
             (Var.typ v.id)
       } in
     Var fresh_v
+  | Void v ->
+    let fresh_v =
+      { v with
+        id =
+          Var.create
+            ~is_virtual:true
+            ~fresh:true
+            (Var.name v.id)
+            (Var.typ v.id)
+      } in
+    Void fresh_v
   | _ -> o
 
 let op_var_exn (x : operand) : op_var =
@@ -430,3 +441,74 @@ let preassign (tgt : Theory.target) (ir : t) : t =
          temps = List.map ~f:freshen_temps v.temps;
          pre_assign = List.hd_exn v.temps |> preassign_var tgt
         })
+
+
+module Operand =
+struct
+  type t = operand
+  let compare = compare_operand
+  let sexp_of_t = sexp_of_operand
+  let t_of_sexp = operand_of_sexp
+end
+
+module OpSet = Set.Make(Operand)
+
+let is_defined (defs : OpSet.t) (v : operand) : bool =
+  let vars =
+    match v with
+    | Var v | Void v -> v.temps
+    | _ -> []
+  in
+  OpSet.fold defs ~init:false
+    ~f:(fun is_def o ->
+        match o with
+        | Var v | Void v ->
+          let def_vars = v.temps in
+          let v_set = Var.Set.of_list vars in
+          let def_set = Var.Set.of_list def_vars in
+          let b = Var.Set.is_empty (Var.Set.inter v_set def_set) in
+          (not b) || is_def
+        | _ -> is_def)
+
+let add_in_vars_blk (b : blk) : blk =
+  (* We only grab data here, since control effects don't influence
+     dependencies. *)
+  let ops = b.data in
+  let collect_vars_op_list l =
+    List.fold l ~init:OpSet.empty
+      ~f:(fun set o ->
+          match o with
+          | Var _ | Void _ -> OpSet.add set o
+          | _ -> set)
+  in
+  (* Simultaneously collect defined and undefined vars *)
+  let _, undefined =
+    List.fold ops ~init:(OpSet.empty, OpSet.empty)
+      ~f:(fun (defined, undefined) o ->
+          let undef = collect_vars_op_list o.operands in
+          let undef = OpSet.filter undef
+              ~f:(fun o -> not @@ is_defined defined o)
+          in
+          let undef = OpSet.filter undef
+              ~f:(fun o -> not @@ is_defined undefined o)
+          in
+          let def = collect_vars_op_list o.lhs in
+          OpSet.union defined def, OpSet.union undefined undef)
+  in
+  let ins = OpSet.to_list undefined |> List.map ~f:freshen_operand
+  in
+  (* We add dummy operation with no instructions and as lhs all the
+     [ins] variables *)
+  let ins = {
+    id = Tid.create ();
+    lhs = ins;
+    opcodes = [];
+    optional = false;
+    operands = [];
+  } in
+  {b with ins = ins}
+
+(* Collect all the variables appearing on rhs that are not defined by
+   an lhs before-hand, and add them to the [in] field. *)
+let add_in_vars (t : t) : t =
+  { t with blks = List.map ~f:add_in_vars_blk t.blks }

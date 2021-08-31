@@ -147,13 +147,26 @@ val users_map : t -> (op_var list) Var.Map.t
     which they are defined and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
+(** [freshen_operand o] creates a new operand with the same body and a
+    fresh id, if the operation is "var-like" (Var or Void) *)
+val freshen_operand : operand -> operand
+
+(** [add_in_vars t] initializes the [in] field of every block. It
+    operates by collecting all the variables appearing on rhs that are
+    not defined by an lhs before-hand, and adding the new ones to the
+    [in] field of the current block. *)
+val add_in_vars : t -> t
+
+(** Various getter functions *)
 val operation_opcodes : t -> opcode list Tid.Map.t
 val operand_operation : t -> operation Var.Map.t
+val op_var_exn : operand -> op_var
+
+(** various printer functions *)
+val pretty_operand : operand -> string
 val pretty_ir : t -> string
 (* Alias of pretty_ir *)
 val to_string : t -> string
-
-val op_var_exn : operand -> op_var
 
 (** Populate the [pre_assign] field with [`R0] if it is not already
     assigned. Useful for testing purposes. *)
