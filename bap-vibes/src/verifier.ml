@@ -59,7 +59,7 @@ let verify ?verifier:(verifier=wp_verifier)
     {
       param with
       postcond = post;
-      ext_solver_path = None
+      ext_solver_path = Some "boolector"
     }
   in
   let (prog1, name1) = orig_prog in

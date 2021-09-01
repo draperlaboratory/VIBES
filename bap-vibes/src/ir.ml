@@ -287,6 +287,7 @@ let map_operations ~f (vir : t) : t =
 let map_op_vars ~f (vir : t) : t =
   let f2 o = match o with
     | Var o -> Var (f o)
+    | Void o -> Void (f o)
     | o -> o
   in
   let apply_to_op (o : operation) : operation =
