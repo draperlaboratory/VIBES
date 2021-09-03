@@ -22,6 +22,7 @@ open Bap_core_theory
               assignment constraints
    [operands] set of all operands
    [temps] Set of of temporaries
+   [class_] The role of a given operand for a given opcode
 *)
 
 type mzn_params = {
@@ -36,7 +37,8 @@ type mzn_params = {
   operand_operation : Ir.operation Var.Map.t;
   congruent : (Ir.op_var * Ir.op_var) list;
   operands : Var.Set.t;
-  temps : Var.Set.t
+  temps : Var.Set.t;
+  class_ : (Theory.role Ir.Opcode.Map.t) Var.Map.t
 }
 
 (** [mzn_params_of_vibes_ir] converts a Ir.t subroutine into the intermediate data
@@ -44,7 +46,6 @@ type mzn_params = {
     TODO Unimplemented:
        * No copy operations
        * Latency
-       * Preassignment
 *)
 let mzn_params_of_vibes_ir (sub : Ir.t) : mzn_params =
   {
@@ -59,22 +60,23 @@ let mzn_params_of_vibes_ir (sub : Ir.t) : mzn_params =
     congruent = sub.congruent;
     temps = Ir.all_temps sub;
     operands = Ir.all_operands sub;
+    class_ = Ir.op_classes sub;
   }
 
 
 (* Convenience types for minizinc serialization. At this point nearly everything
    becomes stringly typed. The {set :} and {e : } wrappers produce the correct json
    for serialization to minzinc *)
-type 'a mznset = {set : 'a list}  [@@deriving yojson]
-type ('a ,'b) mznmap = 'b list
+type 'a mzn_set = {set : 'a list}  [@@deriving yojson]
+type ('a ,'b) mzn_map = 'b list
 
 (* Phantom types make yojson_deriving produce function with unused variables.
    This sets off a warning *)
-let mznmap_of_yojson = fun _ -> [%of_yojson: 'b list]
-let mznmap_to_yojson = fun _ -> [%to_yojson: 'b list]
+let mzn_map_of_yojson = fun _ -> [%of_yojson: 'b list]
+let mzn_map_to_yojson = fun _ -> [%to_yojson: 'b list]
 
 type mzn_enum = {e : string} [@@deriving yojson]
-type mzn_enum_def = mzn_enum mznset [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
+type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
 type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]
@@ -96,19 +98,19 @@ type mzn_params_serial = {
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
   block_t : mzn_enum_def;
-  class_t : mzn_enum_def;
-  operand_operation : (operand, operation) mznmap;
-  definer : (temp, operand) mznmap;
-  users : (temp, operand mznset) mznmap;
-  temp_block : (temp, block) mznmap;
-  copy : operation mznset;
-  width : (temp, int) mznmap;
-  preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
-  congruent : (operand, operand mznset) mznmap;
-  operation_opcodes : (operation, opcode mznset) mznmap;
-  latency : (opcode , int) mznmap;
+  class_t : (operand, (opcode, reg mzn_set) mzn_map) mzn_map;
+  operand_operation : (operand, operation) mzn_map;
+  definer : (temp, operand) mzn_map;
+  users : (temp, operand mzn_set) mzn_map;
+  temp_block : (temp, block) mzn_map;
+  copy : operation mzn_set;
+  width : (temp, int) mzn_map;
+  preassign : (operand, reg mzn_set) mzn_map; (* Set should either be empty or have 1 element. *)
+  congruent : (operand, operand mzn_set) mzn_map;
+  operation_opcodes : (operation, opcode mzn_set) mzn_map;
+  latency : (opcode , int) mzn_map;
   number_excluded : int;
-  exclude_reg : (int, (temp, reg) mznmap) mznmap
+  exclude_reg : (int, (temp, reg) mzn_map) mzn_map
 }  [@@deriving yojson]
 
 
@@ -153,13 +155,17 @@ end
 
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
+(* Generic minizinc enumeration builder *)
+let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
+  List.map keys
+    ~f:(fun t -> Map.find_exn m t |> f)
+
 (** [serialize_man_params] converts the intermediate structure into the serializable structure
     [mzn_params_serial] and retains [serialization_info]. These two structures are produced at
     the same time to hopefully keep close linkage between them.
 
     TODO:
        Implement congruence
-       Implement preassignment
        Implement latency
 
 *)
@@ -170,30 +176,38 @@ let serialize_mzn_params
     (prev_sols : sol list)
   : mzn_params_serial * serialization_info =
   let params = mzn_params_of_vibes_ir vir in
-  let opcodes = Tid.Map.data params.operation_opcodes |>
-                List.concat_map
-                  ~f:(fun is ->
-                      List.map is
-                        ~f:(fun i ->
-                            Ir.sexp_of_opcode i |>
-                            Ppx_sexp_conv_lib.Sexp.to_string)) |>
-                String.Set.of_list |>
-                String.Set.to_list
+  let opcodes = Ir.all_opcodes vir in
+  let opcodes_str = List.map opcodes
+      ~f:(fun i ->
+          Ir.sexp_of_opcode i |>
+          Ppx_sexp_conv_lib.Sexp.to_string)
   in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
   let operations = Tid.Map.keys params.operation_opcodes in
-  let operands = Var.Set.to_list params.operands(* Var.Map.keys params.operand_operation *) in
+  let operands = Var.Set.to_list params.operands in
   let width t = match Var.typ t with
     | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
     | Mem _ -> 0
     | Unk -> failwith "width unimplemented for Unk"
   in
-  let reg_set = Arm_selector.gpr tgt lang in
-  let regs =
-    reg_set |>
+  let gpr_set = Arm_selector.gpr tgt lang in
+  let gpr =
+    gpr_set |>
     Set.to_list |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
+  in
+  let dummy = ["dummy_reg"] in
+  let regs = gpr @ dummy in
+  let regs_of_role r =
+    if Theory.Role.(r = Register.general) then
+      gpr
+    else if Theory.Role.(r = Ir.dummy_role) then
+      dummy
+    else
+      failwith @@
+      Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
+        Theory.Role.pp r
   in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
@@ -202,26 +216,24 @@ let serialize_mzn_params
   assert(List.length regs <> 0);
   {
     reg_t = mzn_enum_def_of_list regs;
-    opcode_t = mzn_enum_def_of_list opcodes;
+    opcode_t = mzn_enum_def_of_list opcodes_str;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Tid.to_string);
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
-    class_t = {set = [{e = "unimplemented_class"}]};
     operand_operation =
-      List.map
-        ~f:(fun t ->
-            Var.Map.find_exn params.operand_operation t |>
-            Ir.operation_to_string |>
-            mzn_enum)
-        operands;
+      key_map operands params.operand_operation
+        ~f:(fun o -> o |> Ir.operation_to_string |> mzn_enum);
     definer =
-      List.map
-        ~f:(fun t ->
-            Var.Map.find_exn params.definer t |>
-            Ir.op_var_to_string |>
-            mzn_enum)
-        temps;
+      key_map temps params.definer
+        ~f:(fun t -> t |> Ir.op_var_to_string |> mzn_enum);
+    class_t =
+      begin
+        key_map operands params.class_
+          ~f:(fun m -> key_map opcodes m
+                 ~f:(fun r -> regs_of_role r |> mzn_enum_def_of_list))
+      end;
+
     users =
       List.map
         ~f:(fun t ->
@@ -237,45 +249,39 @@ let serialize_mzn_params
                     operands
               })
         temps;
-    temp_block =
-      List.map
-        temps
-        ~f:(fun t ->
-            Var.Map.find_exn params.temp_block t |>
-            Tid.to_string |>
-            mzn_enum);
+    temp_block = key_map temps params.temp_block
+        ~f:(fun id -> id |> Tid.to_string |> mzn_enum);
     copy  =
       {
         set =
           Tid.Set.to_list params.copy |>
-          List.map ~f:(fun o -> Tid.to_string o |> mzn_enum)
+          List.map
+            ~f:(fun o -> o |> Tid.to_string |> mzn_enum)
       };
     width = List.map ~f:width temps;
-    preassign =
-      List.map operands
-        ~f:(fun op ->
-            Option.value_map ~default:{set = []}
-              ~f:(fun r -> {set = [mzn_enum_of_var r]})
-              (Var.Map.find_exn params.preassign op));
+    preassign = key_map operands params.preassign
+        ~f:(function
+            | None ->
+              { set = [] }
+            | Some r ->
+              { set = [mzn_enum_of_var r] });
     congruent = List.map ~f:(fun _ -> {set = []} ) operands; (* TODO *)
-    operation_opcodes =
-      List.map
-        ~f:(fun o ->
-            {
-              set = Tid.Map.find_exn params.operation_opcodes o |>
-                    List.map
-                      ~f:(fun i ->
-                          Ir.sexp_of_opcode i |>
-                          Ppx_sexp_conv_lib.Sexp.to_string |>
-                          mzn_enum)
-            })
-        operations;
+    operation_opcodes = key_map operations params.operation_opcodes
+        ~f:(fun ids ->
+            { set =
+                List.map ids
+                  ~f:(fun id ->
+                      id |>
+                      Ir.sexp_of_opcode |>
+                      Ppx_sexp_conv_lib.Sexp.to_string |>
+                      mzn_enum)
+            });
     latency = List.map ~f:(fun _ -> 10) opcodes; (* TODO *)
     number_excluded = List.length prev_sols;
-    exclude_reg = List.map prev_sols
-        ~f:(fun sol ->  List.map temps
-               ~f:(fun t -> Var.Map.find_exn sol.reg t |> mzn_enum_of_var)
-           )
+    exclude_reg =
+      List.map prev_sols
+        ~f:(fun sol ->
+            key_map temps sol.reg ~f:mzn_enum_of_var);
   },
   {
     temps = temps;
@@ -287,9 +293,9 @@ let serialize_mzn_params
 (* [sol_serial] is a datatype for deserialization the minzinc variables via yojson *)
 type sol_serial = {
   (* _objective : int;  Optimization is currently not implemented *)
-  reg : (temp ,reg) mznmap;
-  opcode : (operation , opcode) mznmap;
-  temp : (operand, temp) mznmap;
+  reg : (temp ,reg) mzn_map;
+  opcode : (operation , opcode) mzn_map;
+  temp : (operand, temp) mzn_map;
   live : bool list;
   active : bool list;
   issue : int list;

@@ -6,7 +6,7 @@ open Bap_core_theory
 module KB = Knowledge
 
 
-(** [sol] is a solution returned by minizinc. 
+(** [sol] is a solution returned by minizinc.
     It is unlikely that you need introspect inside this data type outside the minizinc
     module.
 
@@ -14,13 +14,13 @@ module KB = Knowledge
        [reg] and [issue]
 
     Its fields include:
-    [reg] is a mapping from temporaries to registers. It holds the solution to the 
+    [reg] is a mapping from temporaries to registers. It holds the solution to the
       register allocation problem.
-    [opcode] is a mapping from operations to opcodes. It is interesting in the case of 
+    [opcode] is a mapping from operations to opcodes. It is interesting in the case of
       there being multiple possible opcodes for an operation.
-    [temp] is a mapping from operands to temps. It is interesing in the case where 
+    [temp] is a mapping from operands to temps. It is interesing in the case where
       there are multiple logical temporaries available due to copying.
-    [active] is a mapping from operations to booleans. It is interesting when there 
+    [active] is a mapping from operations to booleans. It is interesting when there
       are optional instructions for copying. If it is false, the operation should be
       deleted from the Ir.
     [issue] is a mapping from operations to the issue cycle on which they execute.
@@ -77,11 +77,11 @@ type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 (**/**)
 (* Exposed for unit testing. *)
 
-type 'a mznset = {set : 'a list}  [@@deriving yojson]
-type ('a ,'b) mznmap = 'b list
+type 'a mzn_set = {set : 'a list}  [@@deriving yojson]
+type ('a ,'b) mzn_map = 'b list
 
 type mzn_enum = {e : string} [@@deriving yojson]
-type mzn_enum_def = mzn_enum mznset [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
+type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
 type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]
@@ -96,19 +96,19 @@ type mzn_params_serial = {
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
   block_t : mzn_enum_def;
-  class_t : mzn_enum_def;
-  operand_operation : (operand, operation) mznmap;
-  definer : (temp, operand) mznmap;
-  users : (temp, operand mznset) mznmap;
-  temp_block : (temp, block) mznmap;
-  copy : operation mznset;
-  width : (temp, int) mznmap;
-  preassign : (operand, reg mznset) mznmap; (* Set should either be empty or have 1 element. *)
-  congruent : (operand, operand mznset) mznmap;
-  operation_opcodes : (operation, opcode mznset) mznmap;
-  latency : (opcode, int) mznmap;
+  class_t : (operand, (opcode, reg mzn_set) mzn_map) mzn_map;
+  operand_operation : (operand, operation) mzn_map;
+  definer : (temp, operand) mzn_map;
+  users : (temp, operand mzn_set) mzn_map;
+  temp_block : (temp, block) mzn_map;
+  copy : operation mzn_set;
+  width : (temp, int) mzn_map;
+  preassign : (operand, reg mzn_set) mzn_map; (* Set should either be empty or have 1 element. *)
+  congruent : (operand, operand mzn_set) mzn_map;
+  operation_opcodes : (operation, opcode mzn_set) mzn_map;
+  latency : (opcode, int) mzn_map;
   number_excluded : int;
-  exclude_reg : (int, (temp, reg) mznmap) mznmap
+  exclude_reg : (int, (temp, reg) mzn_map) mzn_map;
 } [@@deriving yojson]
 
 type serialization_info = {

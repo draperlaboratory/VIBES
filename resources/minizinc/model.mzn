@@ -15,7 +15,6 @@ enum temp_t;
 enum operand_t;
 enum operation_t;
 enum block_t;
-enum class_t;
 
 
 array[operand_t] of operation_t : operand_operation; % map from operand to operations it belongs to
@@ -24,10 +23,11 @@ array[temp_t] of set of operand_t : users; %map from temporary to operands that 
 array[temp_t] of block_t : temp_block; % map from temporary to block it lives in
 
 set of operation_t : copy; % is operation a copy operation
-% maybe this should be a mapping from operation_t to operation_class_t
-% copy, normal (linear), in, out, jmp
+
 array[temp_t] of int : width; % Atom width of temporary. Atoms are subpieces of registers. Maybe 8 bit.
+
 array[operand_t] of set of reg_t : preassign; % preassign operand_t to register.
+
 array[operand_t] of set of operand_t : congruent; % Whether congruent. Congruent operands are actually the same temporary split by linear SSA
 
 
@@ -36,12 +36,8 @@ array[operation_t] of set of opcode_t : operation_opcodes; % map from operation 
 % register class
 % For simd registers, spilling.
 
-%array[operand_t] of array[opcode_t] of class_t : op_opcode_class; % two alternative representation for register class.
-%array[reg_t] of class_t : reg_class;
+array[operand_t, opcode_t] of set of reg_t : class_t;
 
-% vs
-
-%array[operand_t] of array[opcode_t] of set of reg_t : reg_class;
 array[opcode_t] of int: latency; % latency of instruction
 
 

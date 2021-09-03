@@ -5,6 +5,8 @@ open Bap_core_theory
 
 type opcode = Knowledge.Name.t [@@deriving compare, equal, sexp]
 
+let dummy_role = Theory.Role.declare ~package:"vibes" "dummy"
+
 module Opcode =
 struct
 
@@ -15,6 +17,12 @@ struct
   let name o = Knowledge.Name.unqualified o
 
   let (=) = equal_opcode
+
+  module Set : (Set.S with type Elt.t = opcode)
+    = Set.Make(Knowledge.Name)
+
+  module Map : (Map.S with type Key.t = opcode)
+    = Map.Make(Knowledge.Name)
 
 end
 
@@ -435,6 +443,8 @@ let freshen_temps v =
   let typ = Var.typ v in
   Var.create ("__Vibes_tmp_" ^ name) typ
 
+(* Preassign variables with names equal to a register in the target to
+   the corresponding register, and freshen the temp name. *)
 let preassign (tgt : Theory.target) (ir : t) : t =
   map_op_vars ir
     ~f:(fun v ->
@@ -513,3 +523,59 @@ let add_in_vars_blk (b : blk) : blk =
    an lhs before-hand, and add them to the [in] field. *)
 let add_in_vars (t : t) : t =
   { t with blks = List.map ~f:add_in_vars_blk t.blks }
+
+
+(* Get every single opcode, removing duplicates. *)
+let all_opcodes (t : t) : opcode list =
+  let blks = t.blks in
+  let op_set = List.fold blks ~init:Opcode.Set.empty
+      ~f:(fun acc b ->
+          let ops = b.ins :: b.outs :: b.data @ b.ctrl in
+          List.fold ops ~init:acc
+            ~f:(fun acc o ->
+                List.fold o.opcodes ~init:acc
+                  ~f:(fun acc code ->
+                      Opcode.Set.add acc code)
+              )
+        )
+  in
+  Opcode.Set.to_list op_set
+
+
+(* Iterate through the operations, and assign roles to all the
+   operands based on the opcode.
+
+   In theory we could be architecture + operation specific, e.g. a
+   stack load operation vs a mov.
+
+   In practice though, we assign [Theory.Role.Register.general] to all
+   non [Void] variables and [dummy_role] to [Void] vars.
+
+*)
+let op_classes (t : t) : (Theory.role Opcode.Map.t) Var.Map.t =
+  let blks = t.blks in
+  let opcodes = all_opcodes t in
+  let op_classes_op acc (o : operation) =
+    let vars = o.lhs @ o.operands in
+    (* for a given var map, variable and role, add to acc the binding
+       v |-> (o |-> role) for every o in opcodes. *)
+    let map_of_role acc (v : var) role =
+      let alist = List.map opcodes
+          ~f:(fun o -> (o, role))
+      in
+      let omap = Opcode.Map.of_alist_exn alist in
+      Var.Map.set acc ~key:v ~data:omap
+    in
+    List.fold vars ~init:acc
+      ~f:(fun acc v ->
+          match v with
+          | Var v -> map_of_role acc v.id Theory.Role.Register.general
+          | Void v -> map_of_role acc v.id dummy_role
+          | _ -> acc
+        )
+  in
+  let op_classes_blk acc (b : blk) =
+    let ops = b.ins :: b.outs :: b.data @ b.ctrl in
+    List.fold ops ~init:acc ~f:op_classes_op
+  in
+  List.fold blks ~init:Var.Map.empty ~f:op_classes_blk
