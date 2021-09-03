@@ -29,6 +29,7 @@
     conceptually decompose into coupled block level constraint
     satisfaction problems. *)
 
+open !Core_kernel
 open Bap.Std
 open Bap_core_theory
 
@@ -45,8 +46,16 @@ sig
 
   val (=) : opcode -> opcode -> bool
 
+  module Set : Set.S with type Elt.t = t
+
+  module Map : Map.S with type Key.t = t
+
 end
 
+(** The "dummy" role, which is the role associated with a variable
+   which does not to be assigned to a physical location, but must
+   still appear in the IR to satisfy ordering constraints. *)
+val dummy_role : Theory.role
 
 (** [operand]s have unique ids, a list of potential temporaries that
     can be used to implement the operand and may be optionally
@@ -147,6 +156,10 @@ val users_map : t -> (op_var list) Var.Map.t
     which they are defined and used. *)
 val temp_blk : t -> Tid.t Var.Map.t
 
+(** [op_classes] maps a variable (operand) and an opcode to the role
+   of the register which may implement that variable. *)
+val op_classes : t -> (Theory.role Opcode.Map.t) Var.Map.t
+
 (** [freshen_operand o] creates a new operand with the same body and a
     fresh id, if the operation is "var-like" (Var or Void) *)
 val freshen_operand : operand -> operand
@@ -159,6 +172,7 @@ val add_in_vars : t -> t
 
 (** Various getter functions *)
 val operation_opcodes : t -> opcode list Tid.Map.t
+val all_opcodes : t -> opcode list
 val operand_operation : t -> operation Var.Map.t
 val op_var_exn : operand -> op_var
 
