@@ -190,21 +190,27 @@ let serialize_mzn_params
     | Mem _ -> 0
     | Unk -> failwith "width unimplemented for Unk"
   in
-  let gpr_set = Arm_selector.gpr tgt lang in
   let gpr =
-    gpr_set |>
+    Arm_selector.gpr tgt lang |>
     Set.to_list |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
   let dummy_reg = Var.create ~is_virtual:false ~fresh:false "dummy_reg" Unk in
   let dummy = dummy_reg |> Var.sexp_of_t |> Sexp.to_string |> List.return in
-  let regs = gpr @ dummy in
+  let regs =
+    Arm_selector.regs tgt lang |>
+    Set.to_list |>
+    List.map ~f:Var.sexp_of_t |>
+    List.map ~f:Sexp.to_string
+  in
   let regs_of_role r =
     if Theory.Role.(r = Register.general) then
       gpr
     else if Theory.Role.(r = Ir.dummy_role) then
       dummy
+    else if Theory.Role.(r = Ir.preassigned) then
+      regs
     else
       failwith @@
       Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
@@ -216,7 +222,8 @@ let serialize_mzn_params
   in
   assert(List.length regs <> 0);
   {
-    reg_t = mzn_enum_def_of_list regs;
+    (* Add the dummy register for void/virtual variables *)
+    reg_t = mzn_enum_def_of_list (regs @ dummy);
     opcode_t = mzn_enum_def_of_list opcodes_str;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);

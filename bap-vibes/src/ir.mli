@@ -53,9 +53,15 @@ sig
 end
 
 (** The "dummy" role, which is the role associated with a variable
-   which does not to be assigned to a physical location, but must
-   still appear in the IR to satisfy ordering constraints. *)
+    which does not to be assigned to a physical location, but must
+    still appear in the IR to satisfy ordering constraints. *)
 val dummy_role : Theory.role
+
+(** The "preassigned" role, which is the role associated with a
+    variable which already has a physical location, which is
+    potentially *not* a general purpose register, which is usually
+    excluded from the class_t for that variable. *)
+val preassigned : Theory.role
 
 (** [operand]s have unique ids, a list of potential temporaries that
     can be used to implement the operand and may be optionally

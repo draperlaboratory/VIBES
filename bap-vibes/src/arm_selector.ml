@@ -54,6 +54,11 @@ let is_thumb (lang : Theory.language) : bool =
     in
     failwith err
 
+(* FIXME: this feels very redundant: we should just leave the
+   responsibility for this in ir.ml or minizinc.ml *)
+let regs (tgt : Theory.target) (_ : Theory.language) =
+  Theory.Target.regs tgt |> Set.map ~f:Var.reify (module Var)
+
 let gpr (tgt : Theory.target) (lang : Theory.language) =
   let roles = [Theory.Role.Register.general] in
   let roles =
@@ -63,6 +68,10 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
       Theory.Role.read ~package:"arm" "thumb"::roles
     else roles
   in
+  let exclude =
+    [Theory.Role.Register.stack_pointer;
+     Theory.Role.Register.frame_pointer;]
+  in
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
@@ -70,7 +79,7 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
       Some v
     else None
   in
-  Theory.Target.regs ~roles:roles tgt |>
+  Theory.Target.regs ~exclude:exclude ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
 let preassign_var

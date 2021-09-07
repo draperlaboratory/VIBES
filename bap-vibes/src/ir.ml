@@ -7,6 +7,8 @@ type opcode = Knowledge.Name.t [@@deriving compare, equal, sexp]
 
 let dummy_role = Theory.Role.declare ~package:"vibes" "dummy"
 
+let preassigned = Theory.Role.declare ~package:"vibes" "preassigned"
+
 module Opcode =
 struct
 
@@ -548,8 +550,10 @@ let all_opcodes (t : t) : opcode list =
    In theory we could be architecture + operation specific, e.g. a
    stack load operation vs a mov.
 
-   In practice though, we assign [Theory.Role.Register.general] to all
-   non [Void] variables and [dummy_role] to [Void] vars.
+   In practice though, we assign
+   - [Theory.Role.Register.general] to all non [Void] variables
+   - [dummy_role] to [Void] vars
+   - [preassigned] to preassigned vars
 
 *)
 let op_classes (t : t) : (Theory.role Opcode.Map.t) Var.Map.t =
@@ -569,7 +573,12 @@ let op_classes (t : t) : (Theory.role Opcode.Map.t) Var.Map.t =
     List.fold vars ~init:acc
       ~f:(fun acc v ->
           match v with
-          | Var v -> map_of_role acc v.id Theory.Role.Register.general
+          | Var v ->
+            begin
+              match v.pre_assign with
+              | None -> map_of_role acc v.id Theory.Role.Register.general
+              | Some _ -> map_of_role acc v.id preassigned
+            end
           | Void v -> map_of_role acc v.id dummy_role
           | _ -> acc
         )

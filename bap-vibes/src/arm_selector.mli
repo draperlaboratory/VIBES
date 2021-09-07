@@ -26,6 +26,9 @@ val ir : arm_eff -> Ir.t
    program, aimed mostly to conserve space. *)
 val peephole : Ir.t -> Ir.t
 
+(** Returns the set of *all* registers on ARM *)
+val regs : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
+
 (** Returns the set of registers suitable for register allocation on ARM *)
 val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 
