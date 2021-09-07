@@ -160,13 +160,10 @@ constraint forall(p in operand_t) (
             );
 
 % C3.2. register class constraint
-% TODO
-/*
-constraint forall(p in operand_t where active[operand_operation[p]](
-    reg[temp[p]] in class[]
+constraint forall(p in operand_t where active[operand_operation[p]])(
+    reg[temp[p]] in class_t[p, opcode[operand_operation[p]]]
 
-)
-*/
+);
 
 % C4 Every operation that is not a copy must be active.
 constraint forall(o in operation_t where not (o in copy))(
