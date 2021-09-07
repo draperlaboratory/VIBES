@@ -197,7 +197,8 @@ let serialize_mzn_params
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
-  let dummy = ["dummy_reg"] in
+  let dummy_reg = Var.create ~is_virtual:false ~fresh:false "dummy_reg" Unk in
+  let dummy = dummy_reg |> Var.sexp_of_t |> Sexp.to_string |> List.return in
   let regs = gpr @ dummy in
   let regs_of_role r =
     if Theory.Role.(r = Register.general) then
