@@ -45,5 +45,8 @@ end
 
 module ARM_Gen :
 sig
-  val select : blk term list -> Ir.t
+  (** [select blks] performs instruction selection: it translates
+      sequences of BIR blocks to the appropriate ARM opcodes (keeping
+      the operands abstract. *)
+  val select : blk term list -> Ir.t KB.t
 end
