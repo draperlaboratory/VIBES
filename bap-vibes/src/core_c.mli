@@ -4,6 +4,13 @@
 
 open Bap_core_theory
 
+(** [declare_call dst] tags [dst] as being a function call with bells and whistles. *)
+val declare_call : Theory.label -> unit KB.t
+
+(** [is_call dst] returns true if the label is indented to be the
+    destination of a "call-like" instruction, i.e. respecting the
+    target ABI for C function calls.  *)
+val is_call : Theory.label -> bool KB.t
 
 module Eval(T : Theory.Core) : sig
   (** [c_patch_to_sexp_eff tgt code] ingests a C AST produced using FrontC and

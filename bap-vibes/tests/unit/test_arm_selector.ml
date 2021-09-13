@@ -11,6 +11,7 @@ let v1 = Var.create "v1" (Imm 32)
 let v2 = Var.create "v2" (Imm 32)
 let v3 = Var.create "v3" (Imm 32)
 let v = Var.create "v" (Imm 1)
+let func = Tid.for_name "some_function"
 let mem = Var.create "mem" (Mem (`r32, `r8))
 let add_goto sub tgt =
   Term.map blk_t sub ~f:(fun blk ->
@@ -121,46 +122,66 @@ module Prog13 = struct
 
 end
 
+
+module Prog14 = struct
+
+  let prog =
+    let bil = [] in
+    let prog = Bap_wp.Bil_to_bir.bil_to_sub bil in
+    add_goto prog func
+
+end
+
+
 module Arm = Arm_selector
 
 
 let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
-  let result =
-    v |> Term.to_sequence blk_t
-    |> Seq.to_list
-    |> Arm.ARM_Gen.select
-    |> Ir.dummy_reg_alloc
-    |> Arm.Pretty.arm_ir_pretty
-    |> Result.ok
-  in
-  let cmp expected input =
-    let rexpected =
-      Option.map expected
-        ~f:(List.map ~f:Str.regexp) in
+  let open KB.Let in
+  let test =
     begin
-      match input, rexpected with
-      | Some input, Some expected ->
-        let pairs = List.zip expected input in
+      let* _ = Core_c.declare_call func in
+      let+ ir =
+        v |> Term.to_sequence blk_t
+        |> Seq.to_list
+        |> Arm.ARM_Gen.select
+      in
+      let result =
+        ir |> Ir.dummy_reg_alloc
+        |> Arm.Pretty.arm_ir_pretty
+        |> Result.ok
+      in
+      let cmp expected input =
+        let rexpected =
+          Option.map expected
+            ~f:(List.map ~f:Str.regexp) in
         begin
-          match pairs with
-          | Ok pairs ->
-            let matches = List.map pairs
-                ~f:(fun (pat, str) -> Str.string_match pat str 0) in
-            List.for_all ~f:(fun b -> b) matches
-          | Unequal_lengths -> false
+          match input, rexpected with
+          | Some input, Some expected ->
+            let pairs = List.zip expected input in
+            begin
+              match pairs with
+              | Ok pairs ->
+                let matches = List.map pairs
+                    ~f:(fun (pat, str) -> Str.string_match pat str 0) in
+                List.for_all ~f:(fun b -> b) matches
+              | Unequal_lengths -> false
+            end
+          | _ -> false
         end
-      | _ -> false
+      in
+      let print_opt_str_list l =
+        match l with
+        | None -> "None"
+        | Some l -> List.to_string ~f:ident l
+      in
+      assert_equal
+        ~cmp:cmp
+        ~printer:print_opt_str_list
+        (Some expected) result
     end
   in
-  let print_opt_str_list l =
-    match l with
-    | None -> "None"
-    | Some l -> List.to_string ~f:ident l
-  in
-  assert_equal
-    ~cmp:cmp
-    ~printer:print_opt_str_list
-    (Some expected) result
+  Toplevel.exec test
 
 
 let blk_pat = "blk\\([0-9]\\|[a-f]\\)*"
@@ -190,7 +211,7 @@ let test_ir9 ctxt =
   test_ir ctxt Prog9.prog [blk_pat ^ ":"; "b tgt"]
 
 let test_ir10 ctxt =
-  test_ir ctxt Prog10.prog [blk_pat ^ ":"; "str R0, R0"]
+  test_ir ctxt Prog10.prog [blk_pat ^ ":"; "str R0, \\[R0\\]"]
 
 let test_ir11 ctxt =
   test_ir ctxt Prog11.prog [blk_pat ^ ":"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
@@ -217,17 +238,22 @@ let test_ir12 ctxt =
 let test_ir13 ctxt =
   test_ir ctxt Prog13.prog [blk_pat ^ ":"; "ldrh R0, \\[R0\\]"; "mov R0, R0"]
 
+
+let test_ir14 ctxt =
+  test_ir ctxt Prog14.prog [blk_pat ^ ":"; "bl some_function"]
+
 let suite =
   [
-    (* "Test Arm.ir 1" >:: test_ir1;
-     * "Test Arm.ir 2" >:: test_ir2;
-     * "Test Arm.ir 3" >:: test_ir3;
-     * "Test Arm.ir 4" >:: test_ir4;
-     * "Test Arm.ir 5" >:: test_ir5;
-     * "Test Arm.ir 6" >:: test_ir6;
-     * "Test Arm.ir 9" >:: test_ir9;
-     * "Test Arm.ir 10" >:: test_ir10;
-     * "Test Arm.ir 11" >:: test_ir11;
-     * "Test Arm.ir 12" >:: test_ir12; *)
+    "Test Arm.ir 1" >:: test_ir1;
+    "Test Arm.ir 2" >:: test_ir2;
+    "Test Arm.ir 3" >:: test_ir3;
+    "Test Arm.ir 4" >:: test_ir4;
+    "Test Arm.ir 5" >:: test_ir5;
+    "Test Arm.ir 6" >:: test_ir6;
+    "Test Arm.ir 9" >:: test_ir9;
+    "Test Arm.ir 10" >:: test_ir10;
+    "Test Arm.ir 11" >:: test_ir11;
+    "Test Arm.ir 12" >:: test_ir12;
     "Test Arm.ir 13" >:: test_ir13;
+    "Test Arm.ir 14" >:: test_ir14;
   ]

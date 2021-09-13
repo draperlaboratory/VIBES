@@ -8,6 +8,18 @@ module Err = Kb_error
 type var_map = unit Theory.var String.Map.t
 
 
+let call_slot = KB.Class.property Theory.Program.cls "is-call" KB.Domain.bool
+
+let declare_call (e : Theory.label) : unit KB.t =
+  KB.provide call_slot e (Some true)
+
+(* We return false by default, if it is unlabeled *)
+let is_call (e : Theory.label) : bool KB.t =
+  let open KB.Let in
+  let+ e = KB.collect call_slot e in
+  Option.value ~default:false e
+
+
 module Eval(T : Theory.Core) = struct
 
   open Theory
@@ -249,10 +261,24 @@ module Eval(T : Theory.Core) = struct
         let* rval = expr_to_pure info rval var_map in
         let* assign = set lval !!rval in
         data assign
+      (* This is our syntax for [goto some_address] *)
       | COMPUTATION (CALL (CONSTANT(CONST_INT s), [])) ->
         let dst = int info.word_sort Bitvec.(!$ s) in
         let* jmp = jmp dst in
         ctrl jmp
+      (* FIXME: handle general calls with arguments *)
+      (* FIXME: should we allow calls to concrete addresses?
+         In that case, we need a new concrete syntax for jumps.
+      *)
+      | COMPUTATION (CALL (VARIABLE f, [])) ->
+        let* dst = Label.for_name ~package:"core-c" f in
+        let* () = declare_call dst in
+        let* call = KB.(return dst >>= goto) in
+        ctrl call
+      | GOTO label ->
+        let label = Label.for_name label in
+        let* goto = KB.(label >>= goto) in
+        ctrl goto
       | IF (c, true_br, false_br) ->
         let c = expr_to_pure info c var_map in
         (* Downcast [c] to Bool.t *)
@@ -270,10 +296,6 @@ module Eval(T : Theory.Core) = struct
         let* eff2 = aux s2 in
         let* eff = seq !!eff1 !!eff2 in
         KB.return eff
-      | GOTO label ->
-        let label = Label.for_name label in
-        let* goto = KB.(label >>= goto) in
-        ctrl goto
       (* FIXME: allow additional var defs? *)
       | BLOCK ([],s) ->
         let* eff = aux s in
