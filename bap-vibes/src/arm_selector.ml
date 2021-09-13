@@ -1,6 +1,7 @@
 open !Core_kernel
 open Bap.Std
 open Bap_core_theory
+open KB.Let
 
 (*-------------------------------------------------------
 *
@@ -142,7 +143,6 @@ module ARM_ops = struct
 
     let mov = op "mov"
     let _movw = op "movw"
-    let _bx = op "bx"
     let add = op "add"
     let mul = op "mul"
     let sub = op "sub"
@@ -157,13 +157,16 @@ module ARM_ops = struct
     let ldrb = op "ldrb"
     let str = op "str"
     let cmp = op "cmp"
-    let beq = op "beq"
     let sdiv = op "sdiv"
     let udiv = op "udiv"
+    let b = op "b"
+    let bl = op "bl"
+    let beq = op "beq"
+    let bleq = op "bleq"
     let _bne = op "bne"
     let _ble = op "ble"
     let _blt = op "blt"
-    let b = op "b"
+    let _bx = op "bx"
 
   end
 
@@ -306,13 +309,14 @@ module ARM_ops = struct
 
      ..cond.. //fills variable [cond_val]
      CMP cond_val 0
-     BEQ tgt
+     BEQ tgt // or BLEQ if is_call is true
   *)
   (* Generally, boolean operations will be handled by a normal (word
      size) value, with value 0 if false and non-zero if true. It will
      be the job of branching operations to call [cmp ? ?] and check
      the appropriate flags. *)
-  let br cond tgt =
+  let br ?is_call:(is_call=false) cond tgt =
+    let opcode = if is_call then Ops.bleq else Ops.beq in
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
     let tmp_flag, tmp_taken =
@@ -320,7 +324,7 @@ module ARM_ops = struct
     in
     let cmp = Ir.simple_op Ops.cmp (Void tmp_flag)
         [cond_val; Const (Word.of_int ~width:32 0)] in
-    let beq = Ir.simple_op Ops.beq (Void tmp_taken) [tgt] in
+    let beq = Ir.simple_op opcode (Void tmp_taken) [tgt] in
     let blks = cond_eff.other_blks in
     {
       current_data = cmp :: cond_eff.current_data;
@@ -329,9 +333,10 @@ module ARM_ops = struct
     }
 
   (* Unconditional jump *)
-  let goto tgt =
+  let goto ?is_call:(is_call=false) tgt =
+    let opcode = if is_call then Ops.bl else Ops.b in
     let tmp_branch = create_temp bit_ty in
-    control (Ir.simple_op Ops.b (Void tmp_branch) [tgt]) empty_eff
+    control (Ir.simple_op opcode (Void tmp_branch) [tgt]) empty_eff
 
 
 end
@@ -380,6 +385,16 @@ struct
     match bil with
     | Int w -> Some w
     | _ -> None
+
+  let is_call (jmp : jmp term) : bool KB.t =
+    match Jmp.dst jmp with
+    | Some dst ->
+      begin
+        match Jmp.resolve dst with
+        | First dst -> Core_c.is_call dst
+        | Second _ -> KB.return false
+      end
+    | None -> KB.return false
 
   let get_dst (jmp : jmp term) : Ir.operand option =
     match Jmp.dst jmp, Jmp.alt jmp with
@@ -461,7 +476,7 @@ struct
   and select_mem (m : Bil.exp) : arm_pure =
     select_exp m
 
-  and select_stmt (s : Blk.elt) : arm_eff =
+  and select_stmt (s : Blk.elt) : arm_eff KB.t =
     match s with
     | `Def t ->
       let lhs = Def.lhs t in
@@ -471,13 +486,14 @@ struct
         | Imm _ | Unk ->
           let lhs = Ir.Var (Ir.simple_var lhs) in
           let rhs = select_exp rhs in
-          lhs := rhs
+          KB.return (lhs := rhs)
         | Mem _ ->
           let rhs = select_exp rhs in
-          rhs.op_eff
+          KB.return rhs.op_eff
       end
     | `Jmp jmp ->
       let cond = Jmp.cond jmp in
+      let* is_call = is_call jmp in
       begin
         match get_dst jmp with
         | None ->
@@ -489,26 +505,27 @@ struct
             match cond with
             | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
               let cond = select_exp cond in
-              br cond dst
-            | Int w when Word.(w <> zero 32) -> goto dst
+              KB.return @@ br ~is_call:is_call cond dst
+            | Int w when Word.(w <> zero 32) ->
+              KB.return @@ goto ~is_call:is_call dst
             | cond ->
               let cond = select_exp cond in
-              br cond dst
+              KB.return @@ br ~is_call:is_call cond dst
           end
       end
     | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
 
-  and select_elts (elts : Blk.elt list) : arm_eff =
+  and select_elts (elts : Blk.elt list) : arm_eff KB.t =
     match elts with
-    | [] -> empty_eff
+    | [] -> KB.return empty_eff
     (* We only select 1 instruction at a time for now *)
     | s :: ss ->
-      let s = select_stmt s in
-      let ss = select_elts ss in
+      let* s = select_stmt s in
+      let+ ss = select_elts ss in
       ss @. s
 
-  and select_blk (b : blk term) : arm_eff =
-    let b_eff = Blk.elts b |> Seq.to_list |> select_elts in
+  and select_blk (b : blk term) : arm_eff KB.t =
+    let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
       Ir.simple_blk (Term.tid b)
@@ -524,15 +541,16 @@ struct
       other_blks = all_blks
     }
 
-  and select_blks (bs : blk term list) : arm_eff =
+  and select_blks (bs : blk term list) : arm_eff KB.t =
     match bs with
-    | [] -> empty_eff
+    | [] -> KB.return empty_eff
     | b :: bs ->
-      let b = select_blk b in
-      b @. (select_blks bs)
+      let* b = select_blk b in
+      let+ bs = select_blks bs in
+      b @. bs
 
-  let select (bs : blk term list) : Ir.t =
-    let bs = select_blks bs in
+  let select (bs : blk term list) : Ir.t KB.t =
+    let+ bs = select_blks bs in
     ir bs
 
 end
