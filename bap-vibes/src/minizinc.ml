@@ -199,7 +199,8 @@ let serialize_mzn_params
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
   in
-  assert(List.length regs <> 0);
+  if (List.length regs = 0) then
+    (failwith @@ Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt);
   {
     reg_t = mzn_enum_def_of_list regs;
     opcode_t = mzn_enum_def_of_list opcodes;

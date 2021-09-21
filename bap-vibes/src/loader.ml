@@ -1,0 +1,112 @@
+(***********************************************************************
+*
+*   An almost verbatim copy of the "raw" (loader for BAP: this allows us
+*   fine-grained control of the loading process, effectively allowing
+*   us to disassemble only small chunks of a large binary.
+*
+*
+**********************************************************************)
+
+
+let doc = {|
+# DESCRIPTION
+
+Provides a VIBES specific loader for raw binaries. Raw binaries to not contain any
+meta information or other headers, so this input should be provided
+form the outside.
+
+|}
+
+open Bap.Std
+open Core_kernel
+
+
+module Buffer = Caml.Buffer
+module Unix = Caml_unix
+
+let doc_template = {|
+(declare arch (name str))
+(declare bits (size int))
+(declare base-address (addr int))
+(declare entry-point (addr int))
+(declare mapped (addr int) (size int) (off int))
+(declare code-region (addr int) (size int) (off int))
+(declare named-region (addr int) (size int) (name str))
+(declare segment (addr int) (size int) (r bool) (w bool) (x bool))
+(declare section (addr int) (size int))
+(declare code-start (addr int))
+
+(arch $arch)
+(bits $bits)
+(base-address $base)
+(entry-point $entry)
+(mapped $base $length $offset)
+(code-region $base $length $offset)
+(named-region $base $length code)
+(section $base $length)
+(segment $base $length true false true)
+|}
+
+let get_arch conf = Some `thumbv7
+let get_offset conf = Bitvec.M32.(int32 0x000123ccl)
+let get_base conf = Bitvec.M32.(int 0x23cc)
+let get_bits conf = 32
+let get_entry conf = []
+let get_length conf = Some 128L
+
+
+let register_loader conf =
+  Image.register_loader ~name:"vibes-raw" (module struct
+    let generate measure input =
+      let arch = get_arch conf |>
+                 Option.value_map ~default:"" ~f:Arch.to_string
+      in
+      let options = [
+          "arch", arch;
+          "offset", Bitvec.to_string @@ get_offset conf;
+          "base", Bitvec.to_string @@ get_base conf;
+          "bits", Int.to_string @@ begin
+            match get_arch conf with
+            | None -> get_bits conf
+            | Some arch -> Size.in_bits (Arch.addr_size arch)
+          end;
+          "entry", begin match get_entry conf with
+            | [] -> Bitvec.to_string @@ get_base conf;
+            | x :: _ -> Bitvec.to_string x
+          end;
+          "length", Int64.to_string @@ match get_length conf with
+          | None -> Int64.(measure input - Bitvec.(to_int64 @@ get_offset conf))
+          | Some n -> n;
+        ] |> String.Map.of_alist_exn in
+      let buf = Buffer.create 128 in
+      let ppf = Format.formatter_of_buffer buf in
+      doc_template |>
+      Buffer.add_substitute buf (fun var ->
+          match Map.find options var with
+          | None -> invalid_argf "bug: missed a var: %S" var ()
+          | Some v -> v);
+      get_entry conf |>
+      List.iter ~f:(Format.fprintf ppf "(code-start %a)@\n" Bitvec.pp);
+      Format.pp_print_flush ppf ();
+      Buffer.contents buf |>
+      Ogre.Doc.from_string |>
+      Or_error.ok_exn
+
+    let length_of_file filename =
+      let desc = Unix.openfile filename Unix.[O_RDONLY] 0o400 in
+      let {Unix.LargeFile.st_size} = Unix.LargeFile.fstat desc in
+      Unix.close desc;
+      st_size
+
+    let length_of_data str =
+      Int64.of_int (Bigstring.length str)
+
+    let from_file name =
+      Or_error.try_with @@ fun () ->
+      Some (generate length_of_file name)
+
+    let from_data data =
+      Or_error.try_with @@ fun () ->
+      Some (generate length_of_data data)
+  end)
+
