@@ -140,6 +140,9 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   Events.(send @@ Header "Starting pipeline");
   Events.(send @@ Info (Format.asprintf "%a" Config.pp config));
 
+  Events.(send @@ Info "Registering loader vibes-raw");
+  let () = Loader.register_loader config in
+
   let filepath = Config.exe config in
   Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
   let+ orig_proj, orig_prog = Utils.load_exe filepath in

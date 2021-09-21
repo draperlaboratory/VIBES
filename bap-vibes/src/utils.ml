@@ -57,7 +57,7 @@ let run_process (command : string) (args : string list)
 
 let load_exe (filename : string)
   : (project * Program.t, Toplevel_error.t) result =
-  let input = Project.Input.file ~loader:"llvm" ~filename in
+  let input = Project.Input.file ~loader:"vibes-raw" ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
     begin
