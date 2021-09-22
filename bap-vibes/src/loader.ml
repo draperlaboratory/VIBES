@@ -35,6 +35,7 @@ let doc_template = {|
 (declare segment (addr int) (size int) (r bool) (w bool) (x bool))
 (declare section (addr int) (size int))
 (declare code-start (addr int))
+(declare named-symbol (addr int) (name str))
 
 (arch $arch)
 (bits $bits)
@@ -45,14 +46,16 @@ let doc_template = {|
 (named-region $base $length code)
 (section $base $length)
 (segment $base $length true false true)
+(named-symbol $entry $func_name)
 |}
 
 let get_arch conf = Some `thumbv7
-let get_offset conf = Bitvec.M32.(int32 0x000123ccl)
-let get_base conf = Bitvec.M32.(int 0x23cc)
+let get_offset conf = Bitvec.M32.(int32 0x00023ccl)
+let get_base conf = Bitvec.M32.(int32 0x000123ccl)
 let get_bits conf = 32
 let get_entry conf = []
-let get_length conf = Some 128L
+let get_length conf = Some 164L
+let get_func conf = "write_encrypted"
 
 
 let register_loader conf =
@@ -74,9 +77,11 @@ let register_loader conf =
             | [] -> Bitvec.to_string @@ get_base conf;
             | x :: _ -> Bitvec.to_string x
           end;
-          "length", Int64.to_string @@ match get_length conf with
+          "length", Int64.to_string @@ begin match get_length conf with
           | None -> Int64.(measure input - Bitvec.(to_int64 @@ get_offset conf))
-          | Some n -> n;
+          | Some n -> n
+          end;
+          "func_name", get_func conf;
         ] |> String.Map.of_alist_exn in
       let buf = Buffer.create 128 in
       let ppf = Format.formatter_of_buffer buf in
