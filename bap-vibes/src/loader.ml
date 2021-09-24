@@ -55,7 +55,7 @@ let get_base conf = Bitvec.M32.(int32 0x000123ccl)
 let get_bits conf = 32
 let get_entry conf = []
 let get_length conf = Some 164L
-let get_func conf = "write_encrypted"
+let get_func conf = Config.exe conf
 
 
 let register_loader conf =

@@ -1,11 +1,15 @@
 (** Encapsulates the configuration needed to run the VIBES pipeline. *)
 
 open !Core_kernel
+open Bap.Std
 
 module Hvar = Higher_var
 
 (** A type to represent an individual patch fragment. *)
 type patch
+
+(** A type that represents the data required to create a simple loader for BAP *)
+type loader_data
 
 (** A type to represent a configuration record. *)
 type t
@@ -51,7 +55,7 @@ val minizinc_model_filepath : t -> string
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
 
-(** [create ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars]
+(** [create_patch ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars]
     will create a patch record, where:
     - [~patch_name] is the name of the patch
     - [~patch_code] is the code of the patch
@@ -65,6 +69,21 @@ val create_patch :
   -> patch_size:int
   -> patch_vars:Hvar.t list
   -> patch
+
+(** [create_loader_data ~arch ~offset ~base ~entry ~length]
+    will create a loader data record, where:
+    - [~arch] is the name of the binary architecture
+    - [~offset] is the base offset of the binary
+    - [~base] is the base address of the code portion
+    - [~entry] is the addres of the "entry point" (which may just be the function of interest)
+    - [~length] is the number of bytes to dissassemble *)
+val create_loader_data :
+  arch:arch
+  -> offset:Bitvec.t
+  -> base:Bitvec.t
+  -> entry:Bitvec.t list
+  -> length:int64 option
+  -> loader_data
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath
     ~minizinc_model_filepath] will create a configuration record, where:
