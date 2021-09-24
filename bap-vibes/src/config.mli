@@ -78,7 +78,7 @@ val create_patch :
     - [~entry] is the addres of the "entry point" (which may just be the function of interest)
     - [~length] is the number of bytes to dissassemble *)
 val create_loader_data :
-  arch:arch
+  arch:arch option
   -> offset:Bitvec.t
   -> base:Bitvec.t
   -> entry:Bitvec.t list
@@ -102,4 +102,5 @@ val create :
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string
+  -> loader_data:loader_data option
   -> t

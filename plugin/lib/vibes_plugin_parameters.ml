@@ -217,6 +217,21 @@ let validate_minizinc_model_filepath (obj : Json.t)
       | Error e -> Err.fail e
     end
 
+let validate_loader_data (obj : Json.t)
+  : (Vibes_config.loader_data option, error) Stdlib.result =
+  let err = Errors.Invalid_loader_data in
+  match Json.Util.member "loader-data" obj with
+  | `Null -> Err.return None
+  | `Assoc l ->
+    begin
+      let loader_fields = ["arch"; "offset"; "base"; "entry"; "length"] in
+      let get_fields = List.map loader_fields ~f:(fun f -> value_of_field f l) in
+      match get_fields with
+      | [Some _; Some _; Some _; Some _; Some _] -> assert false
+      | _ -> Err.fail err
+    end
+  | _ -> Err.fail err
+
 (* Parse the user-provided JSON config file into a Yojson.Safe.t *)
 let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
   try
@@ -233,9 +248,10 @@ let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
   validate_func config_json >>= fun func ->
   validate_property config_json >>= fun property ->
   validate_max_tries config_json >>= fun max_tries ->
+  validate_loader_data config_json >>= fun loader_data ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
   let result = Vibes_config.create
     ~exe ~patches ~func ~property ~patched_exe_filepath ~max_tries
-    ~minizinc_model_filepath in
+    ~minizinc_model_filepath ~loader_data in
   Ok result
