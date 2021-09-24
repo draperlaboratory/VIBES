@@ -1,6 +1,7 @@
 (* Implements {!Config}. *)
 
 open !Core_kernel
+open Bap.Std
 
 module Hvar = Higher_var
 
@@ -24,6 +25,33 @@ type patch =
     patch_vars : Hvar.t list
   }
 
+(* A type that contains the data necessary to initialize the
+   "vibes-raw" loader. *)
+type loader_data =
+  {
+
+    (* The architecture of the portion of the binary to lift *)
+    arch : arch option;
+
+    (* Position of the code of interest relative to the beginning of the file *)
+    offset : Bitvec.t;
+
+    (* Position of the code of interest within the virtual memory *)
+    base : Bitvec.t;
+
+    (* A list of entry points into the program, typically [main] or
+       the function of interest. Can be left empty by default. *)
+    entry : Bitvec.t list;
+
+    (* The number of bytes to dissassemble. Should ideally extend to
+       the end of the "current" function (otherwise funny stuff might
+       happen). *)
+    length : int64 option;
+
+    (* FIXME: add a named symbol list? *)
+
+  }
+
 (* The configuration for a run of the VIBES pipeline. *)
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
@@ -33,6 +61,7 @@ type t = {
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
+  loader_data : loader_data option
 }
 
 (* Patch accessors. *)
@@ -111,11 +140,21 @@ let create_patch ~patch_name:(patch_name : string)
     ~patch_vars:(patch_vars : Hvar.t list) : patch =
   { patch_name; patch_code; patch_point; patch_size; patch_vars; }
 
+
+let create_loader_data
+    ~arch
+    ~offset
+    ~base
+    ~entry
+    ~length : loader_data =
+  { arch; offset; base; entry; length }
+
 (* Create a configuration record. *)
 let create ~exe:(exe : string) ~patches:(patches : patch list)
     ~func:(func : string) ~property:(property : Sexp.t)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
-    ~minizinc_model_filepath:(minizinc_model_filepath : string) : t =
+    ~minizinc_model_filepath:(minizinc_model_filepath : string)
+  ~loader_data:(loader_data : loader_data option) : t =
   { exe; patches; func; property; patched_exe_filepath;
-    max_tries; minizinc_model_filepath }
+    max_tries; minizinc_model_filepath; loader_data }
