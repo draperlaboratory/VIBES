@@ -75,7 +75,9 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
-    if String.(is_prefix name ~prefix:"R") then
+    if String.(is_prefix name ~prefix:"R") &&
+       not ((is_thumb lang) && String.(equal name "R7"))
+    then
       Some v
     else None
   in
@@ -87,7 +89,7 @@ let preassign_var
     (pre : var option)
     (v : var)
   : var option =
-  if String.(Var.name v = "FP") then
+  if String.(Var.name v = "__Vibes_tmp_FP") then
     begin
       (* We assign R11 as the pre-assigned FP register on ARM, and R7
          for Thumb, keeping in line with the ABI (as far as i can
@@ -99,7 +101,7 @@ let preassign_var
         Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     end
     (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
-  else if String.(Var.name v = "PC") then
+  else if String.(Var.name v = "__Vibes_tmp_PC") then
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
   else
     pre
