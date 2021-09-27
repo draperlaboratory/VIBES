@@ -57,7 +57,14 @@ let run_process (command : string) (args : string list)
 
 let load_exe (filename : string)
   : (project * Program.t, Toplevel_error.t) result =
-  let input = Project.Input.file ~loader:"vibes-raw" ~filename in
+  let loader =
+    let loaders = Project.Input.available_loaders () in
+    if Core_kernel.List.mem ~equal:String.equal loaders "vibes-raw" then
+      "vibes-raw"
+    else
+      "llvm"
+  in
+  let input = Project.Input.file ~loader:loader ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
     begin

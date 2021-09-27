@@ -1,6 +1,7 @@
 (* Implements {!Vibes_plugin_parameters}. *)
 
 open !Core_kernel
+open Bap.Std
 open Monads.Std
 
 module Json = Yojson.Safe
@@ -44,11 +45,11 @@ let validate_bitvec_field (field : string) (data : (string * Json.t) list)
 
 (* Validate a word field in a Json association list. *)
 let validate_word_field (field : string) (data : (string * Json.t) list)
-    (e : error) : (Bap.Std.Word.t, error) Stdlib.result =
+    (e : error) : (Word.t, error) Stdlib.result =
   match value_of_field field data with
   | Some (`String s) ->
     begin
-      try Err.return (Bap.Std.Word.of_string s)
+      try Err.return (Word.of_string s)
       with Invalid_argument _ -> Err.fail e
     end
   | _ -> Err.fail e
@@ -224,10 +225,28 @@ let validate_loader_data (obj : Json.t)
   | `Null -> Err.return None
   | `Assoc l ->
     begin
+      (* FIXME: handle missing fields, like "arch" and "length" *)
       let loader_fields = ["arch"; "offset"; "base"; "entry"; "length"] in
       let get_fields = List.map loader_fields ~f:(fun f -> value_of_field f l) in
       match get_fields with
-      | [Some _; Some _; Some _; Some _; Some _] -> assert false
+      | [Some (`String arch);
+         Some (`String offset);
+         Some (`String base);
+         Some (`List entry);
+         Some (`Int length)] ->
+        let arch = Arch.of_string arch in
+        let offset = Bitvec.of_string offset in
+        let base = Bitvec.of_string base in
+        let entry_one s =
+          match s with
+          | `String s -> Bitvec.of_string s
+          | _ -> failwith "validate_loader_data: unexpeced entry!"
+        in
+        let entry = List.map ~f:entry_one entry in
+        let length = Some (Int64.of_int length) in
+        Err.return @@ Some
+          (Vibes_config.create_loader_data
+          ~arch ~offset ~base ~entry ~length)
       | _ -> Err.fail err
     end
   | _ -> Err.fail err

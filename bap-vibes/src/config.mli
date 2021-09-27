@@ -14,6 +14,22 @@ type loader_data
 (** A type to represent a configuration record. *)
 type t
 
+(** [arch d] is the name of the target architecture, if given. *)
+val arch : loader_data -> arch option
+
+(** [offset d] is the file offset of the binary code. *)
+val offset : loader_data -> Bitvec.t
+
+(** [base d] is the base address of the binary code. *)
+val base : loader_data -> Bitvec.t
+
+(** [entry d] is the list of entry points into the code (or empty if
+   unknown). Only the first value is examined. *)
+val entry : loader_data -> Bitvec.t list
+
+(** [length d] is the length in bytes of the code section from [offset d], if given. *)
+val length : loader_data -> int64 option
+
 (** [patch_name p] returns the name of the patch [p]. *)
 val patch_name : patch -> string
 
@@ -51,6 +67,9 @@ val max_tries : t -> int option
 
 (** [minizinc_model_filepath config] returns the path to the minizinc model. *)
 val minizinc_model_filepath : t -> string
+
+(** [loader_data config] returns the data to initialize the loader, if the default loader ("llvm") is not to be used. This argument is optional *)
+val loader_data : t -> loader_data option
 
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
