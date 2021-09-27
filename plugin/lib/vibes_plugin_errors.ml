@@ -70,7 +70,7 @@ let pp (ppf : Format.formatter) t : unit =
     | Invalid_max_tries ->
       "optional config json field \"max-tries\" must be an integer"
     | Invalid_loader_data ->
-      "optional argument loader_data is malformed"
+      "optional argument \"loader-data\" is malformed"
     | No_such_file desc -> desc
   in
   Format.fprintf ppf "@[%s@]" msg

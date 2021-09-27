@@ -49,69 +49,73 @@ let doc_template = {|
 (named-symbol $entry $func_name)
 |}
 
-let get_arch conf = Some `thumbv7
-let get_offset conf = Bitvec.M32.(int32 0x00023ccl)
-let get_base conf = Bitvec.M32.(int32 0x000123ccl)
-let get_bits conf = 32
-let get_entry conf = []
-let get_length conf = Some 164L
+(* FIXME: add this to the loader data? *)
+let get_bits _ = 32
+
 let get_func conf = Config.exe conf
 
 
 let register_loader conf =
-  Image.register_loader ~name:"vibes-raw" (module struct
-    let generate measure input =
-      let arch = get_arch conf |>
-                 Option.value_map ~default:"" ~f:Arch.to_string
-      in
-      let options = [
-          "arch", arch;
-          "offset", Bitvec.to_string @@ get_offset conf;
-          "base", Bitvec.to_string @@ get_base conf;
-          "bits", Int.to_string @@ begin
-            match get_arch conf with
-            | None -> get_bits conf
-            | Some arch -> Size.in_bits (Arch.addr_size arch)
-          end;
-          "entry", begin match get_entry conf with
-            | [] -> Bitvec.to_string @@ get_base conf;
-            | x :: _ -> Bitvec.to_string x
-          end;
-          "length", Int64.to_string @@ begin match get_length conf with
-          | None -> Int64.(measure input - Bitvec.(to_int64 @@ get_offset conf))
-          | Some n -> n
-          end;
-          "func_name", get_func conf;
-        ] |> String.Map.of_alist_exn in
-      let buf = Buffer.create 128 in
-      let ppf = Format.formatter_of_buffer buf in
-      doc_template |>
-      Buffer.add_substitute buf (fun var ->
-          match Map.find options var with
-          | None -> invalid_argf "bug: missed a var: %S" var ()
-          | Some v -> v);
-      get_entry conf |>
-      List.iter ~f:(Format.fprintf ppf "(code-start %a)@\n" Bitvec.pp);
-      Format.pp_print_flush ppf ();
-      Buffer.contents buf |>
-      Ogre.Doc.from_string |>
-      Or_error.ok_exn
+  match Config.loader_data conf with
+  | None -> false
+  | Some l_data ->
+    begin
+      Image.register_loader ~name:"vibes-raw" (module struct
+        let generate measure input =
+          let arch = Config.arch l_data |>
+                     Option.value_map ~default:"" ~f:Arch.to_string
+          in
+          let options = [
+            "arch", arch;
+            "offset", Bitvec.to_string @@ Config.offset l_data;
+            "base", Bitvec.to_string @@ Config.base l_data;
+            "bits", Int.to_string @@ begin
+              match Config.arch l_data with
+              | None -> get_bits conf
+              | Some arch -> Size.in_bits (Arch.addr_size arch)
+            end;
+            (* FIXME: probably we should handle more than one value? *)
+            "entry", begin match Config.entry l_data with
+              | [] -> Bitvec.to_string @@ Config.base l_data;
+              | x :: _ -> Bitvec.to_string x
+            end;
+            "length", Int64.to_string @@ begin match Config.length l_data with
+              | None -> Int64.(measure input - Bitvec.(to_int64 @@ Config.offset l_data))
+              | Some n -> n
+            end;
+            "func_name", get_func conf;
+          ] |> String.Map.of_alist_exn in
+          let buf = Buffer.create 128 in
+          let ppf = Format.formatter_of_buffer buf in
+          doc_template |>
+          Buffer.add_substitute buf (fun var ->
+              match Map.find options var with
+              | None -> invalid_argf "bug: missed a var: %S" var ()
+              | Some v -> v);
+          Config.entry l_data |>
+          List.iter ~f:(Format.fprintf ppf "(code-start %a)@\n" Bitvec.pp);
+          Format.pp_print_flush ppf ();
+          Buffer.contents buf |>
+          Ogre.Doc.from_string |>
+          Or_error.ok_exn
 
-    let length_of_file filename =
-      let desc = Unix.openfile filename Unix.[O_RDONLY] 0o400 in
-      let {Unix.LargeFile.st_size} = Unix.LargeFile.fstat desc in
-      Unix.close desc;
-      st_size
+        let length_of_file filename =
+          let desc = Unix.openfile filename Unix.[O_RDONLY] 0o400 in
+          let {Unix.LargeFile.st_size} = Unix.LargeFile.fstat desc in
+          Unix.close desc;
+          st_size
 
-    let length_of_data str =
-      Int64.of_int (Bigstring.length str)
+        let length_of_data str =
+          Int64.of_int (Bigstring.length str)
 
-    let from_file name =
-      Or_error.try_with @@ fun () ->
-      Some (generate length_of_file name)
+        let from_file name =
+          Or_error.try_with @@ fun () ->
+          Some (generate length_of_file name)
 
-    let from_data data =
-      Or_error.try_with @@ fun () ->
-      Some (generate length_of_data data)
-  end)
+        let from_data data =
+          Or_error.try_with @@ fun () ->
+          Some (generate length_of_data data)
+      end)
+    end;
+    true
 

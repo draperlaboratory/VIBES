@@ -64,6 +64,15 @@ type t = {
   loader_data : loader_data option
 }
 
+
+(* Loader data accessors. *)
+let arch (d : loader_data) : arch option = d.arch
+let offset (d : loader_data) : Bitvec.t = d.offset
+let base (d : loader_data) : Bitvec.t = d.base
+let entry (d : loader_data) : Bitvec.t list = d.entry
+let length (d : loader_data) : int64 option = d.length
+
+
 (* Patch accessors. *)
 let patch_name (p : patch) : string = p.patch_name
 let patch_code (p : patch) : Cabs.definition = p.patch_code
@@ -79,6 +88,7 @@ let property t : Sexp.t = t.property
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
+let loader_data t : loader_data option = t.loader_data
 
 (* For displaying a higher var. *)
 let string_of_hvar (v : Hvar.t) : string =
