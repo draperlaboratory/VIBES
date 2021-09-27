@@ -1,6 +1,6 @@
 (***********************************************************************
 *
-*   An almost verbatim copy of the "raw" (loader for BAP: this allows us
+*   An almost verbatim copy of the "raw" loader for BAP: this allows us
 *   fine-grained control of the loading process, effectively allowing
 *   us to disassemble only small chunks of a large binary.
 *
