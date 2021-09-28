@@ -29,6 +29,7 @@ let doc_template = {|
 (declare bits (size int))
 (declare base-address (addr int))
 (declare entry-point (addr int))
+(declare is-little-endian (flag bool))
 (declare mapped (addr int) (size int) (off int))
 (declare code-region (addr int) (size int) (off int))
 (declare named-region (addr int) (size int) (name str))
@@ -41,6 +42,7 @@ let doc_template = {|
 (bits $bits)
 (base-address $base)
 (entry-point $entry)
+(is-little-endian $endian)
 (mapped $base $length $offset)
 (code-region $base $length $offset)
 (named-region $base $length code)
@@ -78,6 +80,10 @@ let register_loader conf =
             "entry", begin match Config.entry l_data with
               | [] -> Bitvec.to_string @@ Config.base l_data;
               | x :: _ -> Bitvec.to_string x
+            end;
+            "endian", Bool.to_string begin match Config.arch l_data with
+            | None -> true
+            | Some arch -> Poly.equal (Arch.endian arch) LittleEndian
             end;
             "length", Int64.to_string @@ begin match Config.length l_data with
               | None -> Int64.(measure input - Bitvec.(to_int64 @@ Config.offset l_data))
