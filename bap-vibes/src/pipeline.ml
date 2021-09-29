@@ -129,7 +129,7 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   | Ok Verifier.Again ->
     begin
       let new_count = count + 1 in
-      let+ new_seed = Seeder.extract_seed value new_state in
+      let new_seed = Seeder.extract_seed value new_state in
       cegis config orig_proj orig_prog state
         ~count:new_count ~max_tries ~seed:new_seed
     end
@@ -152,7 +152,7 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   let state = Toplevel.current () in
   let computation = init config orig_proj in
   let+ obj, new_state = run_KB_computation computation state in
-  let+ seed = Seeder.extract_seed obj new_state in
+  let seed = Seeder.extract_seed obj new_state in
 
   let max_tries = Config.max_tries config in
   cegis config orig_proj orig_prog new_state ~max_tries ~seed

@@ -5,6 +5,8 @@ open Bap.Std
 
 module Hvar = Higher_var
 
+type patch_code = CCode of Cabs.definition | ASMCode of string
+
 (* A type to represent a patch. *)
 type patch =
   {
@@ -12,7 +14,7 @@ type patch =
     patch_name : string;
 
     (* The C AST produced by FrontC. *)
-    patch_code : Cabs.definition;
+    patch_code : patch_code;
 
     (* The address in the original exe to start patching from. *)
     patch_point : Bitvec.t;
@@ -75,7 +77,7 @@ let length (d : loader_data) : int64 option = d.length
 
 (* Patch accessors. *)
 let patch_name (p : patch) : string = p.patch_name
-let patch_code (p : patch) : Cabs.definition = p.patch_code
+let patch_code (p : patch) : patch_code = p.patch_code
 let patch_point (p : patch) : Bitvec.t = p.patch_point
 let patch_size (p : patch) : int = p.patch_size
 let patch_vars (p : patch) : Hvar.t list = p.patch_vars
@@ -110,7 +112,9 @@ let string_of_hvar (v : Hvar.t) : string =
 
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
-  let code = Utils.print_c Cprint.print_def p.patch_code in
+  let code = match p.patch_code with
+  | CCode ccode -> Utils.print_c Cprint.print_def ccode
+  | ASMCode asmcode -> asmcode in
   let h_vars =
     String.concat ~sep:"\n" (List.map p.patch_vars ~f:string_of_hvar)
   in
@@ -144,7 +148,7 @@ let pp (ppf : Format.formatter) t : unit =
 
 (* Create a patch record. *)
 let create_patch ~patch_name:(patch_name : string)
-    ~patch_code:(patch_code : Cabs.definition)
+    ~patch_code:(patch_code : patch_code)
     ~patch_point:(patch_point : Bitvec.t)
     ~patch_size:(patch_size : int)
     ~patch_vars:(patch_vars : Hvar.t list) : patch =

@@ -74,12 +74,16 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
 (* Extract the patch code, check it's a non-empty string, and parse
    into a [Cabs.definition] *)
 let validate_patch_code (nm : string) (obj : Json.t)
-  : (Cabs.definition, error) Stdlib.result =
-  match Json.Util.member "patch-code" obj with
-  | `String s ->
-    let code = Parse_c.parse_c_patch s in
-    Result.map_error code ~f:(fun msg -> Errors.Invalid_patch_code msg)
-  | _ -> Err.fail Errors.Missing_patch_code
+  : (Vibes_config.patch_code, error) Stdlib.result =
+  match Json.Util.member "patch-code" obj, Json.Util.member "asm-code" obj with
+  | `String s, `Null ->
+          (match Parse_c.parse_c_patch s with
+          | Ok code -> Ok (Vibes_config.CCode code)
+          | Error msg -> Error (Errors.Invalid_patch_code msg))
+  | `Null, `String s -> Ok (Vibes_config.ASMCode s)
+  | `String s, `String s' -> Error
+      (Errors.Invalid_patch_code "Specified both assembly and C code in patch")
+  | _, _ -> Err.fail Errors.Missing_patch_code
 
 (* Extract the patch point field and parse the hex string into a bitvector, or
    error. *)

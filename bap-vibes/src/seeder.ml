@@ -8,8 +8,6 @@ module KB = Knowledge
 open KB.Syntax
 open KB.Let
 
-let (let+) x f = Result.bind x ~f
-
 (* Seed information about a particular patch. *)
 type patch = {
   raw_ir : Ir.t;
@@ -23,38 +21,16 @@ type t = {
   patches : patch list;
 }
 
-(* Extract seed info from a {Data.Patch.t} instance. *)
+(* Extract seed info from a {Data.Patch.t} instance.
+   This is expected to return [None] if a user defined assembly patch *)
 let extract_patch (p : Data.Patch.t) (s : KB.state)
-    : (patch, Toplevel_error.t) result =
-  match KB.run Data.Patch.patch (KB.return p) s with
-  | Error e ->
-    begin
-      let msg = Format.asprintf
-        "(KB.return patch) failed in KB: %a" KB.Conflict.pp e in
-      let err = Kb_error.Other msg in
-      Error (Toplevel_error.KB_error err)
-    end
-  | Ok (value, _) ->
-    begin
-      match KB.Value.get Data.Patch.patch_name value with
-      | None ->
-        begin
-          let msg = "No patch_name in KB to use for seed info" in
-          Error (Toplevel_error.No_value_in_KB msg)
-        end
-      | Some patch_name ->
-        begin
-          let minizinc_solutions =
-            KB.Value.get Data.Patch.minizinc_solutions value in
-          match KB.Value.get Data.Patch.raw_ir value with
-          | None ->
-            begin
-              let msg = "No raw_ir in KB to use for seed info" in
-              Error (Toplevel_error.No_value_in_KB msg)
-            end
-          | Some raw_ir -> Ok { raw_ir; patch_name; minizinc_solutions }
-        end
-    end
+    : patch option =
+    let (let*) x f = Option.bind x ~f in
+    let* (value, _) = KB.run Data.Patch.patch (KB.return p) s |> Result.ok in
+    let* raw_ir = KB.Value.get Data.Patch.raw_ir value in
+    let* patch_name = KB.Value.get Data.Patch.patch_name value in
+    let minizinc_solutions = KB.Value.get Data.Patch.minizinc_solutions value in
+    Some { raw_ir; patch_name; minizinc_solutions }
 
 (* Given a bundle of [seed] info, find the seed info for the patch with
    the specified [name]. *)
@@ -67,12 +43,12 @@ let get_patch_by_name (seed : t option) (name : string) : patch option =
 (* Takes a [Data.computed] result and extract the info we want to use
    to seed the KB for a new pipeline run. *)
 let extract_seed (value : Data.computed) (s : KB.state)
-    : (t, Toplevel_error.t) result =
+    : t =
   let patch_objects = KB.Value.get Data.Patched_exe.patches value in
   let the_list = Data.Patch_set.to_list patch_objects in
   let patch_seeds = List.map the_list ~f:(fun p -> extract_patch p s) in
-  let+ patches = Result.all patch_seeds in
-  Ok { patches }
+  let patches = List.filter_opt patch_seeds in
+  { patches }
 
 (* Create a patch set. *)
 let create_patches
@@ -91,7 +67,9 @@ let create_patches
         ~addr:(Config.patch_point p)
     in
     let* () = Data.Patch.set_patch_name obj (Some patch_name) in
-    let* () = Data.Patch.set_patch_code obj (Some (Config.patch_code p)) in
+    let* () = match Config.patch_code p with
+              | CCode ccode -> Data.Patch.set_patch_code obj (Some ccode)
+              | ASMCode asmcode -> Data.Patch.set_assembly obj (Some [asmcode]) in
     let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
     let* () = Data.Patch.set_lang obj lang in
