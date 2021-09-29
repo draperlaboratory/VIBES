@@ -30,11 +30,14 @@ val entry : loader_data -> Bitvec.t list
 (** [length d] is the length in bytes of the code section from [offset d], if given. *)
 val length : loader_data -> int64 option
 
+(** A type to represent patch cody which may either be C or literal assembly *)
+type patch_code = CCode of Cabs.definition | ASMCode of string
+
 (** [patch_name p] returns the name of the patch [p]. *)
 val patch_name : patch -> string
 
 (** [patch_code p] returns the patch code for the patch [p]. *)
-val patch_code : patch -> Cabs.definition
+val patch_code : patch -> patch_code
 
 (** [patch_point p] returns the start address for the patch [p]. *)
 val patch_point : patch -> Bitvec.t
@@ -83,7 +86,7 @@ val pp : Format.formatter -> t -> unit
     - [~patch_vars] are higher variables declared for the patch *)
 val create_patch :
   patch_name:string
-  -> patch_code:Cabs.definition
+  -> patch_code:patch_code
   -> patch_point:Bitvec.t
   -> patch_size:int
   -> patch_vars:Hvar.t list

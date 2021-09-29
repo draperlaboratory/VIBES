@@ -37,7 +37,10 @@ let ingest_one (tgt : Theory.target) (patch_num : int KB.t) (patch : Data.Patch.
     : int KB.t =
   patch_num >>= fun patch_num ->
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
-  provide_bir tgt patch >>= fun () ->
+  (Data.Patch.get_assembly patch >>= fun asm ->
+  match asm with
+  | Some _asm -> KB.return () (* Assembly is user provided *)
+  | None -> provide_bir tgt patch) >>= fun () ->
   KB.return @@ patch_num+1
 
 (* Processes the whole patch associated with [obj], populating all the

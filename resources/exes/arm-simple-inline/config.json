@@ -1,0 +1,12 @@
+{
+  "max-tries": 1,
+  "func": "main",
+  "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "asm-code" : ".word 0xe3a00003  @mov r0, #3",
+     "patch-point" : "0x10400",
+     "patch-size" : 4
+    }
+  ]
+}

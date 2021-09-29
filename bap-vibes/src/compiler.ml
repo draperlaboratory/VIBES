@@ -42,6 +42,11 @@ let create_vibes_ir
 (* Compile one patch from BIR to VIBES IR *)
 let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
+  Data.Patch.get_assembly patch >>= (fun asm ->
+  match asm with
+    | Some _asm -> KB.return () (* Assembly already set. Presumably by the user. *)
+    | None ->
+  begin
   let info_str =
     Format.asprintf "Translating patch %s BIR to VIBES IR..."
       (string_of_int n)
@@ -61,6 +66,8 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   Events.(send @@ Rule);
   Events.(send @@ Info (Ir.pretty_ir ir));
   Events.(send @@ Rule);
+  KB.return ()
+  end) >>= fun () ->
   KB.return (n + 1)
 
 (* Compile one patch from VIBES IR to assembly *)
@@ -72,25 +79,31 @@ let compile_one_assembly
      (Ir.t * Minizinc.sol) KB.t)
     (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
-  let info_str =
-    Format.asprintf "Translating patch %s VIBES IR to assembly..."
-      (string_of_int n)
-  in
-  Events.(send @@ Info info_str);
-  Data.Patch.get_raw_ir_exn patch >>= fun ir ->
-  Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
-  Data.Patch.get_target patch >>= fun target ->
-  Data.Patch.get_lang patch >>= fun lang ->
-  let prev_sols = Set.to_list prev_sols in
-  create_assembly
-    (solver target lang prev_sols)
-    ir >>= fun (assembly, new_sol) ->
-  Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
-  Events.(send @@ Info "The patch has the following assembly:\n");
-  Events.(send @@ Rule);
-  Events.(send @@ Info (String.concat ~sep:"\n" assembly));
-  Events.(send @@ Rule);
-  Data.Patch.add_minizinc_solution patch new_sol >>= fun () ->
+    Data.Patch.get_assembly patch >>= (fun asm ->
+    match asm with
+    | Some _asm -> KB.return () (* Assembly already set. Presumably by the user. *)
+    | None ->
+      begin
+        let info_str =
+          Format.asprintf "Translating patch %s VIBES IR to assembly..."
+            (string_of_int n)
+        in
+        Events.(send @@ Info info_str);
+        Data.Patch.get_raw_ir_exn patch >>= fun ir ->
+        Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
+        Data.Patch.get_target patch >>= fun target ->
+        Data.Patch.get_lang patch >>= fun lang ->
+        let prev_sols = Set.to_list prev_sols in
+        create_assembly
+          (solver target lang prev_sols)
+          ir >>= fun (assembly, new_sol) ->
+        Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
+        Events.(send @@ Info "The patch has the following assembly:\n");
+        Events.(send @@ Rule);
+        Events.(send @@ Info (String.concat ~sep:"\n" assembly));
+        Events.(send @@ Rule);
+        Data.Patch.add_minizinc_solution patch new_sol 
+      end) >>= fun () ->
   KB.return (n + 1)
 
 (* Converts the patch (as BIR) to VIBES IR instructions. *)
