@@ -1,4 +1,8 @@
-# ARM Simple
+# ARM Vibes Loader
+
+Tests the "vibes-raw" loader functionality, in which the bytes to
+disassemble are specified in the `config.json` file.
+
 
 To clean, build, and patch:
 
