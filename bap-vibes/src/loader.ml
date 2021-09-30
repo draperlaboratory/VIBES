@@ -1,5 +1,8 @@
 (***********************************************************************
 *
+*   This module provides a custom "lightweight" loader for binaries,
+*   configured by user-input.
+*
 *   An almost verbatim copy of the "raw" loader for BAP: this allows us
 *   fine-grained control of the loading process, effectively allowing
 *   us to disassemble only small chunks of a large binary.
@@ -8,10 +11,10 @@
 **********************************************************************)
 
 
-let doc = {|
+let _doc = {|
 # DESCRIPTION
 
-Provides a VIBES specific loader for raw binaries. Raw binaries to not contain any
+Provides a VIBES specific loader for raw binaries. Raw binaries do not contain any
 meta information or other headers, so this input should be provided
 form the outside.
 
@@ -107,7 +110,7 @@ let register_loader conf =
 
         let length_of_file filename =
           let desc = Unix.openfile filename Unix.[O_RDONLY] 0o400 in
-          let {Unix.LargeFile.st_size} = Unix.LargeFile.fstat desc in
+          let {Unix.LargeFile.st_size; _} = Unix.LargeFile.fstat desc in
           Unix.close desc;
           st_size
 

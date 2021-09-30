@@ -69,7 +69,14 @@ let load_exe (filename : string)
   | Ok proj ->
     begin
       let prog = Project.program proj in
-      Ok (proj, prog)
+      let subs = Term.enum sub_t prog in
+      if Seq.is_empty subs then
+        failwith
+        @@ Format.sprintf
+          "load_exe: An empty program was generated, using loader %s."
+          loader
+      else
+        Ok (proj, prog)
     end
   | Error e ->
     begin

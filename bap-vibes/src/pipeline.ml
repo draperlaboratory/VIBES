@@ -140,10 +140,10 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   Events.(send @@ Header "Starting pipeline");
   Events.(send @@ Info (Format.asprintf "%a" Config.pp config));
 
-  Events.(send @@ Info "Registering loader vibes-raw...");
+  Events.(send @@ Info "Checking whether to use loader vibes-raw...");
   let res = Loader.register_loader config in
-  if res then Events.(send @@ Info "Success!")
-  else Events.(send @@ Info "Failed! Using default loader (llvm).");
+  if res then Events.(send @@ Info "Yes! Using loader vibes-raw.")
+  else Events.(send @@ Info "No! Using default loader (llvm).");
 
   let filepath = Config.exe config in
   Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
