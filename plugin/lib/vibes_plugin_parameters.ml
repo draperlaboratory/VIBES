@@ -230,14 +230,15 @@ let validate_loader_data (obj : Json.t)
   | `Assoc l ->
     begin
       (* FIXME: handle missing fields, like "arch" and "length" *)
-      let loader_fields = ["arch"; "offset"; "base"; "entry"; "length"] in
+      let loader_fields = ["arch"; "offset"; "base"; "entry"; "length"; "symbols"] in
       let get_fields = List.map loader_fields ~f:(fun f -> value_of_field f l) in
       match get_fields with
       | [Some (`String arch);
          Some (`String offset);
          Some (`String base);
          Some (`List entry);
-         Some (`Int length)] ->
+         Some (`Int length);
+         Some (`List symbols)] ->
         let arch = Arch.of_string arch in
         let offset = Bitvec.of_string offset in
         let base = Bitvec.of_string base in
@@ -248,9 +249,15 @@ let validate_loader_data (obj : Json.t)
         in
         let entry = List.map ~f:entry_one entry in
         let length = Some (Int64.of_int length) in
+        let symbols_one s =
+          match s with
+          | `List [`String loc; `String name] -> (Bitvec.of_string loc, name)
+          | _ -> failwith "validate_loader-data: unexpected symbol!"
+        in
+        let symbols = List.map ~f:symbols_one symbols in
         Err.return @@ Some
           (Vibes_config.create_loader_data
-          ~arch ~offset ~base ~entry ~length)
+          ~arch ~offset ~base ~entry ~length ~symbols)
       | _ -> Err.fail err
     end
   | _ -> Err.fail err
