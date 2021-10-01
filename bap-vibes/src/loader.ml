@@ -40,6 +40,7 @@ let doc_template = {|
 (declare section (addr int) (size int))
 (declare code-start (addr int))
 (declare named-symbol (addr int) (name str))
+(declare symbol-chunk (addr int) (size int) (root int))
 
 (arch $arch)
 (bits $bits)
@@ -49,15 +50,16 @@ let doc_template = {|
 (mapped $base $length $offset)
 (code-region $base $length $offset)
 (named-region $base $length code)
+(code-start $entry)
 (section $base $length)
 (segment $base $length true false true)
-(named-symbol $entry $func_name)
 |}
 
 (* FIXME: add this to the loader data? *)
+(* This is the default value if the arch is unspecified *)
 let get_bits _ = 32
 
-let get_func conf = Config.exe conf
+let get_func (conf : Config.t) : string = Config.exe conf
 
 
 let register_loader conf =
@@ -69,6 +71,11 @@ let register_loader conf =
         let generate measure input =
           let arch = Config.arch l_data |>
                      Option.value_map ~default:"" ~f:Arch.to_string
+          in
+          let len =
+            match Config.length l_data with
+            | None -> Int64.(measure input - Bitvec.(to_int64 @@ Config.offset l_data))
+            | Some n -> n
           in
           let options = [
             "arch", arch;
@@ -88,10 +95,7 @@ let register_loader conf =
             | None -> true
             | Some arch -> Poly.equal (Arch.endian arch) LittleEndian
             end;
-            "length", Int64.to_string @@ begin match Config.length l_data with
-              | None -> Int64.(measure input - Bitvec.(to_int64 @@ Config.offset l_data))
-              | Some n -> n
-            end;
+            "length", Int64.to_string len;
             "func_name", get_func conf;
           ] |> String.Map.of_alist_exn in
           let buf = Buffer.create 128 in
@@ -103,6 +107,16 @@ let register_loader conf =
               | Some v -> v);
           Config.entry l_data |>
           List.iter ~f:(Format.fprintf ppf "(code-start %a)@\n" Bitvec.pp);
+          Config.symbols l_data |>
+          List.iter ~f:(fun (addr, name) ->
+              Format.fprintf ppf "(named-symbol %a %s)@\n"
+                Int64.pp (Bitvec.to_int64 addr) name);
+          Config.symbols l_data |>
+          List.iter ~f:(fun (addr, _) ->
+              Format.fprintf ppf "(symbol-chunk %a %a %a)@\n"
+                Int64.pp (Bitvec.to_int64 addr)
+                Int64.pp len
+                Int64.pp (Bitvec.to_int64 addr));
           Format.pp_print_flush ppf ();
           Buffer.contents buf |>
           Ogre.Doc.from_string |>

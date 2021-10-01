@@ -27,6 +27,9 @@ val base : loader_data -> Bitvec.t
    unknown). Only the first value is examined. *)
 val entry : loader_data -> Bitvec.t list
 
+(** [symbols d] is a list of [(location, symbol_name)] pairs. *)
+val symbols : loader_data -> (Bitvec.t * string) list
+
 (** [length d] is the length in bytes of the code section from [offset d], if given. *)
 val length : loader_data -> int64 option
 
@@ -89,19 +92,21 @@ val create_patch :
   -> patch_vars:Hvar.t list
   -> patch
 
-(** [create_loader_data ~arch ~offset ~base ~entry ~length]
+(** [create_loader_data ~arch ~offset ~base ~entry ~length ~symbols]
     will create a loader data record, where:
     - [~arch] is the name of the binary architecture
     - [~offset] is the base offset of the binary
     - [~base] is the base address of the code portion
     - [~entry] is the addres of the "entry point" (which may just be the function of interest)
-    - [~length] is the number of bytes to dissassemble *)
+    - [~length] is the number of bytes to dissassemble
+    - [~symbols] is a list of [(location, name)] pairs for the symbolizer *)
 val create_loader_data :
   arch:arch option
   -> offset:Bitvec.t
   -> base:Bitvec.t
   -> entry:Bitvec.t list
   -> length:int64 option
+  -> symbols: (Bitvec.t * string) list
   -> loader_data
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath

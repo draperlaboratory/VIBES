@@ -48,7 +48,8 @@ type loader_data =
        happen). *)
     length : int64 option;
 
-    (* FIXME: add a named symbol list? *)
+    (* A list of (location, name) pairs, to be passed to the symbolizer *)
+    symbols : (Bitvec.t * string) list
 
   }
 
@@ -71,6 +72,7 @@ let offset (d : loader_data) : Bitvec.t = d.offset
 let base (d : loader_data) : Bitvec.t = d.base
 let entry (d : loader_data) : Bitvec.t list = d.entry
 let length (d : loader_data) : int64 option = d.length
+let symbols (d : loader_data) : (Bitvec.t * string) list = d.symbols
 
 
 (* Patch accessors. *)
@@ -156,8 +158,9 @@ let create_loader_data
     ~offset
     ~base
     ~entry
-    ~length : loader_data =
-  { arch; offset; base; entry; length }
+    ~length
+    ~symbols : loader_data =
+  { arch; offset; base; entry; length; symbols }
 
 (* Create a configuration record. *)
 let create ~exe:(exe : string) ~patches:(patches : patch list)

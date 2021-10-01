@@ -25,6 +25,6 @@
         "base" : "0x00010400",
         "entry" : [],
         "length" : 8,
-        "symbols" : []
+        "symbols" : [["0x0010400", "main"]]
     }
 }
