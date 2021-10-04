@@ -44,7 +44,9 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
   Data.Patch.get_assembly patch >>= (fun asm ->
   match asm with
-    | Some _asm -> KB.return () (* Assembly already set. Presumably by the user. *)
+    | Some _asm ->
+         Events.(send @@ Info "The patch has no IR to translate.\n");
+         KB.return () (* Assembly already set. Presumably by the user. *)
     | None ->
   begin
   let info_str =
@@ -81,7 +83,10 @@ let compile_one_assembly
   count >>= fun n ->
     Data.Patch.get_assembly patch >>= (fun asm ->
     match asm with
-    | Some _asm -> KB.return () (* Assembly already set. Presumably by the user. *)
+    | Some _asm ->
+        Events.(send @@ Info "The patch already has assembly\n");
+        Events.(send @@ Rule);
+        KB.return () (* Assembly already set. Presumably by the user. *)
     | None ->
       begin
         let info_str =
