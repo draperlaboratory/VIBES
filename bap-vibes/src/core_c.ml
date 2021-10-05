@@ -261,20 +261,27 @@ module Eval(T : Theory.Core) = struct
         let* rval = expr_to_pure info rval var_map in
         let* assign = set lval !!rval in
         data assign
-      (* This is our syntax for [goto some_address] *)
-      | COMPUTATION (CALL (CONSTANT(CONST_INT s), [])) ->
-        let dst = int info.word_sort Bitvec.(!$ s) in
-        let* jmp = jmp dst in
-        ctrl jmp
       (* FIXME: handle general calls with arguments *)
       (* FIXME: should we allow calls to concrete addresses?
          In that case, we need a new concrete syntax for jumps.
       *)
+      | COMPUTATION (CALL (CONSTANT(CONST_INT s), [])) ->
+        let dst = Bitvec.(!$ s) in
+        let* tid = Label.for_addr ~package:"core-c" dst in
+        let* () = declare_call tid in
+        let dst = int info.word_sort dst in
+        let* jmp = jmp dst in
+        ctrl jmp
       | COMPUTATION (CALL (VARIABLE f, [])) ->
         let* dst = Label.for_name ~package:"core-c" f in
         let* () = declare_call dst in
         let* call = KB.(return dst >>= goto) in
         ctrl call
+      | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
+        let label = String.(chop_prefix_exn ~prefix:"L_" label) in
+        let dst = int info.word_sort Bitvec.(!$ label) in
+        let* jmp = jmp dst in
+        ctrl jmp
       | GOTO label ->
         let label = Label.for_name label in
         let* goto = KB.(label >>= goto) in
