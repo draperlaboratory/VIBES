@@ -17,10 +17,11 @@ module Eval(T : Theory.Core) : sig
       outputs a [unit eff] representing the semantics of the code.
 
       Some restrictions on the input:
-      - `int x, y, z;` at the top of your patch to declare variables `x y z` (as machine words)
+      - [int x, y, z;] at the top of your patch to declare variables [x y z] (as machine words)
       - No local scopes
       - No structured loops (for the moment)
-      - `(0xdead)();` gets translated into a goto statement
+      - [(0xdead)();] gets translated into a call statement to that address
+      - [goto L_0xdead;] gets translated into a goto statement to the address after the [L_]
       - Supports operators +, -, *,, /, = <<, ++, !=, <, >, <=, >=
 
       Here is an example of supported C:
@@ -32,7 +33,7 @@ module Eval(T : Theory.Core) : sig
       if(x > 0){
         y = z;
       } else {
-        (0xdead)();
+        goto L_0xdead;
       }
       ]}
 

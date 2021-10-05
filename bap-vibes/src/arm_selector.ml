@@ -392,7 +392,13 @@ struct
       begin
         match Jmp.resolve dst with
         | First dst -> Core_c.is_call dst
-        | Second _ -> KB.return false
+        | Second w ->
+          let w = KB.Value.get Exp.slot w in
+          match w with
+          | Int w ->
+            let tid = Theory.Label.for_addr ~package:"core-c" (Word.to_bitvec w) in
+            KB.(tid >>= Core_c.is_call)
+          | _ -> KB.return false
       end
     | None -> KB.return false
 
