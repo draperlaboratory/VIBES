@@ -1,0 +1,12 @@
+{
+  "max-tries": 3,
+  "func": "main",
+  "property" : "(assert true)",
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "(0x3c8)();",
+     "patch-point" : "0x10408",
+     "patch-size" : 4
+    }
+  ]
+}
