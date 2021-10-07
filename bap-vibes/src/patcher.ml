@@ -325,15 +325,14 @@ let ogre_compute_region ~loc:(patch_point : int64) (spec : Ogre.doc) : patch_reg
 *)
 let reify_patch
     ~compute_region:(compute_region)
+    ~exe_unit:(exe_unit)
     (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
   let* patch_point = Data.Patch.get_patch_point_exn patch in
   let* addr = Theory.Label.for_addr patch_point in
   let* unit = KB.collect Theory.Label.unit addr in
   let* unit = match unit with
-    | None -> Kb_error.fail (Kb_error.Other
-      (Format.asprintf "Patcher.reify_patch: Missing unit in reify_patch for patch_point %a"
-        Bitvec.pp patch_point))
+    | None -> KB.return exe_unit
     | Some x -> KB.return x
   in
   let* spec = KB.collect Image.Spec.slot unit in
@@ -364,9 +363,11 @@ let patch
   Events.(send @@ Info "Retrieving data from KB...");
 
   let* original_exe_filename = Data.Original_exe.get_filepath_exn obj in
+  let* original_exe_unit = Theory.Unit.for_file original_exe_filename in
   let* patches = Data.Patched_exe.get_patches obj in
   let patch_list = Data.Patch_set.to_list patches in
-  let reify_patch = reify_patch ~compute_region:compute_region in
+  let reify_patch = reify_patch
+    ~compute_region:compute_region ~exe_unit:original_exe_unit in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let patch_sites = naive_find_patch_sites original_exe_filename in
   let* lang =
