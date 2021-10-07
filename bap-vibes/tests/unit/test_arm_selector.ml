@@ -145,6 +145,18 @@ module Prog15 = struct
 end
 
 
+module Prog16 = struct
+
+
+  let prog =
+      let bil =
+        Bil.([v1 := var v2])
+      in
+      Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+
 module Arm = Arm_selector
 
 
@@ -201,23 +213,23 @@ let blk_pat = "blk\\([0-9]\\|[a-f]\\)*"
 (* FIXME: we currently don't check to see if the variable names are
    consistent! *)
 let test_ir1 ctxt =
-  test_ir ctxt Prog1.prog [blk_pat ^ ":"; "add R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog1.prog [blk_pat ^ ":"; "add R0, R0, R0"]
 
 let test_ir2 ctxt =
   test_ir ctxt Prog2.prog
-    [blk_pat ^ ":"; "add R0, R0, R0"; "add R0, R0, R0"; "mov R0, R0"]
+    [blk_pat ^ ":"; "add R0, R0, R0"; "add R0, R0, R0"]
 
 let test_ir3 ctxt =
-  test_ir ctxt Prog3.prog [blk_pat ^ ":"; "lsl R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog3.prog [blk_pat ^ ":"; "lsl R0, R0, R0"]
 
 let test_ir4 ctxt =
-  test_ir ctxt Prog4.prog [blk_pat ^ ":"; "lsr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog4.prog [blk_pat ^ ":"; "lsr R0, R0, R0"]
 
 let test_ir5 ctxt =
-  test_ir ctxt Prog5.prog [blk_pat ^ ":"; "and R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog5.prog [blk_pat ^ ":"; "and R0, R0, R0"]
 
 let test_ir6 ctxt =
-  test_ir ctxt Prog6.prog [blk_pat ^ ":"; "orr R0, R0, R0"; "mov R0, R0"]
+  test_ir ctxt Prog6.prog [blk_pat ^ ":"; "orr R0, R0, R0"]
 
 let test_ir9 ctxt =
   test_ir ctxt Prog9.prog [blk_pat ^ ":"; "b tgt"]
@@ -226,7 +238,7 @@ let test_ir10 ctxt =
   test_ir ctxt Prog10.prog [blk_pat ^ ":"; "str R0, \\[R0\\]"]
 
 let test_ir11 ctxt =
-  test_ir ctxt Prog11.prog [blk_pat ^ ":"; "ldr R0, \\[R0\\]"; "mov R0, R0"]
+  test_ir ctxt Prog11.prog [blk_pat ^ ":"; "ldr R0, \\[R0\\]"]
 
 let test_ir12 ctxt =
   test_ir ctxt Prog12.prog
@@ -248,14 +260,16 @@ let test_ir12 ctxt =
     ]
 
 let test_ir13 ctxt =
-  test_ir ctxt Prog13.prog [blk_pat ^ ":"; "ldrh R0, \\[R0\\]"; "mov R0, R0"]
-
+  test_ir ctxt Prog13.prog [blk_pat ^ ":"; "ldrh R0, \\[R0\\]"]
 
 let test_ir14 ctxt =
   test_ir ctxt Prog14.prog [blk_pat ^ ":"; "bl some_function"]
 
 let test_ir15 ctxt =
-  test_ir ctxt Prog15.prog [blk_pat ^ ":"; "addw R0, R0, #42"; "mov R0, R0"]
+  test_ir ctxt Prog15.prog [blk_pat ^ ":"; "addw R0, R0, #42"]
+
+let test_ir16 ctxt =
+  test_ir ctxt Prog16.prog [blk_pat ^ ":"; "mov R0, R0"]
 
 let suite =
   [
@@ -272,4 +286,5 @@ let suite =
     "Test Arm.ir 13" >:: test_ir13;
     "Test Arm.ir 14" >:: test_ir14;
     "Test Arm.ir 15" >:: test_ir15;
+    "Test Arm.ir 16" >:: test_ir16;
   ]
