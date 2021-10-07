@@ -132,6 +132,18 @@ module Prog14 = struct
 
 end
 
+module Prog15 = struct
+
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+      let bil =
+        Bil.([v1 := var v2 + !!42])
+      in
+      Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
 
 module Arm = Arm_selector
 
@@ -242,6 +254,9 @@ let test_ir13 ctxt =
 let test_ir14 ctxt =
   test_ir ctxt Prog14.prog [blk_pat ^ ":"; "bl some_function"]
 
+let test_ir15 ctxt =
+  test_ir ctxt Prog15.prog [blk_pat ^ ":"; "addw R0, R0, #42"; "mov R0, R0"]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -256,4 +271,5 @@ let suite =
     "Test Arm.ir 12" >:: test_ir12;
     "Test Arm.ir 13" >:: test_ir13;
     "Test Arm.ir 14" >:: test_ir14;
+    "Test Arm.ir 15" >:: test_ir15;
   ]

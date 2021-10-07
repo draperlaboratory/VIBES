@@ -144,6 +144,7 @@ module ARM_ops = struct
     let mov = op "mov"
     let _movw = op "movw"
     let add = op "add"
+    let addw = op "addw"
     let mul = op "mul"
     let sub = op "sub"
     let lsl_ = op "lsl"
@@ -230,7 +231,20 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
-  let (+) arg1 arg2 = binop Ops.add word_ty arg1 arg2
+  let (+) arg1 arg2 =
+    (* If constant arg2 is wider than 3 bits -> emit addw *)
+    let { op_val; _ } = arg2 in
+    let fits_in_3 w =
+      let open Word in
+      let width = bitwidth w in
+      of_int ~width 0 <= w &&
+      w <= of_int ~width 7
+    in
+    match op_val with
+    | Const w when not (fits_in_3 w) ->
+      binop Ops.addw word_ty arg1 arg2
+    | _ ->
+      binop Ops.add word_ty arg1 arg2
 
   let ( * ) arg1 arg2 = binop Ops.mul word_ty arg1 arg2
 
