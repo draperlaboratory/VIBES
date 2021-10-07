@@ -241,6 +241,10 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 % OBJECTIVE
 %-------------------------------
 
+% Minimize number of registers
+solve minimize card( {r | p in operand_t, r in reg_t where reg[temp[p]] = r } );
+
+
 %TODO. For the moment, mere satisfaction would make me happy
 % minimize max( [end[t] | t in temp_t ] ) % total estimated time (spilling is slow)
 % minimize resource usage

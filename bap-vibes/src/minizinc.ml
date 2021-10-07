@@ -309,7 +309,8 @@ type sol_serial = {
   active : bool list;
   issue : int list;
   start_cycle : int list;
-  end_cycle : int list
+  end_cycle : int list;
+  _objective : int;
 } [@@deriving yojson]
 
 
