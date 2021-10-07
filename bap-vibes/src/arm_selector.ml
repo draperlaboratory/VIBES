@@ -189,14 +189,24 @@ module ARM_ops = struct
      constructors for spilled and non-spilled registers. *)
   let arm_mov arg1 arg2 =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
-    let mov =
-      match arg1, arg2_var with
-      | Ir.Var _, Ir.Var _
-      | Ir.Var _, Ir.Const _ ->
-        Ir.simple_op Ops.mov arg1 [arg2_var]
-      | _ -> failwith "arm_mov: unexpected arguments!"
-    in
-    instr mov arg2_sem
+    match arg1, arg2_var with
+    | Ir.Var _, Ir.Var _ when not (List.is_empty arg2_sem.current_data) ->
+      (* FIXME: absolute hack! if we have vars here, we can assume
+         that the last operation assigned to a temporary, and we can
+         just replace that temporary with the known destination, and
+         return that as the effect. *)
+      begin
+        match arg2_sem.current_data with
+        | [] -> assert false (* excluded by the guard above *)
+        | op :: ops ->
+          let op = { op with Ir.lhs = [arg1] } in
+          {arg2_sem with current_data = op :: ops }
+      end
+    | Ir.Var _, Ir.Var _
+    | Ir.Var _, Ir.Const _ ->
+      let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+      instr mov arg2_sem
+    | _ -> failwith "arm_mov: unexpected arguments!"
 
   let ( := ) x y = arm_mov x y
 
