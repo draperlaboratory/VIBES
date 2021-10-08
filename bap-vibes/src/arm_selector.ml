@@ -58,7 +58,11 @@ let is_thumb (lang : Theory.language) : bool =
 (* FIXME: this feels very redundant: we should just leave the
    responsibility for this in ir.ml or minizinc.ml *)
 let regs (tgt : Theory.target) (_ : Theory.language) =
-  Theory.Target.regs tgt |> Set.map ~f:Var.reify (module Var)
+  let bap_regs =
+    Theory.Target.regs tgt |> Set.map ~f:Var.reify (module Var)
+  in
+  let pc = Var.create ~is_virtual:false ~fresh:false "PC" word_ty in
+  Var.Set.add bap_regs pc
 
 let gpr (tgt : Theory.target) (lang : Theory.language) =
   let roles = [Theory.Role.Register.general] in
