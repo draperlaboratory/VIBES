@@ -146,7 +146,7 @@ module ARM_ops = struct
     let op s = create ~arch:"arm" s
 
     let mov = op "mov"
-    let _movw = op "movw"
+    let movw = op "movw"
     let add = op "add"
     let addw = op "addw"
     let mul = op "mul"
@@ -208,7 +208,21 @@ module ARM_ops = struct
       end
     | Ir.Var _, Ir.Var _
     | Ir.Var _, Ir.Const _ ->
-      let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+      (* Check if the second arg is a constant greater than 255, in which case
+          we want movw rather than mov *)
+       let opcode =
+        begin
+          match arg2_var with
+          | Ir.Const w ->
+             begin
+               match Word.to_int w with
+               | Ok i when i < 256 -> Ops.mov
+               | _ -> Ops.movw
+             end
+          | _ -> Ops.mov
+        end
+      in
+      let mov = Ir.simple_op opcode arg1 [arg2_var] in
       instr mov arg2_sem
     | _ -> failwith "arm_mov: unexpected arguments!"
 
