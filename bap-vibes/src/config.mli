@@ -5,6 +5,8 @@ open Bap.Std
 
 module Hvar = Higher_var
 
+module Wp_params = Bap_wp.Run_parameters
+
 (** A type to represent an individual patch fragment. *)
 type patch
 
@@ -60,10 +62,6 @@ val patches : t -> patch list
 (** [func config] returns the name of the function to verify. *)
 val func : t -> string
 
-(** [property config] returns the correctness property to use to verify
-    whether the patched exe is correct. *)
-val property : t -> Sexp.t
-
 (** [patched_exe_filepath config] returns the optional user-specified output
     location. *)
 val patched_exe_filepath : t -> string option
@@ -76,6 +74,9 @@ val minizinc_model_filepath : t -> string
 
 (** [loader_data config] returns the data to initialize the loader, if the default loader ("llvm") is not to be used. This argument is optional *)
 val loader_data : t -> loader_data option
+
+(** [wp_params config] returns the input parameters for the invocation to WP *)
+val wp_params : t -> Wp_params.t
 
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
@@ -117,17 +118,17 @@ val create_loader_data :
     - [~exe] is the filepath to the original exe
     - [~patches] is a list of [patch] records
     - [~func] is the name of the function to check for correctness
-    - [~property] is the correctness property to validate
     - [~patched_exe_filepath] is the optional output location
     - [~max_tries] is the optional number of tries to allow
-    - [~minizinc_model_filepath] is the minizinc model file location *)
+    - [~minizinc_model_filepath] is the minizinc model file location
+    - [~wp_params] is the parameter struct for WP *)
 val create :
   exe:string
   -> patches:patch list
   -> func:string
-  -> property:Sexp.t
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string
   -> loader_data:loader_data option
+  -> wp_params:Wp_params.t
   -> t

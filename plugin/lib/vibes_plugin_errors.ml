@@ -7,7 +7,7 @@ type t =
   | Missing_patch_code
   | Missing_patch_point
   | Missing_func
-  | Missing_property
+  | Missing_wp_params
   | Missing_size
   | Missing_minizinc_model_filepath
   | Missing_higher_var_name
@@ -41,8 +41,8 @@ let pp (ppf : Format.formatter) t : unit =
       ^ "\"patch-point\" field containing a non-empty string"
     | Missing_func ->
       "config json field \"func\" must be a non-empty string"
-    | Missing_property ->
-      "config json field \"property\" must be a non-empty string"
+    | Missing_wp_params ->
+      "config json field \"wp-params\" must be a json struct"
     | Missing_size ->
       "each patch in the config json \"patches\" list must have a "
       ^ "\"patch-size\" field containing an integer"

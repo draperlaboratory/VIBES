@@ -37,5 +37,5 @@ val verify :
   patch_prog:(Program.t * string) ->
   Theory.target ->
   func:string ->
-  Sexp.t ->
+  Run_parameters.t ->
   (next_step, Toplevel_error.t) result

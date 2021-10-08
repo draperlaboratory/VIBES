@@ -10,7 +10,7 @@ type t =
   | Missing_patch_code
   | Missing_patch_point
   | Missing_func
-  | Missing_property
+  | Missing_wp_params
   | Missing_size
   | Missing_minizinc_model_filepath
   | Missing_higher_var_name
