@@ -218,18 +218,31 @@ let validate_wp_params (func : string) (obj : Json.t) : (Wp_params.t, error) Std
       let ext_solver_path =
         read "ext_solver_path" |>
         Option.value_map ~default:(Some "boolector")
-          ~f:(fun s -> Some s)
+          ~f:(fun s -> if String.(s = "none") then None else Some s)
+      in
+      let show =
+        read "show" |>
+        Option.value_map ~default:[]
+          ~f:(fun s ->
+              String.split s ~on:',')
+      in
+      let use_fun_input_regs =
+        read "use-fun-input-regs" |>
+        Option.value_map ~default:false
+          ~f:(fun s -> Bool.of_string s)
       in
       let params = Wp_params.default ~func:func in
       Err.return
         { params with
-          precond = precond;
-          postcond = postcond;
-          user_func_specs_orig = user_func_specs_orig;
-          user_func_specs_mod = user_func_specs_mod;
-          inline = inline;
-          fun_specs = fun_specs;
-          ext_solver_path = ext_solver_path;
+          precond;
+          postcond;
+          user_func_specs_orig;
+          user_func_specs_mod;
+          inline;
+          show;
+          fun_specs;
+          ext_solver_path;
+          use_fun_input_regs;
         }
     end
 
