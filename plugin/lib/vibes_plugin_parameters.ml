@@ -278,45 +278,12 @@ let validate_minizinc_model_filepath (obj : Json.t)
       | Error e -> Err.fail e
     end
 
-let validate_loader_data (obj : Json.t)
-  : (Vibes_config.loader_data option, error) Stdlib.result =
-  let err = Errors.Invalid_loader_data in
-  match Json.Util.member "loader-data" obj with
+let validate_ogre (obj : Json.t)
+  : (string option, error) Stdlib.result =
+  match Json.Util.member "ogre" obj with
   | `Null -> Err.return None
-  | `Assoc l ->
-    begin
-      (* FIXME: handle missing fields, like "arch" and "length" *)
-      let loader_fields = ["arch"; "offset"; "base"; "entry"; "length"; "symbols"] in
-      let get_fields = List.map loader_fields ~f:(fun f -> value_of_field f l) in
-      match get_fields with
-      | [Some (`String arch);
-         Some (`String offset);
-         Some (`String base);
-         Some (`List entry);
-         Some (`Int length);
-         Some (`List symbols)] ->
-        let arch = Arch.of_string arch in
-        let offset = Bitvec.of_string offset in
-        let base = Bitvec.of_string base in
-        let entry_one s =
-          match s with
-          | `String s -> Bitvec.of_string s
-          | _ -> failwith "validate_loader_data: unexpeced entry!"
-        in
-        let entry = List.map ~f:entry_one entry in
-        let length = Some (Int64.of_int length) in
-        let symbols_one s =
-          match s with
-          | `List [`String loc; `String name] -> (Bitvec.of_string loc, name)
-          | _ -> failwith "validate_loader-data: unexpected symbol!"
-        in
-        let symbols = List.map ~f:symbols_one symbols in
-        Err.return @@ Some
-          (Vibes_config.create_loader_data
-          ~arch ~offset ~base ~entry ~length ~symbols)
-      | _ -> Err.fail err
-    end
-  | _ -> Err.fail err
+  | `String filename -> Err.return (Some (In_channel.read_all filename))
+  | _ -> Err.fail (Errors.Invalid_loader_data "must be a string.")
 
 (* Parse the user-provided JSON config file into a Yojson.Safe.t *)
 let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
@@ -336,10 +303,10 @@ let create
   validate_func config_json >>= fun func ->
   validate_wp_params func config_json >>= fun wp_params ->
   validate_max_tries config_json >>= fun max_tries ->
-  validate_loader_data config_json >>= fun loader_data ->
+  validate_ogre config_json >>= fun ogre ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
   let result = Vibes_config.create
     ~exe ~patches ~func ~patched_exe_filepath ~max_tries
-    ~minizinc_model_filepath ~loader_data ~wp_params in
+    ~minizinc_model_filepath ~ogre ~wp_params in
   Ok result

@@ -25,7 +25,7 @@ type t =
   | Invalid_property of string
   | Invalid_patch_code of string
   | Invalid_max_tries
-  | Invalid_loader_data
+  | Invalid_loader_data of string
   | No_such_file of string
 
 val pp : Format.formatter -> t -> unit
