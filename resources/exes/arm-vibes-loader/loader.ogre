@@ -1,0 +1,28 @@
+(declare arch (name str))
+(declare bits (size int))
+(declare base-address (addr int))
+(declare entry-point (addr int))
+(declare is-little-endian (flag bool))
+(declare mapped (addr int) (size int) (off int))
+(declare code-region (addr int) (size int) (off int))
+(declare named-region (addr int) (size int) (name str))
+(declare segment (addr int) (size int) (r bool) (w bool) (x bool))
+(declare section (addr int) (size int))
+(declare code-start (addr int))
+(declare named-symbol (addr int) (name str))
+(declare symbol-chunk (addr int) (size int) (root int))
+
+(arch armv7)
+(bits 32)
+(is-little-endian true)
+
+(mapped 0x10400 8 0x400)
+(section 0x10400 8)
+(segment 0x10400 8 true false true)
+
+(base-address 0x0)
+(entry-point 0x0)
+
+(code-region 0x10400 0x8 0x400)
+(named-region 0x10400 0x8 test)
+(code-start 0x10400)

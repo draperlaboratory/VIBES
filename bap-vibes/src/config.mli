@@ -1,7 +1,6 @@
 (** Encapsulates the configuration needed to run the VIBES pipeline. *)
 
 open !Core_kernel
-open Bap.Std
 
 module Hvar = Higher_var
 
@@ -10,30 +9,8 @@ module Wp_params = Bap_wp.Run_parameters
 (** A type to represent an individual patch fragment. *)
 type patch
 
-(** A type that represents the data required to create a simple loader for BAP *)
-type loader_data
-
 (** A type to represent a configuration record. *)
 type t
-
-(** [arch d] is the name of the target architecture, if given. *)
-val arch : loader_data -> arch option
-
-(** [offset d] is the file offset of the binary code. *)
-val offset : loader_data -> Bitvec.t
-
-(** [base d] is the base address of the binary code. *)
-val base : loader_data -> Bitvec.t
-
-(** [entry d] is the list of entry points into the code (or empty if
-   unknown). Only the first value is examined. *)
-val entry : loader_data -> Bitvec.t list
-
-(** [symbols d] is a list of [(location, symbol_name)] pairs. *)
-val symbols : loader_data -> (Bitvec.t * string) list
-
-(** [length d] is the length in bytes of the code section from [offset d], if given. *)
-val length : loader_data -> int64 option
 
 (** A type to represent patch cody which may either be C or literal assembly *)
 type patch_code = CCode of Cabs.definition | ASMCode of string
@@ -72,8 +49,9 @@ val max_tries : t -> int option
 (** [minizinc_model_filepath config] returns the path to the minizinc model. *)
 val minizinc_model_filepath : t -> string
 
-(** [loader_data config] returns the data to initialize the loader, if the default loader ("llvm") is not to be used. This argument is optional *)
-val loader_data : t -> loader_data option
+(** [ogre config] returns the contents of the user-provided ogre file for use in
+   the raw loader, if provided *)
+val ogre : t -> string option
 
 (** [wp_params config] returns the input parameters for the invocation to WP *)
 val wp_params : t -> Wp_params.t
@@ -96,23 +74,6 @@ val create_patch :
   -> patch_vars:Hvar.t list
   -> patch
 
-(** [create_loader_data ~arch ~offset ~base ~entry ~length ~symbols]
-    will create a loader data record, where:
-    - [~arch] is the name of the binary architecture
-    - [~offset] is the base offset of the binary
-    - [~base] is the base address of the code portion
-    - [~entry] is the addres of the "entry point" (which may just be the function of interest)
-    - [~length] is the number of bytes to dissassemble
-    - [~symbols] is a list of [(location, name)] pairs for the symbolizer *)
-val create_loader_data :
-  arch:arch option
-  -> offset:Bitvec.t
-  -> base:Bitvec.t
-  -> entry:Bitvec.t list
-  -> length:int64 option
-  -> symbols: (Bitvec.t * string) list
-  -> loader_data
-
 (** [create ~exe ~config_filepath ~patched_exe_filepath
     ~minizinc_model_filepath] will create a configuration record, where:
     - [~exe] is the filepath to the original exe
@@ -129,6 +90,6 @@ val create :
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string
-  -> loader_data:loader_data option
+  -> ogre:string option
   -> wp_params:Wp_params.t
   -> t

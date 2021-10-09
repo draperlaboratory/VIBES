@@ -22,7 +22,7 @@ type t =
   | Invalid_property of string
   | Invalid_patch_code of string
   | Invalid_max_tries
-  | Invalid_loader_data
+  | Invalid_loader_data of string
   | No_such_file of string
 
 let pp (ppf : Format.formatter) t : unit =
@@ -69,8 +69,8 @@ let pp (ppf : Format.formatter) t : unit =
     | Invalid_patch_code desc -> desc
     | Invalid_max_tries ->
       "optional config json field \"max-tries\" must be an integer"
-    | Invalid_loader_data ->
-      "optional argument \"loader-data\" is malformed"
+    | Invalid_loader_data s ->
+      "error in optional loader data field \"ogre\": " ^ s
     | No_such_file desc -> desc
   in
   Format.fprintf ppf "@[%s@]" msg
