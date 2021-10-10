@@ -14,6 +14,9 @@ COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
 . "${COMMON_LIB_DIR}/slack.bash"
 . "${COMMON_LIB_DIR}/env.bash"
 
+# Which branch of WP should we install?
+WP_BRANCH="master"
+
 # Report progress to slack?
 REPORT_RESULTS="false"
 
@@ -26,6 +29,7 @@ usage () {
     echo "OPTIONS"
     echo "  -h | --help       Print this help and exit"
     echo "  --report-results  Report the results to slack"
+    echo "  --wp-branch VAL   Install WP from a branch"
 }
 
 # Parse the command line arguments.
@@ -39,6 +43,11 @@ while (( "${#}" )); do
 
         --report-results)
             REPORT_RESULTS="true"
+            ;;
+
+        --wp-branch)
+            shift
+            WP_BRANCH="${1}"
             ;;
 
         *)
@@ -118,7 +127,7 @@ if [ -z "${WP_IS_INSTALLED}" ]; then
         fi
         exit 1
     fi
-    git clone https://github.com/draperlaboratory/cbat_tools.git
+    git clone -b "${WP_BRANCH}" https://github.com/draperlaboratory/cbat_tools.git
     cd cbat_tools/wp
     make
     cd "${CURRENT_DIR}"
