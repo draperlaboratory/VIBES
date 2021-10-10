@@ -8,7 +8,7 @@
 (declare named-region (addr int) (size int) (name str))
 (declare segment (addr int) (size int) (r bool) (w bool) (x bool))
 (declare section (addr int) (size int))
-(declare code-start (addr int))X
+(declare code-start (addr int))
 (declare named-symbol (addr int) (name str))
 (declare symbol-chunk (addr int) (size int) (root int))
 
