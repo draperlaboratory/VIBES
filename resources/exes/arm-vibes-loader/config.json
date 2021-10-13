@@ -1,7 +1,9 @@
 {
   "max-tries": 1,
   "func": "main",
-  "property" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))",
+  "wp-params": {
+    "postcond" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))"
+  },
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar; retvar = 3;",

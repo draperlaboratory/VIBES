@@ -36,6 +36,5 @@ val verify :
   orig_prog:(Program.t * string) ->
   patch_prog:(Program.t * string) ->
   Theory.target ->
-  func:string ->
-  Sexp.t ->
+  Run_parameters.t ->
   (next_step, Toplevel_error.t) result

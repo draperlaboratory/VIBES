@@ -97,7 +97,6 @@ let init_KB
   let filename = Config.exe config in
   let patch_list = Config.patches config in
   let func = Config.func config in
-  let property = Config.property config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   let mzn_model_filepath = Config.minizinc_model_filepath config in
   let target = Bap.Std.Project.target proj in
@@ -111,6 +110,5 @@ let init_KB
   let* () = Data.Solver.set_minizinc_model_filepath
     obj (Some mzn_model_filepath) in
   let* () = Data.Verifier.set_func obj (Some func) in
-  let* () = Data.Verifier.set_property obj (Some property) in
   Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));
   KB.return obj

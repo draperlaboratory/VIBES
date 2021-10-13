@@ -357,23 +357,8 @@ end
 (* Properties pertaining to the verifier *)
 module Verifier = struct
 
-  let property : (cls, Sexp.t option) KB.slot =
-    KB.Class.property ~package cls "property" sexp_domain
-
   let func : (cls, string option) KB.slot =
     KB.Class.property ~package cls "func" string_domain
-
-  let set_property (obj : t) (data : Sexp.t option) : unit KB.t =
-    KB.provide property obj data
-
-  let get_property (obj : t) : Sexp.t option KB.t =
-    KB.collect property obj
-
-  let get_property_exn (obj : t) : Sexp.t KB.t =
-    get_property obj >>= fun result ->
-    match result with
-    | None -> Kb_error.fail Kb_error.Missing_property
-    | Some value -> KB.return value
 
   let set_func (obj : t) (data : string option) : unit KB.t =
     KB.provide func obj data

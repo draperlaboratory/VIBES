@@ -1,6 +1,6 @@
 # --------------------------------------------------------------
 #
-# Run the system tests.
+# Run one system test.
 #
 # --------------------------------------------------------------
 
@@ -18,11 +18,16 @@ TESTS_DIR="$(cd "${THIS_DIR}/tests" && pwd)"
 # Report progress to slack?
 REPORT_RESULTS="false"
 
+# The name of the test to run.
+TEST_NAME=""
+
 # Usage message
 usage () {
-    echo "USAGE: bash $(get_me) [OPTIONS]"
+    echo "USAGE: bash $(get_me) [OPTIONS] TEST_NAME"
     echo ""
-    echo "  Run the system tests."
+    echo "  Run a system test, where TEST_NAME is the name of"
+    echo "  one of the functions defined in this directory:"
+    echo "  ${TESTS_DIR}"
     echo ""
     echo "OPTIONS"
     echo "  -h | --help       Print this help and exit"
@@ -43,9 +48,13 @@ while (( "${#}" )); do
             ;;
 
         *)
-            echo "Unrecognized argument: ${1}"
-            help_hint
-            exit 1
+            if [[ -z "${TEST_NAME}" ]]; then
+                TEST_NAME="${1}"
+            else
+                echo "Unrecognized argument: ${1}"
+                help_hint
+                exit 1
+            fi
             ;;
 
     esac
@@ -83,11 +92,19 @@ git_commit
 # Note that we're starting the tests.
 print_test_startup_info
 
-# Run every test.
+# Import the tests.
 for FILEPATH in "${TESTS_DIR}"/test-*.bash; do
     . ${FILEPATH}
-    run_all
 done
+
+# Make sure the test exists.
+if [[ $(type -t "${TEST_NAME}") != function ]]; then
+    echo "No such test: ${TEST_NAME}"
+    exit 1
+fi
+
+# Run the test.
+"${TEST_NAME}"
 
 # Final report for the test results.
 print_summary

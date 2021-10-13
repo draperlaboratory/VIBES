@@ -165,9 +165,14 @@ The top-level object must include the following fields:
 
 * `"func" : "NAME"` -
   Specifies the name of the function you want to verify.
-* `"property" : "S-EXP"` -
-  Specifies the correctness property (as an S-expression in a JSON string)
-  that VIBES should use to verify the correctness of FUNC in the patched exe.
+* `"wp-params" : {WP-PARAMS}"` -
+  Specifies verification parameters to pass to WP. The following are common:
+  * `"postcond": "S-EXP"` - Specifies the postcondition correctness property
+    (as an S-expression in a JSON string) that WP should use to verify the
+    correctness of FUNC in the patched exe.
+  * `"precond": "S-EXP"` - Specifies a precondition (as an S-expression in
+    a JSON string) that WP should assume when verifying the correctness
+    of FUNC in the patched exe. 
 * `"patches" : [PATCH-OBJECTS]"` -
   Specifies the patches to apply as an array of patch fragment description
   objects.  Each object in the array describes a change to a single contiguous
@@ -197,7 +202,9 @@ Here is an example of a valid configuration file, taken from the
 ```
 {
   "func": "main",
-  "property" : "(assert true)",
+  "wp-params" : {
+    "postcond": "(assert true)"
+  },
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int ret; ret = 3;"

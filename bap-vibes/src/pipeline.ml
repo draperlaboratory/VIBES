@@ -116,11 +116,10 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
   let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
 
-  let func = Config.func config in
-  let property = Config.property config in
+  let wp_params = Config.wp_params config in
   let target = Project.target orig_proj in
   let verif_res =
-    Verifier.verify target ~func:func property
+    Verifier.verify target wp_params
       ~orig_prog:(orig_prog, Config.exe config)
       ~patch_prog:(patch_prog, tmp_patched_filepath)
   in

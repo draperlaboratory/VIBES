@@ -8,6 +8,7 @@ module Json = Yojson.Safe
 module Vibes_config = Bap_vibes.Config
 module Parse_c = Bap_vibes.Parse_c
 module Hvar = Bap_vibes.Higher_var
+module Wp_params = Bap_wp.Run_parameters
 module Errors = Vibes_plugin_errors
 
 (* Monadize the errors. *)
@@ -179,17 +180,72 @@ let validate_func (obj : Json.t) : (string, error) Stdlib.result =
 
 (* Extract the property field string and parse it into an S-expression, or
    error. *)
-let validate_property (obj : Json.t) : (Sexp.t, error) Stdlib.result =
-  match Json.Util.member "property" obj with
-  | `String s ->
-     begin
-       try
-         Err.return (Sexp.of_string s)
-       with Failure _ ->
-         let msg = Format.sprintf "Invalid S-expression: %s" s in
-         Err.fail (Errors.Invalid_property msg)
-     end
-  | _ -> Err.fail Errors.Missing_property
+let validate_wp_params (func : string) (obj : Json.t)
+    : (Wp_params.t, error) Stdlib.result =
+  match Json.Util.member "wp-params" obj with
+  | `Null -> Err.fail Errors.Missing_wp_params
+  | p ->
+    begin
+      let read s = Json.Util.member s p |> Json.Util.to_string_option in
+      let triple l =
+        match l with
+        | [a; b; c] -> (a, b, c)
+        | _ -> failwith "validate_wp_params: expected a ',' seperated triple!"
+      in
+      let precond = read "precond" |> Option.value ~default:"" in
+      let postcond = read "postcond" |> Option.value ~default:"" in
+      let user_func_specs_orig =
+        read "user-func-specs-orig" |>
+        Option.value_map ~default:[]
+          ~f:(fun s ->
+              String.split s ~on:';' |>
+              List.map ~f:(String.split ~on:',') |>
+              List.map ~f:triple)
+      in
+      let user_func_specs_mod =
+        read "user-func-specs-mod" |>
+        Option.value_map ~default:[]
+          ~f:(fun s ->
+              String.split s ~on:';' |>
+              List.map ~f:(String.split ~on:',') |>
+              List.map ~f:triple)
+      in
+      let inline = read "inline" in
+      let fun_specs =
+        read "fun-specs" |>
+        Option.value_map ~default:[]
+          ~f:(fun s -> String.split s ~on:',')
+      in
+      let ext_solver_path =
+        read "ext_solver_path" |>
+        Option.value_map ~default:(Some "boolector")
+          ~f:(fun s -> if String.(s = "none") then None else Some s)
+      in
+      let show =
+        read "show" |>
+        Option.value_map ~default:[]
+          ~f:(fun s ->
+              String.split s ~on:',')
+      in
+      let use_fun_input_regs =
+        read "use-fun-input-regs" |>
+        Option.value_map ~default:false
+          ~f:(fun s -> Bool.of_string s)
+      in
+      let params = Wp_params.default ~func:func in
+      Err.return
+        { params with
+          precond;
+          postcond;
+          user_func_specs_orig;
+          user_func_specs_mod;
+          inline;
+          show;
+          fun_specs;
+          ext_solver_path;
+          use_fun_input_regs;
+        }
+    end
 
 (* Extract the max-tries value, and make sure it's an [int] (if provided). *)
 let validate_max_tries (obj : Json.t) : (int option, error) Stdlib.result =
@@ -269,19 +325,21 @@ let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
   with e -> Err.fail (Errors.Config_not_parsed (Exn.to_string e))
 
 (* Construct a configuration record from the given parameters. *)
-let create ~exe:(exe : string) ~config_filepath:(config_filepath : string)
-      ~patched_exe_filepath:(patched_exe_filepath : string option)
+let create
+    ~exe:(exe : string)
+    ~config_filepath:(config_filepath : string)
+    ~patched_exe_filepath:(patched_exe_filepath : string option)
     : (Vibes_config.t, error) result =
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   parse_json config_filepath >>= fun config_json ->
   validate_patches config_json >>= fun patches ->
   validate_func config_json >>= fun func ->
-  validate_property config_json >>= fun property ->
+  validate_wp_params func config_json >>= fun wp_params ->
   validate_max_tries config_json >>= fun max_tries ->
   validate_loader_data config_json >>= fun loader_data ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
   let result = Vibes_config.create
-    ~exe ~patches ~func ~property ~patched_exe_filepath ~max_tries
-    ~minizinc_model_filepath ~loader_data in
+    ~exe ~patches ~func ~patched_exe_filepath ~max_tries
+    ~minizinc_model_filepath ~loader_data ~wp_params in
   Ok result

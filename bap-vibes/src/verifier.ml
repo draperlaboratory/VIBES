@@ -41,33 +41,17 @@ let wp_verifier (p : Params.t) inputs =
 let verify ?verifier:(verifier=wp_verifier)
     ~orig_prog:(orig_prog : Program.t * string)
     ~patch_prog:(patch_prog : Program.t * string)
-    (tgt : Theory.target) ~func:(func : string) (property : Sexp.t)
+    (tgt : Theory.target) (params : Params.t)
     : (next_step, Toplevel_error.t) result =
   Events.(send @@ Header "Starting Verifier");
 
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
-  let* func =
-    Result.(
-      func |>
-      Utils.get_func (fst orig_prog) |>
-      Result.of_option ~error:(Toplevel_error.Missing_func_orig func) >>|
-      Sub.name)
-  in
-  let param = Params.default ~func:func in
-  let post = Sexp.to_string property in
-  let param =
-    {
-      param with
-      postcond = post;
-      ext_solver_path = Some "boolector"
-    }
-  in
   let (prog1, name1) = orig_prog in
   let (prog2, name2) = patch_prog in
   let input1 = Runner.{program = prog1; target = tgt; filename = name1} in
   let input2 = Runner.{program = prog2; target = tgt; filename = name2} in
   let* status =
-    verifier param
+    verifier params
       [input1; input2]
   |> Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e)
   in

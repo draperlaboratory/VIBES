@@ -1,7 +1,9 @@
 {
   "max-tries": 15,
   "func": "main",
-  "property" : "(assert true)",
+  "wp-params": {
+    "postcond" : "(assert true)"
+  },
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar; retvar = 3;",
