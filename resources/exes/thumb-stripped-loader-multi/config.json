@@ -1,7 +1,9 @@
 {
   "max-tries": 15,
   "func": "f2",
-  "property" : "(assert (= R0_mod (_ bv10 32)))",
+  "wp-params": {
+    "postcond" : "(assert (= R0_mod (_ bv10 32)))"
+  },
   "patches" : [
     {"patch-name" : "ret-10",
      "patch-code" : "int retvar; retvar = 10;",
