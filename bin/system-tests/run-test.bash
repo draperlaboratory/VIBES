@@ -99,6 +99,7 @@ done
 
 # Make sure the test exists.
 if [[ $(type -t "${TEST_NAME}") != function ]]; then
+    echo ""
     echo "No such test: ${TEST_NAME}"
     exit 1
 fi
