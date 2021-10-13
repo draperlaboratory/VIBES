@@ -180,7 +180,8 @@ let validate_func (obj : Json.t) : (string, error) Stdlib.result =
 
 (* Extract the property field string and parse it into an S-expression, or
    error. *)
-let validate_wp_params (func : string) (obj : Json.t) : (Wp_params.t, error) Stdlib.result =
+let validate_wp_params (func : string) (obj : Json.t)
+    : (Wp_params.t, error) Stdlib.result =
   match Json.Util.member "wp-params" obj with
   | `Null -> Err.fail Errors.Missing_wp_params
   | p ->

@@ -42,7 +42,7 @@ let pp (ppf : Format.formatter) t : unit =
     | Missing_func ->
       "config json field \"func\" must be a non-empty string"
     | Missing_wp_params ->
-      "config json field \"wp-params\" must be a json struct"
+      "config json field \"wp-params\" is mandatory and must be a json struct"
     | Missing_size ->
       "each patch in the config json \"patches\" list must have a "
       ^ "\"patch-size\" field containing an integer"

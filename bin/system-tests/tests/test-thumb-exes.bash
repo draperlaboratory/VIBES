@@ -76,8 +76,10 @@ test_thumb_simple_multi () {
     run_arm_exe "${TEST_PATCH_EXE}" 1
 }
 
-# Run these tests:
-test_thumb_simple
-test_thumb_simple_cegis
-test_thumb_simple_compiled
-test_thumb_simple_multi
+# Run all tests
+run_all () {
+    test_thumb_simple
+    test_thumb_simple_cegis
+    test_thumb_simple_compiled
+    test_thumb_simple_multi
+}

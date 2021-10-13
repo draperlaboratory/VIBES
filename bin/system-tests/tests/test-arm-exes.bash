@@ -184,13 +184,16 @@ test_arm_patch_call () {
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
 
-# Run these tests:
-test_arm_simple
-test_arm_simple_inline
-test_arm_simple_cegis
-test_arm_simple_compiled
-test_arm_simple_multi
-test_arm_subst_reg
-test_arm_subst_stack
-test_arm_vibes_loader
-test_arm_stripped_loader
+
+# Run all tests
+run_all () {
+    test_arm_simple
+    test_arm_simple_inline
+    test_arm_simple_cegis
+    test_arm_simple_compiled
+    test_arm_simple_multi
+    test_arm_subst_reg
+    test_arm_subst_stack
+    test_arm_vibes_loader
+    test_arm_stripped_loader
+}

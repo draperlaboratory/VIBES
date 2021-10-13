@@ -1,6 +1,8 @@
 {
   "func": "main",
-  "property" : "(assert (= (bvadd R3_mod #x00000002) R0_orig))",
+  "wp-params": {
+    "postcond" : "(assert (= (bvadd R3_mod #x00000002) R0_orig))"
+  },
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar; retvar = 3;",
