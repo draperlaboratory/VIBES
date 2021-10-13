@@ -35,7 +35,7 @@ type t = {
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
-  ogre : string option
+  ogre : string option;
   wp_params : Wp_params.t;
 }
 
@@ -126,7 +126,7 @@ let create
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
-    ~ogre:(ogre : string option) : t =
+    ~ogre:(ogre : string option)
     ~wp_params:(wp_params : Wp_params.t)
   : t =
   { exe; patches; func; patched_exe_filepath;
