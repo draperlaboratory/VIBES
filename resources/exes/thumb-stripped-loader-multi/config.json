@@ -1,7 +1,7 @@
 {
   "max-tries": 15,
-  "func": "f2",
   "wp-params": {
+    "func": "f2",
     "postcond" : "(assert (= R0_mod (_ bv10 32)))"
   },
   "patches" : [
@@ -37,6 +37,6 @@
         }}
      ]}
   ],
-  ogre : "loader.ogre"
+  "ogre": "loader.ogre"
 
 }

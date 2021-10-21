@@ -184,7 +184,6 @@ test_arm_patch_call () {
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
 
-
 # Run all tests
 run_all () {
     test_arm_simple

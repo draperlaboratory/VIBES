@@ -13,6 +13,11 @@ module Typ = Extension.Type
 
 type Extension.Error.t += Fail of string
 
+let print_error (e : Extension.Error.t) : string option =
+  match e with
+  | Fail s -> Some (Format.sprintf "ERROR: %s" s)
+  | _ -> None
+
 (* A module to encapsulate the definition of the CLI. *)
 module Cli = struct
 
@@ -112,4 +117,6 @@ module Cli = struct
 end
 
 (* Register the custom CLI/command with BAP. *)
-let () = Cmd.declare Cli.name Cli.grammar Cli.callback ~doc:Cli.doc
+let () = 
+  Bap_main.Extension.Error.register_printer print_error;
+  Cmd.declare Cli.name Cli.grammar Cli.callback ~doc:Cli.doc

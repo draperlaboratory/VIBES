@@ -1,6 +1,8 @@
 {
-  "func": "foo",
-  "property" : "(assert true)",
+  "wp-params": {
+    "func": "foo",
+    "postcond" : "(assert true)"
+  },
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int temp;

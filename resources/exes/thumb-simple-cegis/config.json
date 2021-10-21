@@ -1,6 +1,6 @@
 {
-  "func": "main",
   "wp-params": {
+    "func": "main",
     "postcond" : "(assert (= (bvadd R3_mod #x00000002) R0_orig))"
   },
   "patches" : [

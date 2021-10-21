@@ -36,9 +36,6 @@ val exe : t -> string
 (** [patch config] returns the list of patch fragments *)
 val patches : t -> patch list
 
-(** [func config] returns the name of the function to verify. *)
-val func : t -> string
-
 (** [patched_exe_filepath config] returns the optional user-specified output
     location. *)
 val patched_exe_filepath : t -> string option
@@ -78,15 +75,14 @@ val create_patch :
     ~minizinc_model_filepath] will create a configuration record, where:
     - [~exe] is the filepath to the original exe
     - [~patches] is a list of [patch] records
-    - [~func] is the name of the function to check for correctness
     - [~patched_exe_filepath] is the optional output location
     - [~max_tries] is the optional number of tries to allow
     - [~minizinc_model_filepath] is the minizinc model file location
+    - [~ogre] is the optional filepath to an ogre file
     - [~wp_params] is the parameter struct for WP *)
 val create :
   exe:string
   -> patches:patch list
-  -> func:string
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string

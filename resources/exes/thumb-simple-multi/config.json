@@ -1,7 +1,7 @@
 {
   "max-tries": 15,
-  "func": "main",
   "wp-params": {
+    "func": "main",
     "postcond" : "(assert true)"
   },
   "patches" : [

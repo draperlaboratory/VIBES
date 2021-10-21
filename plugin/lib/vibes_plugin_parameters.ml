@@ -168,19 +168,9 @@ let validate_patches (obj : Json.t)
   | `List ps -> Err.all (List.map ~f:validate_patch ps)
   | _ -> Err.fail Errors.Missing_patches
 
-(* Extract and validate the name of the function to verify. *)
-let validate_func (obj : Json.t) : (string, error) Stdlib.result =
-  match Json.Util.member "func" obj with
-  | `String s ->
-    begin
-      if (String.length s) > 0 then Err.return s
-      else Err.fail Errors.Missing_func
-    end
-  | _ -> Err.fail Errors.Missing_func
-
 (* Extract the property field string and parse it into an S-expression, or
    error. *)
-let validate_wp_params (func : string) (obj : Json.t)
+let validate_wp_params (obj : Json.t)
     : (Wp_params.t, error) Stdlib.result =
   match Json.Util.member "wp-params" obj with
   | `Null -> Err.fail Errors.Missing_wp_params
@@ -192,6 +182,7 @@ let validate_wp_params (func : string) (obj : Json.t)
         | [a; b; c] -> (a, b, c)
         | _ -> failwith "validate_wp_params: expected a ',' seperated triple!"
       in
+      let func = read "func" |> Option.value ~default:"" in
       let precond = read "precond" |> Option.value ~default:"" in
       let postcond = read "postcond" |> Option.value ~default:"" in
       let user_func_specs_orig =
@@ -217,7 +208,7 @@ let validate_wp_params (func : string) (obj : Json.t)
           ~f:(fun s -> String.split s ~on:',')
       in
       let ext_solver_path =
-        read "ext_solver_path" |>
+        read "ext-solver-path" |>
         Option.value_map ~default:(Some "boolector")
           ~f:(fun s -> if String.(s = "none") then None else Some s)
       in
@@ -228,23 +219,26 @@ let validate_wp_params (func : string) (obj : Json.t)
               String.split s ~on:',')
       in
       let use_fun_input_regs =
-        read "use-fun-input-regs" |>
+        read "user-fun-input-regs" |>
         Option.value_map ~default:false
           ~f:(fun s -> Bool.of_string s)
       in
-      let params = Wp_params.default ~func:func in
-      Err.return
-        { params with
-          precond;
-          postcond;
-          user_func_specs_orig;
-          user_func_specs_mod;
-          inline;
-          show;
-          fun_specs;
-          ext_solver_path;
-          use_fun_input_regs;
-        }
+      if String.equal func "" then
+        Err.fail Errors.Missing_func
+      else
+        let params = Wp_params.default ~func:func in
+        Err.return
+          { params with
+            precond;
+            postcond;
+            user_func_specs_orig;
+            user_func_specs_mod;
+            inline;
+            show;
+            fun_specs;
+            ext_solver_path;
+            use_fun_input_regs;
+          }
     end
 
 (* Extract the max-tries value, and make sure it's an [int] (if provided). *)
@@ -300,13 +294,12 @@ let create
   is_not_empty exe Errors.Missing_exe >>= fun exe ->
   parse_json config_filepath >>= fun config_json ->
   validate_patches config_json >>= fun patches ->
-  validate_func config_json >>= fun func ->
-  validate_wp_params func config_json >>= fun wp_params ->
+  validate_wp_params config_json >>= fun wp_params ->
   validate_max_tries config_json >>= fun max_tries ->
   validate_ogre config_json >>= fun ogre ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
   let result = Vibes_config.create
-    ~exe ~patches ~func ~patched_exe_filepath ~max_tries
+    ~exe ~patches ~patched_exe_filepath ~max_tries
     ~minizinc_model_filepath ~ogre ~wp_params in
   Ok result

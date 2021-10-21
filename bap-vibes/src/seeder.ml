@@ -68,8 +68,9 @@ let create_patches
     in
     let* () = Data.Patch.set_patch_name obj (Some patch_name) in
     let* () = match Config.patch_code p with
-              | CCode ccode -> Data.Patch.set_patch_code obj (Some ccode)
-              | ASMCode asmcode -> Data.Patch.set_assembly obj (Some [asmcode]) in
+      | CCode ccode -> Data.Patch.set_patch_code obj (Some ccode)
+      | ASMCode asmcode -> Data.Patch.set_assembly obj (Some [asmcode])
+    in
     let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in
     let* () = Data.Patch.set_lang obj lang in
@@ -96,7 +97,6 @@ let init_KB
   : Data.t KB.t =
   let filename = Config.exe config in
   let patch_list = Config.patches config in
-  let func = Config.func config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   let mzn_model_filepath = Config.minizinc_model_filepath config in
   let target = Bap.Std.Project.target proj in
@@ -109,6 +109,5 @@ let init_KB
   let* () = Data.Patched_exe.set_patches obj patches in
   let* () = Data.Solver.set_minizinc_model_filepath
     obj (Some mzn_model_filepath) in
-  let* () = Data.Verifier.set_func obj (Some func) in
   Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));
   KB.return obj

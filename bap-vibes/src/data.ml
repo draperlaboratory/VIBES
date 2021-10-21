@@ -353,23 +353,3 @@ module Solver = struct
     | Some value -> KB.return value
 
 end
-
-(* Properties pertaining to the verifier *)
-module Verifier = struct
-
-  let func : (cls, string option) KB.slot =
-    KB.Class.property ~package cls "func" string_domain
-
-  let set_func (obj : t) (data : string option) : unit KB.t =
-    KB.provide func obj data
-
-  let get_func (obj : t) : string option KB.t =
-    KB.collect func obj
-
-  let get_func_exn (obj : t) : string KB.t =
-    get_func obj >>= fun result ->
-    match result with
-    | None -> Kb_error.fail Kb_error.Missing_func
-    | Some value -> KB.return value
-
-end
