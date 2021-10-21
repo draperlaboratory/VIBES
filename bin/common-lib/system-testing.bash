@@ -39,7 +39,7 @@ print_test_startup_info () {
 # DESC
 #   Print a header
 # ARGS
-# - 1 : The message to print
+# - ${1} : The message to print
 print_header () {
     echo "" | tee -a "${REPORT}"
     rule | tee -a "${REPORT}"
@@ -65,13 +65,17 @@ print_summary () {
     echo "|| Passed: ${TESTS_PASSED}," \
 	 "Failed: ${TESTS_FAILED}" | tee -a "${REPORT}"
     rule | tee -a "${REPORT}"
+
+    echo "SYSTEM_TESTS ${TESTS_FINAL_STATUS}" > "${SUMMARY}"
+    echo "${TESTS_TALLY}" >> "${SUMMARY}"
+    echo "Passed: ${TESTS_PASSED}, Failed: ${TESTS_FAILED}" >> "${SUMMARY}"
 }
 
 # DESC
 #     Run an ARM executable with qemu
 # ARGS
-# - 1 : The path to the executable
-# - 2 : The expected exit code
+# - ${1} : The path to the executable
+# - ${2} : The expected exit code
 run_arm_exe () {
     local EXE_PATH="${1}"
     local EXPECTED_EXIT_CODE="${2}"
@@ -117,8 +121,8 @@ run_arm_exe () {
 # DESC
 #     Run a make command
 # ARGS
-# - 1 : The make command
-# - 2 : The expected exit code
+# - ${1} : The make command
+# - ${2} : The expected exit code
 run_make () {
     local CMD="${1}"
     local EXPECTED_EXIT_CODE="${2}"

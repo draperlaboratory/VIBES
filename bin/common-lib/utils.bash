@@ -47,20 +47,37 @@ create_tmp_dir () {
 TMP_SCRATCH_DIR="$(create_tmp_dir)"
 MSG_FILE="${TMP_SCRATCH_DIR}/message.txt"
 REPORT_FILE="${TMP_SCRATCH_DIR}/report.txt"
+SUMMARY_FILE="${TMP_SCRATCH_DIR}/summary.txt"
 SLACK_FILE="${TMP_SCRATCH_DIR}/data.json"
 BAP_VERSION_FILE="${TMP_SCRATCH_DIR}/bap-version.txt"
+GIT_BRANCH_FILE="${TMP_SCRATCH_DIR}/git-branch.txt"
 GIT_COMMIT_FILE="${TMP_SCRATCH_DIR}/git-commit.txt"
 echo "Initializing message...no message yet" > "${MSG_FILE}"
 echo "Initializing report...nothing to report yet" > "${REPORT_FILE}"
+echo "Initializing summary...nothing to report yet" > "${SUMMARY_FILE}"
 echo '{"username":"None yet","text":"Nothing yet"}' > "${SLACK_FILE}"
 echo "No BAP version to report yet" > "${BAP_VERSION_FILE}"
-echo "No commit to report yet" > "${GIT_COMMIT_FILE}"
+echo "No git branch to report yet" > "${GIT_BRANCH_FILE}"
+echo "No git commit to report yet" > "${GIT_COMMIT_FILE}"
+
+# DESC
+#     Get filepath to the SUMMARY_FILE.
+# ARGS
+# - ${1} : If "true" then return SUMMARY_FILE.
+#          Otherwise, return /dev/null.
+summary_file () {
+    if [[ "${1}" == "true" ]]; then
+        echo "${SUMMARY_FILE}"
+    else
+        echo "/dev/null"
+    fi
+}
 
 # DESC
 #     Get filepath to the REPORT_FILE.
 # ARGS
-# - 1 : If "true" then return REPORT_FILE.
-#       Otherwise, return /dev/null.
+# - ${1} : If "true" then return REPORT_FILE.
+#          Otherwise, return /dev/null.
 report_file () {
     if [[ "${1}" == "true" ]]; then
         echo "${REPORT_FILE}"
@@ -74,6 +91,13 @@ report_file () {
 bap_version () {
     bap --version > "${BAP_VERSION_FILE}"
     echo "BAP_VERSION: $(cat "${BAP_VERSION_FILE}")"
+}
+
+# DESC
+#   Record the current GIT branch
+git_branch () {
+    git branch | grep "\*" --color=never > "${GIT_BRANCH_FILE}"
+    echo "GIT_BRANCH: $(cat "${GIT_BRANCH_FILE}")"
 }
 
 # DESC

@@ -50,7 +50,7 @@ before you run this script.
 
 To run the script, from the root of the VIBES repo:
 
-    bash bin/setup/install-dependencies.bash
+    bash bin/setup/install-dependencies.bash --wp-branch=codyroux/user-fun-spec-compare
     . bin/common-lib/env.bash
 
 To install these dependencies manually, perform the following steps.
@@ -79,8 +79,12 @@ Then install boolector, e.g.:
     export PATH=$(pwd):$PATH
 
 Clone [cbat_tools](https://github.com/draperlaboratory/cbat_tools), `cd`
-into the `wp/lib/bap_wp` folder, and install with `make`:
+into the `wp` folder, checkout the branch `codyroux/user-fun-spec-compare`, and install with `make`:
 
+    cd ~
+    git clone https://github.com/draperlaboratory/cbat_tools
+    cd cbat_tools/wp
+    git checkout codyroux/user-fun-spec-compare
     make
 
 Install the following opam packages:
