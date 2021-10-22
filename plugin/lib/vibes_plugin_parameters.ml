@@ -219,7 +219,7 @@ let validate_wp_params (obj : Json.t)
               String.split s ~on:',')
       in
       let use_fun_input_regs =
-        read "user-fun-input-regs" |>
+        read "use-fun-input-regs" |>
         Option.value_map ~default:false
           ~f:(fun s -> Bool.of_string s)
       in
