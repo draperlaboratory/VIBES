@@ -31,7 +31,6 @@ type patch =
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
   patches : patch list; (* The list of patches to apply. *)
-  func : string; (* The name of the function to check. *)
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
@@ -49,7 +48,6 @@ let patch_vars (p : patch) : Hvar.t list = p.patch_vars
 (* Config accessors. *)
 let exe t : string = t.exe
 let patches t : patch list = t.patches
-let func t : string = t.func
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
@@ -96,16 +94,48 @@ let patch_to_string (p : patch) : string =
 let patches_to_string (ps : patch list) : string =
   String.concat ~sep:",\n" (List.map ~f:patch_to_string ps)
 
+(* For displaying WP params. *)
+let wp_params_to_string (wp_params : Wp_params.t) : string =
+  let opt (s : string option) : string =
+    match s with
+    | None -> "Nothing"
+    | Some s -> s
+  in
+  let lst (l : string list) : string = String.concat ~sep:", " l in
+  let triple (trip : string * string * string) : string =
+    match trip with
+    | (a, b, c) -> Printf.sprintf "%s; %s; %s" a b c
+  in
+  let triple_list (t_list : (string * string * string) list) : string =
+    lst @@ List.map t_list ~f:triple
+  in
+  let params = [ 
+      Printf.sprintf "func: %s" wp_params.func;
+      Printf.sprintf "precond: %s" wp_params.precond;
+      Printf.sprintf "postcond: %s" wp_params.postcond;
+      Printf.sprintf "inline: %s" (opt wp_params.inline);
+      Printf.sprintf "ext-solver-path: %s" (opt wp_params.ext_solver_path);
+      Printf.sprintf "show: %s" (lst wp_params.show);
+      Printf.sprintf "use-fun-input-regs: %b" wp_params.use_fun_input_regs;
+      Printf.sprintf "fun-specs: %s" (lst wp_params.fun_specs);
+      Printf.sprintf 
+        "user-fun-specs-orig: %s" (triple_list wp_params.user_func_specs_orig);
+      Printf.sprintf
+        "user-fun-specs-mod: %s" (triple_list wp_params.user_func_specs_mod);
+    ] 
+  in
+  String.concat ~sep:"\n" params
+
 (* For pretty-printing config. *)
 let pp (ppf : Format.formatter) t : unit =
   let info = String.concat ~sep:"\n" [
       Printf.sprintf "Exe: %s" t.exe;
       Printf.sprintf "Patches: %s" (patches_to_string t.patches);
-      Printf.sprintf "Func: %s" t.func;
       Printf.sprintf "Output filepath: %s"
         (Option.value t.patched_exe_filepath ~default:"none provided");
       Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
       Printf.sprintf "Minizinc model: %s" t.minizinc_model_filepath;
+      Printf.sprintf "WP-params: %s" (wp_params_to_string t.wp_params);
     ] in
   Format.fprintf ppf "@[%s@]@." info
 
@@ -122,12 +152,11 @@ let create_patch
 let create
     ~exe:(exe : string)
     ~patches:(patches : patch list)
-    ~func:(func : string)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
     ~ogre:(ogre : string option)
     ~wp_params:(wp_params : Wp_params.t)
   : t =
-  { exe; patches; func; patched_exe_filepath;
+  { exe; patches; patched_exe_filepath;
     max_tries; minizinc_model_filepath; ogre; wp_params }

@@ -156,10 +156,3 @@ module Solver : sig
   val get_minizinc_model_filepath : t -> string option KB.t
   val get_minizinc_model_filepath_exn : t -> string KB.t
 end
-
-(** Properties pertaining to the verifier *)
-module Verifier : sig
-  val set_func : t -> string option -> unit KB.t
-  val get_func : t -> string option KB.t
-  val get_func_exn : t -> string KB.t
-end

@@ -163,10 +163,10 @@ optional parameters.  It is a JSON file with a single top level object.
 
 The top-level object must include the following fields:
 
-* `"func" : "NAME"` -
-  Specifies the name of the function you want to verify.
 * `"wp-params" : {WP-PARAMS}"` -
   Specifies verification parameters to pass to WP. The following are common:
+  * `"func" : "NAME"` -
+    Specifies the name of the function you want to verify.
   * `"postcond": "S-EXP"` - Specifies the postcondition correctness property
     (as an S-expression in a JSON string) that WP should use to verify the
     correctness of FUNC in the patched exe.
@@ -201,8 +201,8 @@ Here is an example of a valid configuration file, taken from the
 
 ```
 {
-  "func": "main",
   "wp-params" : {
+    "func": "main",
     "postcond": "(assert true)"
   },
   "patches" : [
