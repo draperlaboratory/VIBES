@@ -17,6 +17,10 @@ TESTS_DIR="$(cd "${THIS_DIR}/tests" && pwd)"
 
 # Report progress to slack?
 REPORT_RESULTS="false"
+SUMMARY_RESULTS="false"
+
+# Report more than just errors?
+REPORT_VERBOSITY="quiet"
 
 # Usage message
 usage () {
@@ -27,6 +31,7 @@ usage () {
     echo "OPTIONS"
     echo "  -h | --help       Print this help and exit"
     echo "  --report-results  Report the results to slack"
+    echo "  --not-quiet       Report full results, not just a summary" 
 }
 
 # Parse the command line arguments.
@@ -40,6 +45,11 @@ while (( "${#}" )); do
 
         --report-results)
             REPORT_RESULTS="true"
+            SUMMARY_RESULTS="true"
+            ;;
+
+        --not-quiet)
+            REPORT_VERBOSITY="verbose"
             ;;
 
         *)
@@ -75,9 +85,11 @@ fi
 
 # Where to record progress.
 REPORT="$(report_file "${REPORT_RESULTS}")"
+SUMMARY="$(summary_file "${SUMMARY_RESULTS}")"
 
 # Record some useful info.
 bap_version
+git_branch
 git_commit
 
 # Note that we're starting the tests.
@@ -97,14 +109,14 @@ if [[ "${TESTS_FINAL_STATUS}" == "FAILED" ]]; then
     if [[ "${REPORT_RESULTS}" == "true" ]]; then
         echo "Posting results to slack..."
         echo "System tests failed" > "${MSG_FILE}"
-        report_to_slack
+        report_to_slack "${REPORT_VERBOSITY}"
     fi
     exit 1
 else
     if [[ "${REPORT_RESULTS}" == "true" ]]; then
         echo "Posting results to slack..."
         echo "System tests passed" > "${MSG_FILE}"
-        report_to_slack
+        report_to_slack "${REPORT_VERBOSITY}"
     fi
     exit 0
 fi
