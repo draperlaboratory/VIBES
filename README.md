@@ -1,8 +1,13 @@
 # VIBES
 
-This is the main external VIBES (DARPA AMP TA2) repository.
+VIBES (Verified, Incremental Binary Editing with Synthesis) is a tool that
+uses program synthesis and constraint programming techniques to compile a
+source-level patch and insert it into a preexisting binary program.  VIBES
+uses formal verification to prove that only the intended change is made.
 
-The VIBES tool is comprised of two components:
+This is the main external VIBES repository.
+
+The VIBES tool comprises two components:
 
 * An OCaml library.
 * A command-line tool, which serves a front-end to the library.
@@ -11,8 +16,19 @@ The library is called `bap-vibes`. Its source code lives in [lib/](./lib).
 The command-line tool is implemented as a BAP command, `bap vibes`. Its
 source code lives in [plugin/](./plugin).
 
+## Acknowledgements
 
-## Install APT dependencies
+This work is sponsored by DARPA / NAVWAR Contract N6600120C4018, as part of
+the DARPA Assured Micro-Patching (AMP) program.  Its content does not
+necessarily reflect the position or policy of the US Government and no
+official endorsement should be inferred.
+
+# Installation
+
+VIBES has been developed primarily on Ubuntu 18 and 20.  The instructions
+below assume you are on one of these operating systems.
+
+## Install dependencies through apt
 
 Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
 `arm-linux-gnueabi-gcc`, and `cmake`.  For example, on Ubuntu:
@@ -20,7 +36,7 @@ Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
     apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi cmake
 
 
-# Install OCaml and BAP
+## Install OCaml and BAP
 
 If you are running in the latest `binaryanalysisplatform/bap:latest` docker
 container, you may skip this section. OCaml and BAP are already installed.
@@ -31,7 +47,6 @@ Install the latest (bleeding edge) version of BAP:
 
     opam repo add bap-testing git+https://github.com/BinaryAnalysisPlatform/opam-repository#testing
     opam depext --install -y bap
-
 
 ## Get the VIBES source code
 
@@ -118,7 +133,7 @@ If you want just the library (without the command-line front-end), follow
 the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
 
 
-## Usage
+# Usage
 
 The basic form of the command is this:
 
@@ -162,7 +177,7 @@ verbose logging, so that you can see the progress.
 
 ## Configuration file format
 
-The mandatory configuation file provides the details of the patch and several
+The mandatory configuration file provides the details of the patch and several
 optional parameters.  It is a JSON file with a single top level object.
 
 The top-level object must include the following fields:
@@ -176,7 +191,7 @@ The top-level object must include the following fields:
     correctness of FUNC in the patched exe.
   * `"precond": "S-EXP"` - Specifies a precondition (as an S-expression in
     a JSON string) that WP should assume when verifying the correctness
-    of FUNC in the patched exe. 
+    of FUNC in the patched exe.
 * `"patches" : [PATCH-OBJECTS]"` -
   Specifies the patches to apply as an array of patch fragment description
   objects.  Each object in the array describes a change to a single contiguous
