@@ -65,7 +65,7 @@ before you run this script.
 
 To run the script, from the root of the VIBES repo:
 
-    bash bin/setup/install-dependencies.bash --wp-branch=codyroux/user-fun-spec-compare
+    bash bin/setup/install-dependencies.bash --wp-branch codyroux/user-fun-spec-compare
     . bin/common-lib/env.bash
 
 To install these dependencies manually, perform the following steps.
