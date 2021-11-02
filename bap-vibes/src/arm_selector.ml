@@ -9,18 +9,107 @@ open KB.Let
 * manner: we match against a portion of the AST, call the selector
 * recursively and generate opcodes.
 *
-* The generated code is a bunch of blocks, along with the "current"
-* block, which is unfinished while data operations are still being
-* munched, and turned into a block and added to the set.
 *
-* Note that a given BIR instruction may itself give rise to several
-* blocks, which forces us to pass along that set in the output
-* datatypes, [arm_eff] and [arm_pure], though at the moment no
-* instructions make use of this (ite is a potential example though).
+*
+*  The approach attempts to create a small DSL for opcodes and their
+*  operands, ultimately "smart" constructors for [Ir.t] blocks, and
+*  then use ordinary OCaml pattern matching, with DSL terms on the
+*  right hand side.
+*
+*
+* since BIR constructs may be at a higher-level than ARM ones, and be
+* nested, we need to flatten the terms, as well as disentangle the
+* different kinds of operations. We roughly follow the Core Theory
+* division of data and control _effects_, and _pure_ operations which
+* simply create data, we do _not_ distinguish a memory and non-memory
+* operations, since we need to track dependencies between sequential
+* memory reads and writes (though the variable name for memory doesn't
+* really matter in the end).
+*
+* This results in 2 types:
+*
+* - [arm_eff] which contains the data required for the control and data
+*   operations in the current block, as well as the other blocks
+*   involved in the computation.
+*
+* - [arm_pure], which contains a variable or constant which represents
+*   the value being computed, as well as the effects required to compute
+*   that value (in the form of an [arm_eff] field.
+*
+* Every value is assumed to fit in a "standard" 32 bit register, so
+* anything involving memory, or "double" width words have to be handled
+* explicitly. It's currently an issue that we don't track bit-widths
+* explicitly, since it may result in errors down the line, if we assume
+* widths of registers or operands incorrectly. It sure simplifies the
+* code though.
+*
+*
+* There's a bunch of "preassign" operations throughout the module, since
+* this allows the front-end to use special variable names, which we then
+* know will be correctly allocated to specific registers, e.g. PC or
+* SP. A little care must be taken depending on whether we're generating
+* ARM proper or Thumb. There are probably some land mines here, since
+* some instructions do not allow some registers, and this is not necessarily
+* enforced by our constraints.
+*
+* We also provide the set of "allowed" general purpose registers, to be
+* used by the minizinc back end when doing selection.
+*
+* The general approach to emitting instructions for BIL expressions is
+* the following:
+* 1. Recursively emit instructions for the sub-terms.
+* 2. Generate a fresh temp to store the result.
+* 3. Select the appropriate opcode, and move the result into the
+*    generated temp.
+* 4. Union the set of all effects that participated in building the
+*    result.
+* 5. Return the resulting [arm_pure] record.
+*
+* The opcodes are roughly just the ARM assembly mnemonic strings,
+* they're created in the specific [Ops] module. Actually building
+* the opcodes with their arguments (the aforementioned DSL) is done in
+* the [Arm_ops] module.
+*
+* The selection is done by a series of pattern matching code, namely the
+* [select_FOO] functions, where [FOO] is one of [exp], [stmt] or [blk].
+*
+* The pretty printer takes the resulting Vibes IR block, and is
+* relatively straightforward except for various idiosyncrasies of the
+* ARM assembly syntax:
+*
+* Roughly the only real issue is adding square brackets at the
+* appropriate places. For example, the [str] operation can support
+* (among many others!) the syntaxes [str r0, [r1, #42]], [str r0, [r1]]
+* etc.
+*
+* We do that by marking operands by one of four tags (of a type called
+* [bracket]): [Open], [Close], [Neither] or [Both]. These tags mark
+* whether to open a square bracket, close one, enclose the operand or
+* neither. Roughly we just create a parallel list of the same length as operands.
+*
+* We do this in kind of a hacky way, but I'm not sure how to do this
+* better.
+*
+* Pretty printing is also the time when we resolve offsets: we do the
+* arithmetic required to make them correct relative the the original
+* binary, even though they may be in the patch location. See
+* [arm_operand_pretty] for details.
+*
+*
+* Finally, we create a peephole optimization which, *after register
+* allocation*, deletes all instructions of the form [mov ri ri] (or of
+* the form [add ri #0]). This is the only point when this can be done,
+* since before register allocation we do not know if the [mov] will be
+* of that form.
+*
+* Sadly there is no way to have an explicit [nop] generated at the moment.
+*
 *
 *
 *
 *---------------------------------------------------------*)
+
+
 
 type arm_eff = {
   (* These are the move/load/store operations in the current block *)
