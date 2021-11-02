@@ -5,17 +5,12 @@ module Wp_params = Bap_wp.Run_parameters
 module H = Helpers
 
 (* Some dummy values to use in the tests below. *)
-let orig_proj = H.dummy_proj "orig_exe" ~name:H.func
-let orig_prog = H.prog_exn orig_proj
-let patch_proj = H.dummy_proj "patched_exe" ~name:H.func
-let patch_prog = H.prog_exn patch_proj
 let tgt = Bap_core_theory.Theory.Target.unknown
 let params =
   {
     (Wp_params.default ~func:H.func) with
     postcond = (Core_kernel.Sexp.to_string H.property)
   }
-
 
 (* A helper to print the results. *)
 let res_str r : string =
@@ -28,6 +23,10 @@ let res_str r : string =
 
 (* Test that the verifier works as expected when [WP] returns [UNSAT]. *)
 let test_verify_unsat (_ : test_ctxt) : unit =
+  let orig_proj = H.dummy_proj "orig_exe" ~name:H.func in
+  let orig_prog = H.prog_exn orig_proj in
+  let patch_proj = H.dummy_proj "patched_exe" ~name:H.func in
+  let patch_prog = H.prog_exn patch_proj in
   let result = Verifier.verify tgt params
     ~orig_prog ~patch_prog
     ~verifier:H.verify_unsat
@@ -40,6 +39,10 @@ let test_verify_unsat (_ : test_ctxt) : unit =
 
 (* Test that the verifier works as expected when [WP] returns [SAT]. *)
 let test_verify_sat (_ : test_ctxt) : unit =
+  let orig_proj = H.dummy_proj "orig_exe" ~name:H.func in
+  let orig_prog = H.prog_exn orig_proj in
+  let patch_proj = H.dummy_proj "patched_exe" ~name:H.func in
+  let patch_prog = H.prog_exn patch_proj in
   let result = Verifier.verify tgt params
     ~orig_prog ~patch_prog
     ~verifier:H.verify_sat
@@ -52,6 +55,10 @@ let test_verify_sat (_ : test_ctxt) : unit =
 
 (* Test that the verifier works as expected when [WP] returns [UNKNOWN]. *)
 let test_verify_unknown (_ : test_ctxt) : unit =
+  let orig_proj = H.dummy_proj "orig_exe" ~name:H.func in
+  let orig_prog = H.prog_exn orig_proj in
+  let patch_proj = H.dummy_proj "patched_exe" ~name:H.func in
+  let patch_prog = H.prog_exn patch_proj in
   let result = Verifier.verify tgt params
     ~orig_prog ~patch_prog
     ~verifier:H.verify_unknown

@@ -1,11 +1,8 @@
-open !Core_kernel
+open Core_kernel
 open Bap.Std
-open Bap_knowledge
-open Bap_vibes
 open Bap_core_theory
+open Bap_vibes
 open OUnit2
-
-module KB = Knowledge
 
 (* Skip a test, with a message saying why. *)
 let skip_test (msg : string) : unit = skip_if true msg
@@ -19,7 +16,8 @@ let empty_proj (filename : string) : (Project.t, Error.t) result =
   Project.create input
 
 (* Same as [empty_proj], but fail if loading errors. *)
-let proj_exn (proj : (Project.t * string, Error.t) result) : Project.t * string =
+let proj_exn (proj : (Project.t * string, Error.t) result)
+    : Project.t * string =
   match proj with
   | Ok p -> p
   | Error e ->
@@ -29,13 +27,15 @@ let proj_exn (proj : (Project.t * string, Error.t) result) : Project.t * string 
     end
 
 (* Create a dummy project with an empty main subroutine *)
-let dummy_proj ?name:(name = "main") filename : (Project.t * string, Error.t) result =
+let dummy_proj ?name:(name = "main") filename
+    : (Project.t * string, Error.t) result =
   let empty_proj = empty_proj filename in
   let dummy_main = Sub.create ~name:name () in
   let dummy_prog = Program.Builder.create () in
   Program.Builder.add_sub dummy_prog dummy_main;
   let dummy_prog = Program.Builder.result dummy_prog in
-  Result.map empty_proj ~f:(fun p -> (Project.with_program p dummy_prog, filename))
+  Result.map empty_proj
+    ~f:(fun p -> (Project.with_program p dummy_prog, filename))
 
 (* Create a dummy C function declaration with empty everything *)
 let dummy_code : Cabs.definition =
@@ -46,17 +46,17 @@ let dummy_code : Cabs.definition =
   FUNDEF (single_name, body)
 
 (* Get an empty program that can be used in tests. *)
-let prog_exn (proj : (Project.t * string, Error.t) result) : Program.t * string =
+let prog_exn (proj : (Project.t * string, Error.t) result)
+    : Program.t * string =
   let p, s = proj_exn proj in
   (Project.program p, s)
 
+(* Some dummy values that can be used in tests. *)
 let dummy_target =
   Theory.Target.declare
     ~bits:32
     ~byte:8
     "dummy_tgt"
-
-(* Some dummy values that can be used in tests. *)
 let patch = "ret-3"
 let patch_point_str = "0x3f"
 let patch_point = Bitvec.of_string patch_point_str
@@ -69,8 +69,6 @@ let original_exe = "/path/to/original/exe"
 let patched_exe = "/path/to/patched/exe"
 let minizinc_model_filepath = "/path/to/model.mzn"
 let unit = KB.Object.create Bap_core_theory.Theory.Unit.cls
-let proj = dummy_proj original_exe
-let prog = prog_exn proj
 
 (* A helper to create a [Data] object that can be used in tests. *)
 let obj () = KB.Object.create Data.cls
