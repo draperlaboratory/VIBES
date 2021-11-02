@@ -1,3 +1,54 @@
+(*******************************************************************
+* The VIBES Intermediate Representation.
+*
+* This module contains the data type and operations that is fed
+* into the constraint solver as the last step of the code generation,
+* where (currently) register allocation and instruction scheduling are
+* performed.
+*
+* The basic datatype of opcodes ([opcode], or [Opcode.t]) is just a
+* fancy string (the BAP [Name.t] type), since that's all the info we
+* need for now (though it would be nice to distinguish move from
+* non-move operations in the future).
+*
+* Variables have a unique identifier, and a list of possible virtual
+* variables that correspond to it, along with an optional physical
+* "preassignment" location.
+*
+* Operands are a variant type of either:
+* - A variable (probably the most common case)
+* - A bitvector constant
+* - A label (for jumps)
+* - A "void" operand, representing a name which will disappear on
+*   printing, or a "virtual" resource (e.g. memory, or a "branch taken"
+*   tag)
+* - An offset (for concrete locations)
+*
+* It's a bit annoying to distinguish the two last ones, but it turns out
+* to be quite useful, if we're creating branching structure in our
+* patch, to not have to do crazy mathematics to determine the location
+* of the target. The offsets are necessary if we need to jump somewhere
+* outside of the patch code (which is quite common).
+*
+* Void operands are necessary for instruction scheduling: basically a
+* void operand should be assigned and used by operations whose order
+* cannot be swapped: e.g. in the sequence [str foo bar; ld ri boz],
+* [str] should assign to a void [mem] variable, and [ld] should read
+* from that same variable, so that their order is preserved (unless you
+* can prove that the locations do not alias).
+*
+* Similar issues can arise with branching, though that typically occurs
+* at the end of a block and is not reordered.
+*
+*
+* Registers are allocated based on their role: only certain registers
+* are available to certain roles in the minizinc constraint environment.
+*
+* Because we don't want to assign *actual* resources to the void
+* locations, we tag all the variables with a "dummy" role, to
+* avoid using up precious real locations.
+*
+************************************************************************)
 open !Core_kernel
 open Bap.Std
 open Bap_knowledge
@@ -56,14 +107,6 @@ type operand =
   | Label of Tid.t
   | Void of op_var
   | Offset of Word.t [@@deriving compare, equal, sexp]
-
-type shift = [
-  | `ASR
-  | `LSL
-  | `LSR
-  | `ROR
-  | `RRX
-] [@@deriving sexp, equal, compare]
 
 
 let freshen_operand o =
