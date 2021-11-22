@@ -23,7 +23,9 @@ type t =
   | Invalid_patch_code of string
   | Invalid_max_tries
   | Invalid_loader_data of string
+  | Invalid_bsi_data of string
   | No_such_file of string
+  | Bad_image of string * Core_kernel.Error.t
 
 let pp (ppf : Format.formatter) t : unit =
   let msg = match t with
@@ -71,6 +73,12 @@ let pp (ppf : Format.formatter) t : unit =
       "optional config json field \"max-tries\" must be an integer"
     | Invalid_loader_data s ->
       "error in optional loader data field \"ogre\": " ^ s
+    | Invalid_bsi_data s ->
+      "error in optional field \"bsi-metadata\": " ^ s
     | No_such_file desc -> desc
+    | Bad_image (exe, e) ->
+      Format.asprintf "couldn't create image for exe \"%s\": %a"
+        exe Core_kernel.Error.pp e
+
   in
   Format.fprintf ppf "@[%s@]" msg

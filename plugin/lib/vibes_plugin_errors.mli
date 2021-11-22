@@ -26,6 +26,8 @@ type t =
   | Invalid_patch_code of string
   | Invalid_max_tries
   | Invalid_loader_data of string
+  | Invalid_bsi_data of string
   | No_such_file of string
+  | Bad_image of string * Core_kernel.Error.t
 
 val pp : Format.formatter -> t -> unit
