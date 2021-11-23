@@ -421,28 +421,8 @@ module BSI = struct
       let arch = fix_arm_arch_string entry_point arch in
       {arch; bits; is_little_endian; entry_point; functions}
 
-end
-
-let parse_bsi_metadata (exe : string) (config_json : Json.t)
-  : (BSI.t option, error) Stdlib.result =
-  match Json.Util.member "bsi-metadata" config_json with
-  | `Null -> Err.return None
-  | `String bsi_metadata_filepath ->
-    parse_json bsi_metadata_filepath >>= BSI.parse exe >>| Option.return
-  | _ -> Err.fail @@ Errors.Invalid_bsi_data
-      "`bsi-metadata` field must be a string"
-
-let validate_loader_info
-    (bsi : BSI.t option)
-    (config_json : Json.t)
-  : (string option, error) Stdlib.result =
-  validate_ogre config_json >>= fun ogre ->
-  match bsi, ogre with
-  | None, None -> Err.return None
-  | None, Some _ -> Err.return ogre
-  | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
-  | Some bsi, None ->
-    let ogre_preamble =
+  let to_ogre_string (bsi : t) : string =
+    let preamble =
       sprintf
         "(declare arch (name str))\n\
          (declare bits (size int))\n\
@@ -461,7 +441,7 @@ let validate_loader_info
          (bits %d)\n\
          (is-little-endian %s)\n\
          (base-address 0x0)\n\
-         (entry-point %s)\n"
+         (entry-point %s)\n\n"
         bsi.arch bsi.bits
         (Bool.to_string bsi.is_little_endian)
         (Bitvec.to_string bsi.entry_point) in
@@ -488,8 +468,30 @@ let validate_loader_info
             start
             start f.name
             start size start) in
-    Err.return @@ Some (ogre_preamble ^ functions)
+    preamble ^ functions
+  
+end
 
+let parse_bsi_metadata (exe : string) (config_json : Json.t)
+  : (BSI.t option, error) Stdlib.result =
+  match Json.Util.member "bsi-metadata" config_json with
+  | `Null -> Err.return None
+  | `String bsi_metadata_filepath ->
+    parse_json bsi_metadata_filepath >>= BSI.parse exe >>| Option.return
+  | _ -> Err.fail @@ Errors.Invalid_bsi_data
+      "`bsi-metadata` field must be a string"
+
+let validate_loader_info
+    (bsi : BSI.t option)
+    (config_json : Json.t)
+  : (string option, error) Stdlib.result =
+  validate_ogre config_json >>= fun ogre ->
+  match bsi, ogre with
+  | None, None -> Err.return None
+  | None, Some _ -> Err.return ogre
+  | Some bsi, None -> Err.return @@ Some (BSI.to_ogre_string bsi)
+  | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
+    
 (* Construct a configuration record from the given parameters. *)
 let create
     ~exe:(exe : string)
