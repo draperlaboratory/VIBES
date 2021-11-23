@@ -432,7 +432,6 @@ let parse_bsi_metadata (exe : string) (config_json : Json.t)
   | _ -> Err.fail @@ Errors.Invalid_bsi_data
       "`bsi-metadata` field must be a string"
 
-(* Ignore the OGRE field if we're already getting metadata. *)
 let validate_loader_info
     (bsi : BSI.t option)
     (config_json : Json.t)
