@@ -83,7 +83,7 @@ let validate_patch_code (nm : string) (obj : Json.t)
      | Error msg -> Error (Errors.Invalid_patch_code msg))
   | `Null, `String s -> Ok (Vibes_config.ASMCode s)
   | `String s, `String s' -> Error
-                               (Errors.Invalid_patch_code "Specified both assembly and C code in patch")
+      (Errors.Invalid_patch_code "Specified both assembly and C code in patch")
   | _, _ -> Err.fail Errors.Missing_patch_code
 
 (* Extract the patch point field and parse the hex string into a bitvector, or
