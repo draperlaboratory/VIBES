@@ -327,17 +327,18 @@ module BSI = struct
     match value_of_field "address_ranges" data with
     | Some (`List data) -> begin
         match data with
-        | x :: _ ->
-          (* XXX: The function may actually be non-contiguous in memory,
-             which is why the ranges are specified as a list. For now,
-             we will just ignore this and pick the first range. *)
+        | x :: [] ->
           validate_address_range_start name x >>= fun start ->
           validate_address_range_end name x >>| fun end_ ->
           let size = bitvec_of_int @@ end_ - start in
           let start = bitvec_of_int start in
           start, size
+        (* XXX: consider how to load non-contiguous chunks with the same
+           symbol name. *)
+        | _ :: _ -> Err.fail @@ Errors.Invalid_bsi_data
+            (sprintf "expected contiguous address range of function %s" name)
         | [] -> Err.fail @@ Errors.Invalid_bsi_data
-            (sprintf "expected non-empty list for address ranges \
+            (sprintf "expected empty list for address ranges \
                       of function %s" name)
       end
     | Some _ -> Err.fail @@ Errors.Invalid_bsi_data
