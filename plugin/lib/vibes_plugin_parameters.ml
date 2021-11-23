@@ -437,9 +437,12 @@ let validate_loader_info
     (bsi : BSI.t option)
     (config_json : Json.t)
   : (string option, error) Stdlib.result =
-  match bsi with
-  | None -> validate_ogre config_json
-  | Some bsi ->
+  validate_ogre config_json >>= fun ogre ->
+  match bsi, ogre with
+  | None, None -> Err.return None
+  | None, Some _ -> Err.return ogre
+  | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
+  | Some bsi, None ->
     let ogre_preamble =
       sprintf
         "(declare arch (name str))\n\
