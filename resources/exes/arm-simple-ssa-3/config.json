@@ -1,0 +1,33 @@
+{
+  "max-tries": 1,
+  "wp-params": {
+    "func": "main",
+    "postcond": "(assert (= (bvadd R0_mod #x00000004) R0_orig))"
+  },
+  "patches" : [
+    {"patch-name" : "ssa-example",
+     "patch-code" : "int x; x = 0x3; x = x;",
+     "patch-point" : "0x103cc",
+     "patch-size" : 8,
+     "patch-vars": [
+       {"name": "x",
+	"at-entry": {
+          "stored-in": "register",
+	  "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R0"
+        }},
+       {"name": "y",
+	"at-entry": {
+          "stored-in": "register",
+	  "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R0"
+        }}
+       ]}
+  ]
+}
