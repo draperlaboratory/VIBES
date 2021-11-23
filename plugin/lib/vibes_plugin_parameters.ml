@@ -461,8 +461,7 @@ let validate_loader_info
          (entry-point %s)\n"
         bsi.arch bsi.bits
         (Bool.to_string bsi.is_little_endian)
-        (Bitvec.to_string bsi.entry_point)
-    in
+        (Bitvec.to_string bsi.entry_point) in
     let functions =
       String.concat ~sep:"\n\n" @@
       List.map bsi.functions ~f:(fun f ->
