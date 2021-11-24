@@ -330,9 +330,9 @@ module BSI = struct
     : (Bitvec.t * Bitvec.t, error) Stdlib.result =
     match value_of_field "address_ranges" data with
     | Some (`List data) -> begin
-        match data with
         (* XXX: consider how to load non-contiguous chunks with the same
            symbol name. *)
+        match data with
         | x :: [] ->
           validate_address_range_start name x >>= fun start ->
           validate_address_range_end name x >>| fun end_ ->
