@@ -311,6 +311,8 @@ module BSI = struct
     : (int, error) Stdlib.result =
     match Json.Util.member "start" obj with
     | `Int i -> Err.return i
+    | `Null -> Err.fail @@ Errors.Invalid_bsi_data
+        (sprintf "missing field `start` for address range of function %s" name)
     | _ -> Err.fail @@ Errors.Invalid_bsi_data
         (sprintf "expected integer for address range `start` \
                   of function %s" name)
@@ -319,6 +321,8 @@ module BSI = struct
     : (int, error) Stdlib.result =
     match Json.Util.member "end" obj with
     | `Int i -> Err.return i
+    | `Null -> Err.fail @@ Errors.Invalid_bsi_data
+        (sprintf "missing field `end` for address range of function %s" name)
     | _ -> Err.fail @@ Errors.Invalid_bsi_data
         (sprintf "expected integer for address range `end` of function %s" name)
 
@@ -327,19 +331,16 @@ module BSI = struct
     match value_of_field "address_ranges" data with
     | Some (`List data) -> begin
         match data with
+        (* XXX: consider how to load non-contiguous chunks with the same
+           symbol name. *)
         | x :: [] ->
           validate_address_range_start name x >>= fun start ->
           validate_address_range_end name x >>| fun end_ ->
           let size = bitvec_of_int @@ end_ - start in
           let start = bitvec_of_int start in
           start, size
-        (* XXX: consider how to load non-contiguous chunks with the same
-           symbol name. *)
-        | _ :: _ -> Err.fail @@ Errors.Invalid_bsi_data
-            (sprintf "expected contiguous address range of function %s" name)
-        | [] -> Err.fail @@ Errors.Invalid_bsi_data
-            (sprintf "expected empty list for address ranges \
-                      of function %s" name)
+        | _ -> Err.fail @@ Errors.Invalid_bsi_data
+            (sprintf "expected singleton address range of function %s" name)
       end
     | Some _ -> Err.fail @@ Errors.Invalid_bsi_data
         (sprintf "expected list for `address_ranges` of function %s" name)
