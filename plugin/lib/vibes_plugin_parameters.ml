@@ -112,6 +112,11 @@ let validate_h_var_name (obj : Json.t) : (string, error) Stdlib.result =
   | `String s -> is_not_empty s (Errors.Missing_higher_var_name)
   | _ -> Err.fail Errors.Missing_higher_var_name
 
+let validate_h_var_constant (addr : string)
+  : (word, error) Stdlib.result =
+  try Err.return @@ Word.of_string addr
+  with Invalid_argument _ -> Err.fail Errors.Missing_higher_var_offset
+
 (* Extract where a higher variable is stored, or error. *)
 let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
     : (Hvar.stored_in, error) Stdlib.result =
@@ -122,13 +127,26 @@ let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
       | Some (`String "register") ->
         validate_string_field
           "register" data Errors.Missing_higher_var_reg >>= fun reg ->
-        Err.return (Hvar.Register reg)
+        Err.return (Hvar.stored_in_register reg)
       | Some (`String "memory") ->
-        validate_string_field
-          "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
-        validate_word_field
-          "offset" data Errors.Missing_higher_var_offset >>= fun offset ->
-        Err.return (Hvar.Memory (fp, offset))
+        begin
+          match value_of_field "address" data with
+          | Some (`String addr) ->
+            begin
+              try
+                Err.return
+                  Hvar.(stored_in_memory (create_global (Word.of_string addr)))
+              with Invalid_argument _ ->
+                Err.fail Errors.Missing_higher_var_offset
+            end
+          | Some _ -> Err.fail Errors.Missing_higher_var_offset
+          | None ->
+            validate_string_field
+              "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
+            validate_word_field
+              "offset" data Errors.Missing_higher_var_offset >>= fun offset ->
+            Err.return Hvar.(stored_in_memory (create_frame fp offset))
+        end
       | _ -> Err.fail Errors.Missing_higher_var_stored_in
     end
   | _ -> Err.fail e
@@ -136,11 +154,21 @@ let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
 (* Extract a higher variable, or error. *)
 let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
   validate_h_var_name obj >>= fun name ->
-  validate_h_var_stored_in
-    obj "at-entry" Errors.Missing_higher_var_at_entry >>= fun at_entry ->
-  validate_h_var_stored_in
-    obj "at-exit" Errors.Missing_higher_var_at_exit >>= fun at_exit ->
-  Err.return (Hvar.create name at_entry at_exit)
+  match Json.Util.member "constant" obj with
+  | `String addr ->
+    validate_h_var_constant addr >>= fun addr ->
+    Err.return (Hvar.create_with_constant name ~const:addr)
+  | `Null ->
+    validate_h_var_stored_in
+      obj "at-entry" Errors.Missing_higher_var_at_entry >>= fun at_entry ->
+    begin match Json.Util.member "at-exit" obj with
+      | `Null -> Err.return None
+      | _ ->
+        validate_h_var_stored_in
+          obj "at-exit" Errors.Missing_higher_var_at_exit >>| Option.return
+    end >>= fun at_exit ->
+    Err.return (Hvar.create_with_storage name ~at_entry ~at_exit)
+  | _ -> Err.fail Errors.Missing_higher_var_offset
 
 (* Extract the patch vars (which may be an empty list), or error. *)
 let validate_patch_vars (obj : Json.t)
