@@ -35,6 +35,8 @@ let create_vibes_ir
   let ir = Blk.from_insn bir in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
+  List.iter ir ~f:(fun blk ->
+      eprintf "%s\n%!" (Blk.to_string blk));
   let* ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign tgt lang ir in
   KB.return ir
