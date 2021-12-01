@@ -294,8 +294,12 @@ module Eval(T : Theory.Core) = struct
         constant_to_pure info c
       (* FIXME: for now, casts are simply for tagging subterms *)
       | CAST (_, e) -> aux e
-      | _ -> Cprint.print_expression e 0;
-        Err.fail @@ Err.Core_c_error "FrontC produced expression unsupported by VIBES"
+      | _ ->
+        let e_str = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+        let msg =
+          Format.sprintf "FrontC produced expression unsuppored by VIBES: %s"
+            e_str in
+        Err.fail @@ Err.Core_c_error msg
     in
     aux e
 
