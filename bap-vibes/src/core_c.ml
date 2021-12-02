@@ -106,11 +106,11 @@ module Eval(CT : Theory.Core) = struct
     let sp =
       T.Target.reg tgt T.Role.Register.stack_pointer in
     let sp_data_align =
-      (* XXX: If we're on the ARM target, then data access on the stack
-         should be aligned by 4 bytes at all times. Meanwhile, the ABI states
-         that the SP must be 8-byte aligned at callsites. The ARM target
-         for BAP says that `data_alignment` is 8, but we actually want it to
-         be 4 for this case, so we'll just use `bits`. *)
+      (* XXX: If we're on the ARM target, SP should be at least aligned by 4
+         bytes at all times. Furthermore, the ABI states that the SP must be
+         8-byte aligned at callsites. The ARM target for BAP says that
+         `data_alignment` is 8, but we actually want it to be 4 for this case,
+         so we'll just use `bits`. *)
       let align = bits lsr 3 in
       CT.int word_sort @@
       Bitvector.(to_bitvec @@ of_int align ~width:bits) in
