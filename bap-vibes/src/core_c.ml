@@ -86,22 +86,37 @@ module Eval(CT : Theory.Core) = struct
     word_sort : 'a T.Bitv.t T.Value.sort;
     byte_sort : 'b T.Bitv.t T.Value.sort;
     mem_var   : ('a, 'b) T.Mem.t T.var;
-    endianness : T.endianness;
+    endian : T.Bool.t T.value;
     ret_var   : unit T.var;
     arg_vars  : unit T.var list;
     caller_save : unit T.var list;
     sp        : unit T.var;
+    sp_data_align : unit T.bitv;
     hvars     : Hvar.t list;
   }
 
-  let mk_interp_info (hvars : Hvar.t list) (tgt : T.target) : ('a, 'b) interp_info =
-    let word_sort = T.Bitv.define (T.Target.bits tgt) in
+  let mk_interp_info (hvars : Hvar.t list)
+      (tgt : T.target) : ('a, 'b) interp_info KB.t =
+    let bits = T.Target.bits tgt in
+    let word_sort = T.Bitv.define bits in
     let byte_sort = T.Bitv.define (T.Target.byte tgt) in
     let of_bil v = T.Var.define (Var.sort v) (Var.name v) in
     let ret_var = of_bil Arm_env.r0 in
     let arg_vars = List.map Arm_env.[r0; r1; r2; r3] ~f:of_bil in
     let sp =
       T.Target.reg tgt T.Role.Register.stack_pointer in
+    let sp_data_align =
+      (* XXX: If we're on the ARM target, then data access on the stack
+         should be aligned by 4 bytes at all times. Meanwhile, the ABI states
+         that the SP must be 8-byte aligned at callsites. The ARM target
+         for BAP says that `data_alignment` is 8, but we actually want it to
+         be 4 for this case, so we'll just use `bits`. *)
+      let align = bits lsr 3 in
+      CT.int word_sort @@
+      Bitvector.(to_bitvec @@ of_int align ~width:bits) in
+    let endianness = T.Target.endianness tgt in
+    let+ endian =
+      if T.Endianness.(endianness = eb) then CT.b1 else CT.b0 in
     (* We assume mem_sort is indexed on word size into bytes, since
        it's the most common. Otherwise we need to query [tgt]
        more... *)
@@ -109,12 +124,13 @@ module Eval(CT : Theory.Core) = struct
       word_sort = word_sort;
       byte_sort = byte_sort;
       mem_var = T.Target.data tgt;
-      endianness = T.Target.endianness tgt;
+      endian;
       ret_var;
       arg_vars;
+      sp = Option.value_exn sp;
+      sp_data_align;
       hvars;
       caller_save = arg_vars;
-      sp = Option.value_exn sp;
     }
 
   let char_ty = Theory.Bitv.define 8
@@ -262,7 +278,8 @@ module Eval(CT : Theory.Core) = struct
     | MEMOF ->
       (* FIXME: use endianness here *)
       let ty = ty_op_pointer_type info ty in
-      let load : _ bitv -> _ bitv = CT.(loadw ty b0 (var info.mem_var)) in
+      let load : _ bitv -> _ bitv =
+        CT.(loadw ty !!(info.endian) (var info.mem_var)) in
       lift_bitv load
     | ADDROF
     | MINUS
@@ -286,7 +303,8 @@ module Eval(CT : Theory.Core) = struct
     | CONST_CHAR _
     | CONST_STRING _
     | CONST_COMPOUND _ ->
-      Err.fail @@ Err.Core_c_error "constant_to_pure: constant unsupported by VIBES"
+      Err.fail @@
+      Err.Core_c_error "constant_to_pure: constant unsupported by VIBES"
 
   let addr_of_var info var_map (v : string)  : unit pure =
     match Hvar.find v info.hvars with
@@ -301,17 +319,19 @@ module Eval(CT : Theory.Core) = struct
                     storage classifier." v)
       | Some storage -> match Hvar.memory storage with
         | None -> Err.fail @@ Err.Core_c_error
-            (sprintf "expr_to_pure: higher var %s for ADDROF expression is not \
-                      stored in a memory location." v)
+            (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
+                      not stored in a memory location." v)
         | Some memory -> match Hvar.frame memory with
           | Some (fp, off) ->
             let fp = T.Var.resort (Map.find_exn var_map fp) info.word_sort in
-            let+ a = CT.add (CT.var fp) (CT.int info.word_sort (Word.to_bitvec off)) in
+            let+ a =
+              CT.add (CT.var fp)
+                (CT.int info.word_sort (Word.to_bitvec off)) in
             T.Value.forget a
           | None -> match Hvar.global memory with
             | None -> Err.fail @@ Err.Core_c_error
-                (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
-                          not stored in a frame or global memory." v)
+                (sprintf "expr_to_pure: higher var %s for ADDROF expression \
+                          is  not stored in a frame or global memory." v)
             | Some addr ->
               let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
               T.Value.forget a
@@ -371,72 +391,57 @@ module Eval(CT : Theory.Core) = struct
       Err.Core_c_error "Maximum number of arguments for function call \
                         was exceeded"
 
+  (* Right now, we're doing the stupid way of preserving and restoring hvars
+     that are caller-save. That is, this idiom happens at every single callsite.
+     Ideally, we should be doing this once at the beginning and once at the end.
+     Then, every time those hvars are referenced in the body of the patch, they
+     will be substituted with the corresponding stack location.  *)
+
+  let caller_save_of_hvar info (hvar : Hvar.t) : unit T.var option =
+    let value = Hvar.value hvar in
+    match Hvar.at_entry value with
+    | None -> None
+    | Some at_entry -> match Hvar.at_exit value with
+      | None -> None
+      | Some at_exit ->
+        match Hvar.register at_entry, Hvar.register at_exit with
+        | Some reg, Some reg' when String.equal reg reg' ->
+          List.find info.caller_save ~f:(fun v ->
+              String.equal reg @@ T.Var.name v)
+        | _ -> None
+
+  let word_sort_var info (v : unit T.var) =
+    CT.var @@ T.Var.resort v info.word_sort
+  
   let preserve_caller_save_hvars info =
-    let _get_caller_save reg =
-      List.find info.caller_save ~f:(fun v ->
-          String.equal reg (T.Var.name v)) in
-    let* little_endian =
-      if T.Endianness.(info.endianness = eb) then CT.b1 else CT.b0 in
-    let* adj_val = CT.int info.word_sort @@
-      Bitvector.to_bitvec @@ Word.of_int 4 ~width:32 in
-    let _reify_var v = CT.var @@ T.Var.resort v info.word_sort in
     KB.List.fold_right info.hvars ~init:!!empty_data ~f:(fun hvar acc ->
-        (* let value = Hvar.value hvar in *)
-        (* match Hvar.at_entry value with *)
-        (* | None -> KB.return acc *)
-        (* | Some at_entry -> match Hvar.at_exit value with *)
-        (*   | None -> KB.return acc *)
-        (*   | Some at_exit -> *)
-        (*     match Hvar.register at_entry, Hvar.register at_exit with *)
-        (*     | Some reg, Some reg' when String.equal reg reg' -> *)
-        (*       begin *)
-        (*         match get_caller_save reg with *)
-        (*         | None -> KB.return acc *)
-        (*         | Some var -> *)
-        (*           let* new_sp = CT.sub (reify_var info.sp) !!adj_val in *)
-        (*           let* adjust_stack_ptr = *)
-        (*             CT.set info.sp !!(T.Value.forget new_sp) in *)
-        (*           let* store_reg = *)
-        (*             CT.storew !!little_endian (CT.var info.mem_var) *)
-        (*               (reify_var info.sp) (reify_var var) in *)
-        (*           let+ set_store = CT.set info.mem_var !!store_reg in *)
-        (*           CT.seq !!adjust_stack_ptr (CT.seq !!set_store acc) *)
-        (*       end *)
-        (*     | _ -> *) KB.return acc)
+        match caller_save_of_hvar info hvar with
+        | None -> KB.return acc
+        | Some var ->
+          let* new_sp =
+            CT.sub (word_sort_var info info.sp) info.sp_data_align in
+          let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in
+          let* store_reg =
+            CT.storew !!(info.endian) (CT.var info.mem_var)
+              (word_sort_var info info.sp) (word_sort_var info var) in
+          let+ set_store = CT.set info.mem_var !!store_reg in
+          CT.seq !!adjust_stack_ptr (CT.seq !!set_store acc))
 
   let restore_caller_save_hvars info =
-    let _get_caller_save reg =
-      List.find info.caller_save ~f:(fun v ->
-          String.equal reg (T.Var.name v)) in
-    let* little_endian =
-      if T.Endianness.(info.endianness = eb) then CT.b1 else CT.b0 in
-    let* adj_val = CT.int info.word_sort @@
-      Bitvector.to_bitvec @@ Word.of_int 4 ~width:32 in
-    let _reify_var v = CT.var @@ T.Var.resort v info.word_sort in
     let* pops =
       KB.List.fold info.hvars ~init:!!empty_data ~f:(fun acc hvar ->
-          (* let value = Hvar.value hvar in *)
-          (* match Hvar.at_entry value with *)
-          (* | None -> KB.return acc *)
-          (* | Some at_entry -> match Hvar.at_exit value with *)
-          (*   | None -> KB.return acc *)
-          (*   | Some at_exit -> *)
-          (*     match Hvar.register at_entry, Hvar.register at_exit with *)
-          (*     | Some reg, Some reg' when String.equal reg reg' -> *)
-          (*       begin *)
-          (*         match get_caller_save reg with *)
-          (*         | None -> KB.return acc *)
-          (*         | Some var -> *)
-          (*           let* new_sp = CT.add (reify_var info.sp) !!adj_val in *)
-          (*           let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in *)
-          (*           let* load_reg = *)
-          (*             CT.loadw info.word_sort !!little_endian *)
-          (*               (CT.var info.mem_var) (reify_var info.sp) in *)
-          (*           let+ set_reg = CT.set var !!(T.Value.forget load_reg) in *)
-          (*           CT.seq !!set_reg (CT.seq !!adjust_stack_ptr acc) *)
-          (*       end *)
-          (*     | _ ->  *)KB.return acc)
-    in
+          match caller_save_of_hvar info hvar with
+          | None -> KB.return acc
+          | Some var ->
+            let* new_sp =
+              CT.add (word_sort_var info info.sp) info.sp_data_align in
+            let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in
+            let* load_reg =
+              CT.loadw info.word_sort !!(info.endian)
+                (CT.var info.mem_var) (word_sort_var info info.sp) in
+            let+ set_reg = CT.set var !!(T.Value.forget load_reg) in
+            CT.seq !!set_reg (CT.seq !!adjust_stack_ptr acc)) in        
+    (* XXX: Why do we have to unwrap it again? Did I mess up somewhere? *)
     pops
 
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
@@ -456,7 +461,8 @@ module Eval(CT : Theory.Core) = struct
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* preserve = preserve_caller_save_hvars info in
-        let* call_blk = CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
+        let* call_blk =
+          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
         let* retval = CT.set lval @@ CT.var info.ret_var in
         let* restore = restore_caller_save_hvars info in
         let* post = CT.seq !!retval !!restore in
@@ -479,7 +485,8 @@ module Eval(CT : Theory.Core) = struct
         let dst = CT.int info.word_sort dst in
         let* call = CT.jmp dst in
         let* preserve = preserve_caller_save_hvars info in
-        let* call_blk = CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
+        let* call_blk =
+          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
         let* restore = restore_caller_save_hvars info in
         let* post_blk = data restore in
         CT.seq !!call_blk !!post_blk
@@ -489,7 +496,8 @@ module Eval(CT : Theory.Core) = struct
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* preserve = preserve_caller_save_hvars info in
-        let* call_blk = CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
+        let* call_blk =
+          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
         let* restore = restore_caller_save_hvars info in
         let* post_blk = data restore in
         CT.seq !!call_blk !!post_blk
@@ -559,7 +567,7 @@ module Eval(CT : Theory.Core) = struct
 
   let c_patch_to_eff (hvars : Hvar.t list) (tgt : T.target)
       (patch : Cabs.definition) : unit eff =
-    let info = mk_interp_info hvars tgt in
+    let* info = mk_interp_info hvars tgt in
     match patch with
     | FUNDEF (_, b) -> body_to_eff info b
     | _ -> Err.fail @@
