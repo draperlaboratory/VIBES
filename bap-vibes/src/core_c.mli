@@ -40,5 +40,6 @@ module Eval(T : Theory.Core) : sig
       If a construct (as parsed by FrontC) is not supported,
       [failwith] is called and crashes the program.
   *)
-  val c_patch_to_eff : Theory.target -> Cabs.definition -> unit Theory.eff
+  val c_patch_to_eff :
+    Higher_var.t list -> Theory.target -> Cabs.definition -> unit Theory.eff
 end

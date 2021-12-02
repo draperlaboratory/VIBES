@@ -21,7 +21,8 @@ let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   Events.(send @@ Info (Printf.sprintf "%s" code_str));
 
   (* Get the patch (as BIR). *)
-  let* bir = CParser.c_patch_to_eff tgt code in
+  let* hvars = Data.Patch.get_patch_vars_exn patch in
+  let* bir = CParser.c_patch_to_eff hvars tgt code in
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);

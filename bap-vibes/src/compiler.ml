@@ -32,9 +32,11 @@ let create_vibes_ir
     (lang : Theory.language)
     (hvars : Higher_var.t list)
     (bir : Insn.t) : Ir.t KB.t =
-  let ir = Blk.from_insn bir in
+  let ir = Blk.from_insns [bir] in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
+  List.iter ir ~f:(fun blk ->
+      eprintf "%s\n%!" (Blk.to_string blk));
   let* ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign tgt lang ir in
   KB.return ir
@@ -42,36 +44,32 @@ let create_vibes_ir
 (* Compile one patch from BIR to VIBES IR *)
 let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
-  Data.Patch.get_assembly patch >>= (fun asm ->
-  match asm with
+  Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
-         Events.(send @@ Info "The patch has no IR to translate.\n");
-         KB.return () (* Assembly already set. Presumably by the user. *)
+      Events.(send @@ Info "The patch has no IR to translate.\n");
+      KB.return () (* Assembly already set. Presumably by the user. *)
     | None ->
-  begin
-  let info_str =
-    Format.asprintf "Translating patch %s BIR to VIBES IR..."
-      (string_of_int n)
-  in
-  Events.(send @@ Info info_str);
-  Data.Patch.get_bir patch >>= fun bir ->
-
-  let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp bir in
-  Events.(send @@ Info info_str);
-
-  Data.Patch.get_lang patch >>= fun lang ->
-  Data.Patch.get_target patch >>= fun tgt ->
-  Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
-  create_vibes_ir tgt lang hvars bir >>= fun ir ->
-  Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
-  Events.(send @@ Info "The patch has the following VIBES IR:\n");
-  Events.(send @@ Rule);
-  Events.(send @@ Info (Ir.pretty_ir ir));
-  Events.(send @@ Rule);
-  KB.return ()
-  end) >>= fun () ->
-  KB.return (n + 1)
-
+      let info_str =
+        Format.sprintf "Translating patch %d BIR to VIBES IR..." n
+      in
+      Events.(send @@ Info info_str);
+      Data.Patch.get_bir patch >>= fun bir ->
+      
+      let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp bir in
+      Events.(send @@ Info info_str);
+      
+      Data.Patch.get_lang patch >>= fun lang ->
+      Data.Patch.get_target patch >>= fun tgt ->
+      Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
+      create_vibes_ir tgt lang hvars bir >>= fun ir ->
+      Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
+      Events.(send @@ Info "The patch has the following VIBES IR:\n");
+      Events.(send @@ Rule);
+      Events.(send @@ Info (Ir.pretty_ir ir));
+      Events.(send @@ Rule);
+      KB.return ()
+  end >>= fun () -> KB.return (n + 1)
+  
 (* Compile one patch from VIBES IR to assembly *)
 let compile_one_assembly
     (solver : Theory.target ->

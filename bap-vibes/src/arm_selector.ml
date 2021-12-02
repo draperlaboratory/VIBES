@@ -257,7 +257,8 @@ module ARM_ops = struct
     let bl = op "bl"
     let beq = op "beq"
     let bleq = op "bleq"
-    let _bne = op "bne"
+    let bne = op "bne"
+    let blne = op "blne"
     let _ble = op "ble"
     let _blt = op "blt"
     let _bx = op "bx"
@@ -446,8 +447,12 @@ module ARM_ops = struct
      size) value, with value 0 if false and non-zero if true. It will
      be the job of branching operations to call [cmp ? ?] and check
      the appropriate flags. *)
-  let br ?is_call:(is_call=false) cond tgt =
-    let opcode = if is_call then Ops.bleq else Ops.beq in
+  let br ?(neg = false) ?is_call:(is_call=false) cond tgt =
+    let opcode =
+      if is_call then
+        if neg then Ops.blne else Ops.bleq
+      else
+        if neg then Ops.bne else Ops.beq in
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
     let tmp_flag, tmp_taken =
@@ -496,11 +501,10 @@ struct
     | ARSHIFT ->  shr (const (Word.one 32))
     | AND -> (&&)
     | OR -> (||)
-    | EQ -> equals
+    | EQ | NEQ -> equals
     | XOR -> xor
     | MOD
     | SMOD
-    | NEQ
     | LT
     | LE
     | SLT
@@ -643,11 +647,18 @@ struct
             | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
               let cond = select_exp cond in
               KB.return @@ br ~is_call:is_call cond dst
+            | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
+              let cond = select_exp cond in
+              KB.return @@ br ~is_call:is_call cond dst ~neg:true
             | Int w when Word.(w <> zero 32) ->
               KB.return @@ goto ~is_call:is_call dst
             | cond ->
+              (* XXX: this is a hack *)
+              let neg = match cond with
+                | BinOp (NEQ, _, _) -> true
+                | _ -> false in
               let cond = select_exp cond in
-              KB.return @@ br ~is_call:is_call cond dst
+              KB.return @@ br ~is_call:is_call cond dst ~neg
           end
       end
     | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
