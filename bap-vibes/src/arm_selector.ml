@@ -521,25 +521,23 @@ struct
     | Int w -> Some w
     | _ -> None
 
-  let is_call (jmp : jmp term) : bool KB.t =
-    match Jmp.dst jmp with
-    | Some dst ->
-      begin
-        match Jmp.resolve dst with
-        | First dst -> Core_c.is_call dst
-        | Second w ->
-          let w = KB.Value.get Exp.slot w in
-          match w with
-          | Int w ->
-            let tid = Theory.Label.for_addr ~package:"core-c" (Word.to_bitvec w) in
-            KB.(tid >>= Core_c.is_call)
-          | _ -> KB.return false
-      end
-    | None -> KB.return false
+  let is_call (jmp : jmp term) : bool =
+    match Jmp.kind jmp with
+    | Call _ -> true
+    | _ -> false
 
   let get_dst (jmp : jmp term) : Ir.operand option =
     match Jmp.dst jmp, Jmp.alt jmp with
     | Some dst, None ->
+      begin
+        match Jmp.resolve dst with
+        | First dst -> Some (Ir.Label dst)
+        | Second c ->
+          Option.map
+            ~f:(fun w -> Ir.Offset w)
+            (get_const c)
+      end
+    | Some _, Some dst ->
       begin
         match Jmp.resolve dst with
         | First dst -> Some (Ir.Label dst)
@@ -634,7 +632,7 @@ struct
       end
     | `Jmp jmp ->
       let cond = Jmp.cond jmp in
-      let* is_call = is_call jmp in
+      let is_call = is_call jmp in
       begin
         match get_dst jmp with
         | None ->
