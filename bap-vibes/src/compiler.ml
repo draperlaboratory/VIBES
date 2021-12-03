@@ -26,32 +26,26 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   | Ok assembly -> KB.return (assembly, new_sol)
   | Error e -> Kb_error.fail e
 
-(* Temporary hacky fix for when we have a conditional call with a return,
-   but no fallthrough edge. *)
-let fix_conditional_call (blk : blk term) : blk term =
-  let jmps = Term.enum jmp_t blk |> Seq.to_list in
-  match jmps with
-  | [jmp] when Exp.(Jmp.cond jmp <> Bil.int Word.b1) -> begin
-      match Jmp.kind jmp with
-      | Call call -> begin
-          match Call.return call with
-          | None -> blk
-          | Some cont ->
-            (* Assume the fallthrough is the label we intended to return to. *)
-            let builder =
-              Blk.Builder.init blk
-                ~copy_defs:true ~copy_phis:true ~copy_jmps:true in
-            Blk.Builder.add_jmp builder @@ Jmp.create_goto cont;
-            Blk.Builder.result builder
-        end        
-      | _ -> blk
-    end    
-  | _ -> blk
-
 let to_ssa (blks : Blk.t list) : Blk.t list =
-  let sub = Sub.create () ~name:"dummy-wrapper" in
-  let sub = List.fold blks ~init:sub ~f:(fun sub blk ->
-      Term.append blk_t sub blk) in
+  (* BAP will give us the blks in such an order that the first one is the
+     entry blk. *)
+  let entry_tid = List.hd_exn blks |> Term.tid in
+  (* Create the subroutine, which will fill in the control-flow edges. *)
+  let sub = List.fold blks
+      ~init:(Sub.create () ~name:"dummy-wrapper")
+      ~f:(fun sub blk -> Term.append blk_t sub blk) in
+  (* Prune all unreachable blks, which are those whose sum of in-degree and
+     out-degree is zero. We have to be careful to ignore the entry block. *)
+  let sub =
+    let cfg = Sub.to_cfg sub in
+    Graphs.Ir.nodes cfg |> Seq.filter ~f:(fun node ->
+        let blk = Graphs.Ir.Node.label node in
+        Tid.(Term.tid blk <> entry_tid) &&
+        Graphs.Ir.Node.degree node cfg = 0) |>
+    Seq.fold ~init:sub ~f:(fun sub node ->
+        let blk = Graphs.Ir.Node.label node in
+        Term.remove blk_t sub @@ Term.tid blk) in
+  (* Convert to SSA. *)
   let sub = Sub.ssa sub in
   Term.enum blk_t sub |> Seq.to_list
 
@@ -62,14 +56,14 @@ let create_vibes_ir
     (hvars : Higher_var.t list)
     (bir : Insn.t) : Ir.t KB.t =
   let ir = Blk.from_insns [bir] in
-  let ir = List.map ir ~f:fix_conditional_call in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
   let ir = to_ssa ir in
   Events.(send @@ Header "SSA'd BIR");
   Events.(send @@ Info (
-      let blks = List.map ir ~f:(fun blk -> Format.asprintf "    %a\n" Blk.pp blk)
-      in String.concat blks ~sep:"\n"));
+      List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
+      String.concat ~sep:"\n"));
+  Events.(send @@ Info "\n\n");
   let* ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign tgt lang ir in
   KB.return ir
