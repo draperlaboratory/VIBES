@@ -415,32 +415,34 @@ module Eval(CT : Theory.Core) = struct
   
   let preserve_caller_save_hvars info =
     KB.List.fold_right info.hvars ~init:!!empty_data ~f:(fun hvar acc ->
-        match caller_save_of_hvar info hvar with
-        | None -> KB.return acc
-        | Some var ->
-          let* new_sp =
-            CT.sub (word_sort_var info info.sp) info.sp_data_align in
-          let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in
-          let* store_reg =
-            CT.storew !!(info.endian) (CT.var info.mem_var)
-              (word_sort_var info info.sp) (word_sort_var info var) in
-          let+ set_store = CT.set info.mem_var !!store_reg in
-          CT.seq !!adjust_stack_ptr (CT.seq !!set_store acc))
+        KB.return acc
+        (* match caller_save_of_hvar info hvar with *)
+        (* | None -> KB.return acc *)
+        (* | Some var -> *)
+        (*   let* new_sp = *)
+        (*     CT.sub (word_sort_var info info.sp) info.sp_data_align in *)
+        (*   let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in *)
+        (*   let* store_reg = *)
+        (*     CT.storew !!(info.endian) (CT.var info.mem_var) *)
+        (*       (word_sort_var info info.sp) (word_sort_var info var) in *)
+        (*   let+ set_store = CT.set info.mem_var !!store_reg in *)
+        (*   CT.seq !!adjust_stack_ptr (CT.seq !!set_store acc) *))
 
   let restore_caller_save_hvars info =
     let* pops =
       KB.List.fold info.hvars ~init:!!empty_data ~f:(fun acc hvar ->
-          match caller_save_of_hvar info hvar with
-          | None -> KB.return acc
-          | Some var ->
-            let* new_sp =
-              CT.add (word_sort_var info info.sp) info.sp_data_align in
-            let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in
-            let* load_reg =
-              CT.loadw info.word_sort !!(info.endian)
-                (CT.var info.mem_var) (word_sort_var info info.sp) in
-            let+ set_reg = CT.set var !!(T.Value.forget load_reg) in
-            CT.seq !!set_reg (CT.seq !!adjust_stack_ptr acc)) in        
+          KB.return acc
+          (* match caller_save_of_hvar info hvar with *)
+          (* | None -> KB.return acc *)
+          (* | Some var -> *)
+          (*   let* new_sp = *)
+          (*     CT.add (word_sort_var info info.sp) info.sp_data_align in *)
+          (*   let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in *)
+          (*   let* load_reg = *)
+          (*     CT.loadw info.word_sort !!(info.endian) *)
+          (*       (CT.var info.mem_var) (word_sort_var info info.sp) in *)
+          (*   let+ set_reg = CT.set var !!(T.Value.forget load_reg) in *)
+          (*   CT.seq !!set_reg (CT.seq !!adjust_stack_ptr acc) *)) in        
     (* XXX: Why do we have to unwrap it again? Did I mess up somewhere? *)
     pops
 

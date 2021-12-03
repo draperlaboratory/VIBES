@@ -26,6 +26,35 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   | Ok assembly -> KB.return (assembly, new_sol)
   | Error e -> Kb_error.fail e
 
+(* Temporary hacky fix for when we have a conditional call with a return,
+   but no fallthrough edge. *)
+let fix_conditional_call (blk : blk term) : blk term =
+  let jmps = Term.enum jmp_t blk |> Seq.to_list in
+  match jmps with
+  | [jmp] when Exp.(Jmp.cond jmp <> Bil.int Word.b1) -> begin
+      match Jmp.kind jmp with
+      | Call call -> begin
+          match Call.return call with
+          | None -> blk
+          | Some cont ->
+            (* Assume the fallthrough is the label we intended to return to. *)
+            let builder =
+              Blk.Builder.init blk
+                ~copy_defs:true ~copy_phis:true ~copy_jmps:true in
+            Blk.Builder.add_jmp builder @@ Jmp.create_goto cont;
+            Blk.Builder.result builder
+        end        
+      | _ -> blk
+    end    
+  | _ -> blk
+
+let to_ssa (blks : Blk.t list) : Blk.t list =
+  let sub = Sub.create () ~name:"dummy-wrapper" in
+  let sub = List.fold blks ~init:sub ~f:(fun sub blk ->
+      Term.append blk_t sub blk) in
+  let sub = Sub.ssa sub in
+  Term.enum blk_t sub |> Seq.to_list
+
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
     (tgt: Theory.target)
@@ -33,10 +62,14 @@ let create_vibes_ir
     (hvars : Higher_var.t list)
     (bir : Insn.t) : Ir.t KB.t =
   let ir = Blk.from_insns [bir] in
+  let ir = List.map ir ~f:fix_conditional_call in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
-  List.iter ir ~f:(fun blk ->
-      eprintf "%s\n%!" (Blk.to_string blk));
+  let ir = to_ssa ir in
+  Events.(send @@ Header "SSA'd BIR");
+  Events.(send @@ Info (
+      let blks = List.map ir ~f:(fun blk -> Format.asprintf "    %a\n" Blk.pp blk)
+      in String.concat blks ~sep:"\n"));
   let* ir = Arm.ARM_Gen.select ir in
   let ir = Arm.preassign tgt lang ir in
   KB.return ir
