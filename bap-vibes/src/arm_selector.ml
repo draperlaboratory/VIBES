@@ -526,28 +526,31 @@ struct
     | Call _ -> true
     | _ -> false
 
-  let get_dst (jmp : jmp term) : Ir.operand option =
+  let get_label (tid : tid) : Ir.operand KB.t =
+    let+ addr = KB.collect Theory.Label.addr tid in
+    match addr with
+    | None -> Ir.Label tid
+    | Some addr -> Ir.Offset (Bitvec.to_int addr |> Word.of_int ~width:32)
+
+  open KB.Syntax
+  
+  let get_dst (jmp : jmp term) : Ir.operand option KB.t =
     match Jmp.dst jmp, Jmp.alt jmp with
     | Some dst, None ->
       begin
         match Jmp.resolve dst with
-        | First dst -> Some (Ir.Label dst)
-        | Second c ->
-          Option.map
-            ~f:(fun w -> Ir.Offset w)
-            (get_const c)
+        | First dst -> get_label dst >>| Option.return
+        | Second c -> KB.return @@ Option.map
+            ~f:(fun w -> Ir.Offset w) (get_const c)
       end
     | Some _, Some dst ->
       begin
         match Jmp.resolve dst with
-        | First dst -> Some (Ir.Label dst)
-        | Second c ->
-          Option.map
-            ~f:(fun w -> Ir.Offset w)
-            (get_const c)
+        | First dst -> get_label dst >>| Option.return
+        | Second c -> KB.return @@  Option.map
+            ~f:(fun w -> Ir.Offset w) (get_const c)
       end
-    | _ -> None
-
+    | _ -> KB.return @@ None
 
   let sel_unop (o : unop) : arm_pure -> arm_pure =
     match o with
@@ -633,31 +636,27 @@ struct
     | `Jmp jmp ->
       let cond = Jmp.cond jmp in
       let is_call = is_call jmp in
-      begin
-        match get_dst jmp with
+      get_dst jmp >>| begin function
         | None ->
           let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
           failwith err
         (* NOTE: branches if cond is zero *)
-        | Some dst ->
-          begin
-            match cond with
-            | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
-              let cond = select_exp cond in
-              KB.return @@ br ~is_call:is_call cond dst
-            | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
-              let cond = select_exp cond in
-              KB.return @@ br ~is_call:is_call cond dst ~neg:true
-            | Int w when Word.(w <> zero 32) ->
-              KB.return @@ goto ~is_call:is_call dst
-            | cond ->
-              (* XXX: this is a hack *)
-              let neg = match cond with
-                | BinOp (NEQ, _, _) -> true
-                | _ -> false in
-              let cond = select_exp cond in
-              KB.return @@ br ~is_call:is_call cond dst ~neg
-          end
+        | Some dst -> match cond with
+          | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
+            let cond = select_exp cond in
+            br ~is_call:is_call cond dst
+          | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
+            let cond = select_exp cond in
+            br ~is_call:is_call cond dst ~neg:true
+          | Int w when Word.(w <> zero 32) ->
+            goto ~is_call:is_call dst
+          | cond ->
+            (* XXX: this is a hack *)
+            let neg = match cond with
+              | BinOp (NEQ, _, _) -> true
+              | _ -> false in
+            let cond = select_exp cond in
+            br ~is_call:is_call cond dst ~neg
       end
     | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
 

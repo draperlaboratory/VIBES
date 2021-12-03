@@ -481,11 +481,9 @@ module Eval(CT : Theory.Core) = struct
       *)
       | COMPUTATION (CALL (CONSTANT(CONST_INT s), args)) ->
         let* arg_assignments = assign_args info var_map args in
-        let dst = Bitvec.(!$ s) in
-        let* tid = T.Label.for_addr ~package:"core-c" dst in
-        let* () = declare_call tid in
-        let dst = CT.int info.word_sort dst in
-        let* call = CT.jmp dst in
+        let* dst = T.Label.for_addr ~package:"core-c" @@ Bitvec.(!$s) in
+        let* () = declare_call dst in
+        let* call = CT.goto dst in
         let* preserve = preserve_caller_save_hvars info in
         let* call_blk =
           CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
