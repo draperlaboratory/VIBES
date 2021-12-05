@@ -11,6 +11,7 @@ module Hvar = Higher_var
 (** We define "domains" for the types used in our properties. *)
 val string_domain    : string option KB.Domain.t
 val int_domain       : int option KB.Domain.t
+val int64_domain     : int64 option KB.Domain.t
 val bitvec_domain    : Bitvec.t option KB.Domain.t
 val sexp_domain      : Sexp.t option KB.Domain.t
 val source_domain    : Cabs.definition option KB.Domain.t
@@ -113,10 +114,40 @@ end
 (** Sets of patches *)
 module Patch_set : Set.S with type Elt.t = Patch.t
 
+(** The Patch_space module defines an additional class holding all properties
+   related to regions in the original binary that can be used for the patch
+   (e.g., dead code).  *)
+module Patch_space : sig
+
+  (* The KB infrastructure *)
+  type patch_space_cls
+  type t = patch_space_cls KB.obj
+  val patch_space : (patch_space_cls, unit) KB.cls
+
+  (* equal, compare, and other things for patch spaces *)
+  include Knowledge.Object.S with type t := t
+
+  val offset : (patch_space_cls, int64 option) KB.slot
+  val size : (patch_space_cls, int64 option) KB.slot
+
+  val set_offset : t -> int64 option -> unit KB.t
+  val get_offset : t -> int64 option KB.t
+  val get_offset_exn : t -> int64 KB.t
+
+  val set_size : t -> int64 option -> unit KB.t
+  val get_size : t -> int64 option KB.t
+  val get_size_exn : t -> int64 KB.t
+end
+
+(** Sets of patch spaces *)
+
+module Patch_space_set : Set.S with type Elt.t = Patch_space.t
+
 (** Properties pertaining to the original executable *)
 module Original_exe : sig
   val filepath : (cls, string option) KB.slot
   val target : (cls, Theory.target) KB.slot
+  val patch_spaces : (cls, Patch_space_set.t) KB.slot
 
   val set_filepath : t -> string option -> unit KB.t
   val get_filepath : t -> string option KB.t
@@ -127,6 +158,9 @@ module Original_exe : sig
 
   (** Raises if the target is empty *)
   val get_target_exn : t -> Theory.target KB.t
+
+  val set_patch_spaces : t -> Patch_space_set.t -> unit KB.t
+  val get_patch_spaces : t -> Patch_space_set.t KB.t
 
 end
 

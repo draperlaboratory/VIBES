@@ -44,6 +44,17 @@ let validate_bitvec_field (field : string) (data : (string * Json.t) list)
     end
   | _ -> Err.fail e
 
+(* Validate an int64 field in a Json association list. *)
+let validate_int64_field (field : string) (data : (string * Json.t) list)
+    (e : error) : (int64, error) Stdlib.result =
+  match value_of_field field data with
+  | Some (`String s) ->
+    begin
+      try Err.return (Int64.of_string s)
+      with Invalid_argument _ -> Err.fail e
+    end
+  | _ -> Err.fail e
+
 (* Validate a word field in a Json association list. *)
 let validate_word_field (field : string) (data : (string * Json.t) list)
     (e : error) : (Word.t, error) Stdlib.result =
@@ -167,6 +178,33 @@ let validate_patches (obj : Json.t)
   match Json.Util.member "patches" obj with
   | `List ps -> Err.all (List.map ~f:validate_patch ps)
   | _ -> Err.fail Errors.Missing_patches
+
+let validate_patch_space (obj : Json.t)
+    : (Vibes_config.patch_space, error) Stdlib.result =
+  let top_level_err = Errors.Invalid_patch_spaces
+    "Each item in the patch-space list must be a JSON object."
+  in
+  let offset_err = Errors.Invalid_patch_spaces
+    "Error parsing `offset` field, which must be a bitvector string."
+  in
+  let size_err = Errors.Invalid_patch_spaces
+    "Error parsing `size` field, which must be an integer string."
+  in
+  match obj with
+  | `Assoc data ->
+     validate_int64_field "offset" data offset_err >>= fun offset ->
+     validate_int64_field "size" data size_err >>= fun size ->
+     Err.return { Vibes_config.space_offset = offset ;
+                  Vibes_config.space_size = size }
+  | _ -> Err.fail top_level_err
+
+(* Extract and validate the patch_space list, or error. *)
+let validate_patch_spaces (obj : Json.t)
+    : (Vibes_config.patch_space list, error) Stdlib.result =
+  match Json.Util.member "patch-space" obj with
+  | `List ps -> Err.all (List.map ~f:validate_patch_space ps)
+  | `Null -> Err.return []
+  | _ -> Err.fail (Errors.Invalid_patch_spaces "Must be a JSON list.")
 
 (* Extract the property field string and parse it into an S-expression, or
    error. *)
@@ -299,7 +337,8 @@ let create
   validate_ogre config_json >>= fun ogre ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
+  validate_patch_spaces config_json >>= fun patch_spaces ->
   let result = Vibes_config.create
     ~exe ~patches ~patched_exe_filepath ~max_tries
-    ~minizinc_model_filepath ~ogre ~wp_params in
+    ~minizinc_model_filepath ~ogre ~patch_spaces ~wp_params in
   Ok result

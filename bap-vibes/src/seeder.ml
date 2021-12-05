@@ -88,6 +88,23 @@ let create_patches
   let patches = List.map ps ~f:(fun p -> create_patch seed p) in
   KB.all patches >>| Data.Patch_set.of_list
 
+(* Create a Data.Patch_space_set.t from the config, containing the patch spaces
+ *)
+let create_patch_spaces (patch_spaces : Config.patch_space list)
+    : Data.Patch_space_set.t KB.t =
+  let create_patch_space (ps : Config.patch_space) =
+    let* obj = KB.Object.create Data.Patch_space.patch_space in
+    let* () =
+      Data.Patch_space.set_offset obj (Some (Config.(ps.space_offset)))
+    in
+    let* () =
+      Data.Patch_space.set_size obj (Some (Config.(ps.space_size)))
+    in
+    KB.return obj
+  in
+  let* patch_spaces = KB.all (List.map patch_spaces ~f:create_patch_space) in
+  KB.return (Data.Patch_space_set.of_list patch_spaces)
+
 (* Create a {!Data.t} instance from the provided {Config.t} data,
    possibly adding extra [seed] info. *)
 let init_KB
@@ -97,16 +114,19 @@ let init_KB
   : Data.t KB.t =
   let filename = Config.exe config in
   let patch_list = Config.patches config in
+  let patch_spaces = Config.patch_spaces config in
   let patched_exe_filepath = Config.patched_exe_filepath config in
   let mzn_model_filepath = Config.minizinc_model_filepath config in
   let target = Bap.Std.Project.target proj in
   let addr_size = Theory.Target.bits target in
   let* patches = create_patches patch_list ~seed in
+  let* patch_spaces = create_patch_spaces patch_spaces in
   let* obj = KB.Object.create Data.cls in
   let* () = Data.Original_exe.set_filepath obj (Some filename) in
   let* () = Data.Patched_exe.set_filepath obj patched_exe_filepath in
   let* () = Data.Original_exe.set_target obj target in
   let* () = Data.Patched_exe.set_patches obj patches in
+  let* () = Data.Original_exe.set_patch_spaces obj patch_spaces in
   let* () = Data.Solver.set_minizinc_model_filepath
     obj (Some mzn_model_filepath) in
   Events.(send @@ Info (Printf.sprintf "Address size: %d bits" addr_size));

@@ -1,0 +1,41 @@
+{
+  "max-tries": 3,
+  "wp-params": {
+    "func": "main",
+    "postcond" : "(assert true)"
+  },
+  "patch-space" : [
+    {"offset" : "0x3c8",
+     "size" : "24"}
+  ],
+  "patches" : [
+    {"patch-name" : "math",
+     "patch-code" : "int input, output, five, three, x;
+                     five = 5;
+                     x = input * five - 3;
+                     three = 3;
+                     output = x * three;",
+     "patch-point" : "0x103ee",
+     "patch-size" : 4,
+     "patch-vars": [
+       {"name": "input",
+	      "at-entry": {
+          "stored-in": "register",
+	        "register": "R3"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	        "register": "R3"
+        }},
+       {"name": "output",
+	      "at-entry": {
+          "stored-in": "register",
+	        "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	        "register": "R0"
+        }}
+     ]}
+  ]
+}

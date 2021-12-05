@@ -28,6 +28,11 @@ let int_domain : int option KB.Domain.t = KB.Domain.optional
     ~equal:Int.(=)
     "int-domain"
 
+(* Optional int64 domain *)
+let int64_domain : int64 option KB.Domain.t = KB.Domain.optional
+    ~equal:Int64.(=)
+    "int64-domain"
+
 (* Optional bitvector domain *)
 let bitvec_domain : Bitvec.t option KB.Domain.t = KB.Domain.optional
     ~equal:Bitvec.equal
@@ -246,8 +251,59 @@ end
 (* Sets of patches *)
 module Patch_set = Set.Make (Patch)
 
+(* Properties pertaining to space for patches *)
+module Patch_space = struct
+
+  (* Declare patche spaces as a KB class.  A patch space is a KB object of its
+     own corresponding to a single region of space available for patch code.  We
+     may know of multiple such regions. *)
+  type patch_space_cls
+  let patch_space : (patch_space_cls, unit) KB.cls =
+    KB.Class.declare ~package "patch-space" ()
+
+  (* This provides equality / comparisons for objects of this class *)
+  include (val KB.Object.derive patch_space)
+
+  let offset : (patch_space_cls, int64 option) KB.slot =
+    KB.Class.property ~package patch_space "patch-space-offset" int64_domain
+
+  let size : (patch_space_cls, int64 option) KB.slot =
+    KB.Class.property ~package patch_space "patch-space-size" int64_domain
+
+  let set_offset (obj : t) (data : int64 option) : unit KB.t =
+    KB.provide offset obj data
+
+  let get_offset (obj : t) : int64 option KB.t =
+    KB.collect offset obj
+
+  let get_offset_exn (obj : t) : int64 KB.t =
+    get_offset obj >>= fun result ->
+    match result with
+    | None -> Kb_error.fail Kb_error.Missing_patch_space_offset
+    | Some value -> KB.return value
+
+  let set_size (obj : t) (data : int64 option) : unit KB.t =
+    KB.provide size obj data
+
+  let get_size (obj : t) : int64 option KB.t =
+    KB.collect size obj
+
+  let get_size_exn (obj : t) : int64 KB.t =
+    get_size obj >>= fun result ->
+    match result with
+    | None -> Kb_error.fail Kb_error.Missing_patch_space_size
+    | Some value -> KB.return value
+end
+
+(* Sets of patch spaces *)
+module Patch_space_set = Set.Make (Patch_space)
+
 (* Properties pertaining to the original executable *)
 module Original_exe = struct
+
+  let patch_spaces_domain : Patch_space_set.t KB.domain =
+    KB.Domain.flat ~empty:Patch_space_set.empty ~equal:Patch_space_set.equal
+      "patch-spaces"
 
   let filepath : (cls, string option) KB.slot =
     KB.Class.property ~package cls "original-exe-filepath"
@@ -256,6 +312,10 @@ module Original_exe = struct
   let target : (cls, Theory.target) KB.slot =
     KB.Class.property ~package cls "original-exe-target"
       Theory.Target.domain
+
+  let patch_spaces : (cls, Patch_space_set.t) KB.slot =
+    KB.Class.property ~package cls "original-exe-patch-spaces"
+      patch_spaces_domain
 
   let set_filepath (obj : t) (data : string option) : unit KB.t =
     KB.provide filepath obj data
@@ -281,6 +341,12 @@ module Original_exe = struct
       Kb_error.fail Kb_error.Missing_target
     else
       KB.return tgt
+
+  let set_patch_spaces (obj : t) (data : Patch_space_set.t) : unit KB.t =
+    KB.provide patch_spaces obj data
+
+  let get_patch_spaces (obj : t) : Patch_space_set.t KB.t =
+    KB.collect patch_spaces obj
 
 end
 
