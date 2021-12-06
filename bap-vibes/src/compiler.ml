@@ -47,6 +47,8 @@ let to_ssa (blks : Blk.t list) : Blk.t list =
         Term.remove blk_t sub @@ Term.tid blk) in
   (* Convert to SSA. *)
   let sub = Sub.ssa sub in
+  (* TODO - try this: *)
+  let sub = Linear_ssa.transform sub in
   Term.enum blk_t sub |> Seq.to_list
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
@@ -59,7 +61,7 @@ let create_vibes_ir
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
   let ir = to_ssa ir in
-  Events.(send @@ Header "SSA'd BIR");
+  Events.(send @@ Info "SSA'd BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
