@@ -1,0 +1,30 @@
+(** Converts subroutines into the "linear SSA" form required by the {!Ir}.
+
+    In essence, a subroutine is in linear SSA form when each block of the
+    subroutine has all of its variable names unique to it. That is to say,
+    no variable names that occur in block [a] also occur in block [b].
+
+    To accomplish this, the [transform] function below simply prefixes
+    the variables in each block with the [tid] of their containing block.
+    So if [RAX] occurs in a block with [tid = abc], it will become [abc_RAX],
+    while if the "same" variable [RAX] occurs in another block [tid = def],
+    it will become [def_RAX].
+    
+    If the "same" variable appears in two different blocks in the manner just
+    described, then the {!Ir} considers the two occurrences to be "congruent."
+    So two variable names are congruent if they differ only in the containing
+    block [tid] prefix. E.g., [abc_RAX] and [def_RAX] are "congruent,"
+    because they differ only in the prefixes [abc_] and [def_].
+
+    There is a {!congruent} method below that can be used to easily check
+    if two variables are "congruent" in this sense. *)
+
+open Bap.Std
+
+(** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"
+    in the sense described above. *)
+val congruent : Var.t -> Var.t -> bool
+
+(** [tranform s] takes the subroutine [s] and converts it into the linear
+    SSA form described above. *)
+val transform : Sub.t -> Sub.t
