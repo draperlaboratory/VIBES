@@ -30,10 +30,10 @@ module KB = Knowledge
 
 type sol = {
   reg : var Var.Map.t;
-  opcode : Ir.opcode Tid.Map.t;
+  opcode : Ir.opcode Int.Map.t;
   temp : Var.t Var.Map.t;
-  active : bool Tid.Map.t;
-  issue : int Tid.Map.t;
+  active : bool Int.Map.t;
+  issue : int Int.Map.t;
 } [@@deriving sexp, compare]
 
 (**
@@ -114,7 +114,7 @@ type mzn_params_serial = {
 type serialization_info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
-  operations : Tid.t list;
+  operations : Int.t list;
   operands : Var.t list;
 }
 
