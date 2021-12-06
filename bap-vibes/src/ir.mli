@@ -82,6 +82,8 @@ type operand = Var of op_var
              | Void of op_var
              | Offset of word [@@deriving compare, equal, sexp]
 
+val create_id : unit -> int
+
 (** An [operation] has
     a *unique* id
     an assigned lhs,
@@ -89,7 +91,7 @@ type operand = Var of op_var
     a flag of whether the operation is optional,
     a list of operands. *)
 type operation = {
-  id : tid;
+  id : int;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
@@ -177,7 +179,7 @@ val freshen_operand : operand -> operand
 val add_in_vars : t -> t
 
 (** Various getter functions *)
-val operation_opcodes : t -> opcode list Tid.Map.t
+val operation_opcodes : t -> opcode list Int.Map.t
 val all_opcodes : t -> opcode list
 val operand_operation : t -> operation Var.Map.t
 val op_var_exn : operand -> op_var
