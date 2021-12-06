@@ -82,6 +82,25 @@ git_commit
 
 echo ""
 
+# Update APT repository information
+sudo apt update
+APT_UPDATE_RESULT="${?}"
+if [[ "${APT_UPDATE_RESULT}" != "0" ]]; then
+    echo "Unable to update APT repository information." > "${MSG_FILE}"
+    echo "...." >> "${REPORT_FILE}"
+    echo "Halting." >> "${REPORT_FILE}"
+    echo "Tried 'sudo apt update'." >> "${REPORT_FILE}"
+    echo "Got a non-zero exit code: ${APT_RESULT}." >> "${REPORT_FILE}"
+    echo "$(cat "${MSG_FILE}")"
+    echo "$(cat "${REPORT_FILE}")"
+    if [[ "${REPORT_RESULTS}" == "true" ]]; then
+        report_to_slack
+    fi
+    exit 1
+else
+    echo "- APT repository information updated." | tee -a "${REPORT_FILE}"
+fi
+
 # Install APT dependencies.
 sudo apt install -y \
     qemu \

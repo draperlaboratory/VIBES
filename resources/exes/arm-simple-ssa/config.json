@@ -6,8 +6,8 @@
   },
   "patches" : [
     {"patch-name" : "ssa-example",
-     "patch-code" : "int x; x = 0x3; x = x;",
-     "patch-point" : "0x103cc",
+     "patch-code" : "int x; x = 0x3; x = x + 0x4;",
+     "patch-point" : "0x103c8",
      "patch-size" : 8,
      "patch-vars": [
        {"name": "x",
@@ -18,16 +18,7 @@
         "at-exit": {
           "stored-in": "register",
 	  "register": "R0"
-        }},
-       {"name": "y",
-	"at-entry": {
-          "stored-in": "register",
-	  "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	  "register": "R0"
         }}
-       ]}
+     ]}
   ]
 }

@@ -184,44 +184,8 @@ test_arm_patch_call () {
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
 
-test_arm_simple_ssa_1 () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-ssa-1"
-    local MAIN_EXE="${TEST_DIR}/main.reference"
-    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
-    local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
-
-    print_header "Checking ${TEST_DIR}"
-
-    # Check the precompiled executables.
-    run_arm_exe "${MAIN_EXE}" 7
-    run_arm_exe "${PATCH_EXE}" 3
-
-    # Check that vibes patches correctly.
-    run_make "make clean -C ${TEST_DIR}" 0
-    run_make "make patch.reference -C ${TEST_DIR}" 0
-    run_arm_exe "${TEST_PATCH_EXE}" 3
-}
-
-test_arm_simple_ssa_2 () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-ssa-2"
-    local MAIN_EXE="${TEST_DIR}/main.reference"
-    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
-    local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
-
-    print_header "Checking ${TEST_DIR}"
-
-    # Check the precompiled executables.
-    run_arm_exe "${MAIN_EXE}" 7
-    run_arm_exe "${PATCH_EXE}" 3
-
-    # Check that vibes patches correctly.
-    run_make "make clean -C ${TEST_DIR}" 0
-    run_make "make patch.reference -C ${TEST_DIR}" 0
-    run_arm_exe "${TEST_PATCH_EXE}" 3
-}
-
-test_arm_simple_ssa_3 () {
-    local TEST_DIR="${EXES_DIR}/arm-simple-ssa-3"
+test_arm_simple_ssa () {
+    local TEST_DIR="${EXES_DIR}/arm-simple-ssa"
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"

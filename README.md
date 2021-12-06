@@ -49,6 +49,7 @@ Clone this repo wherever you prefer to keep your projects, for example:
     git clone https://github.com/draperlaboratory/VIBES.git
     cd VIBES
 
+
 ## Install dependencies with a script
 
 If you have bash on Ubuntu, you can run a script to install the remaining
@@ -58,7 +59,7 @@ before you run this script.
 
 To run the script, from the root of the VIBES repo:
 
-    bash bin/setup/ubuntu.bash --wp-branch codyroux/user-fun-spec-compare
+    bash bin/setup/ubuntu.bash
     source bin/setup/env.bash
 
 
@@ -108,7 +109,7 @@ Install the following opam packages:
     opam install ounit2 ppx_deriving_yojson
 
 
-## Installing/uninstalling
+## Installing/uninstalling the VIBES tool
 
 To install the tool (the library and the command-line front-end), `cd` into
 the root of the project:
