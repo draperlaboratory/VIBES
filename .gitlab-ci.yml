@@ -9,8 +9,15 @@ run_tests:
 
   script:
 
-    # Install dependencies and install the VIBES tool.
-    - sudo -E bash -x bin/setup/ubuntu.bash --report-results
+    # Install APT dependencies.
+    - >-
+      sudo -E apt install -y
+      qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi cmake
+
+    # Install other dependencies (non-sudo).
+    - bash -x bin/setup/install-dependencies.bash --report-results
+
+    # Build and install the VIBES tool.
     - source bin/setup/env.bash
     - make
 
