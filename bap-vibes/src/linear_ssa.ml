@@ -24,6 +24,23 @@ let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
   in
   Var.create escaped_name typ
 
+let orig_name (name : string) : string =
+  (* Drop the underscore at the beginning, followed by the tid string,
+     which is always 8 characters. Then, there's a final underscore
+     before we get to the actual var name. *)
+  let name = String.drop_prefix name 10 in
+  match String.split name ~on:'_' with
+  | [] -> name
+  | [name; _] -> name
+  | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name
+
+let same (a : var) (b : var) : bool =
+  try
+    String.equal
+      (orig_name @@ Var.name a)
+      (orig_name @@ Var.name b)
+  with _ -> false      
+
 let rec linearize_exp ~prefix:(prefix : string) (exp : Bil.exp) : Bil.exp =
   match exp with
   | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->

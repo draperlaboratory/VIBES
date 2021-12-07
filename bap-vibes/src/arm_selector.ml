@@ -178,13 +178,23 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
   Theory.Target.regs ~exclude:exclude ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
+let reg_name (v : var) : string =
+  let name = Var.name v in
+  let name =
+    if String.is_prefix name ~prefix:Ir.tmp_prefix then
+      String.drop_prefix name (String.length Ir.tmp_prefix)
+    else name in
+  let name = try Linear_ssa.orig_name name with _ -> name in
+  name
+
 let preassign_var
     (lang : Theory.language)
     (pre : var option)
     (v : var)
   : var option =
-  if String.(Var.name v = "__Vibes_tmp_FP") then
-    begin
+  let name = reg_name v in
+  match name with
+  | "FP" -> begin
       (* We assign R11 as the pre-assigned FP register on ARM, and R7
          for Thumb, keeping in line with the ABI (as far as i can
          tell).  *)
@@ -195,11 +205,21 @@ let preassign_var
         Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
     end
     (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
-  else if String.(Var.name v = "__Vibes_tmp_PC") then
+  | "PC" ->
     Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
-  else
-    pre
-
+  | "SP" ->
+    Some (Var.create ~is_virtual:false ~fresh:false "SP" (Var.typ v))
+  | _ ->
+    if (String.length name = 2
+        && Char.(name.[0] = 'R')
+        && Char.is_digit name.[1])
+    || (String.length name = 3
+        && Char.(name.[0] = 'R')
+        && Char.is_digit name.[1]
+        && Char.is_digit name.[2])
+    then Some (Var.create ~is_virtual:false ~fresh:false name (Var.typ v))
+    else pre
+      
 let preassign
     (tgt : Theory.target)
     (lang : Theory.language)
@@ -236,6 +256,7 @@ module ARM_ops = struct
 
     let mov = op "mov"
     let movw = op "movw"
+    let movt = op "movt"
     let add = op "add"
     let addw = op "addw"
     let mul = op "mul"
@@ -262,7 +283,7 @@ module ARM_ops = struct
     let _ble = op "ble"
     let _blt = op "blt"
     let _bx = op "bx"
-
+    
   end
 
   let create_temp ty =
@@ -299,21 +320,22 @@ module ARM_ops = struct
     | Ir.Var _, Ir.Var _
     | Ir.Var _, Ir.Const _ ->
       (* Check if the second arg is a constant greater than 255, in which case
-          we want movw rather than mov *)
-       let opcode =
-        begin
-          match arg2_var with
-          | Ir.Const w ->
-             begin
-               match Word.to_int w with
-               | Ok i when i < 256 -> Ops.mov
-               | _ -> Ops.movw
-             end
-          | _ -> Ops.mov
-        end
-      in
-      let mov = Ir.simple_op opcode arg1 [arg2_var] in
-      instr mov arg2_sem
+          we want movw rather than mov. If it's greater than 65535, then it
+         needs to be split into two operations. *)
+      begin
+        match arg2_var with
+        | Ir.Const w when Word.to_int_exn w <= 0xFF ->
+          let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+          instr mov arg2_sem
+        | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
+          let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
+          instr mov arg2_sem
+        | Ir.Const _ ->
+          failwith "arm_mov: too large constant"
+        | _ ->
+          let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+          instr mov arg2_sem
+      end
     | _ -> failwith "arm_mov: unexpected arguments!"
 
   let ( := ) x y = arm_mov x y
@@ -447,7 +469,7 @@ module ARM_ops = struct
      size) value, with value 0 if false and non-zero if true. It will
      be the job of branching operations to call [cmp ? ?] and check
      the appropriate flags. *)
-  let br ?(neg = false) ?is_call:(is_call=false) cond tgt =
+  let br ?(neg = false) ?is_call:(is_call=false) cond tgt lang =
     let opcode =
       if is_call then
         if neg then Ops.blne else Ops.bleq
@@ -469,10 +491,11 @@ module ARM_ops = struct
     }
 
   (* Unconditional jump *)
-  let goto ?is_call:(is_call=false) tgt =
+  let goto ?is_call:(is_call=false) tgt arg_vars =
     let opcode = if is_call then Ops.bl else Ops.b in
     let tmp_branch = create_temp bit_ty in
-    control (Ir.simple_op opcode (Void tmp_branch) [tgt]) empty_eff
+    let arg_vars = List.map arg_vars ~f:(fun v -> Ir.Var (Ir.simple_var v)) in
+    control (Ir.simple_op opcode (Void tmp_branch) ([tgt] @ arg_vars)) empty_eff
 
 
 end
@@ -557,45 +580,45 @@ struct
     | NOT -> assert false
     | NEG -> assert false
 
-  let rec select_exp (e : Bil.exp) : arm_pure =
+  let rec select_exp (lang : Theory.language) (e : Bil.exp) : arm_pure =
     match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
-      let mem = select_mem mem in
-      let a = select_exp a in
+      let mem = select_mem lang mem in
+      let a = select_exp lang a in
       let w = const w in
       ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
     | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
-      let mem = select_mem mem in
-      let a = select_exp a in
+      let mem = select_mem lang mem in
+      let a = select_exp lang a in
       let w = const (Word.neg w) in
       ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
     | Load (mem, loc, _, size) ->
-      let mem = select_exp mem in
-      let loc = select_exp loc in
+      let mem = select_exp lang mem in
+      let loc = select_exp lang loc in
       ldr (Size.in_bits size) mem loc
     | Store (mem, loc, value, _, _size) ->
-      let mem = select_exp mem in
-      let loc = select_exp loc in
-      let value = select_exp value in
+      let mem = select_exp lang mem in
+      let loc = select_exp lang loc in
+      let value = select_exp lang value in
       (* We have to swap the arguments here, since ARM likes the value
        first, and the location second *)
       str mem value loc
     | BinOp (PLUS, a, Int w) when Word.(w = zero 32) ->
-      select_exp a
+      select_exp lang a
     | BinOp (MINUS, a, Int w) when Word.(w = zero 32) ->
-      select_exp a
+      select_exp lang a
     (* FIXME: this is amost certainly wrong *)
     | BinOp (PLUS, a, b) when Exp.(a = b) ->
-      let a = select_exp a in
+      let a = select_exp lang a in
       let zero = const (Word.zero 32) in
       let one = const (Word.one 32) in
       shl zero a one
     | BinOp (o, a, b) ->
-      let a = select_exp a in
-      let b = select_exp b in
+      let a = select_exp lang a in
+      let b = select_exp lang b in
       sel_binop o a b
     | UnOp (o, a) ->
-      let a = select_exp a in
+      let a = select_exp lang a in
       sel_unop o a
     | Var v ->
       begin
@@ -615,10 +638,10 @@ struct
     | Extract (_, _, _) -> failwith "select_exp: Extract is unsupported!"
     | Concat (_, _) -> failwith "select_exp: Concat is unsupported!"
 
-  and select_mem (m : Bil.exp) : arm_pure =
-    select_exp m
+  and select_mem (lang : Theory.language) (m : Bil.exp) : arm_pure =
+    select_exp lang m
 
-  and select_stmt (s : Blk.elt) : arm_eff KB.t =
+  and select_stmt (lang : Theory.language) (arg_vars : var list) (s : Blk.elt) : arm_eff KB.t =
     match s with
     | `Def t ->
       let lhs = Def.lhs t in
@@ -626,11 +649,24 @@ struct
       begin
         match Var.typ lhs with
         | Imm _ | Unk ->
-          let lhs = Ir.Var (Ir.simple_var lhs) in
-          let rhs = select_exp rhs in
-          KB.return (lhs := rhs)
+          begin
+            match rhs with
+            | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
+              when Caml.(Linear_ssa.same a lhs
+                         && Word.(s = of_int ~width:32 16)) ->
+              (* Hack for loading a large constant. *)
+              let arg1 = Ir.Var (Ir.simple_var lhs) in
+              let arg2 = select_exp lang (Int w) in
+              let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
+              let movt = Ir.simple_op Ops.movt arg1 [arg2_var; Ir.Var (Ir.simple_var a)] in
+              KB.return @@ instr movt arg2_sem
+            | _ ->
+              let lhs = Ir.Var (Ir.simple_var lhs) in
+              let rhs = select_exp lang rhs in
+              KB.return (lhs := rhs)
+          end
         | Mem _ ->
-          let rhs = select_exp rhs in
+          let rhs = select_exp lang rhs in
           KB.return rhs.op_eff
       end
     | `Jmp jmp ->
@@ -643,34 +679,55 @@ struct
         (* NOTE: branches if cond is zero *)
         | Some dst -> match cond with
           | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
-            let cond = select_exp cond in
-            br ~is_call:is_call cond dst
+            let cond = select_exp lang cond in
+            br ~is_call:is_call cond dst lang
           | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
-            let cond = select_exp cond in
-            br ~is_call:is_call cond dst ~neg:true
+            let cond = select_exp lang cond in
+            br ~is_call:is_call cond dst lang ~neg:true
           | Int w when Word.(w <> zero 32) ->
-            goto ~is_call:is_call dst
+            goto ~is_call:is_call dst arg_vars
           | cond ->
             (* XXX: this is a hack *)
             let neg = match cond with
               | BinOp (NEQ, _, _) -> true
               | _ -> false in
-            let cond = select_exp cond in
-            br ~is_call:is_call cond dst ~neg
+            let cond = select_exp lang cond in
+            br ~is_call:is_call cond dst lang ~neg
       end
     | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
 
-  and select_elts (elts : Blk.elt list) : arm_eff KB.t =
+  and select_elts (lang : Theory.language)
+      (arg_vars : var list) (elts : Blk.elt list) : arm_eff KB.t =
     match elts with
     | [] -> KB.return empty_eff
     (* We only select 1 instruction at a time for now *)
     | s :: ss ->
-      let* s = select_stmt s in
-      let+ ss = select_elts ss in
+      let* s = select_stmt lang arg_vars s in
+      let+ ss = select_elts lang arg_vars ss in
       ss @. s
 
-  and select_blk (b : blk term) : arm_eff KB.t =
-    let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts in
+  and select_blk (lang : Theory.language) (b : blk term) : arm_eff KB.t =
+    let arg_vars =
+      let tbl = String.Table.create () in
+      let has_call =
+        Term.enum jmp_t b |> Seq.exists ~f:(fun jmp ->
+            match Jmp.kind jmp with
+            | Call _ -> true
+            | _ -> false) in
+      if has_call then
+        Term.enum def_t b |> Seq.to_list_rev |>
+        List.iter ~f:(fun def ->
+            let lhs = Def.lhs def in
+            let name = reg_name lhs in
+            match name with
+            | "R0" | "R1" | "R2" | "R3" ->
+              String.Table.change tbl name ~f:(function
+                  | Some v -> Some v
+                  | None -> Some lhs)
+            | _ -> ());
+      String.Table.data tbl
+    in      
+    let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts lang arg_vars in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
       Ir.simple_blk (Term.tid b)
@@ -686,16 +743,16 @@ struct
       other_blks = all_blks
     }
 
-  and select_blks (bs : blk term list) : arm_eff KB.t =
+  and select_blks (lang : Theory.language) (bs : blk term list) : arm_eff KB.t =
     match bs with
     | [] -> KB.return empty_eff
     | b :: bs ->
-      let* b = select_blk b in
-      let+ bs = select_blks bs in
+      let* b = select_blk lang b in
+      let+ bs = select_blks lang bs in
       b @. bs
 
-  let select (bs : blk term list) : Ir.t KB.t =
-    let+ bs = select_blks bs in
+  let select (lang : Theory.language) (bs : blk term list) : Ir.t KB.t =
+    let+ bs = select_blks lang bs in
     ir bs
 
 end
@@ -784,6 +841,7 @@ module Pretty = struct
   let arm_operands_pretty (op : string) (lhs : Ir.operand list) (rhs : Ir.operand list)
     : (string, Kb_error.t) result =
     (* Don't print the head of the operand if it's void. *)
+    let rhs = if String.(op = "movt" || op = "bl") then [List.hd_exn rhs] else rhs in
     let l = rm_void_args (lhs @ rhs) in
     let is_loc_list = mk_loc_list op l in
     let l = List.zip_exn is_loc_list l in

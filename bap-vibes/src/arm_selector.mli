@@ -18,6 +18,8 @@ open Bap.Std
 (** The abstract representation of [Theory.eff] terms in [ARM_Core]. *)
 type arm_eff
 
+val is_thumb : Theory.language -> bool
+
 (** Extracts the concrete [Ir.t] from the abstract [arm_eff]
     representation. *)
 val ir : arm_eff -> Ir.t
@@ -48,5 +50,5 @@ sig
   (** [select blks] performs instruction selection: it translates
       sequences of BIR blocks to the appropriate ARM opcodes (keeping
       the operands abstract. *)
-  val select : blk term list -> Ir.t KB.t
+  val select : Theory.language -> blk term list -> Ir.t KB.t
 end
