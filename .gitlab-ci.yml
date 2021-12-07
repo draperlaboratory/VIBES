@@ -10,7 +10,7 @@ run_tests:
   script:
 
     # Install dependencies and install the VIBES tool.
-    - bash -x bin/setup/ubuntu.bash --report-results
+    - sudo bash -x bin/setup/ubuntu.bash --report-results
     - source bin/setup/env.bash
     - make
 
