@@ -36,9 +36,14 @@ type sol = {
   issue : int Tid.Map.t;
 } [@@deriving sexp, compare]
 
+val run_minizinc :
+  Yojson.Safe.t ->
+  model_filepath:string ->
+  Yojson.Safe.t KB.t
+
 (**
 
-   [run_minzinc tgt lang minizinc_model_filepath ir] encodes the
+   [run_unison tgt lang minizinc_model_filepath ir] encodes the
    provided [ir] IR.t for target [tgt] in language [lang] to a json
    file, calls minizinc, and interpets the solution. It uses the
    provided [minizinc_model_filepath] to run minizinc.  It will
@@ -46,7 +51,7 @@ type sol = {
 
 *)
 
-val run_minizinc :
+val run_unison :
   Theory.target ->
   Theory.language ->
   filepath:string ->
@@ -79,6 +84,7 @@ type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
 type 'a mzn_set = {set : 'a list}  [@@deriving yojson]
 type ('a ,'b) mzn_map = 'b list
+
 
 type mzn_enum = {e : string} [@@deriving yojson]
 type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)

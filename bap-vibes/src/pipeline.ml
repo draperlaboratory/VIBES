@@ -24,7 +24,8 @@ let halt_if_too_many (count : int) (max_tries : int option)
 let init (config : Config.t) (proj : project) : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed:None in
   let* () = Patch_ingester.ingest obj in
-  let* () = Compiler.compile_ir obj in
+  let isel_model_filepath = Config.minizinc_isel_filepath config in
+  let* () = Compiler.compile_ir ~isel_model_filepath obj in
   KB.return obj
 
 (* This function produces a patched exe. *)

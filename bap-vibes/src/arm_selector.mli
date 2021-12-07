@@ -12,6 +12,7 @@
  *
  *
  *************************************************************)
+open Core_kernel
 open Bap_core_theory
 open Bap.Std
 
@@ -36,6 +37,10 @@ val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 (* FIXME: make this happen at variable creation time *)
 val preassign : Theory.target -> Theory.language -> Ir.t -> Ir.t
 
+module Isel : sig
+  val patterns : Isel.Pattern.t String.Map.t
+  val templates : Isel.Template.t String.Map.t
+end
 
 module Pretty :
 sig

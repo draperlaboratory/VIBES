@@ -692,7 +692,32 @@ struct
 
 end
 
+module Isel = struct
+  open Isel.Utils
+  let patterns = 
+    String.Map.of_alist_exn [
+    "add", binop_pat PLUS;
+    "mov", def_pat (Def.create z (Bil.var x));
+    "str", store_pat;
+    "ld",  load_pat
+  ]
 
+  open ARM_ops.Ops
+  let mov_template : Isel.Template.t =
+    let pat = String.Map.find_exn patterns "mov" |> List.hd_exn in
+    let blkid = Term.tid pat in
+    let operand v = Ir.Var (Ir.simple_var v) in
+    let operation = Ir.simple_op mov (operand z) [operand x] in
+    { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
+    congruent = []}
+
+  let templates = String.Map.of_alist_exn [
+    "add", binop_template (String.Map.find_exn patterns "add") add;
+    "mov", mov_template;
+    "str", store_template;
+    "ld",  load_template
+  ]
+end
 
 module Pretty = struct
 

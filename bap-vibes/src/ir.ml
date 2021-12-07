@@ -631,3 +631,23 @@ let op_classes (t : t) : (Theory.role Opcode.Map.t) Var.Map.t =
     List.fold ops ~init:acc ~f:op_classes_op
   in
   List.fold blks ~init:Var.Map.empty ~f:op_classes_blk
+
+
+let map_operands ~f vir = 
+  map_operations vir
+  ~f:(fun operation ->
+    {
+      operation with
+      operands = List.map ~f operation.operands;
+      lhs = List.map ~f operation.lhs;
+    }
+    )
+let freshen_operands vir =
+  map_operands ~f:freshen_operand vir
+
+let freshen_operation_ids vir =
+  map_operations vir ~f:(fun operation ->
+    {
+      operation with
+      id = Tid.create ()
+    })
