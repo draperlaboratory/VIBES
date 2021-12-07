@@ -1,5 +1,7 @@
 # ARM Simple SSA
 
+This example patch has more than one occurrence of the same variable. In principle, if VIBES does not convert the patch into SSA form, it will choke on this example.
+
 To clean, build, and patch:
 
     make
