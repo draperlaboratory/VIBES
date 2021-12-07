@@ -6,10 +6,12 @@ open Bap_core_theory
 open Bap.Std
 open Knowledge.Syntax
 open Knowledge.Let
+open Graphlib.Std
 
 module KB = Knowledge
 module Arm = Arm_selector
 module Subst = Substituter
+module Hvar = Higher_var
 
 (* Applies the peephole optimizer to the output of a given solver. *)
 let optimized solver =
@@ -26,30 +28,184 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
   | Ok assembly -> KB.return (assembly, new_sol)
   | Error e -> Kb_error.fail e
 
+let split_large_const (blks : Blk.t list) : Blk.t list =
+  List.map blks ~f:(fun blk ->
+      let tbl = Tid.Table.create () in
+      let new_defs = ref [] in
+      let blk = Term.map def_t blk ~f:(fun def ->
+          match Def.rhs def with
+          | Int w when Word.to_int_exn w > 0xFFFF ->
+            let shift = Word.of_int ~width:32 16 in
+            let lower = Word.(w land of_int ~width:32 0xFFFF) in
+            let upper = Word.(w lsr shift) in
+            let lhs = Def.lhs def in
+            begin
+              let def1 = Def.create lhs Bil.(int lower) in
+              Tid.Table.change tbl (Term.tid def) ~f:(function
+                  | None -> Some [def1]
+                  | Some _ -> assert false)
+            end;
+            Def.with_rhs def Bil.(var lhs lor (int upper lsl int shift))
+          | Load (mem, Int w, endian, size) when Word.to_int_exn w > 0xFFFF ->
+            let shift = Word.of_int ~width:32 16 in
+            let lower = Word.(w land of_int ~width:32 0xFFFF) in
+            let upper = Word.(w lsr shift) in
+            let lhs = Def.lhs def in
+            begin
+              let def1 = Def.create lhs Bil.(int lower) in
+              let def2 = Def.create lhs Bil.(var lhs lor (int upper lsl int shift)) in
+              Tid.Table.change tbl (Term.tid def) ~f:(function
+                  | None -> Some [def2; def1]
+                  | Some _ -> assert false)
+            end;
+            Def.with_rhs def @@ Load (mem, Var lhs, endian, size)
+          | Store (mem, Int w, value, endian, size) when Word.to_int_exn w > 0xFFFF ->
+            let shift = Word.of_int ~width:32 16 in
+            let lower = Word.(w land of_int ~width:32 0xFFFF) in
+            let upper = Word.(w lsr shift) in
+            let tmp = Var.create ~is_virtual:true ~fresh:true "const" (Type.Imm 32) in
+            begin
+              let def1 = Def.create tmp Bil.(int lower) in
+              let def2 = Def.create tmp Bil.(var tmp lor (int upper lsl int shift)) in
+              Tid.Table.change tbl (Term.tid def) ~f:(function
+                  | None -> Some [def2; def1]
+                  | Some _ -> assert false)
+            end;
+            Def.with_rhs def @@ Store (mem, Var tmp, value, endian, size)
+          | _ -> def)
+      in
+      let blk = Term.map jmp_t blk ~f:(fun jmp ->
+          match Jmp.cond jmp with
+          | BinOp (op, Load (mem, Int w, endian, size), rhs)
+            when Word.to_int_exn w > 0xFFFF ->
+            let shift = Word.of_int ~width:32 16 in
+            let lower = Word.(w land of_int ~width:32 0xFFFF) in
+            let upper = Word.(w lsr shift) in
+            let tmp = Var.create ~is_virtual:true ~fresh:true "cond" (Type.Imm 32) in
+            begin
+              let def1 = Def.create tmp Bil.(int lower) in
+              let def2 = Def.create tmp Bil.(var tmp lor (int upper lsl int shift)) in
+              new_defs := !new_defs @ [def1; def2]
+            end;
+            Jmp.with_cond jmp @@ BinOp (op, Load (mem, Var tmp, endian, size), rhs)
+          | _ -> jmp) in
+      let blk =
+        Tid.Table.fold tbl ~init:blk ~f:(fun ~key:tid ~data:defs blk ->
+            let blk, _ =
+              List.fold defs ~init:(blk, tid) ~f:(fun (blk, tid) def ->
+                  Term.prepend def_t blk def ~before:tid, Term.tid def) in
+            blk) in
+      List.fold !new_defs ~init:blk ~f:(fun blk def ->
+          Term.append def_t blk def))
+
+let massage_conditional_calls (blks : Blk.t list) : Blk.t list =
+  let new_blks = ref [] in
+  let blks =
+    List.map blks ~f:(Term.map jmp_t ~f:(fun jmp ->
+        match Jmp.kind jmp with
+        | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
+          let builder = Blk.Builder.create () in
+          Blk.Builder.add_jmp builder (Jmp.create_call call);
+          let result = Blk.Builder.result builder in
+          new_blks := result :: !new_blks;
+          Jmp.with_kind jmp @@ Goto (Direct (Term.tid result))
+        | _ -> jmp)) in
+  let sub = List.fold (blks @ !new_blks)
+      ~init:(Sub.create () ~name:"dummy-wrapper")
+      ~f:(fun sub blk -> Term.append blk_t sub blk) in
+  let cfg = Sub.to_cfg sub in
+  Graphlib.reverse_postorder_traverse (module Graphs.Ir) cfg |>
+  Seq.to_list |>
+  List.map ~f:Graphs.Ir.Node.label
+
 let to_ssa (blks : Blk.t list) : Blk.t list =
-  (* BAP will give us the blks in such an order that the first one is the
-     entry blk. *)
-  let entry_tid = List.hd_exn blks |> Term.tid in
   (* Create the subroutine, which will fill in the control-flow edges. *)
   let sub = List.fold blks
       ~init:(Sub.create () ~name:"dummy-wrapper")
       ~f:(fun sub blk -> Term.append blk_t sub blk) in
-  (* Prune all unreachable blks, which are those whose sum of in-degree and
-     out-degree is zero. We have to be careful to ignore the entry block. *)
-  let sub =
-    let cfg = Sub.to_cfg sub in
-    Graphs.Ir.nodes cfg |> Seq.filter ~f:(fun node ->
-        let blk = Graphs.Ir.Node.label node in
-        Tid.(Term.tid blk <> entry_tid) &&
-        Graphs.Ir.Node.degree node cfg = 0) |>
-    Seq.fold ~init:sub ~f:(fun sub node ->
-        let blk = Graphs.Ir.Node.label node in
-        Term.remove blk_t sub @@ Term.tid blk) in
   (* Convert to SSA. *)
   let sub = Sub.ssa sub in
   (* TODO - try this: *)
   let sub = Linear_ssa.transform sub in
   Term.enum blk_t sub |> Seq.to_list
+
+(* XXX: what if other Hvars rely on offsets from SP? We should probably just fail.
+   Write a function that checks if such hvars are already present. *)
+let spill_hvars (tgt : Theory.target) (hvars : Hvar.t list)
+    (entry_blk : Blk.t) (exit_blk : Blk.t)
+    (blks : Blk.t list) : Blk.t list * Higher_var.t list =
+  let caller_save = String.Map.of_alist_exn [
+      "R0", (Word.zero 32, Arm_env.r0);
+      "R1", (Word.of_int ~width:32 4, Arm_env.r1);
+      "R2", (Word.of_int ~width:32 8, Arm_env.r2);
+      "R3", (Word.of_int ~width:32 12, Arm_env.r3);
+    ] in
+  let saved = ref String.Set.empty in
+  let mem =
+    let mem = Theory.Target.data tgt in
+    Var.reify mem in
+  let hvars = List.map hvars ~f:(fun hvar ->
+      let name = Hvar.name hvar in
+      let value = Hvar.value hvar in
+      match Hvar.at_entry value with
+      | None -> hvar
+      | Some at_entry ->
+        match Hvar.at_exit value with
+        | None -> hvar
+        | Some at_exit ->
+          match Hvar.register at_entry, Hvar.register at_exit with
+          | Some v, Some v' when String.(v = v') ->
+            begin
+              match Map.find caller_save v with
+              | None -> hvar
+              | Some (offset, _) ->
+                let memory = Hvar.create_frame "SP" offset in
+                let at_entry = Hvar.stored_in_memory memory in
+                saved := Set.add !saved v;
+                Hvar.create_with_storage name ~at_entry ~at_exit:None
+            end
+          | _ -> hvar) in
+  if Set.is_empty !saved then blks, hvars
+  else
+    let endian =
+      if Theory.(Endianness.(Target.endianness tgt = eb)) then
+        BigEndian
+      else
+        LittleEndian
+    in
+    let sp = Arm_env.sp in
+    let space = Word.of_int ~width:32 16 in
+    let push v =
+      let off, reg = Map.find_exn caller_save v in
+      Def.create mem @@
+      Store (Var mem, BinOp (PLUS, Var sp, Int off),
+             Var reg, endian, `r32);
+    in
+    let pop v =
+      let off, reg = Map.find_exn caller_save v in
+      Def.create reg @@
+      Load (Var mem, BinOp (PLUS, Var sp, Int off),
+            endian, `r32);
+    in
+    let pushes =
+      Set.to_list !saved |> List.rev |> List.map ~f:push in
+    let pops =
+      Set.to_list !saved |> List.rev |> List.map ~f:pop in
+    let blks = List.map blks ~f:(fun blk ->
+        if Tid.(Term.tid blk = Term.tid entry_blk) then
+          let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
+              Term.prepend def_t blk def) in
+          let adj = Def.create sp @@ BinOp (MINUS, Var sp, Int space) in
+          Term.prepend def_t blk adj
+        else if Tid.(Term.tid blk = Term.tid exit_blk) then
+          let blk = List.fold pops ~init:blk ~f:(fun blk def ->
+              Term.append def_t blk def) in
+          let adj = Def.create sp @@ BinOp (PLUS, Var sp, Int space) in
+          Term.append def_t blk adj
+          
+        else blk)
+    in
+    blks, hvars
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
@@ -58,15 +214,25 @@ let create_vibes_ir
     (hvars : Higher_var.t list)
     (bir : Insn.t) : Ir.t KB.t =
   let ir = Blk.from_insns [bir] in
+  (* BAP will give us the blks in such an order that the first one is the
+     entry blk. *)
+  let entry_blk = List.hd_exn ir in
+  let exit_blk = List.last_exn ir in
+  let ir, hvars = spill_hvars tgt hvars entry_blk exit_blk ir in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
+  let ir = split_large_const ir in
+  let ir =
+    if Arm_selector.is_thumb lang
+    then massage_conditional_calls ir
+    else ir in
   let ir = to_ssa ir in
   Events.(send @@ Info "SSA'd BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
-  let* ir = Arm.ARM_Gen.select ir in
+  let* ir = Arm.ARM_Gen.select lang ir in
   let ir = Arm.preassign tgt lang ir in
   KB.return ir
 

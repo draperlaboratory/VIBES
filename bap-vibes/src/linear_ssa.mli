@@ -25,6 +25,16 @@ open Bap.Std
     in the sense described above. *)
 val congruent : Var.t -> Var.t -> bool
 
+(** [orig_name name] removes the SSA naming conventions from [name].
+
+    Example: if [name] is ["_00001234_R0_1"] then [orig_name name] is
+    ["R0"]. Similarly, if [name] is ["_00001234_R0"], then [orig_name name]
+    is also ["R0"]. Any other patterns will raise an exception.
+*)
+val orig_name : string -> string
+
+val same : var -> var -> bool
+
 (** [tranform s] takes the subroutine [s] and converts it into the linear
     SSA form described above. *)
 val transform : Sub.t -> Sub.t

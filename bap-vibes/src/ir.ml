@@ -163,6 +163,14 @@ let simple_op opcode arg args =
     (* Operands need to have unique ids *)
     operands = List.map ~f:freshen_operand args;
   }
+  
+let op_no_args opcode =
+  { id = create_id ();
+    lhs = [];
+    opcodes = [opcode];
+    optional = false;
+    operands = [];
+  }
 
 let mk_empty_operation () =
   { id = create_id ();
@@ -201,13 +209,25 @@ type t = {
 
 let empty = {blks = []; congruent = []}
 
+(* Preserve the ordering when deduping. This is much slower than `dedup_and_sort`. *)
+let dedup_list_stable l ~compare =
+  let equal x x' = compare x x' = 0 in
+  let rec loop res = function
+    | [] -> res
+    | x :: xs ->
+      let dups = List.find_all_dups (x :: xs) ~compare in
+      let res = if List.mem dups x ~equal then res else x :: res in
+      loop res xs
+  in
+  loop [] (List.rev l)
+
 let union t1 t2 =
   let comp_pair = Tuple.T2.compare ~cmp1:compare_op_var ~cmp2:compare_op_var in
   {
     blks =
-      List.dedup_and_sort ~compare:compare_blk (t1.blks @ t2.blks);
+      dedup_list_stable ~compare:compare_blk (t1.blks @ t2.blks);
     congruent =
-      List.dedup_and_sort ~compare:comp_pair (t1.congruent @ t2.congruent)
+      dedup_list_stable ~compare:comp_pair (t1.congruent @ t2.congruent)
   }
 
 let add blk t =
@@ -488,12 +508,14 @@ let preassign_var tgt v =
   then Some v
   else None
 
+let tmp_prefix = "__Vibes_tmp_"
+
 (* We freshen temporaries so that they do not clash with register
    names in the Minizinc model. *)
 let freshen_temps v =
   let name = Var.name v in
   let typ = Var.typ v in
-  Var.create ("__Vibes_tmp_" ^ name) typ
+  Var.create (tmp_prefix ^ name) typ
 
 (* Preassign variables with names equal to a register in the target to
    the corresponding register, and freshen the temp name. *)

@@ -100,6 +100,8 @@ type operation = {
 
 val simple_op : opcode -> operand -> operand list -> operation
 
+val op_no_args : opcode -> operation
+
 (** A [vibes_blk] has an id,
     a set of operations,
     a set of input temporaries assumed to exists at the beginning of the block,
@@ -141,6 +143,8 @@ val op_var_to_string : op_var -> string
 
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
+
+val tmp_prefix : string
 
 (** [preassign tgt ir] sets all the variables which are set to
     registers in [tgt] as being the preassigned location for those
