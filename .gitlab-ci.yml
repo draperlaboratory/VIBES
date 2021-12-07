@@ -9,16 +9,9 @@ run_tests:
 
   script:
 
-    # Install APT dependencies.
-    - >-
-      sudo -E apt install -y
-      qemu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi cmake
-
-    # Install other dependencies (non-sudo).
-    - bash -x bin/setup/install-dependencies.bash --report-results --wp-branch codyroux/user-fun-spec-compare
-
-    # Source environment variables and install the vibes tool.
-    - . bin/common-lib/env.bash
+    # Install dependencies and install the VIBES tool.
+    - bash -x bin/setup/ubuntu.bash --report-results
+    - source bin/setup/env.bash
     - make
 
     # Run the various tests.
