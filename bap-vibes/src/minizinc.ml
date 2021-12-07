@@ -421,6 +421,26 @@ let delete_empty_blocks vir =
   {vir with blks = blks}
 
 let run_minizinc
+  (params : Yojson.Safe.t)
+  ~model_filepath:(model_filepath : string) =
+  let params_filepath =
+    Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
+  let solution_filepath =
+    Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
+  Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
+  Yojson.Safe.to_file params_filepath params;
+  let minizinc_args = ["--output-mode"; "json";
+    "-o"; solution_filepath;
+    "--output-objective";
+    "-d"; params_filepath;
+    "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
+    "--search-complete-msg";"\"\"";
+    "--solver"; "chuffed";
+    model_filepath ] in
+  Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
+  KB.return (Yojson.Safe.from_file solution_filepath)
+
+let run_unison
     ?(exclude_regs: String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (lang : Theory.language)
@@ -428,30 +448,15 @@ let run_minizinc
     (prev_sols : sol list)
     (vir : Ir.t)
   : (Ir.t * sol) KB.t =
-  let params_filepath =
-    Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
-  let solution_filepath =
-    Stdlib.Filename.temp_file "vibes-mzn-sol" ".json" in
-  Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
   let* params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
-  Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
-  let minizinc_args = ["--output-mode"; "json";
-                       "-o"; solution_filepath;
-                       "--output-objective";
-                       "-d"; params_filepath;
-                       "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
-                       "--search-complete-msg";"\"\"";
-                       "--solver"; "chuffed";
-                       model_filepath ] in
-  Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
-  let sol_serial = Yojson.Safe.from_file solution_filepath |> sol_serial_of_yojson  in
+  (run_minizinc ~model_filepath (mzn_params_serial_to_yojson params)) >>= fun sol_json ->
+  let sol_serial = sol_serial_of_yojson sol_json in
   let sol = match sol_serial with
     | Ok sol_serial -> KB.return (deserialize_sol sol_serial name_maps)
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
-
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in
   Events.(send @@ Info (sprintf "Solved Ir: %s\n" (Ir.pretty_ir vir')));

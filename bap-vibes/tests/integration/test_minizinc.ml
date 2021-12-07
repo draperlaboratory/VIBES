@@ -114,7 +114,7 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
     (* Now run the compiler. *)
-    Minizinc.run_minizinc
+    Minizinc.run_unison
       arm_tgt
       arm_lang
       ~filepath:model

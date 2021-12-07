@@ -57,6 +57,10 @@ val max_tries : t -> int option
 (** [minizinc_model_filepath config] returns the path to the minizinc model. *)
 val minizinc_model_filepath : t -> string
 
+(** [minizinc_isel_filepath config] returns the path to the minizinc iinstruction 
+    selection model.*)
+val minizinc_isel_filepath : t -> string
+
 (** [ogre config] returns the contents of the user-provided ogre file for use in
    the raw loader, if provided *)
 val ogre : t -> string option
@@ -107,6 +111,7 @@ val create :
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string
+  -> minizinc_isel_filepath:string
   -> ogre:string option
   -> patch_spaces:patch_space list
   -> wp_params:Wp_params.t

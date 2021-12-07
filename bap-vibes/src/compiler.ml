@@ -26,6 +26,7 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
+    (isel_model_filepath : string)
     (tgt: Theory.target)
     (lang : Theory.language)
     (hvars : Higher_var.t list)
@@ -41,14 +42,26 @@ let create_vibes_ir
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
   let+ ir =
     if is_arm || is_thumb then
-      let+ ir = Arm.ARM_Gen.select ir ~argument_tids ~is_thumb in
+      let+ ir = 
+        if String.is_empty isel_model_filepath then
+          Arm.ARM_Gen.select ir ~argument_tids ~is_thumb
+        else
+          begin
+            Events.(send @@ Info "Running Minizinc instruction selector.");
+            let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
+            List.iter ir ~f:(fun blk ->
+            Events.(send @@ Info (sprintf "The patch has the following BIL: %a" Blk.pps blk)));
+            let* ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns Arm.Isel.templates in
+            KB.return ir
+          end
+      in
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
   ir, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)
-let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
+let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) (isel_model_filepath : string) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
       Events.(send @@ Info "The patch has no IR to translate.\n");
@@ -67,7 +80,7 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
       Data.Patch.get_target patch >>= fun tgt ->
       Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
       Data.Patch.get_sp_align_exn patch >>= fun sp_align ->
-      create_vibes_ir tgt lang hvars sp_align bir >>= fun (ir, exclude_regs) ->
+      create_vibes_ir isel_model_filepath tgt lang hvars sp_align bir >>= fun (ir, exclude_regs) ->
       Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
       Data.Patch.set_exclude_regs patch (Some exclude_regs) >>= fun () ->
       Events.(send @@ Info "The patch has the following VIBES IR:\n");
@@ -117,19 +130,19 @@ let compile_one_assembly
   end >>= fun () -> KB.return (n + 1)
 
 (* Converts the patch (as BIR) to VIBES IR instructions. *)
-let compile_ir (obj : Data.t) : unit KB.t =
+let compile_ir ?(isel_model_filepath = "") (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting IR compiler");
   Data.Patched_exe.get_patches obj >>= fun patches ->
   let size : string = string_of_int (Data.Patch_set.length patches) in
   Events.(send @@ Info ("There are " ^ size ^ " patch fragments."));
   Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(compile_one_vibes_ir) >>= fun _ ->
+    ~f:(compile_one_vibes_ir isel_model_filepath) >>= fun _ ->
   Events.(send @@ Info "Done.");
   KB.return ()
 
 (* Converts the patch (as IR) to assembly instructions. *)
-let compile_assembly ?solver:(solver = Minizinc.run_minizinc) (obj : Data.t)
-  : unit KB.t =
+let compile_assembly ?solver:(solver = Minizinc.run_unison) (obj : Data.t)
+    : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
   Events.(send @@ Info ("Using minizinc model: " ^ mzn_model));
