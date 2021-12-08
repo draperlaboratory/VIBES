@@ -48,20 +48,25 @@ let split_large_const (blks : Blk.t list) : Blk.t list =
     Bil.(var v lor (int upper lsl int shift)) in
   List.map blks ~f:(fun blk ->
       let tbl = Tid.Table.create () in
+      let saved_temps = Word.Table.create () in
       let new_defs = ref [] in
       (* Handle defs *)
       let blk = Term.map def_t blk ~f:(fun def ->
           match Def.rhs def with
-          | Int w when Word.to_int_exn w > 0xFFFF ->
-            let shift, lower, upper = split_word w in
-            let lhs = Def.lhs def in
-            begin
-              let def1 = Def.create lhs Bil.(int lower) in
-              Tid.Table.change tbl (Term.tid def) ~f:(function
-                  | None -> Some [def1]
-                  | Some _ -> assert false)
-            end;
-            Def.with_rhs def @@ idiom lhs shift upper
+          | Int w when Word.to_int_exn w > 0xFFFF -> begin
+              match Word.Table.find saved_temps w with
+              | Some v -> Def.with_rhs def @@ Var v
+              | None ->
+                let shift, lower, upper = split_word w in
+                let lhs = Def.lhs def in
+                begin
+                  let def1 = Def.create lhs Bil.(int lower) in
+                  Tid.Table.change tbl (Term.tid def) ~f:(function
+                      | None -> Some [def1]
+                      | Some _ -> assert false)
+                end;
+                Def.with_rhs def @@ idiom lhs shift upper
+            end
           | Load (mem, Int w, endian, size) when Word.to_int_exn w > 0xFFFF ->
             let shift, lower, upper = split_word w in
             let lhs = Def.lhs def in
@@ -84,6 +89,7 @@ let split_large_const (blks : Blk.t list) : Blk.t list =
                   | None -> Some [def2; def1]
                   | Some _ -> assert false)
             end;
+            (* Word.Table.set saved_temps ~key:w ~data:tmp; *)
             Def.with_rhs def @@ Store (mem, Var tmp, value, endian, size)
           | _ -> def)
       in
@@ -149,7 +155,7 @@ let to_ssa (blks : Blk.t list) : Blk.t list =
   Term.enum blk_t sub |> Seq.to_list
 
 (* Spill higher vars in caller-save registers if we are doing any calls
-   in our patch, since the ABI says they may be clobbered.
+   in a multi-block patch, since the ABI says they may be clobbered.
 
    XXX: what if other Hvars rely on offsets from SP? We should probably just fail.
    Write a function that checks if such hvars are already present.
@@ -162,7 +168,7 @@ let spill_hvars (tgt : Theory.target) (hvars : Hvar.t list)
           match Jmp.kind jmp with
           | Call _ -> true
           | _ -> false)) in
-  if not has_calls then blks, hvars
+  if not (has_calls && List.length blks > 1) then blks, hvars
   else
     (* We're going to use predetermined stack locations, for simplicity.
        The nice part is that the total space will be a multiple of 8. *)
@@ -258,6 +264,7 @@ let create_vibes_ir
     then massage_conditional_calls ir
     else ir in
   let ir = reorder_blks ir in
+  let ir = Bir_opt.apply_ordered ir in
   let ir = to_ssa ir in
   Events.(send @@ Info "SSA'd BIR\n");
   Events.(send @@ Info (

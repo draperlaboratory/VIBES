@@ -72,3 +72,27 @@ let apply (ir : blk term list) : blk term list =
   (* This list contains all the optimizations we currently apply *)
   let opts = [short_circ] in
   apply_list opts ir
+
+let apply_ordered (ir : blk term list) : blk term list =
+  let rec aux acc = function
+    | [] -> List.rev acc
+    | [blk] -> List.rev (blk :: acc)
+    | blk1 :: blk2 :: rest -> begin
+        let jmps1 = Term.enum jmp_t blk1 |> Seq.to_list in
+        match jmps1 with
+        | [jmp] -> begin
+            match Jmp.kind jmp with
+            | Goto (Direct tid) when Tid.(tid = Term.tid blk2) ->
+              let defs1 = Term.enum def_t blk1 |> Seq.to_list in
+              let defs2 = Term.enum def_t blk2 |> Seq.to_list in
+              let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
+              let new_blk =
+                Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
+                  ~tid:(Term.tid blk1) () in
+              aux acc (new_blk :: rest)
+            | _ -> aux (blk2 :: blk1 :: acc) rest
+          end
+        | _ -> aux (blk2 :: blk1 :: acc) rest
+      end
+  in
+  aux [] ir
