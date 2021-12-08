@@ -12,8 +12,7 @@ open Ir
 
 
 let in_op (ts : Var.t list) : operation =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = Ir.create_id ();
     lhs = List.map ~f:(fun t -> Var (simple_var t)) ts;
     opcodes = [];
     optional = false;
@@ -21,8 +20,7 @@ let in_op (ts : Var.t list) : operation =
   }
 
 let out_op (ts : Var.t list) : operation =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = Ir.create_id ();
     lhs = [];
     opcodes = [];
     optional = false;
@@ -30,8 +28,7 @@ let out_op (ts : Var.t list) : operation =
   }
 
 let simple_op' opcode arg args =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = Ir.create_id ();
     lhs = [Var (simple_var arg)];
     opcodes = [opcode];
     optional = false;
@@ -74,7 +71,7 @@ let vir1,
       (t1, List.map ~f:op_var_exn op1.operands);
       (t2, List.map ~f:op_var_exn op2.operands);
       (t3, List.map ~f:op_var_exn blk1.outs.operands) ] in
-  let op_opcodes = Tid.Map.of_alist_exn [
+  let op_opcodes = Int.Map.of_alist_exn [
       (op1.id, [mov]);
       (op2.id, [mov]);
       ( blk1.ins.id, []);
@@ -101,7 +98,7 @@ let test_temps1 _  =
 let test_operands1 _  =
   assert_equal ~cmp:(Var.Set.equal) (Var.Set.of_list operands1) (Ir.all_operands vir1)
 let test_op_opcodes1 _  =
-  assert_equal ~cmp:(Tid.Map.equal (List.equal Ir.equal_opcode)) op_opcodes1 (Ir.operation_opcodes vir1)
+  assert_equal ~cmp:(Int.Map.equal (List.equal Ir.equal_opcode)) op_opcodes1 (Ir.operation_opcodes vir1)
 let test_dummy_reg_alloc _ =
   let r0 = Var.create ~is_virtual:false ~fresh:false "R0" (Type.Imm 32) in
   let ir_alloc = Ir.dummy_reg_alloc vir1 in

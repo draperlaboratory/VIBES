@@ -73,6 +73,10 @@ let exclude_regs_domain : String.Set.t option KB.Domain.t = KB.Domain.optional
   ~equal:String.Set.equal
   "exclude-regs-domain"
 
+let sp_align_domain : int option KB.Domain.t = KB.Domain.optional
+  ~equal:Int.equal
+  "sp-align-domain"
+
 (* General knowledge info for the package *)
 type cls
 type t = cls KB.obj
@@ -130,6 +134,9 @@ module Patch = struct
 
   let exclude_regs : (patch_cls, String.Set.t option) KB.slot =
     KB.Class.property ~package patch "exclude-regs" exclude_regs_domain
+
+  let sp_align : (patch_cls, int option) KB.slot =
+    KB.Class.property ~package patch "sp-align" sp_align_domain
   
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -259,6 +266,17 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_vars
     | Some value -> KB.return value
 
+  let set_sp_align (obj : t) (data : int option) : unit KB.t =
+    KB.provide sp_align obj data
+
+  let get_sp_align (obj : t) : int option KB.t =
+    KB.collect sp_align obj
+
+  let get_sp_align_exn (obj : t) : int KB.t =
+    get_sp_align obj >>= function
+    | None -> Kb_error.fail Kb_error.Missing_sp_align
+    | Some value -> KB.return value
+  
 end
 
 (* Sets of patches *)

@@ -24,6 +24,7 @@ type t =
   | Missing_patch_vars
   | Missing_patch_space_offset
   | Missing_patch_space_size
+  | Missing_sp_align
   | Missing_func
   | Missing_property
   | Missing_raw_ir

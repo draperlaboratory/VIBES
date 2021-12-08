@@ -24,7 +24,11 @@ type patch =
     patch_size : int;
 
     (* Higher variables *)
-    patch_vars : Hvar.t list
+    patch_vars : Hvar.t list;
+
+    (* The amount that the SP should be adjusted by to be aligned
+       at the beginning of the patch (for ABI reasons). *)
+    patch_sp_align : int;
   }
 
 (** A type to represent known regions that may be overwritten with patch code *)
@@ -51,6 +55,7 @@ let patch_code (p : patch) : patch_code = p.patch_code
 let patch_point (p : patch) : Bitvec.t = p.patch_point
 let patch_size (p : patch) : int = p.patch_size
 let patch_vars (p : patch) : Hvar.t list = p.patch_vars
+let patch_sp_align (p : patch) : int = p.patch_sp_align
 
 (* Config accessors. *)
 let exe t : string = t.exe
@@ -92,7 +97,7 @@ let string_of_hvar (v : Hvar.t) : string =
           let part_2 =
             Format.sprintf
               "        at-exit: %s\n      }"
-              (string_of_loc v_loc) in
+              (string_of_loc v_loc_2) in
           String.concat ~sep:"" [part_1; part_2]
       end
     | None -> match Hvar.constant v with
@@ -195,8 +200,10 @@ let create_patch
     ~patch_code:(patch_code : patch_code)
     ~patch_point:(patch_point : Bitvec.t)
     ~patch_size:(patch_size : int)
-    ~patch_vars:(patch_vars : Hvar.t list) : patch =
-  { patch_name; patch_code; patch_point; patch_size; patch_vars; }
+    ~patch_vars:(patch_vars : Hvar.t list)
+    ~patch_sp_align:(patch_sp_align : int)
+  : patch =
+  { patch_name; patch_code; patch_point; patch_size; patch_vars; patch_sp_align }
 
 (* Create a configuration record. *)
 let create

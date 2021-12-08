@@ -160,8 +160,8 @@ let to_ssa (blks : Blk.t list) : Blk.t list =
    XXX: what if other Hvars rely on offsets from SP? We should probably just fail.
    Write a function that checks if such hvars are already present.
 *)
-let spill_hvars (tgt : Theory.target) (hvars : Hvar.t list)
-    (entry_blk : Blk.t) (exit_blk : Blk.t)
+let spill_hvars (tgt : Theory.target) (sp_align : int)
+    (hvars : Hvar.t list) (entry_blk : Blk.t) (exit_blk : Blk.t)
     (blks : Blk.t list) : Blk.t list * Higher_var.t list =
   let has_calls = List.exists blks ~f:(fun blk ->
       Term.enum jmp_t blk |> Seq.exists ~f:(fun jmp ->
@@ -210,7 +210,7 @@ let spill_hvars (tgt : Theory.target) (hvars : Hvar.t list)
         then BigEndian else LittleEndian in
       let sp = Arm_env.sp in
       (* Predetermined amount of space to allocate on the stack. *)
-      let space = Word.of_int ~width:32 16 in
+      let space = Word.of_int ~width:32 (sp_align + 16) in
       let push v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
@@ -269,13 +269,14 @@ let create_vibes_ir
     (tgt: Theory.target)
     (lang : Theory.language)
     (hvars : Higher_var.t list)
+    (sp_align : int)
     (bir : Insn.t) : (Ir.t * String.Set.t) KB.t =
   let ir = Blk.from_insns [bir] in
   (* BAP will give us the blks in such an order that the first one is the
      entry blk. *)
   let entry_blk = List.hd_exn ir in
   let exit_blk = List.last_exn ir in
-  let ir, hvars = spill_hvars tgt hvars entry_blk exit_blk ir in
+  let ir, hvars = spill_hvars tgt sp_align hvars entry_blk exit_blk ir in
   let exclude_regs = collect_exclude_regs hvars in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
@@ -315,7 +316,8 @@ let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
       Data.Patch.get_lang patch >>= fun lang ->
       Data.Patch.get_target patch >>= fun tgt ->
       Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
-      create_vibes_ir tgt lang hvars bir >>= fun (ir, exclude_regs) ->
+      Data.Patch.get_sp_align_exn patch >>= fun sp_align ->
+      create_vibes_ir tgt lang hvars sp_align bir >>= fun (ir, exclude_regs) ->
       Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
       Data.Patch.set_exclude_regs patch (Some exclude_regs) >>= fun () ->
       Events.(send @@ Info "The patch has the following VIBES IR:\n");
