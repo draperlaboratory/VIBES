@@ -31,6 +31,7 @@ let orig_name (name : string) : string =
   let name = String.drop_prefix name 10 in
   match String.split name ~on:'_' with
   | [] -> name
+  | [name] when not @@ String.is_empty name -> name
   | [name; _] -> name
   | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name
 
