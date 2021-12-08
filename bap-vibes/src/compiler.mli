@@ -19,7 +19,8 @@ module KB = Knowledge
     an optional [solver] parameter for unit testing which defaults
     to [Minizinc.run_minizinc] *)
 val compile_assembly :
-  ?solver:(Theory.target ->
+  ?solver:(?exclude_regs:Core_kernel.String.Set.t ->
+           Theory.target ->
            Theory.language ->
            filepath:string ->
            Minizinc.sol list ->

@@ -170,6 +170,7 @@ let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list
 
 *)
 let serialize_mzn_params
+    ?(exclude_regs : String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (lang : Theory.language)
     (vir : Ir.t)
@@ -193,6 +194,8 @@ let serialize_mzn_params
   let gpr =
     Arm_selector.gpr tgt lang |>
     Set.to_list |>
+    List.filter ~f:(fun v ->
+        not @@ Set.mem exclude_regs @@ Var.name v) |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
@@ -383,6 +386,7 @@ let delete_empty_blocks vir =
   {vir with blks = blks}
 
 let run_minizinc
+    ?(exclude_regs: String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (lang : Theory.language)
     ~filepath:(model_filepath : string)
@@ -397,7 +401,7 @@ let run_minizinc
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols in
+  let params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
   Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filepath;
