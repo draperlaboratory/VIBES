@@ -2,6 +2,7 @@ open !Core_kernel
 open Bap_knowledge
 open Bap_vibes
 open Bap.Std
+open Bap_core_theory
 
 module KB = Knowledge
 
@@ -180,7 +181,7 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
       let+ ir =
         v |> Term.to_sequence blk_t
         |> Seq.to_list
-        |> Arm.ARM_Gen.select
+        |> Arm.ARM_Gen.select Theory.Language.unknown
       in
       let result =
         ir |> Ir.dummy_reg_alloc

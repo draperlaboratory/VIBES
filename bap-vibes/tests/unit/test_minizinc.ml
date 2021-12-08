@@ -34,10 +34,10 @@ open Test_ir
 let dummy_sol : Minizinc.sol =
   {
     reg = Var.Map.empty ;
-    opcode = Tid.Map.empty;
+    opcode = Int.Map.empty;
     temp = Var.Map.empty;
-    active = Tid.Map.empty;
-    issue  = Tid.Map.empty;
+    active = Int.Map.empty;
+    issue  = Int.Map.empty;
   }
 
 let sol1 : Minizinc.sol =
@@ -45,10 +45,10 @@ let sol1 : Minizinc.sol =
   let mov = Ir.Opcode.create ~arch:"arm" "mov" in
   {
     reg = Var.Map.of_alist_exn (List.zip_exn temps1 [r0; r0; r0]) ;
-    opcode = Tid.Map.of_alist_exn (List.zip_exn operations1 [mov; mov; mov; mov]);
+    opcode = Int.Map.of_alist_exn (List.zip_exn operations1 [mov; mov; mov; mov]);
     temp = Var.Map.of_alist_exn (List.zip_exn operands1 oprnd_temps1);
-    active = Tid.Map.of_alist_exn (List.zip_exn operations1 [true; true; true; true]);
-    issue  = Tid.Map.of_alist_exn (List.zip_exn operations1 [4; 3; 2; 1]); (* Just reverse ordered *)
+    active = Int.Map.of_alist_exn (List.zip_exn operations1 [true; true; true; true]);
+    issue  = Int.Map.of_alist_exn (List.zip_exn operations1 [4; 3; 2; 1]); (* Just reverse ordered *)
   }
 
 let new_vir1 = Minizinc.apply_sol vir1 sol1
@@ -71,7 +71,7 @@ let test_sol_apply_ex1 _ =
   let blk1 = List.hd_exn vir1.blks in
   let blk2 = List.hd_exn new_vir1.blks in
   let r0 = Var.create ~is_virtual:false ~fresh:false "r0" (Type.Imm 32) in
-  assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Tid.equal o1.id o2.id))
+  assert_equal ~cmp:(List.equal (fun (o1 : operation) o2 -> Int.equal o1.id o2.id))
     blk1.data (List.rev blk2.data);
   assert_bool "All registers assigned to R0"
     (List.for_all (all_operands_helper blk2)

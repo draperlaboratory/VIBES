@@ -22,6 +22,7 @@ type t =
   | Missing_patch_vars
   | Missing_patch_space_offset
   | Missing_patch_space_size
+  | Missing_sp_align
   | Missing_func
   | Missing_property
   | Missing_raw_ir
@@ -61,6 +62,7 @@ let pp ppf (e : t) =
     | Missing_patch_vars -> "No patch vars were stashed in KB"
     | Missing_patch_space_offset -> "No patch space offset was stashed in KB"
     | Missing_patch_space_size -> "No patch space size was stashed in KB"
+    | Missing_sp_align -> "No SP alignment was provided in KB"
     | Missing_func -> "No function name to verify was stashed in KB"
     | Missing_property -> "No correctness property was stashed in KB"
     | Missing_raw_ir -> "Raw Ir compiled from core_theory not found in KB"
