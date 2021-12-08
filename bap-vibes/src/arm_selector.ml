@@ -451,6 +451,34 @@ module ARM_ops = struct
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
 
+  (* Help take advantage of the loc shape `reg + imm` *)
+  let str_base_off mem value base off =
+    let res = create_temp mem_ty in
+    let {op_val = value_val; op_eff = value_sem} = value in
+    let {op_val = mem_val; op_eff = mem_sem} = mem in
+    let base = Ir.Var (Ir.simple_var base) in
+    let off = Ir.Const off in
+    let ops =
+      begin
+        match value_val with
+        | Var _ ->
+          let op = Ir.simple_op Ops.str mem_val [value_val; base; off] in
+          [op]
+        | Const _ ->
+          let tmp = Ir.Var (create_temp word_ty) in
+          let mov = Ir.simple_op Ops.mov tmp [value_val] in
+          let op = Ir.simple_op Ops.str mem_val [tmp; base; off] in
+          [op; mov]
+        | _ ->
+          let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
+          failwith @@ Format.sprintf "str: unsupported operand %s" op_str
+      end
+    in
+    (* Again, a little cowboy instruction ordering *)
+    let sem = value_sem @. mem_sem in
+    let sem = {sem with current_data = ops @ sem.current_data} in
+    {op_val = Void res; op_eff = sem}
+  
   let (&&) a b = binop Ops.and_ word_ty a b
 
   let (||) a b = binop Ops.orr word_ty a b
@@ -494,6 +522,9 @@ module ARM_ops = struct
   let goto ?is_call:(is_call=false) tgt arg_vars =
     let opcode = if is_call then Ops.bl else Ops.b in
     let tmp_branch = create_temp bit_ty in
+    (* The arg vars that were set before making this call should be
+       marked as dependencies for the callee (since they are the parameters!).
+       We don't want them to get clobbered. *)
     let arg_vars = List.map arg_vars ~f:(fun v -> Ir.Var (Ir.simple_var v)) in
     control (Ir.simple_op opcode (Void tmp_branch) ([tgt] @ arg_vars)) empty_eff
 
@@ -596,6 +627,14 @@ struct
       let mem = select_exp lang mem in
       let loc = select_exp lang loc in
       ldr (Size.in_bits size) mem loc
+    | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
+      let mem = select_mem lang mem in
+      let value = select_exp lang value in
+      str_base_off mem value a w
+    | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , size) ->
+      let mem = select_mem lang mem in
+      let value = select_exp lang value in
+      str_base_off mem value a Word.(-w)
     | Store (mem, loc, value, _, _size) ->
       let mem = select_exp lang mem in
       let loc = select_exp lang loc in
@@ -707,6 +746,10 @@ struct
       ss @. s
 
   and select_blk (lang : Theory.language) (b : blk term) : arm_eff KB.t =
+    (* A little bit of a hacky way to grab the parameter registers that
+       were most recently set leading up to a `Call` instruction.
+       We're going to use these to signal that the callee depends on them,
+       so they shouldn't be reordered in such a way that they're clobbered. *)
     let arg_vars =
       let tbl = String.Table.create () in
       let has_call =
