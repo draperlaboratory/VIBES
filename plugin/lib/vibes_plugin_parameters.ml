@@ -177,6 +177,14 @@ let validate_patch_vars (obj : Json.t)
   | `List h_vars -> Err.all (List.map ~f:validate_h_var h_vars)
   | _ -> Err.return []
 
+let validate_patch_sp_align (obj : Json.t)
+  : (int, error) Stdlib.result =
+  match Json.Util.member "patch-sp-align" obj with
+  | `Int n -> Err.return n
+  | `Null -> Err.return 0
+  | _ -> Err.fail @@
+    Errors.Invalid_sp_align "expected integer for patch-sp-align"
+
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t)
     : (Vibes_config.patch, error) Stdlib.result =
@@ -185,8 +193,10 @@ let validate_patch (obj : Json.t)
   validate_patch_point obj >>= fun patch_point ->
   validate_patch_size obj >>= fun patch_size ->
   validate_patch_vars obj >>= fun patch_vars ->
+  validate_patch_sp_align obj >>= fun patch_sp_align ->
   let p = Vibes_config.create_patch
-    ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars in
+      ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars
+      ~patch_sp_align in
   Err.return p
 
 (* Extract and validate the patch fragment list, or error. *)

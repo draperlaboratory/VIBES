@@ -390,62 +390,7 @@ module Eval(CT : Theory.Core) = struct
       Err.fail @@
       Err.Core_c_error "Maximum number of arguments for function call \
                         was exceeded"
-
-  (* Right now, we're doing the stupid way of preserving and restoring hvars
-     that are caller-save. That is, this idiom happens at every single callsite.
-     Ideally, we should be doing this once at the beginning and once at the end.
-     Then, every time those hvars are referenced in the body of the patch, they
-     will be substituted with the corresponding stack location.  *)
-
-  let caller_save_of_hvar info (hvar : Hvar.t) : unit T.var option =
-    let value = Hvar.value hvar in
-    match Hvar.at_entry value with
-    | None -> None
-    | Some at_entry -> match Hvar.at_exit value with
-      | None -> None
-      | Some at_exit ->
-        match Hvar.register at_entry, Hvar.register at_exit with
-        | Some reg, Some reg' when String.equal reg reg' ->
-          List.find info.caller_save ~f:(fun v ->
-              String.equal reg @@ T.Var.name v)
-        | _ -> None
-
-  let word_sort_var info (v : unit T.var) =
-    CT.var @@ T.Var.resort v info.word_sort
   
-  let preserve_caller_save_hvars info =
-    KB.List.fold_right info.hvars ~init:!!empty_data ~f:(fun hvar acc ->
-        KB.return acc
-        (* match caller_save_of_hvar info hvar with *)
-        (* | None -> KB.return acc *)
-        (* | Some var -> *)
-        (*   let* new_sp = *)
-        (*     CT.sub (word_sort_var info info.sp) info.sp_data_align in *)
-        (*   let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in *)
-        (*   let* store_reg = *)
-        (*     CT.storew !!(info.endian) (CT.var info.mem_var) *)
-        (*       (word_sort_var info info.sp) (word_sort_var info var) in *)
-        (*   let+ set_store = CT.set info.mem_var !!store_reg in *)
-        (*   CT.seq !!adjust_stack_ptr (CT.seq !!set_store acc) *))
-
-  let restore_caller_save_hvars info =
-    let* pops =
-      KB.List.fold info.hvars ~init:!!empty_data ~f:(fun acc hvar ->
-          KB.return acc
-          (* match caller_save_of_hvar info hvar with *)
-          (* | None -> KB.return acc *)
-          (* | Some var -> *)
-          (*   let* new_sp = *)
-          (*     CT.add (word_sort_var info info.sp) info.sp_data_align in *)
-          (*   let* adjust_stack_ptr = CT.set info.sp !!(T.Value.forget new_sp) in *)
-          (*   let* load_reg = *)
-          (*     CT.loadw info.word_sort !!(info.endian) *)
-          (*       (CT.var info.mem_var) (word_sort_var info info.sp) in *)
-          (*   let+ set_reg = CT.set var !!(T.Value.forget load_reg) in *)
-          (*   CT.seq !!set_reg (CT.seq !!adjust_stack_ptr acc) *)) in        
-    (* XXX: Why do we have to unwrap it again? Did I mess up somewhere? *)
-    pops
-
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
     let empty_ctrl = T.Effect.empty T.Effect.Sort.fall in
     let* empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl in
@@ -462,13 +407,10 @@ module Eval(CT : Theory.Core) = struct
         let* dst = T.Label.for_name ~package:"core-c" f in
         let* () = declare_call dst in
         let* call = CT.goto dst in
-        let* preserve = preserve_caller_save_hvars info in
         let* call_blk =
-          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
+          CT.blk T.Label.null arg_assignments !!call in
         let* retval = CT.set lval @@ CT.var info.ret_var in
-        let* restore = restore_caller_save_hvars info in
-        let* post = CT.seq !!retval !!restore in
-        let* post_blk = data post in
+        let* post_blk = data retval in
         CT.seq !!call_blk !!post_blk
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
         let lval = String.Map.find_exn var_map lval in
@@ -484,23 +426,15 @@ module Eval(CT : Theory.Core) = struct
         let* dst = T.Label.for_addr ~package:"core-c" @@ Bitvec.(!$s) in
         let* () = declare_call dst in
         let* call = CT.goto dst in
-        let* preserve = preserve_caller_save_hvars info in
-        let* call_blk =
-          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
-        let* restore = restore_caller_save_hvars info in
-        let* post_blk = data restore in
-        CT.seq !!call_blk !!post_blk
+        let* call_blk = CT.blk T.Label.null arg_assignments !!call in
+        !!call_blk
       | COMPUTATION (CALL (VARIABLE f, args)) ->
         let* arg_assignments = assign_args info var_map args in
         let* dst = T.Label.for_name ~package:"core-c" f in
         let* () = declare_call dst in
         let* call = CT.goto dst in
-        let* preserve = preserve_caller_save_hvars info in
-        let* call_blk =
-          CT.blk T.Label.null (CT.seq preserve arg_assignments) !!call in
-        let* restore = restore_caller_save_hvars info in
-        let* post_blk = data restore in
-        CT.seq !!call_blk !!post_blk
+        let* call_blk = CT.blk T.Label.null arg_assignments !!call in
+        !!call_blk
       | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
         let label = String.(chop_prefix_exn ~prefix:"L_" label) in
         let dst = CT.int info.word_sort Bitvec.(!$ label) in

@@ -23,7 +23,7 @@ let assert_parse_eq s1 s2 =
         let* theory = Theory.instance () in
         let* (module T) = Theory.require theory in
         let module Eval = Core_c.Eval(T) in
-        let* sem = Eval.c_patch_to_eff Helpers.dummy_target ast in
+        let* sem = Eval.c_patch_to_eff [] Helpers.dummy_target ast in
         let sem_str = eff_to_str sem in
         KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
       end

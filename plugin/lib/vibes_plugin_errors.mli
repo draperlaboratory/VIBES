@@ -21,6 +21,7 @@ type t =
   | Missing_higher_var_at_entry
   | Missing_higher_var_at_exit
   | Config_not_parsed of string
+  | Invalid_sp_align of string
   | Invalid_hex of string
   | Invalid_property of string
   | Invalid_patch_code of string

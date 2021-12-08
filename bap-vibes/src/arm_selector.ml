@@ -497,7 +497,7 @@ module ARM_ops = struct
      size) value, with value 0 if false and non-zero if true. It will
      be the job of branching operations to call [cmp ? ?] and check
      the appropriate flags. *)
-  let br ?(neg = false) ?is_call:(is_call=false) cond tgt lang =
+  let br ?(neg = false) ?is_call:(is_call=false) cond tgt _lang =
     let opcode =
       if is_call then
         if neg then Ops.blne else Ops.bleq
@@ -629,13 +629,13 @@ struct
       let mem = select_exp lang mem in
       let loc = select_exp lang loc in
       ldr (Size.in_bits size) mem loc
-    | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
+    | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , _size) ->
       let mem = select_mem lang mem in
       let value = select_exp lang value in
       let lhs = Option.value_exn lhs_mem
           ~message:"Expected LHS operand for store" in
       str_base_off lhs mem value a w
-    | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , size) ->
+    | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , _size) ->
       let mem = select_mem lang mem in
       let value = select_exp lang value in
       let lhs = Option.value_exn lhs_mem
