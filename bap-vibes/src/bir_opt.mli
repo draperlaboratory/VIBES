@@ -8,3 +8,5 @@
 open Bap.Std
 
 val apply : blk term list -> blk term list
+
+val apply_ordered : blk term list -> blk term list
