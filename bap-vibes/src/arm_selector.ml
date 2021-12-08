@@ -321,7 +321,7 @@ module ARM_ops = struct
     | Ir.Var _, Ir.Const _ ->
       (* Check if the second arg is a constant greater than 255, in which case
           we want movw rather than mov. If it's greater than 65535, then it
-         needs to be split into two operations. *)
+         needs to be split into two operations (movw/movt). *)
       begin
         match arg2_var with
         | Ir.Const w when Word.to_int_exn w <= 0xFF ->
@@ -425,7 +425,7 @@ module ARM_ops = struct
     (* Update the semantics of loc with those of mem *)
     binop (ldr_op bits) word_ty mem loc
 
-  let str mem value loc =
+  let str lhs mem value loc =
     let res = create_temp mem_ty in
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
@@ -434,12 +434,12 @@ module ARM_ops = struct
       begin
         match value_val with
         | Var _ ->
-          let op = Ir.simple_op Ops.str mem_val [value_val; loc_val] in
+          let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
           [op]
         | Const _ ->
           let tmp = Ir.Var (create_temp word_ty) in
           let mov = Ir.simple_op Ops.mov tmp [value_val] in
-          let op = Ir.simple_op Ops.str mem_val [tmp; loc_val] in
+          let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
           [op; mov]
         | _ ->
           let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
@@ -452,7 +452,7 @@ module ARM_ops = struct
     {op_val = Void res; op_eff = sem}
 
   (* Help take advantage of the loc shape `reg + imm` *)
-  let str_base_off mem value base off =
+  let str_base_off lhs mem value base off =
     let res = create_temp mem_ty in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
@@ -462,12 +462,12 @@ module ARM_ops = struct
       begin
         match value_val with
         | Var _ ->
-          let op = Ir.simple_op Ops.str mem_val [value_val; base; off] in
+          let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
           [op]
         | Const _ ->
           let tmp = Ir.Var (create_temp word_ty) in
           let mov = Ir.simple_op Ops.mov tmp [value_val] in
-          let op = Ir.simple_op Ops.str mem_val [tmp; base; off] in
+          let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
           [op; mov]
         | _ ->
           let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
@@ -611,7 +611,9 @@ struct
     | NOT -> assert false
     | NEG -> assert false
 
-  let rec select_exp (lang : Theory.language) (e : Bil.exp) : arm_pure =
+  (* lhs_mem is for when we have a store operation. This is the destination
+     memory of the operation. *)
+  let rec select_exp ?lhs_mem (lang : Theory.language) (e : Bil.exp) : arm_pure =
     match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
       let mem = select_mem lang mem in
@@ -630,18 +632,24 @@ struct
     | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
       let mem = select_mem lang mem in
       let value = select_exp lang value in
-      str_base_off mem value a w
+      let lhs = Option.value_exn lhs_mem
+          ~message:"Expected LHS operand for store" in
+      str_base_off lhs mem value a w
     | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , size) ->
       let mem = select_mem lang mem in
       let value = select_exp lang value in
-      str_base_off mem value a Word.(-w)
+      let lhs = Option.value_exn lhs_mem
+          ~message:"Expected LHS operand for store" in
+      str_base_off lhs mem value a Word.(-w)
     | Store (mem, loc, value, _, _size) ->
       let mem = select_exp lang mem in
       let loc = select_exp lang loc in
       let value = select_exp lang value in
+      let lhs = Option.value_exn lhs_mem
+          ~message:"Expected LHS operand for store" in
       (* We have to swap the arguments here, since ARM likes the value
        first, and the location second *)
-      str mem value loc
+      str lhs mem value loc
     | BinOp (PLUS, a, Int w) when Word.(w = zero 32) ->
       select_exp lang a
     | BinOp (MINUS, a, Int w) when Word.(w = zero 32) ->
@@ -696,8 +704,8 @@ struct
               (* Hack for loading a large constant. *)
               let arg1 = Ir.Var (Ir.simple_var lhs) in
               let arg2 = select_exp lang (Int w) in
-              let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
-              let movt = Ir.simple_op Ops.movt arg1 [arg2_var; Ir.Var (Ir.simple_var a)] in
+              let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+              let movt = Ir.simple_op Ops.movt arg1 [Ir.Var (Ir.simple_var a); arg2_val] in
               KB.return @@ instr movt arg2_sem
             | _ ->
               let lhs = Ir.Var (Ir.simple_var lhs) in
@@ -705,7 +713,8 @@ struct
               KB.return (lhs := rhs)
           end
         | Mem _ ->
-          let rhs = select_exp lang rhs in
+          let lhs_mem = Ir.Void (Ir.simple_var lhs) in
+          let rhs = select_exp lang rhs ~lhs_mem in
           KB.return rhs.op_eff
       end
     | `Jmp jmp ->
@@ -876,7 +885,11 @@ module Pretty = struct
           [Neither; Both]
         else if len = 3 then
           [Neither; Open; Close]
-        else failwith "mk_loc_list: expected to receive 2 or 3 arguments"
+        else begin
+          failwith @@
+          sprintf "mk_loc_list: expected to receive 2 or 3 arguments, got %d (op = %s)"
+            len op
+        end
       end
     else
       init_neither len
@@ -884,8 +897,9 @@ module Pretty = struct
   let arm_operands_pretty (op : string) (lhs : Ir.operand list) (rhs : Ir.operand list)
     : (string, Kb_error.t) result =
     (* Don't print the head of the operand if it's void. *)
-    let rhs = if String.(op = "movt" || op = "bl") then [List.hd_exn rhs] else rhs in
-    let l = rm_void_args (lhs @ rhs) in
+    let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
+    let rhs = if String.(op = "movt") then List.tl_exn rhs else rhs in
+    let l = if String.(op = "str") then rm_void_args rhs else rm_void_args (lhs @ rhs) in
     let is_loc_list = mk_loc_list op l in
     let l = List.zip_exn is_loc_list l in
     let all_str =

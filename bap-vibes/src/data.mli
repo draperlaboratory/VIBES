@@ -54,6 +54,7 @@ module Patch : sig
   val patch_size : (patch_cls, int option) KB.slot
   val patch_label : (patch_cls, Theory.label option) KB.slot
   val raw_ir : (patch_cls, Ir.t option) KB.slot
+  val exclude_regs : (patch_cls, String.Set.t option) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   (* The language/encoding of the assembly, typically used to
      distinguish between ARM and Thumb. *)
@@ -91,6 +92,9 @@ module Patch : sig
   val get_raw_ir : t -> Ir.t option KB.t
   val get_raw_ir_exn : t -> Ir.t KB.t
 
+  val set_exclude_regs : t -> String.Set.t option -> unit KB.t
+  val get_exclude_regs : t -> String.Set.t option KB.t
+  
   val set_assembly : t -> string list option -> unit KB.t
   val get_assembly : t -> string list option KB.t
   val get_assembly_exn : t -> string list KB.t

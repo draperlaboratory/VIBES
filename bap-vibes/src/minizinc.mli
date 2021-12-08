@@ -47,6 +47,7 @@ type sol = {
 *)
 
 val run_minizinc :
+  ?exclude_regs:String.Set.t ->
   Theory.target ->
   Theory.language ->
   filepath:string ->
@@ -119,6 +120,7 @@ type serialization_info = {
 }
 
 val serialize_mzn_params :
+  ?exclude_regs:String.Set.t ->
   Theory.target ->
   Theory.language ->
   Ir.t ->
