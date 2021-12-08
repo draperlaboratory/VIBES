@@ -28,13 +28,6 @@ official endorsement should be inferred.
 VIBES has been developed primarily on Ubuntu 18 and 20.  The instructions
 below assume you are on one of these operating systems.
 
-## Install dependencies through apt
-
-Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
-`arm-linux-gnueabi-gcc`, and `cmake`.  For example, on Ubuntu:
-
-    apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi cmake
-
 
 ## Install OCaml and BAP
 
@@ -56,7 +49,8 @@ Clone this repo wherever you prefer to keep your projects, for example:
     git clone https://github.com/draperlaboratory/VIBES.git
     cd VIBES
 
-## Install the remaining dependencies
+
+## Install dependencies with a script
 
 If you have bash on Ubuntu, you can run a script to install the remaining
 dependencies. This script will not overwrite any previous installations, so
@@ -65,12 +59,20 @@ before you run this script.
 
 To run the script, from the root of the VIBES repo:
 
-    bash bin/setup/install-dependencies.bash --wp-branch codyroux/user-fun-spec-compare
-    . bin/common-lib/env.bash
+    bash bin/setup/ubuntu.bash
+    source bin/setup/env.bash
 
-To install these dependencies manually, perform the following steps.
 
-First, install `minizinc`. For example, if you use `snap`:
+## Install the dependencies manually
+
+To install the dependencies manually, perform the following steps.
+
+Install `arm-linux-gnueabi-as`, `arm-linux-gnueabi-objcopy`,
+`arm-linux-gnueabi-gcc`, and `cmake`.  For example, on Ubuntu:
+
+    apt install -y qemu binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi cmake
+
+Then, install `minizinc`. For example, if you use `snap`:
 
     snap install minizinc --classic
 
@@ -82,7 +84,7 @@ Or install it this way:
     export PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/bin":"${PATH}"
     export LD_LIBRARY_PATH="${HOME}/MiniZincIDE-2.5.3-bundle-linux-x86_64/lib":"${LD_LIBRARY_PATH}"
 
-Then install boolector, e.g.:
+Next, install boolector, e.g.:
 
     cd ~
     git clone https://github.com/boolector/boolector
@@ -107,7 +109,7 @@ Install the following opam packages:
     opam install ounit2 ppx_deriving_yojson
 
 
-## Installing/uninstalling
+## Installing/uninstalling the VIBES tool
 
 To install the tool (the library and the command-line front-end), `cd` into
 the root of the project:
