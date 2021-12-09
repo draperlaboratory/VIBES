@@ -698,6 +698,17 @@ struct
         | Imm _ | Unk ->
           begin
             match rhs with
+            | BinOp (PLUS, Var a, Int w)
+              when Caml.(Linear_ssa.same a lhs
+                         && is_thumb lang
+                         && Word.to_int_exn w <= 0xFF) ->
+              (* Thumb 2 encoding allows adding an 8-bit immediate, when
+                 source and destination registers are the same. *)
+              let arg1 = Ir.Var (Ir.simple_var lhs) in
+              let arg2 = Ir.Var (Ir.simple_var a) in
+              let arg3 = Ir.Const w in
+              let add = Ir.simple_op Ops.add arg1 [arg2; arg3] in
+              KB.return @@ instr add empty_eff
             | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
               when Caml.(Linear_ssa.same a lhs
                          && Word.(s = of_int ~width:32 16)) ->
