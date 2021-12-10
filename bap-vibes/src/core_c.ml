@@ -89,9 +89,6 @@ module Eval(CT : Theory.Core) = struct
     endian : T.Bool.t T.value;
     ret_var   : unit T.var;
     arg_vars  : unit T.var list;
-    caller_save : unit T.var list;
-    sp        : unit T.var;
-    sp_data_align : unit T.bitv;
     hvars     : Hvar.t list;
   }
 
@@ -100,20 +97,8 @@ module Eval(CT : Theory.Core) = struct
     let bits = T.Target.bits tgt in
     let word_sort = T.Bitv.define bits in
     let byte_sort = T.Bitv.define (T.Target.byte tgt) in
-    let of_bil v = T.Var.define (Var.sort v) (Var.name v) in
-    let ret_var = of_bil Arm_env.r0 in
-    let arg_vars = List.map Arm_env.[r0; r1; r2; r3] ~f:of_bil in
-    let sp =
-      T.Target.reg tgt T.Role.Register.stack_pointer in
-    let sp_data_align =
-      (* XXX: If we're on the ARM target, SP should be at least aligned by 4
-         bytes at all times. Furthermore, the ABI states that the SP must be
-         8-byte aligned at callsites. The ARM target for BAP says that
-         `data_alignment` is 8, but we actually want it to be 4 for this case,
-         so we'll just use `bits`. *)
-      let align = bits lsr 3 in
-      CT.int word_sort @@
-      Bitvector.(to_bitvec @@ of_int align ~width:bits) in
+    let ret_var = T.(Target.reg tgt Role.Register.function_return) in
+    let arg_vars = T.(Target.regs tgt ~roles:Role.Register.[function_argument]) in
     let endianness = T.Target.endianness tgt in
     let+ endian =
       if T.Endianness.(endianness = eb) then CT.b1 else CT.b0 in
@@ -125,12 +110,9 @@ module Eval(CT : Theory.Core) = struct
       byte_sort = byte_sort;
       mem_var = T.Target.data tgt;
       endian;
-      ret_var;
-      arg_vars;
-      sp = Option.value_exn sp;
-      sp_data_align;
+      ret_var = Option.value_exn ret_var;
+      arg_vars = Set.to_list arg_vars;
       hvars;
-      caller_save = arg_vars;
     }
 
   let char_ty = Theory.Bitv.define 8
@@ -410,6 +392,22 @@ module Eval(CT : Theory.Core) = struct
         let* call_blk =
           CT.blk T.Label.null arg_assignments !!call in
         let* retval = CT.set lval @@ CT.var info.ret_var in
+        let* post_blk = data retval in
+        CT.seq !!call_blk !!post_blk
+      | COMPUTATION (BINARY (ASSIGN, UNARY (MEMOF, VARIABLE lval), CALL (VARIABLE f, args))) ->
+        let* arg_assignments = assign_args info var_map args in
+        let lval = String.Map.find_exn var_map lval in
+        let* dst = T.Label.for_name ~package:"core-c" f in
+        let* () = declare_call dst in
+        let* call = CT.goto dst in
+        let* call_blk =
+          CT.blk T.Label.null arg_assignments !!call in
+        (* XXX: maybe look at the type instead of defaulting to the word_sort *)
+        let* retval =
+          CT.(set info.mem_var
+                (store (var info.mem_var)
+                   (var (T.Var.resort lval info.word_sort))
+                   (var (T.Var.resort info.ret_var info.word_sort)))) in
         let* post_blk = data retval in
         CT.seq !!call_blk !!post_blk
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
