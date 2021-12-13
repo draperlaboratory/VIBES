@@ -34,6 +34,87 @@ let split_word (w : word) : word * word * word =
   let upper = Word.(w lsr shift) in
   shift, lower, upper
 
+(* Create a dummy subroutine from the blocks. *)
+let create_sub (blks : Blk.t list) : Sub.t KB.t =
+  let+ tid = Theory.Label.fresh in
+  Sub.create ~name:"dummy-wrapper" ~blks ~tid ()
+
+(* Find the exit nodes of the patch code. *)
+let exit_blks (blks : Blk.t list) : Blk.t list KB.t = match blks with
+  | [_] -> KB.return blks
+  | _ ->
+    let+ sub = create_sub blks in
+    let cfg = Sub.to_cfg sub in
+    Graphs.Ir.nodes cfg |> Seq.to_list |> List.filter_map ~f:(fun node ->
+        let blk = Graphs.Ir.Node.label node in
+        if Graphs.Ir.Node.degree node cfg ~dir:`Out = 0
+        then Some blk
+        else
+          let jmps = Term.enum jmp_t blk in
+          if Seq.exists jmps ~f:(fun jmp ->
+              match Jmp.kind jmp with
+              | Call call -> begin
+                  match Call.return call with
+                  | None | Some (Indirect _) -> true
+                  | _ -> false
+                end
+              | _ -> false)
+          then Some blk
+          else None)
+
+(* If there are exit nodes of the form `call ... with noreturn` or
+   `call ... with return <indirect>`, then insert a new blk for them
+   to return to. *)
+let adjust_noreturn_exits (blks : Blk.t list) : Blk.t list KB.t =
+  let* exits = exit_blks blks in
+  let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+  let extra = ref None and extra_ind = ref [] in
+  let tbl = Tid.Table.create () in
+  let+ () = KB.List.iter blks ~f:(fun blk ->
+      let tid = Term.tid blk in
+      if Set.mem exits tid then
+        Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
+            let tid = Term.tid jmp in
+            match Jmp.kind jmp with
+            | Call call -> begin
+                match Call.return call with
+                | Some (Direct _) -> KB.return ()
+                | Some (Indirect _ as label) ->
+                  let+ tid' = Theory.Label.fresh in
+                  let blk' = Blk.create ~tid:tid' ~jmps:[
+                      Jmp.create_goto label;
+                    ] () in
+                  extra_ind := blk' :: !extra_ind;
+                  Tid.Table.set tbl ~key:tid ~data:tid'
+                | None ->
+                  let+ tid' = match !extra with
+                    | Some blk' -> KB.return @@ Term.tid blk'
+                    | None ->
+                      let+ tid' = Theory.Label.fresh in
+                      let blk' = Blk.create ~tid:tid' () in
+                      extra := Some blk';
+                      tid' in
+                  Tid.Table.set tbl ~key:tid ~data:tid'
+              end
+            | _ -> KB.return ())
+      else KB.return ()) in
+  let blks = List.map blks ~f:(fun blk ->
+      Term.map jmp_t blk ~f:(fun jmp ->
+          let tid = Term.tid jmp in
+          match Tid.Table.find tbl tid with
+          | Some tid' -> Jmp.(with_dst jmp @@ Some (resolved tid'))
+          | None -> jmp)) in
+  let extra = Option.value_map !extra ~default:[] ~f:List.return in
+  blks @ extra @ !extra_ind
+
+(* Returns true if there are calls in the patch *)
+let has_calls (blks : Blk.t list) : bool =
+  List.exists blks ~f:(fun blk ->
+      Term.enum jmp_t blk |> Seq.exists ~f:(fun jmp ->
+          match Jmp.kind jmp with
+          | Call _ -> true
+          | _ -> false))
+
 (* On ARM, we can't use constants larger than 65535. The typical idiom is
    to load the lower 16 bits first, then load the upper 16 bits, using a
    movw/movt idiom.
@@ -41,79 +122,106 @@ let split_word (w : word) : word * word * word =
    TODO: clean this up and make it more general, right now I'm only
    covering a limited number of cases.
 *)
-let split_large_const (blks : Blk.t list) : Blk.t list =
+let split_large_const (blks : Blk.t list) : Blk.t list KB.t =
   let new_tmp () =
     Var.create ~is_virtual:true ~fresh:true "const" (Type.Imm 32) in
   let idiom v shift upper =
     Bil.(var v lor (int upper lsl int shift)) in
-  List.map blks ~f:(fun blk ->
+  KB.List.map blks ~f:(fun blk ->
       let tbl = Tid.Table.create () in
+      let rhs = Tid.Table.create () in
+      let cond = Tid.Table.create () in
       let saved_temps = Word.Table.create () in
       let new_defs = ref [] in
       (* Handle defs *)
-      let blk = Term.map def_t blk ~f:(fun def ->
-          match Def.rhs def with
-          | Int w when Word.to_int_exn w > 0xFFFF -> begin
-              match Word.Table.find saved_temps w with
-              | Some v -> Def.with_rhs def @@ Var v
-              | None ->
-                let shift, lower, upper = split_word w in
-                let lhs = Def.lhs def in
-                begin
-                  let def1 = Def.create lhs Bil.(int lower) in
-                  Tid.Table.change tbl (Term.tid def) ~f:(function
-                      | None -> Some [def1]
-                      | Some _ -> assert false)
-                end;
-                Def.with_rhs def @@ idiom lhs shift upper
-            end
-          | Load (mem, Int w, endian, size) when Word.to_int_exn w > 0xFFFF ->
-            let shift, lower, upper = split_word w in
-            let lhs = Def.lhs def in
-            begin
-              let def1 = Def.create lhs Bil.(int lower) in
-              let def2 = Def.create lhs @@ idiom lhs shift upper in
-              Tid.Table.change tbl (Term.tid def) ~f:(function
-                  | None -> Some [def2; def1]
-                  | Some _ -> assert false)
-            end;
-            Def.with_rhs def @@ Load (mem, Var lhs, endian, size)
-          | Store (mem, Int w, value, endian, size)
-            when Word.to_int_exn w > 0xFFFF ->
-            let shift, lower, upper = split_word w in
-            let tmp = new_tmp () in
-            begin
-              let def1 = Def.create tmp Bil.(int lower) in
-              let def2 = Def.create tmp @@ idiom tmp shift upper in
-              Tid.Table.change tbl (Term.tid def) ~f:(function
-                  | None -> Some [def2; def1]
-                  | Some _ -> assert false)
-            end;
-            (* Word.Table.set saved_temps ~key:w ~data:tmp; *)
-            Def.with_rhs def @@ Store (mem, Var tmp, value, endian, size)
-          | _ -> def)
+      let* () =
+        Term.enum def_t blk |> KB.Seq.iter ~f:(fun def ->
+            let tid = Term.tid def in
+            match Def.rhs def with
+            | Int w when Word.to_int_exn w > 0xFFFF -> begin
+                match Word.Table.find saved_temps w with
+                | Some v -> KB.return @@
+                  Tid.Table.set rhs ~key:tid ~data:(Bil.var v)
+                | None ->
+                  let shift, lower, upper = split_word w in
+                  let lhs = Def.lhs def in
+                  let+ () =
+                    let+ tid' = Theory.Label.fresh in
+                    let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
+                    Tid.Table.change tbl tid ~f:(function
+                        | None -> Some [def1]
+                        | Some _ -> assert false) in
+                  Tid.Table.set rhs ~key:tid ~data:(idiom lhs shift upper)
+              end
+            | Load (mem, Int w, endian, size)
+              when Word.to_int_exn w > 0xFFFF ->
+              let shift, lower, upper = split_word w in
+              let lhs = Def.lhs def in
+              let+ () =
+                let* tid' = Theory.Label.fresh in
+                let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
+                let+ tid' = Theory.Label.fresh in
+                let def2 = Def.create ~tid:tid' lhs @@ idiom lhs shift upper in
+                Tid.Table.change tbl (Term.tid def) ~f:(function
+                    | None -> Some [def2; def1]
+                    | Some _ -> assert false) in
+              Tid.Table.set rhs ~key:tid
+                ~data:Bil.(Load (mem, Var lhs, endian, size))
+            | Store (mem, Int w, value, endian, size)
+              when Word.to_int_exn w > 0xFFFF ->
+              let shift, lower, upper = split_word w in
+              let tmp = new_tmp () in
+              let+ () =
+                let* tid' = Theory.Label.fresh in
+                let def1 = Def.create ~tid:tid' tmp Bil.(int lower) in
+                let+ tid' = Theory.Label.fresh in
+                let def2 = Def.create ~tid:tid' tmp @@ idiom tmp shift upper in
+                Tid.Table.change tbl tid ~f:(function
+                    | None -> Some [def2; def1]
+                    | Some _ -> assert false) in
+              (* Word.Table.set saved_temps ~key:w ~data:tmp; *)
+              Tid.Table.set rhs ~key:tid
+                ~data:Bil.(Store (mem, Var tmp, value, endian, size))
+            | _ -> KB.return ())
       in
       (* Handle jmps (right now only the cond of the jmp) *)
-      let blk = Term.map jmp_t blk ~f:(fun jmp ->
-          match Jmp.cond jmp with
-          | BinOp (op, Load (mem, Int w, endian, size), rhs)
-            when Word.to_int_exn w > 0xFFFF ->
-            let shift, lower, upper = split_word w in
-            let tmp = new_tmp () in
-            begin
-              let def1 = Def.create tmp Bil.(int lower) in
-              let def2 = Def.create tmp @@ idiom tmp shift upper in
-              new_defs := !new_defs @ [def1; def2]
-            end;
-            Jmp.with_cond jmp @@
-            BinOp (op, Load (mem, Var tmp, endian, size), rhs)
-          | _ -> jmp) in
+      let+ () =
+        Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
+            let tid = Term.tid jmp in
+            match Jmp.cond jmp with
+            | BinOp (op, Load (mem, Int w, endian, size), rhs)
+              when Word.to_int_exn w > 0xFFFF ->
+              let shift, lower, upper = split_word w in
+              let tmp = new_tmp () in
+              let+ () =
+                let* tid' = Theory.Label.fresh in
+                let def1 = Def.create ~tid:tid' tmp Bil.(int lower) in
+                let+ tid' = Theory.Label.fresh in
+                let def2 = Def.create ~tid:tid' tmp @@ idiom tmp shift upper in
+                new_defs := !new_defs @ [def1; def2] in
+              let open Bil.Types in
+              let cond' =
+                BinOp (op, Load (mem, Var tmp, endian, size), rhs) in
+              Tid.Table.set cond ~key:tid ~data:cond'
+            | _ -> KB.return ()) in
       (* Prepend new defs (from previous defs) *)
       let blk =
         Tid.Table.fold tbl ~init:blk ~f:(fun ~key:tid ~data:defs blk ->
             List.fold defs ~init:(blk, tid) ~f:(fun (blk, before) def ->
                 Term.prepend def_t blk def ~before, Term.tid def) |> fst)
       in
+      (* Set the new RHS. *)
+      let blk =
+        Term.map def_t blk ~f:(fun def ->
+            match Tid.Table.find rhs @@ Term.tid def with
+            | Some rhs -> Def.with_rhs def rhs
+            | None -> def) in
+      (* Set the new conds. *)
+      let blk =
+        Term.map jmp_t blk ~f:(fun jmp ->
+            match Tid.Table.find cond @@ Term.tid jmp with
+            | Some cond -> Jmp.with_cond jmp cond
+            | None -> jmp) in
       (* Append new defs (from jmps) *)
       List.fold !new_defs ~init:blk ~f:(fun blk def ->
           Term.append def_t blk def))
@@ -121,33 +229,41 @@ let split_large_const (blks : Blk.t list) : Blk.t list =
 (* On Thumb, the selector will try to create a conditional `bl` instruction,
    which is illegal, so we need to insert a new block for the call, with
    a conditional goto to this new block. *)
-let massage_conditional_calls (blks : Blk.t list) : Blk.t list =
+let massage_conditional_calls (blks : Blk.t list) : Blk.t list KB.t =
   let new_blks = ref [] in
+  let kind = Tid.Table.create () in
+  let+ () =
+    KB.List.iter blks ~f:(fun blk ->
+        Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
+            let tid = Term.tid jmp in
+            match Jmp.kind jmp with
+            | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
+              let* tid' = Theory.Label.fresh in
+              let+ tid'' = Theory.Label.fresh in
+              let blk' = Blk.create ~tid:tid' ~jmps:[
+                  Jmp.create_call ~tid:tid'' call;
+                ] () in
+              new_blks := blk' :: !new_blks;
+              Tid.Table.set kind ~key:tid ~data:(Goto (Direct tid'))
+            | _ -> KB.return ())) in
   let blks =
     List.map blks ~f:(Term.map jmp_t ~f:(fun jmp ->
-        match Jmp.kind jmp with
-        | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
-          let builder = Blk.Builder.create () in
-          Blk.Builder.add_jmp builder (Jmp.create_call call);
-          let result = Blk.Builder.result builder in
-          new_blks := result :: !new_blks;
-          Jmp.with_kind jmp @@ Goto (Direct (Term.tid result))
-        | _ -> jmp)) in
+        match Tid.Table.find kind @@ Term.tid jmp with
+        | Some kind -> Jmp.with_kind jmp kind
+        | None -> jmp)) in
   blks @ !new_blks
 
 (* Order the blocks according to a reverse postorder DFS traversal.
    This should minimize the number of extra jumps we need to insert. *)
-let reorder_blks (blks : Blk.t list) : Blk.t list =
-  let sub = List.fold blks ~init:(Sub.create () ~name:"dummy-wrapper")
-      ~f:(Term.append blk_t) in
+let reorder_blks (blks : Blk.t list) : Blk.t list KB.t =
+  let+ sub = create_sub blks in
   let cfg = Sub.to_cfg sub in
   Graphlib.reverse_postorder_traverse (module Graphs.Ir) cfg |>
   Seq.to_list |> List.map ~f:Graphs.Ir.Node.label
 
-let to_ssa (blks : Blk.t list) : Blk.t list =
+let to_ssa (blks : Blk.t list) : Blk.t list KB.t =
   (* Create the subroutine, which will fill in the control-flow edges. *)
-  let sub = List.fold blks ~init:(Sub.create () ~name:"dummy-wrapper")
-      ~f:(Term.append blk_t) in
+  let+ sub = create_sub blks in
   (* Convert to SSA. *)
   let sub = Sub.ssa sub in
   (* TODO - try this: *)
@@ -160,15 +276,11 @@ let to_ssa (blks : Blk.t list) : Blk.t list =
    XXX: what if other Hvars rely on offsets from SP? We should probably just fail.
    Write a function that checks if such hvars are already present.
 *)
-let spill_hvars (tgt : Theory.target) (sp_align : int)
-    (hvars : Hvar.t list) (entry_blk : Blk.t) (exit_blk : Blk.t)
-    (blks : Blk.t list) : Blk.t list * Higher_var.t list =
-  let has_calls = List.exists blks ~f:(fun blk ->
-      Term.enum jmp_t blk |> Seq.exists ~f:(fun jmp ->
-          match Jmp.kind jmp with
-          | Call _ -> true
-          | _ -> false)) in
-  if not (has_calls && List.length blks > 1) then blks, hvars
+let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
+    (hvars : Hvar.t list) (entry_blk : Blk.t)
+    (blks : Blk.t list) : (Blk.t list * Higher_var.t list) KB.t =
+  if not (has_calls blks && List.length blks > 1)
+  then KB.return (blks, hvars)
   else
     (* We're going to use predetermined stack locations, for simplicity.
        The nice part is that the total space will be a multiple of 8. *)
@@ -178,7 +290,8 @@ let spill_hvars (tgt : Theory.target) (sp_align : int)
         "R2", (Word.of_int ~width:32 8, Arm_env.r2);
         "R3", (Word.of_int ~width:32 12, Arm_env.r3);
       ] in
-    let spilled = ref String.Set.empty in
+    let spilled = ref String.Set.empty
+    and restored = ref String.Set.empty in
     (* Find which hvars we need to spill. *)
     let hvars = List.map hvars ~f:(fun hvar ->
         let name = Hvar.name hvar in
@@ -198,49 +311,82 @@ let spill_hvars (tgt : Theory.target) (sp_align : int)
                   let memory = Hvar.create_frame "SP" offset in
                   let at_entry = Hvar.stored_in_memory memory in
                   spilled := Set.add !spilled v;
+                  restored := Set.add !restored v;
+                  Hvar.create_with_storage name ~at_entry ~at_exit:None
+              end
+            | Some v, _ ->
+              begin
+                match Map.find caller_save v with
+                | None -> hvar
+                | Some (offset, _) ->
+                  let memory = Hvar.create_frame "SP" offset in
+                  let at_entry = Hvar.stored_in_memory memory in
+                  spilled := Set.add !spilled v;
                   Hvar.create_with_storage name ~at_entry ~at_exit:None
               end
             | _ -> hvar) in
-    (* Don't bother if nothing got spilled. *)
-    if Set.is_empty !spilled then blks, hvars
+    let sp = Arm_env.sp in
+    let* exits = exit_blks blks in
+    let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+    if Set.is_empty !spilled
+    && Set.is_empty !restored
+    && sp_align <> 0 then
+      (* If nothing got spilled, then we should still adjust SP if
+         necessary. *)
+      let space = Word.of_int sp_align ~width:32 in
+      let+ blks = KB.List.map blks ~f:(fun blk ->
+          let tid = Term.tid blk in
+          if Tid.(tid = Term.tid entry_blk) then
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
+            Term.prepend def_t blk adj
+          else if Set.mem exits tid then
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
+            Term.append def_t blk adj
+          else KB.return blk)
+      in
+      blks, hvars
     else
       let mem = Var.reify @@ Theory.Target.data tgt in
       let endian =
         if Theory.(Endianness.(Target.endianness tgt = eb))
         then BigEndian else LittleEndian in
-      let sp = Arm_env.sp in
       (* Predetermined amount of space to allocate on the stack. *)
       let space = Word.of_int ~width:32 (sp_align + 16) in
       let push v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
         let addr = BinOp (PLUS, Var sp, Int off) in
-        Def.create mem @@ Store (Var mem, addr, Var reg, endian, `r32);
+        let+ tid = Theory.Label.fresh in
+        Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32);
       in
       let pop v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
         let addr = BinOp (PLUS, Var sp, Int off) in
-        Def.create reg @@ Load (Var mem, addr, endian, `r32);
+        let+ tid = Theory.Label.fresh in
+        Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32);
       in
-      let pushes =
-        Set.to_list !spilled |> List.rev |> List.map ~f:push in
-      let _pops =
-        Set.to_list !spilled |> List.rev |> List.map ~f:pop in
-      let blks = List.map blks ~f:(fun blk ->
+      let* pushes =
+        Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
+      let* pops =
+        Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
+      let+ blks = KB.List.map blks ~f:(fun blk ->
           let tid = Term.tid blk in
           if Tid.(tid = Term.tid entry_blk) then
             let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
                 Term.prepend def_t blk def) in
-            let adj = Def.create sp @@ BinOp (MINUS, Var sp, Int space) in
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
             Term.prepend def_t blk adj
-          else if Tid.(tid = Term.tid exit_blk) then
-            (* let blk = List.fold pops ~init:blk ~f:(fun blk def -> *)
-            (*     Term.append def_t blk def) in *)
-            let adj = Def.create sp @@ BinOp (PLUS, Var sp, Int space) in
+          else if Set.mem exits tid then
+            let blk = List.fold pops ~init:blk ~f:(fun blk def ->
+                Term.append def_t blk def) in
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
             Term.append def_t blk adj
-
-          else blk)
+          else KB.return blk)
       in
       blks, hvars
 
@@ -275,19 +421,20 @@ let create_vibes_ir
   (* BAP will give us the blks in such an order that the first one is the
      entry blk. *)
   let entry_blk = List.hd_exn ir in
-  let exit_blk = List.last_exn ir in
-  let ir, hvars = spill_hvars tgt sp_align hvars entry_blk exit_blk ir in
+  let* ir = adjust_noreturn_exits ir in
+  let* ir, hvars =
+    spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
   let exclude_regs = collect_exclude_regs hvars in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
-  let ir = split_large_const ir in
-  let ir =
+  let* ir = split_large_const ir in
+  let* ir =
     if Arm_selector.is_thumb lang
     then massage_conditional_calls ir
-    else ir in
-  let ir = reorder_blks ir in
+    else KB.return ir in
+  let* ir = reorder_blks ir in
   let ir = Bir_opt.apply_ordered ir in
-  let ir = to_ssa ir in
+  let* ir = to_ssa ir in
   Events.(send @@ Info "SSA'd BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
