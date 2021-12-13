@@ -3,13 +3,6 @@
 open Core_kernel
 open Bap.Std
 
-let congruent (var_1 : Var.t) (var_2 : Var.t) : bool =
-  let name_1 = Var.name var_1 in
-  let name_1 = String.drop_prefix name_1 10 in
-  let name_2 = Var.name var_2 in
-  let name_2 = String.drop_prefix name_2 10 in
-  String.equal name_1 name_2
-
 let prefix_from (blk : Blk.t) : string =
   let tid = Term.tid blk in
   let tid_str = Tid.to_string tid in
@@ -41,6 +34,11 @@ let same (a : var) (b : var) : bool =
       (orig_name @@ Var.name a)
       (orig_name @@ Var.name b)
   with _ -> false      
+
+let congruent (a : var) (b : var) : bool =
+  let name_1 = String.drop_prefix (Var.name a) 10 in
+  let name_2 = String.drop_prefix (Var.name b) 10 in
+  String.equal name_1 name_2
 
 let rec linearize_exp ~prefix:(prefix : string) (exp : Bil.exp) : Bil.exp =
   match exp with

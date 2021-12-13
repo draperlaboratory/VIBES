@@ -21,19 +21,19 @@
 
 open Bap.Std
 
-(** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"
-    in the sense described above. *)
-val congruent : Var.t -> Var.t -> bool
-
 (** [orig_name name] removes the SSA naming conventions from [name].
 
     Example: if [name] is ["_00001234_R0_1"] then [orig_name name] is
     ["R0"]. Similarly, if [name] is ["_00001234_R0"], then [orig_name name]
-    is also ["R0"]. Any other patterns will raise an exception.
-*)
+    is also ["R0"]. Any other patterns will raise an exception. *)
 val orig_name : string -> string
 
+(** [same v1 v2] checks whether [v1] and [v2] have the same [orig_name]. *)
 val same : var -> var -> bool
+
+(** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"
+    in the sense described in the comment at the beginning of the module. *)
+val congruent : Var.t -> Var.t -> bool
 
 (** [tranform s] takes the subroutine [s] and converts it into the linear
     SSA form described above. *)

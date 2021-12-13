@@ -11,6 +11,7 @@ let suite () =
     "Arm_selector" >::: Test_arm_selector.suite;
     "Bir_opt" >::: Test_bir_opt.suite;
     "C Parser" >::: Test_parse_c.suite;
+    "Linear SSA" >::: Test_linear_ssa.suite;
   ]
 
 let _ =
