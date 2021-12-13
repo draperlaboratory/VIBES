@@ -300,11 +300,20 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
         | None -> hvar
         | Some at_entry ->
           match Hvar.at_exit value with
-          | None -> hvar
+          | None -> begin
+              match Hvar.register at_entry with
+              | None -> hvar
+              | Some v -> match Map.find caller_save v with
+                | None -> hvar
+                | Some (offset, _) ->
+                  let memory = Hvar.create_frame "SP" offset in
+                  let at_entry = Hvar.stored_in_memory memory in
+                  spilled := Set.add !spilled v;
+                  Hvar.create_with_storage name ~at_entry ~at_exit:None
+            end
           | Some at_exit ->
             match Hvar.register at_entry, Hvar.register at_exit with
-            | Some v, Some v' when String.(v = v') ->
-              begin
+            | Some v, Some v' when String.(v = v') -> begin
                 match Map.find caller_save v with
                 | None -> hvar
                 | Some (offset, _) ->
@@ -314,46 +323,21 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
                   restored := Set.add !restored v;
                   Hvar.create_with_storage name ~at_entry ~at_exit:None
               end
-            | Some v, _ ->
-              begin
-                match Map.find caller_save v with
-                | None -> hvar
-                | Some (offset, _) ->
-                  let memory = Hvar.create_frame "SP" offset in
-                  let at_entry = Hvar.stored_in_memory memory in
-                  spilled := Set.add !spilled v;
-                  Hvar.create_with_storage name ~at_entry ~at_exit:None
-              end
             | _ -> hvar) in
     let sp = Arm_env.sp in
     let* exits = exit_blks blks in
     let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
-    if Set.is_empty !spilled
-    && Set.is_empty !restored
-    && sp_align <> 0 then
-      (* If nothing got spilled, then we should still adjust SP if
-         necessary. *)
-      let space = Word.of_int sp_align ~width:32 in
-      let+ blks = KB.List.map blks ~f:(fun blk ->
-          let tid = Term.tid blk in
-          if Tid.(tid = Term.tid entry_blk) then
-            let+ tid = Theory.Label.fresh in
-            let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
-            Term.prepend def_t blk adj
-          else if Set.mem exits tid then
-            let+ tid = Theory.Label.fresh in
-            let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
-            Term.append def_t blk adj
-          else KB.return blk)
-      in
-      blks, hvars
+    let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
+    if no_regs && sp_align = 0
+    then KB.return (blks, hvars)
     else
       let mem = Var.reify @@ Theory.Target.data tgt in
       let endian =
         if Theory.(Endianness.(Target.endianness tgt = eb))
         then BigEndian else LittleEndian in
       (* Predetermined amount of space to allocate on the stack. *)
-      let space = Word.of_int ~width:32 (sp_align + 16) in
+      let space = Word.of_int ~width:32 @@
+        if no_regs then sp_align else sp_align + 16 in
       let push v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
