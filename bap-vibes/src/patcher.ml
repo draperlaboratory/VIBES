@@ -93,6 +93,7 @@ let binary_of_asm (lang : Theory.language) (assembly : string list)
 
 *)
 let jmp_instr_size : int64 = 4L
+let nop_size : int64 = 4L
 
 
 (** [build_patch] returns the binary of a patch with athe appropriate jumps *)
@@ -234,6 +235,19 @@ let external_patch_site
   in
   (jmp_to_patch, placed_patch)
 
+
+(** [nop_patch] will build a patch consisting of nops. Will need generalization
+    When architecture has nop of different size. *)
+let nop_patch ~addr:(addr : int64) ~size:(size : int64) : placed_patch =
+  let num_nop = Int.of_int64_exn Int64.(size / nop_size) in
+    {
+      assembly = (List.init num_nop ~f:(fun _ -> "nop"));
+      orig_loc = addr;
+      orig_size = size;
+      patch_loc = addr;
+      jmp = None
+    }
+
 (** [find_site_greedy] goes through a [patch_site] list and finds the
    first one in which a patch of size [patch_size] can fit. It then
    returns the address of this site and a modified [patch_site] list
@@ -288,7 +302,10 @@ let place_patches
       let (jmp_to_patch, placed_patch) = external_patch_site patch patch_loc in
       (* TODO: We could also insert the unused original space into
          patch_sites here. *)
-      (jmp_to_patch :: placed_patch  :: acc , patch_sites)
+      let nop_size = patch.orig_size - jmp_instr_size in
+      let nop_addr = patch.orig_loc + jmp_instr_size in
+      let nop_patch = nop_patch ~addr:nop_addr ~size:nop_size in
+      (jmp_to_patch :: nop_patch :: placed_patch  :: acc , patch_sites)
   in
   let (placed_patches, _) =
     List.fold patches
