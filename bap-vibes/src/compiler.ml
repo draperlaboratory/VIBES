@@ -122,7 +122,7 @@ let has_calls (blks : Blk.t list) : bool =
    TODO: clean this up and make it more general, right now I'm only
    covering a limited number of cases.
 *)
-let split_large_const (blks : Blk.t list) : Blk.t list KB.t =
+let arm_split_large_const (blks : Blk.t list) : Blk.t list KB.t =
   let new_tmp () =
     Var.create ~is_virtual:true ~fresh:true "const" (Type.Imm 32) in
   let idiom v shift upper =
@@ -270,30 +270,53 @@ let to_ssa (blks : Blk.t list) : Blk.t list KB.t =
   let sub = Linear_ssa.transform sub in
   Term.enum blk_t sub |> Seq.to_list
 
-(* Spill higher vars in caller-save registers if we are doing any calls
-   in a multi-block patch, since the ABI says they may be clobbered.
+(* We shouldn't do any spilling if there are higher vars that depend
+   on SP-relative locations in memory. *)
+let check_hvars_for_existing_stack_locations
+    (sp : var) (hvars : Hvar.t list) : unit =
+  List.iter hvars ~f:(fun hvar ->
+      let value = Hvar.value hvar in
+      match Hvar.at_entry value with
+      | None -> ()
+      | Some at_entry -> match Hvar.memory at_entry with
+        | None -> ()
+        | Some memory -> match Hvar.frame memory with
+          | None -> ()
+          | Some (reg, offset) ->
+            if String.(reg = Var.name sp) then
+              failwith @@ sprintf
+                "Existing stack location [%s, %s] used by hvar %s"
+                reg (Word.to_string offset) (Hvar.name hvar))
 
-   XXX: what if other Hvars rely on offsets from SP? We should probably just fail.
-   Write a function that checks if such hvars are already present.
-*)
+(* Spill higher vars in caller-save registers if we are doing any calls
+   in a multi-block patch, since the ABI says they may be clobbered. *)
 let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
     (hvars : Hvar.t list) (entry_blk : Blk.t)
     (blks : Blk.t list) : (Blk.t list * Higher_var.t list) KB.t =
   if not (has_calls blks && List.length blks > 1)
   then KB.return (blks, hvars)
   else
-    (* We're going to use predetermined stack locations, for simplicity.
-       The nice part is that the total space will be a multiple of 8. *)
-    let caller_save = String.Map.of_alist_exn [
-        "R0", (Word.zero 32, Arm_env.r0);
-        "R1", (Word.of_int ~width:32 4, Arm_env.r1);
-        "R2", (Word.of_int ~width:32 8, Arm_env.r2);
-        "R3", (Word.of_int ~width:32 12, Arm_env.r3);
-      ] in
+    let width = Theory.Target.bits tgt in
+    let stride = Word.of_int ~width (width lsr 3) in
+    (* Use predetermined stack locations. *)
+    let caller_save =
+      Theory.Target.regs tgt ~roles:Theory.Role.Register.[caller_saved] |>
+      Set.to_list |> List.mapi ~f:(fun i v ->
+          let idx = Word.of_int ~width i in
+          let v = Var.reify v in
+          let name = Var.name v in
+          name, (Word.(stride * idx), v)) |>
+      String.Map.of_alist_exn in
+    let sp =
+      match Theory.Target.reg tgt Theory.Role.Register.stack_pointer with
+      | None -> failwith @@
+        sprintf "No stack pointer register for target %s\n%!"
+          (Theory.Target.to_string tgt)
+      | Some v -> Var.reify v in
     let spilled = ref String.Set.empty
     and restored = ref String.Set.empty in
     (* Find which hvars we need to spill. *)
-    let hvars = List.map hvars ~f:(fun hvar ->
+    let hvars' = List.map hvars ~f:(fun hvar ->
         let name = Hvar.name hvar in
         let value = Hvar.value hvar in
         match Hvar.at_entry value with
@@ -306,7 +329,7 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
               | Some v -> match Map.find caller_save v with
                 | None -> hvar
                 | Some (offset, _) ->
-                  let memory = Hvar.create_frame "SP" offset in
+                  let memory = Hvar.create_frame (Var.name sp) offset in
                   let at_entry = Hvar.stored_in_memory memory in
                   spilled := Set.add !spilled v;
                   Hvar.create_with_storage name ~at_entry ~at_exit:None
@@ -317,27 +340,30 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
                 match Map.find caller_save v with
                 | None -> hvar
                 | Some (offset, _) ->
-                  let memory = Hvar.create_frame "SP" offset in
+                  let memory = Hvar.create_frame (Var.name sp) offset in
                   let at_entry = Hvar.stored_in_memory memory in
                   spilled := Set.add !spilled v;
                   restored := Set.add !restored v;
                   Hvar.create_with_storage name ~at_entry ~at_exit:None
               end
             | _ -> hvar) in
-    let sp = Arm_env.sp in
     let* exits = exit_blks blks in
     let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
     let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
+    if not no_regs then check_hvars_for_existing_stack_locations sp hvars;
     if no_regs && sp_align = 0
-    then KB.return (blks, hvars)
+    then KB.return (blks, hvars')
     else
       let mem = Var.reify @@ Theory.Target.data tgt in
       let endian =
         if Theory.(Endianness.(Target.endianness tgt = eb))
         then BigEndian else LittleEndian in
       (* Predetermined amount of space to allocate on the stack. *)
-      let space = Word.of_int ~width:32 @@
-        if no_regs then sp_align else sp_align + 16 in
+      let space =
+        Map.length caller_save * (width lsr 3) |>
+        Int.round_up ~to_multiple_of:(Theory.Target.data_alignment tgt) in
+      let space = Word.of_int ~width @@
+        if no_regs then sp_align else sp_align + space in
       let push v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
@@ -372,15 +398,18 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
             Term.append def_t blk adj
           else KB.return blk)
       in
-      blks, hvars
+      blks, hvars'
 
-(* If we've specified that we want a higher var to remain in a callee-save register
-   for the lifetime of the patch, then we need to tell minizinc to never use it
-   in a solution. *)
-let collect_exclude_regs (hvars : Hvar.t list) : String.Set.t =
-  let is_callee_save = function
-    | "R4" | "R5" | "R6" | "R7" | "R8" -> true
-    | _ -> false in
+(* If we've specified that we want a higher var to remain in a callee-save
+   register for the lifetime of the patch, then we need to tell minizinc
+   to never use it in a solution. *)
+let collect_exclude_regs (tgt : Theory.target)
+    (hvars : Hvar.t list) : String.Set.t =
+  let callee_save =
+    Theory.Target.regs tgt ~roles:Theory.Role.Register.[callee_saved] |>
+    Set.to_list |>
+    List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
+    String.Set.of_list in
   List.fold hvars ~init:String.Set.empty ~f:(fun acc hvar ->
       let value = Hvar.value hvar in
       match Hvar.at_entry value with
@@ -390,7 +419,8 @@ let collect_exclude_regs (hvars : Hvar.t list) : String.Set.t =
         | None -> acc
         | Some at_exit ->
           match Hvar.register at_entry, Hvar.register at_exit with
-          | Some v, Some v' when String.(v = v') && is_callee_save v ->
+          | Some v, Some v'
+            when String.(v = v') && Set.mem callee_save v ->
             String.Set.add acc v
           | _ -> acc)
 
@@ -408,10 +438,14 @@ let create_vibes_ir
   let* ir = adjust_noreturn_exits ir in
   let* ir, hvars =
     spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
-  let exclude_regs = collect_exclude_regs hvars in
+  let exclude_regs = collect_exclude_regs tgt hvars in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
-  let* ir = split_large_const ir in
+  let arm_or_thumb = Arm_selector.is_arm_or_thumb lang in
+  let* ir =
+    if arm_or_thumb
+    then arm_split_large_const ir
+    else KB.return ir in
   let* ir =
     if Arm_selector.is_thumb lang
     then massage_conditional_calls ir
@@ -424,8 +458,12 @@ let create_vibes_ir
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
-  let* ir = Arm.ARM_Gen.select lang ir in
-  let ir = Arm.preassign tgt lang ir in
+  let* ir =
+    if arm_or_thumb then
+      let+ ir = Arm.ARM_Gen.select lang ir in
+      Arm.preassign tgt lang ir
+    else failwith @@
+      sprintf "Unsupported lang %s" (Theory.Language.to_string lang) in
   KB.return (ir, exclude_regs)
 
 (* Compile one patch from BIR to VIBES IR *)
