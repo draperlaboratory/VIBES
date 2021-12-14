@@ -132,6 +132,15 @@ let word_ty = Bil.Types.Imm 32
 let bit_ty = Bil.Types.Imm 1
 let mem_ty = Bil.Types.Mem (`r32, `r8)
 
+let is_arm_or_thumb (lang : Theory.language) : bool =
+  let l = Theory.Language.to_string lang in
+  if String.is_substring l ~substring:"arm" then
+    true
+  else if String.is_substring l ~substring:"thumb" then
+    true
+  else
+    false
+
 let is_thumb (lang : Theory.language) : bool =
   let l = Theory.Language.to_string lang in
   if String.is_substring l ~substring:"arm" then

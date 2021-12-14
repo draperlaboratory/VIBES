@@ -18,6 +18,8 @@ open Bap.Std
 (** The abstract representation of [Theory.eff] terms in [ARM_Core]. *)
 type arm_eff
 
+val is_arm_or_thumb : Theory.language -> bool
+
 val is_thumb : Theory.language -> bool
 
 (** Extracts the concrete [Ir.t] from the abstract [arm_eff]
