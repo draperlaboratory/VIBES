@@ -48,9 +48,10 @@ let test_patch_placer_loose_fit _ =
       size = 128L
     }] in
     match Patcher.place_patches lang [patch] patch_sites with
-    | [orig_jmp; placed_patch] ->
+    | [orig_jmp; _nop_patch; placed_patch] ->
     assert_equal ~printer:Int64.to_string placed_patch.patch_loc 100L;
     assert_equal ~printer:Int64.to_string 4L (Option.value_exn placed_patch.jmp);
+    assert_equal 0 (List.length _nop_patch.assembly);
     assert_equal 0L orig_jmp.patch_loc;
     assert_equal 100L (Option.value_exn orig_jmp.jmp)
     | _ -> assert_failure "List is wrong size"
