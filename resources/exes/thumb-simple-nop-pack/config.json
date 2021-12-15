@@ -1,0 +1,29 @@
+{
+  "max-tries": 3,
+  "wp-params": {
+    "func": "main",
+    "postcond" : "(assert true)"
+  },
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" :  "int retvar, t1, t2, t3, t4;
+                      t1 = 3;
+                      t2 = t1 + 1;
+                      t3 = t2 + 1;
+                      t4 = t3 + 1;
+                      retvar = t4 + 1;",
+     "patch-point" : "0x104c8",
+     "patch-size" : 6,
+     "patch-vars": [
+       {"name": "retvar",
+	"at-entry": {
+          "stored-in": "register",
+	  "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R0"
+        }}
+       ]}
+  ]
+}

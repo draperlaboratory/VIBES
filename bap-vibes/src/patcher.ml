@@ -31,14 +31,43 @@ type placed_patch = {
   jmp : int64 option
 } [@@deriving sexp, equal]
 
-let tgt_flag (l : Theory.language) : string =
+let is_substring_lang (s : string) (l : Theory.language) : bool =
   let l = Theory.Language.to_string l in
-  let open String in
-  if is_substring l ~substring:"arm" then ""
-  else if is_substring l ~substring:"thumb" then "-mthumb"
+  String.is_substring l ~substring:s
+
+let is_arm (l : Theory.language) : bool = is_substring_lang "arm" l
+
+let is_thumb (l : Theory.language) : bool = is_substring_lang "thumb" l
+
+let is_unknown (l : Theory.language) : bool = is_substring_lang "unknown" l
+
+let tgt_flag (l : Theory.language) : string =
+  if is_arm l then ""
+  else if is_thumb l then "-mthumb"
   (* Needed for testing *)
-  else if is_substring l ~substring:"unknown" then ""
-  else failwith ("Unsupported language: " ^ l)
+  else if is_unknown l then ""
+  else failwith ("Unsupported language: " ^ (Theory.Language.to_string l))
+
+(**
+
+   [jmp_instr_size] is the implicit size in bytes of the code for an
+   unconditional branch instruction We may need to generalize this
+   number at some point for different architectures and different
+   kinds of jumps.
+
+*)
+let jmp_instr_size (l : Theory.language) : int64 = 
+  if is_arm l then 4L
+  else if is_thumb l then 2L
+  (* Needed for testing 
+  else if is_unknown l then "" *)
+  else failwith ("Unsupported language: " ^ (Theory.Language.to_string l))
+let nop_size (l :Theory.language) : int64 =
+  if is_arm l then 4L
+  else if is_thumb l then 2L
+  (* Needed for testing 
+  else if is_unknown l then "" *)
+  else failwith ("Unsupported language: " ^ (Theory.Language.to_string l))
 
 (** [binary_of_asm] uses external programs to convert assembly code to binary *)
 let binary_of_asm (lang : Theory.language) (assembly : string list)
@@ -83,18 +112,6 @@ let binary_of_asm (lang : Theory.language) (assembly : string list)
   let* _ = Utils.run_process objcopy objcopy_args in
   let patch_exe = In.read_all raw_bin_filename in
   Ok patch_exe
-
-(**
-
-   [jmp_instr_size] is the implicit size in bytes of the code for an
-   unconditional branch instruction We may need to generalize this
-   number at some point for different architectures and different
-   kinds of jumps.
-
-*)
-let jmp_instr_size : int64 = 4L
-let nop_size : int64 = 4L
-
 
 (** [build_patch] returns the binary of a patch with athe appropriate jumps *)
 let build_patch
@@ -197,8 +214,9 @@ let exact_fit_patch (patch : patch) : placed_patch = {
     old location and hence needs an extra jump placed. This also
     returns the remainder of the space as a [patch_site] for possible
     further patch placement *)
-let loose_fit_patch (patch : patch) (patch_size : int64) : placed_patch * patch_site =
+let loose_fit_patch (l : Theory.Language.t) (patch : patch) (patch_size : int64) : placed_patch * patch_site =
   let open Int64 in
+  let jmp_instr_size = jmp_instr_size l in
   let patch_site = {
     location = patch.orig_loc + patch_size + jmp_instr_size;
     size = patch.orig_size - jmp_instr_size - patch_size } in
@@ -238,7 +256,11 @@ let external_patch_site
 
 (** [nop_patch] will build a patch consisting of nops. Will need generalization
     When architecture has nop of different size. *)
-let nop_patch ~addr:(addr : int64) ~size:(size : int64) : placed_patch =
+let nop_patch 
+  ~lang:(l : Theory.language)
+  ~addr:(addr : int64)
+  ~size:(size : int64) : placed_patch =
+  let nop_size = nop_size l in
   let num_nop = Int.of_int64_exn Int64.(size / nop_size) in
     {
       assembly = (List.init num_nop ~f:(fun _ -> "nop"));
@@ -291,12 +313,13 @@ let place_patches
           (exact_fit_patch patch :: acc, patch_sites)
         else (* Inexact fit. Add jmp, put leftover space in patch_sites *)
           let (placed_patch, new_patch_site) =
-            loose_fit_patch patch patch_size
+            loose_fit_patch lang patch patch_size
           in
           (placed_patch :: acc, new_patch_site :: patch_sites)
       end
     else (* Patch does not fit inplace*)
       (* Find patch_site that works *)
+      let jmp_instr_size = jmp_instr_size lang in
       let patch_size = patch_size + jmp_instr_size in
       let (patch_loc, patch_sites) = find_site_greedy patch_sites patch_size in
       let (jmp_to_patch, placed_patch) = external_patch_site patch patch_loc in
@@ -304,7 +327,7 @@ let place_patches
          patch_sites here. *)
       let nop_size = patch.orig_size - jmp_instr_size in
       let nop_addr = patch.orig_loc + jmp_instr_size in
-      let nop_patch = nop_patch ~addr:nop_addr ~size:nop_size in
+      let nop_patch = nop_patch ~lang ~addr:nop_addr ~size:nop_size in
       (jmp_to_patch :: nop_patch :: placed_patch  :: acc , patch_sites)
   in
   let (placed_patches, _) =
