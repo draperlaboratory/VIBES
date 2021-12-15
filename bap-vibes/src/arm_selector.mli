@@ -52,5 +52,5 @@ sig
   (** [select blks] performs instruction selection: it translates
       sequences of BIR blocks to the appropriate ARM opcodes (keeping
       the operands abstract. *)
-  val select : Theory.language -> blk term list -> Ir.t KB.t
+  val select : Theory.target -> Theory.language -> blk term list -> Ir.t KB.t
 end
