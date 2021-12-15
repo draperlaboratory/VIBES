@@ -275,7 +275,8 @@ module Arm_specific = struct
         let* tid1 = Theory.Label.fresh in
         let+ tid2 = Theory.Label.fresh in
         tid1, tid2 in
-    let mapper = object
+    prev_tids := Some (tid1, tid2);
+    let rhs' = (object
       inherit Exp.mapper
       method! map_int w = match Word.Table.find saved_temps w with
         | Some v -> Var v
@@ -290,8 +291,7 @@ module Arm_specific = struct
             add [def1; def2];
             Var v
           else Int w
-    end in
-    let rhs' = mapper#map_exp rhs in
+    end)#map_exp rhs in
     match !prev_tids with
     | None -> update rhs'
     | Some _ -> () 
