@@ -288,7 +288,7 @@ module Arm_specific = struct
             let def2 = Def.create ~tid:tid2 v @@ idiom v shift upper in
             Word.Table.set saved_temps ~key:w ~data:v;
             prev_tids := None;
-            add [def1; def2];
+            add [def2; def1];
             Var v
           else Int w
     end)#map_exp rhs in
