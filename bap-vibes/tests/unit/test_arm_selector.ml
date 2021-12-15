@@ -2,7 +2,6 @@ open !Core_kernel
 open Bap_knowledge
 open Bap_vibes
 open Bap.Std
-open Bap_core_theory
 
 module KB = Knowledge
 
@@ -14,22 +13,29 @@ let v3 = Var.create "v3" (Imm 32)
 let v = Var.create "v" (Imm 1)
 let func = Tid.for_name "some_function"
 let mem = Var.create "mem" (Mem (`r32, `r8))
-let add_goto sub tgt =
-  Term.map blk_t sub ~f:(fun blk ->
-  let blk = Blk.Builder.init blk in
-  Blk.Builder.add_jmp blk @@ Jmp.create @@ Goto (Label.direct tgt);
-  Blk.Builder.result blk)
+
+let add_goto sub tgt = Term.map blk_t sub ~f:(fun blk ->
+    let blk = Blk.Builder.init blk in
+    Blk.Builder.add_jmp blk @@ Jmp.create @@ Goto (Label.direct tgt);
+    Blk.Builder.result blk)
+
+let add_call sub tgt = Term.map blk_t sub ~f:(fun blk ->
+    let return_blk = Blk.Builder.create () |> Blk.Builder.result in
+    let blk = Blk.Builder.init blk in
+    let call = Call.create ~return:(Label.direct @@ Term.tid return_blk)
+        ~target:(Label.direct tgt) () in
+    Blk.Builder.add_jmp blk @@ Jmp.create @@ Call call;
+    Blk.Builder.result blk)
 
 module Prog1 = struct
 
   let prog =
-      let bil =
-        Bil.([v1 := var v2 + var v3])
-      in
-      Bap_wp.Bil_to_bir.bil_to_sub bil
+    let bil =
+      Bil.([v1 := var v2 + var v3])
+    in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
-
 
 module Prog2 = struct
 
@@ -41,11 +47,9 @@ end
 
 module Prog3 = struct
 
-
   let prog =
     let bil = Bil.[v1 := var v2 lsl var v3] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
-
 
 end
 
@@ -59,7 +63,6 @@ end
 
 module Prog5 = struct
 
-
   let prog =
     let bil = Bil.[v1 := var v2 land var v3] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
@@ -68,13 +71,11 @@ end
 
 module Prog6 = struct
 
-
   let prog =
     let bil = Bil.[v1 := var v2 lor var v3] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
-
 
 module Prog9 = struct
 
@@ -86,9 +87,7 @@ module Prog9 = struct
 
 end
 
-
 module Prog10 = struct
-
 
   let prog =
     let bil = Bil.[mem := store ~mem:(var mem) ~addr:(var v1) (var v2) BigEndian `r32] in
@@ -123,13 +122,12 @@ module Prog13 = struct
 
 end
 
-
 module Prog14 = struct
 
   let prog =
     let bil = [] in
     let prog = Bap_wp.Bil_to_bir.bil_to_sub bil in
-    add_goto prog func
+    add_call prog func
 
 end
 
@@ -138,22 +136,20 @@ module Prog15 = struct
   let (!!) i = Bil.int (Word.of_int ~width:32 i)
 
   let prog =
-      let bil =
-        Bil.([v1 := var v2 + !!42])
-      in
-      Bap_wp.Bil_to_bir.bil_to_sub bil
+    let bil =
+      Bil.([v1 := var v2 + !!42])
+    in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-
 module Prog16 = struct
 
-
   let prog =
-      let bil =
-        Bil.([v1 := var v2])
-      in
-      Bap_wp.Bil_to_bir.bil_to_sub bil
+    let bil =
+      Bil.([v1 := var v2])
+    in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
@@ -162,26 +158,26 @@ module Prog17 = struct
   let (!!) i = Bil.int (Word.of_int ~width:32 i)
 
   let prog =
-      let bil =
-        Bil.([v1 := !!5000])
-      in
-      Bap_wp.Bil_to_bir.bil_to_sub bil
+    let bil =
+      Bil.([v1 := !!5000])
+    in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
 
-
 module Arm = Arm_selector
-
 
 let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
   let open KB.Let in
   let test =
     begin
       let* _ = Core_c.declare_call func in
+      let tgt = Helpers.the_target () in
+      let lang = Helpers.the_lang () in
       let+ ir =
         v |> Term.to_sequence blk_t
         |> Seq.to_list
-        |> Arm.ARM_Gen.select Theory.Language.unknown
+        |> Arm.ARM_Gen.select tgt lang
       in
       let result =
         ir |> Ir.dummy_reg_alloc
@@ -219,7 +215,6 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
     end
   in
   Toplevel.exec test
-
 
 let blk_pat = "blk\\([0-9]\\|[a-f]\\)*"
 
@@ -262,11 +257,11 @@ let test_ir12 ctxt =
       "b " ^ blk_pat;
 
       blk_pat ^ ":";
-      "mov R0, #3";
+      "mov R0, #4";
       "b " ^ blk_pat;
 
       blk_pat ^ ":";
-      "mov R0, #4";
+      "mov R0, #3";
       "b " ^ blk_pat;
 
       blk_pat ^ ":";
