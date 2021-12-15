@@ -450,7 +450,7 @@ let create_vibes_ir
   Events.(send @@ Info "\n\n");
   let* ir =
     if arm_or_thumb then
-      let+ ir = Arm.ARM_Gen.select lang ir in
+      let+ ir = Arm.ARM_Gen.select tgt lang ir in
       Arm.preassign tgt lang ir
     else failwith @@
       sprintf "Unsupported lang %s" (Theory.Language.to_string lang) in

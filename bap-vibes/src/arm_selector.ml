@@ -766,11 +766,16 @@ struct
       let+ ss = select_elts lang arg_vars ss in
       ss @. s
 
-  and select_blk (lang : Theory.language) (b : blk term) : arm_eff KB.t =
+  and select_blk (tgt : Theory.target) (lang : Theory.language)
+      (b : blk term) : arm_eff KB.t =
     (* A little bit of a hacky way to grab the parameter registers that
        were most recently set leading up to a `Call` instruction.
        We're going to use these to signal that the callee depends on them,
        so they shouldn't be reordered in such a way that they're clobbered. *)
+    let function_args =
+      Theory.Target.regs tgt ~roles:Theory.Role.Register.[function_argument] |>
+      Set.to_list |> List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
+      String.Set.of_list in
     let arg_vars =
       let tbl = String.Table.create () in
       let has_call =
@@ -783,12 +788,10 @@ struct
         List.iter ~f:(fun def ->
             let lhs = Def.lhs def in
             let name = reg_name lhs in
-            match name with
-            | "R0" | "R1" | "R2" | "R3" ->
+            if Set.mem function_args name then
               String.Table.change tbl name ~f:(function
                   | Some v -> Some v
-                  | None -> Some lhs)
-            | _ -> ());
+                  | None -> Some lhs));
       String.Table.data tbl
     in      
     let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts lang arg_vars in
@@ -807,16 +810,18 @@ struct
       other_blks = all_blks
     }
 
-  and select_blks (lang : Theory.language) (bs : blk term list) : arm_eff KB.t =
+  and select_blks (tgt : Theory.target) (lang : Theory.language)
+      (bs : blk term list) : arm_eff KB.t =
     match bs with
     | [] -> KB.return empty_eff
     | b :: bs ->
-      let* b = select_blk lang b in
-      let+ bs = select_blks lang bs in
+      let* b = select_blk tgt lang b in
+      let+ bs = select_blks tgt lang bs in
       b @. bs
 
-  let select (lang : Theory.language) (bs : blk term list) : Ir.t KB.t =
-    let+ bs = select_blks lang bs in
+  let select (tgt : Theory.target) (lang : Theory.language)
+      (bs : blk term list) : Ir.t KB.t =
+    let+ bs = select_blks tgt lang bs in
     ir bs
 
 end
