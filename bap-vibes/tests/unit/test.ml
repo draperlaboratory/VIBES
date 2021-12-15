@@ -15,7 +15,7 @@ let suite () =
   ]
 
 let _ =
-  match Bap_main.init ~requires:["lifter"; "disassembler"; "semantics"] () with
+  match Bap_main.init () with
   | Error err ->
     Format.eprintf "Failed to initialize BAP: %a@\n%!"
       Bap_main.Extension.Error.pp err;

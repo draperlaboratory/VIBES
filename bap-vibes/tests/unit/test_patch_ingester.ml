@@ -15,7 +15,7 @@ let test_ingest (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
+    Data.Original_exe.set_target obj (H.the_target ()) >>= fun () ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
     Data.Patched_exe.set_patches obj
@@ -50,7 +50,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
   (* Run the ingester. *)
   let computation =
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
+    Data.Original_exe.set_target obj (H.the_target ()) >>= fun () ->
     (* Create a patch but don't fill its properties. *)
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patched_exe.set_patches obj
@@ -96,7 +96,7 @@ let test_ingest_with_no_patch_vars (_ : test_ctxt) : unit =
 
     (* Set up the KB. *)
     H.obj () >>= fun obj ->
-    Data.Original_exe.set_target obj H.dummy_target >>= fun () ->
+    Data.Original_exe.set_target obj (H.the_target ()) >>= fun () ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
 
     let code = H.dummy_code in

@@ -766,34 +766,35 @@ struct
       let+ ss = select_elts lang arg_vars ss in
       ss @. s
 
-  and select_blk (tgt : Theory.target) (lang : Theory.language)
-      (b : blk term) : arm_eff KB.t =
-    (* A little bit of a hacky way to grab the parameter registers that
-       were most recently set leading up to a `Call` instruction.
-       We're going to use these to signal that the callee depends on them,
-       so they shouldn't be reordered in such a way that they're clobbered. *)
+  (* A little bit of a hacky way to grab the parameter registers that
+     were most recently set leading up to a `Call` instruction.
+     We're going to use these to signal that the callee depends on them,
+     so they shouldn't be reordered in such a way that they're clobbered. *)
+  and collect_arg_vars (tgt : Theory.target) (b : blk term) : var list =
     let function_args =
       Theory.Target.regs tgt ~roles:Theory.Role.Register.[function_argument] |>
       Set.to_list |> List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
       String.Set.of_list in
-    let arg_vars =
-      let tbl = String.Table.create () in
-      let has_call =
-        Term.enum jmp_t b |> Seq.exists ~f:(fun jmp ->
-            match Jmp.kind jmp with
-            | Call _ -> true
-            | _ -> false) in
-      if has_call then
-        Term.enum def_t b |> Seq.to_list_rev |>
-        List.iter ~f:(fun def ->
-            let lhs = Def.lhs def in
-            let name = reg_name lhs in
-            if Set.mem function_args name then
-              String.Table.change tbl name ~f:(function
-                  | Some v -> Some v
-                  | None -> Some lhs));
-      String.Table.data tbl
-    in      
+    let tbl = String.Table.create () in
+    let has_call =
+      Term.enum jmp_t b |> Seq.exists ~f:(fun jmp ->
+          match Jmp.kind jmp with
+          | Call _ -> true
+          | _ -> false) in
+    if has_call then
+      Term.enum def_t b |> Seq.to_list_rev |>
+      List.iter ~f:(fun def ->
+          let lhs = Def.lhs def in
+          let name = reg_name lhs in
+          if Set.mem function_args name then
+            String.Table.change tbl name ~f:(function
+                | Some v -> Some v
+                | None -> Some lhs));
+    String.Table.data tbl
+
+  and select_blk (tgt : Theory.target) (lang : Theory.language)
+      (b : blk term) : arm_eff KB.t =
+    let arg_vars = collect_arg_vars tgt b in
     let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts lang arg_vars in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
