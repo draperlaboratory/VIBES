@@ -299,7 +299,7 @@ module Arm_specific = struct
   (* On ARM, we can't use constants larger than 65535. The typical idiom is
      to load the lower 16 bits first, then load the upper 16 bits, using a
      movw/movt idiom. *)
-  let arm_split_large_const (blks : blk term list) : blk term list KB.t =
+  let split_large_const (blks : blk term list) : blk term list KB.t =
     (* This is so we don't create fresh tids that are discareded. *)
     let prev_tids = ref None in
     KB.List.map blks ~f:(fun blk ->
@@ -548,7 +548,7 @@ let create (code : insn)
   let* ir = Subst.substitute tgt hvars ir in
   let* ir =
     if Arm.is_arm_or_thumb lang
-    then Arm_specific.arm_split_large_const ir
+    then Arm_specific.split_large_const ir
     else KB.return ir in
   let* ir =
     if Arm.is_thumb lang
