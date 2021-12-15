@@ -133,6 +133,7 @@ let bit_ty = Bil.Types.Imm 1
 let mem_ty = Bil.Types.Mem (`r32, `r8)
 
 let is_arm_or_thumb (lang : Theory.language) : bool =
+  assert (not @@ Theory.Language.is_unknown lang);
   let l = Theory.Language.to_string lang in
   if String.is_substring l ~substring:"arm" then
     true
@@ -142,16 +143,14 @@ let is_arm_or_thumb (lang : Theory.language) : bool =
     false
 
 let is_thumb (lang : Theory.language) : bool =
+  assert (not @@ Theory.Language.is_unknown lang);
   let l = Theory.Language.to_string lang in
   if String.is_substring l ~substring:"arm" then
     false
   else if String.is_substring l ~substring:"thumb" then
     true
   else
-    let err =
-      Format.asprintf "is_thumb: unsupported language: %s" l
-    in
-    failwith err
+    false
 
 (* FIXME: this feels very redundant: we should just leave the
    responsibility for this in ir.ml or minizinc.ml *)
@@ -165,23 +164,20 @@ let regs (tgt : Theory.target) (_ : Theory.language) =
 let gpr (tgt : Theory.target) (lang : Theory.language) =
   let roles = [Theory.Role.Register.general] in
   let roles =
-    if not (Theory.Language.is_unknown lang) &&
-       is_thumb lang
-    then
-      Theory.Role.read ~package:"arm" "thumb"::roles
+    if is_thumb lang
+    then Theory.Role.read ~package:"arm" "thumb"::roles
     else roles
   in
-  let exclude =
-    [Theory.Role.Register.stack_pointer;
-     Theory.Role.Register.frame_pointer;]
-  in
+  let exclude = [
+    Theory.Role.Register.stack_pointer;
+    Theory.Role.Register.frame_pointer
+  ] in
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
     if String.(is_prefix name ~prefix:"R") &&
        not ((is_thumb lang) && String.(equal name "R7"))
-    then
-      Some v
+    then Some v
     else None
   in
   Theory.Target.regs ~exclude:exclude ~roles:roles tgt |>
@@ -202,22 +198,18 @@ let preassign_var
     (v : var)
   : var option =
   let name = reg_name v in
+  let is_virtual = false and fresh = false in
   match name with
-  | "FP" -> begin
-      (* We assign R11 as the pre-assigned FP register on ARM, and R7
-         for Thumb, keeping in line with the ABI (as far as i can
-         tell).  *)
-      if Theory.Language.is_unknown lang then None
-      else if is_thumb lang then
-        Some (Var.create ~is_virtual:false ~fresh:false "R7" (Var.typ v))
-      else
-        Some (Var.create ~is_virtual:false ~fresh:false "R11" (Var.typ v))
-    end
+  | "FP" ->
+    (* We assign R11 as the pre-assigned FP register on ARM, and R7
+       for Thumb, keeping in line with the ABI (as far as i can
+       tell).  *)
+    if is_thumb lang
+    then Some (Var.create ~is_virtual ~fresh "R7" (Var.typ v))
+    else Some (Var.create ~is_virtual ~fresh "R11" (Var.typ v))
     (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
-  | "PC" ->
-    Some (Var.create ~is_virtual:false ~fresh:false "PC" (Var.typ v))
-  | "SP" ->
-    Some (Var.create ~is_virtual:false ~fresh:false "SP" (Var.typ v))
+  | "PC" -> Some (Var.create ~is_virtual ~fresh "PC" (Var.typ v))
+  | "SP" -> Some (Var.create ~is_virtual ~fresh "SP" (Var.typ v))
   | _ ->
     if (String.length name = 2
         && Char.(name.[0] = 'R')
@@ -226,7 +218,7 @@ let preassign_var
         && Char.(name.[0] = 'R')
         && Char.is_digit name.[1]
         && Char.is_digit name.[2])
-    then Some (Var.create ~is_virtual:false ~fresh:false name (Var.typ v))
+    then Some (Var.create ~is_virtual ~fresh name (Var.typ v))
     else pre
       
 let preassign
