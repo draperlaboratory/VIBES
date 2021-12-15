@@ -20,7 +20,7 @@ type t = {
 
 module Opt : sig
 
-  (** [apply ir] pplies [Term]-level optimizations to [ir], which are required
+  (** [apply ir] applies [Term]-level optimizations to [ir], which are required
       to put the patch code in good shape before instruction selection. *)
   val apply : blk term list -> blk term list
 
