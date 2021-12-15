@@ -232,20 +232,19 @@ let arm_split_large_const (blks : Blk.t list) : Blk.t list KB.t =
 let massage_conditional_calls (blks : Blk.t list) : Blk.t list KB.t =
   let new_blks = ref [] in
   let kind = Tid.Table.create () in
-  let+ () =
-    KB.List.iter blks ~f:(fun blk ->
-        Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
-            let tid = Term.tid jmp in
-            match Jmp.kind jmp with
-            | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
-              let* tid' = Theory.Label.fresh in
-              let+ tid'' = Theory.Label.fresh in
-              let blk' = Blk.create ~tid:tid' ~jmps:[
-                  Jmp.create_call ~tid:tid'' call;
-                ] () in
-              new_blks := blk' :: !new_blks;
-              Tid.Table.set kind ~key:tid ~data:(Goto (Direct tid'))
-            | _ -> KB.return ())) in
+  let+ () = KB.List.iter blks ~f:(fun blk ->
+      Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
+          let tid = Term.tid jmp in
+          match Jmp.kind jmp with
+          | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
+            let* tid' = Theory.Label.fresh in
+            let+ tid'' = Theory.Label.fresh in
+            let blk' = Blk.create ~tid:tid' ~jmps:[
+                Jmp.create_call ~tid:tid'' call;
+              ] () in
+            new_blks := blk' :: !new_blks;
+            Tid.Table.set kind ~key:tid ~data:(Goto (Direct tid'))
+          | _ -> KB.return ())) in
   let blks =
     List.map blks ~f:(Term.map jmp_t ~f:(fun jmp ->
         match Tid.Table.find kind @@ Term.tid jmp with
@@ -316,37 +315,33 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
     let spilled = ref String.Set.empty
     and restored = ref String.Set.empty in
     (* Find which hvars we need to spill. *)
+    let spill ?(restore = false) name v offset =
+      let memory = Hvar.create_frame (Var.name sp) offset in
+      let at_entry = Hvar.stored_in_memory memory in
+      spilled := Set.add !spilled v;
+      if restore then restored := Set.add !restored v;
+      Hvar.create_with_storage name ~at_entry ~at_exit:None in
     let hvars' = List.map hvars ~f:(fun hvar ->
         let name = Hvar.name hvar in
         let value = Hvar.value hvar in
         match Hvar.at_entry value with
         | None -> hvar
-        | Some at_entry ->
-          match Hvar.at_exit value with
-          | None -> begin
-              match Hvar.register at_entry with
-              | None -> hvar
-              | Some v -> match Map.find caller_save v with
-                | None -> hvar
-                | Some (offset, _) ->
-                  let memory = Hvar.create_frame (Var.name sp) offset in
-                  let at_entry = Hvar.stored_in_memory memory in
-                  spilled := Set.add !spilled v;
-                  Hvar.create_with_storage name ~at_entry ~at_exit:None
-            end
-          | Some at_exit ->
-            match Hvar.register at_entry, Hvar.register at_exit with
-            | Some v, Some v' when String.(v = v') -> begin
-                match Map.find caller_save v with
-                | None -> hvar
-                | Some (offset, _) ->
-                  let memory = Hvar.create_frame (Var.name sp) offset in
-                  let at_entry = Hvar.stored_in_memory memory in
-                  spilled := Set.add !spilled v;
-                  restored := Set.add !restored v;
-                  Hvar.create_with_storage name ~at_entry ~at_exit:None
-              end
-            | _ -> hvar) in
+        | Some at_entry -> match Hvar.register at_entry with
+          | None -> hvar
+          | Some v -> match Map.find caller_save v with
+            | None -> hvar
+            | Some (offset, _) -> match Hvar.at_exit value with
+              | None -> spill name v offset
+              | Some at_exit ->
+                match Hvar.register at_exit with
+                | Some v' when String.(v = v') ->
+                  spill name v offset ~restore:true
+                | _ ->
+                  (* XXX: handle the value being restored in a different
+                     destination? *)
+                  failwith @@ sprintf
+                    "Unexpected value for `at_exit` of higher var %s"
+                    name) in
     let* exits = exit_blks blks in
     let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
     let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
@@ -369,19 +364,15 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
         let off, reg = Map.find_exn caller_save v in
         let addr = BinOp (PLUS, Var sp, Int off) in
         let+ tid = Theory.Label.fresh in
-        Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32);
-      in
+        Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
       let pop v =
         let open Bil.Types in
         let off, reg = Map.find_exn caller_save v in
         let addr = BinOp (PLUS, Var sp, Int off) in
         let+ tid = Theory.Label.fresh in
-        Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32);
-      in
-      let* pushes =
-        Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
-      let* pops =
-        Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
+        Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
+      let* pushes = Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
+      let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
       let+ blks = KB.List.map blks ~f:(fun blk ->
           let tid = Term.tid blk in
           if Tid.(tid = Term.tid entry_blk) then
@@ -396,8 +387,7 @@ let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
             let+ tid = Theory.Label.fresh in
             let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
             Term.append def_t blk adj
-          else KB.return blk)
-      in
+          else KB.return blk) in
       blks, hvars'
 
 (* If we've specified that we want a higher var to remain in a callee-save
@@ -441,13 +431,13 @@ let create_vibes_ir
   let exclude_regs = collect_exclude_regs tgt hvars in
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
-  let arm_or_thumb = Arm_selector.is_arm_or_thumb lang in
+  let arm_or_thumb = Arm.is_arm_or_thumb lang in
   let* ir =
     if arm_or_thumb
     then arm_split_large_const ir
     else KB.return ir in
   let* ir =
-    if Arm_selector.is_thumb lang
+    if Arm.is_thumb lang
     then massage_conditional_calls ir
     else KB.return ir in
   let* ir = reorder_blks ir in
