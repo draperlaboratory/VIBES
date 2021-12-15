@@ -4,9 +4,7 @@
     that was ingested by the {!Patch_ingester}, and "compiling" it to
     assembly (or something like it) for the target architecture. *)
 
-open Bap_knowledge
 open Bap_core_theory
-module KB = Knowledge
 
 (** [compile_ir obj] converts the patch (which is BIL) associated with the
     provided [obj] into VIBES IR. It stores this IR

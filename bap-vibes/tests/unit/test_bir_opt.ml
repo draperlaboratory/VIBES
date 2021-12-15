@@ -32,7 +32,7 @@ let blk_dir =
 (* Tests that the optimization actually happened *)
 let test_success _ =
   let blks = [blk_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
@@ -51,7 +51,7 @@ let test_success _ =
 (* Optimization shouldn't happen because the second jump is conditional *)
 let test_failure_branch _ =
   let blks = [blk_cond_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
@@ -67,7 +67,7 @@ let test_failure_branch _ =
 (* Optimization shouldn't happen because the second block has data effects *)
 let test_failure_mov _ =
   let blks = [blk_mov_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
