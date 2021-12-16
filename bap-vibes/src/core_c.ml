@@ -86,7 +86,7 @@ module Eval(CT : Theory.Core) = struct
     word_sort : 'a T.Bitv.t T.Value.sort;
     byte_sort : 'b T.Bitv.t T.Value.sort;
     mem_var   : ('a, 'b) T.Mem.t T.var;
-    endian : T.Bool.t T.value;
+    endian    : T.Bool.t T.value;
     ret_var   : unit T.var;
     arg_vars  : unit T.var list;
     hvars     : Hvar.t list;
@@ -288,7 +288,7 @@ module Eval(CT : Theory.Core) = struct
       Err.fail @@
       Err.Core_c_error "constant_to_pure: constant unsupported by VIBES"
 
-  let addr_of_var info var_map (v : string)  : unit pure =
+  let addr_of_var info (v : string)  : unit pure =
     match Hvar.find v info.hvars with
     | None -> Err.fail @@ Err.Core_c_error
         (sprintf "expr_to_pure: missing higher var %s for ADDROF expression, \
@@ -304,10 +304,10 @@ module Eval(CT : Theory.Core) = struct
             (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
                       not stored in a memory location." v)
         | Some memory -> match Hvar.frame memory with
-          | Some (fp, off) ->
-            let fp = T.Var.resort (Map.find_exn var_map fp) info.word_sort in
+          | Some (reg, off) ->
+            let reg = T.Var.create info.word_sort @@ T.Var.Ident.of_string reg in
             let+ a =
-              CT.add (CT.var fp)
+              CT.add (CT.var reg)
                 (CT.int info.word_sort (Word.to_bitvec off)) in
             T.Value.forget a
           | None -> match Hvar.global memory with
@@ -321,7 +321,7 @@ module Eval(CT : Theory.Core) = struct
   let expr_to_pure info (e : Cabs.expression) (var_map : var_map) : unit pure =
     let rec aux e =
       match e with
-      | UNARY (ADDROF, VARIABLE v) -> addr_of_var info var_map v
+      | UNARY (ADDROF, VARIABLE v) -> addr_of_var info v
       | UNARY (ADDROF, UNARY (MEMOF, a)) -> aux a
       | UNARY (op, a) ->
         let ty_a = infer a in
@@ -405,7 +405,7 @@ module Eval(CT : Theory.Core) = struct
         (* XXX: maybe look at the type instead of defaulting to the word_sort *)
         let* retval =
           CT.(set info.mem_var
-                (store (var info.mem_var)
+                (storew !!(info.endian) (var info.mem_var)
                    (var (T.Var.resort lval info.word_sort))
                    (var (T.Var.resort info.ret_var info.word_sort)))) in
         let* post_blk = data retval in

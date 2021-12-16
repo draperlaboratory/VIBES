@@ -12,7 +12,7 @@ let compare_sem sem str =
   let strip s = String.filter s ~f:(Fn.non Char.is_whitespace) in
   String.equal (strip sem) (strip str)
 
-let assert_parse_eq s1 s2 =
+let assert_parse_eq ?(hvars = []) s1 s2 =
   match Parse_c.parse_c_patch s1 with
   | Error e ->
     assert_failure
@@ -23,7 +23,7 @@ let assert_parse_eq s1 s2 =
         let* theory = Theory.instance () in
         let* (module T) = Theory.require theory in
         let module Eval = Core_c.Eval(T) in
-        let* sem = Eval.c_patch_to_eff [] (Helpers.the_target ()) ast in
+        let* sem = Eval.c_patch_to_eff hvars (Helpers.the_target ()) ast in
         let sem_str = eff_to_str sem in
         KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
       end
@@ -98,6 +98,72 @@ let test_call_hex _ =
        }
      }"
 
+let test_call_args_1 _ =
+  assert_parse_eq
+    "int a, b, c, f; f(a, b, c);"
+    "{
+       R0 := a
+       R1 := b
+       R2 := c
+       call(f)
+     }"
+
+let test_call_args_2 _ =
+  assert_parse_eq
+    "int a, c, f; f(a, 0x1234, c);"
+    "{
+       R0 := a
+       R1 := 0x1234
+       R2 := c
+       call(f)
+     }"
+
+let test_call_args_ret _ =
+  assert_parse_eq
+    "int a, b, c, d, f; d = f(a, b, c);"
+    "{
+       R0 := a
+       R1 := b
+       R2 := c
+       call(f)
+       d := R0
+     }"
+
+let test_call_args_ret_store _ =
+  assert_parse_eq
+    "int a, b, c, f;
+     int *d;
+     d = (int*)(a + 0x1337);
+     *d = f(a, b, c);"
+    "{
+       d := a + 0x1337
+       R0 := a
+       R1 := b
+       R2 := c
+       call(f)
+       mem := mem with [d, el]:u32 <- R0
+     }"
+
+let test_call_args_addrof _ =
+  let hvars = Higher_var.[
+      create_with_storage "c"
+        ~at_exit:None
+        ~at_entry:(stored_in_memory
+                     (create_frame "SP" @@
+                      Bap.Std.Word.of_int ~width:32 8));
+    ] in
+  assert_parse_eq ~hvars
+    "int a, b, c, d, f;
+     f(a, b, &c);
+     d = *c;"
+    "{
+       R0 := a
+       R1 := b
+       R2 := SP + 8
+       call(f)
+       d := mem[c, el]:u32
+     }"
+
 let test_load_short _ =
   assert_parse_eq
     "int x, y;
@@ -113,5 +179,10 @@ let suite = [
   "Test fallthrough" >:: test_fallthrough;
   "Test compound" >:: test_compound;
   "Test call hex" >:: test_call_hex;
+  "Test call args 1" >:: test_call_args_1;
+  "Test call args 2" >:: test_call_args_2;
+  "Test call args ret" >:: test_call_args_ret;
+  "Test call args ret store" >:: test_call_args_ret_store;
+  "Test call args addrof" >:: test_call_args_addrof;
   "Test load short" >:: test_load_short;
 ]
