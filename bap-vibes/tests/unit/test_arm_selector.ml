@@ -165,6 +165,25 @@ module Prog17 = struct
 
 end
 
+module Prog18 = struct
+
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+    let bil = Bil.[if_ (var v <> !!0) [v1 := !!3] [v1 := !!4]] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+module Prog19 = struct
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+    let bil = Bil.[mem := store ~mem:(var mem) ~addr:(var v1 + !!8) (var v2) BigEndian `r32] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
 module Arm = Arm_selector
 
 let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
@@ -282,6 +301,28 @@ let test_ir16 ctxt =
 let test_ir17 ctxt =
   test_ir ctxt Prog17.prog [blk_pat ^ ":"; "movw R0, #5000"]
 
+let test_ir18 ctxt =
+  test_ir ctxt Prog18.prog
+    [
+      blk_pat ^ ":";
+      "cmp R0, #0";
+      "bne " ^ blk_pat;
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #4";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #3";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+    ]
+
+let test_ir19 ctxt =
+  test_ir ctxt Prog19.prog [blk_pat ^ ":"; "str R0, \\[R0, #8\\]"]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -299,4 +340,6 @@ let suite =
     "Test Arm.ir 15" >:: test_ir15;
     "Test Arm.ir 16" >:: test_ir16;
     "Test Arm.ir 17" >:: test_ir17;
+    "Test Arm.ir 18" >:: test_ir18;
+    "Test Arm.ir 19" >:: test_ir19;
   ]
