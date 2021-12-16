@@ -8,6 +8,8 @@ open Bap.Std
 module KB = Bap_knowledge.Knowledge
 module Hvar = Higher_var
 
+exception Subst_err of string
+
 (** [substitute h_vars patch_code] replaces higher level variables [h_vars]
     with lower-level locations in the provided [patch_code]. *)
 val substitute : Theory.target -> Hvar.t list -> blk term list -> blk term list KB.t
