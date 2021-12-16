@@ -24,6 +24,20 @@ module Opt : sig
       to put the patch code in good shape before instruction selection. *)
   val apply : blk term list -> blk term list
 
+  (** [merge_adjacent ir] attempts to merge adjacent blocks in [ir] with an
+      edge in between them. Requires the blocks to be ordered according to a
+      reverse post-order DFS traversal. *)
+  val merge_adjacent : blk term list -> blk term list
+  
+end
+
+
+module Shape : sig
+
+  (** [reorder_blks ir] reorders [ir] according to a reverse post-order DFS
+      traversal. *)
+  val reorder_blks : blk term list -> blk term list KB.t
+  
 end
 
 (** [create code ~tgt ~lang ~hvars ~sp_align] creates the BIR from the patch

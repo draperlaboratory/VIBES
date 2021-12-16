@@ -80,9 +80,42 @@ let test_failure_mov _ =
     end
   | _ -> assert_failure "Unexpected block shape!"
 
+let test_merge _ =
+  let blks = [blk_dir; blk_redir] in
+  let opts = Bir_passes.Opt.merge_adjacent blks in
+  match opts with
+  | [blk] ->
+    let tid1 = Term.tid blk in
+    let tid2 = Term.tid blk_dir in
+    assert_bool
+      (sprintf "Expected result to be blk %s, got %s"
+         (Tid.to_string tid2)
+         (Tid.to_string tid1))
+      Tid.(tid1 = tid2);
+    begin
+      match Term.enum jmp_t blk |> Seq.to_list with
+      | [jmp] -> begin
+          match Jmp.kind jmp with
+          | Goto label -> begin
+              match label with
+              | Indirect e ->
+                assert_bool
+                  (sprintf "Expected result to be %s, got %s"
+                     (Exp.to_string indirect_tgt)
+                     (Exp.to_string e))
+                  Exp.(e = indirect_tgt)
+              | _ -> assert_failure "Expected indirect label"
+            end            
+          | _ -> assert_failure "Expected goto"
+        end        
+      | _ -> assert_failure "Expected singleton jmp"
+    end
+    
+  | _ -> assert_failure "Expected singleton block as result"
 
 let suite = [
   "Test success" >:: test_success;
   "Test failure branch" >:: test_failure_branch;
   "Test failure mov" >:: test_failure_mov;
+  "Test merge" >:: test_merge;
 ]
