@@ -110,7 +110,6 @@ let test_merge _ =
         end        
       | _ -> assert_failure "Expected singleton jmp"
     end
-    
   | _ -> assert_failure "Expected singleton block as result"
 
 let suite = [
