@@ -12,6 +12,7 @@ let suite () =
     "Bir_opt" >::: Test_bir_opt.suite;
     "C Parser" >::: Test_parse_c.suite;
     "Linear SSA" >::: Test_linear_ssa.suite;
+    "Substituter" >::: Test_substituter.suite;
   ]
 
 let _ =
