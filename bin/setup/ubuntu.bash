@@ -68,7 +68,7 @@ if [[ "${REPORT_RESULTS}" == "true" ]]; then
     REPORT_FLAG="--report-results"
 fi
 
-bash "${THIS_DIR}"/install-apt.bash ${REPORT_FLAG}
+bash -x "${THIS_DIR}"/install-apt.bash ${REPORT_FLAG}
 RESULT="${?}"
 if [[ "${RESULT}" != "0" ]]; then
     echo "Failed to install APT packages."
