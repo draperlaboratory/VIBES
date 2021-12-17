@@ -65,3 +65,15 @@ test:
 	$(MAKE) test.unit
 	$(MAKE) test.integration
 	$(MAKE) test.system
+
+#####################################################
+# CLEAN
+#####################################################
+
+clean.plugin:
+	$(MAKE) clean -C $(PLUGIN_DIR)
+
+clean.lib:
+	$(MAKE) clean -C $(LIB_DIR)
+
+clean: clean.plugin clean.lib
