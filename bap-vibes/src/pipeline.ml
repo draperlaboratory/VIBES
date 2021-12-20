@@ -114,7 +114,11 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
+
+  (* Temporarily use the new KB state when loading the patched binary. *)
+  Toplevel.set new_state;
   let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
+  Toplevel.set state;
 
   let wp_params = Config.wp_params config in
   let target = Project.target orig_proj in
