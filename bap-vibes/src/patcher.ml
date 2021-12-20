@@ -351,6 +351,26 @@ let reify_patch
               orig_loc = patch_file_offset;
               orig_size = Int64.of_int patch_size}
 
+(* Turn a KB patch space into a patch site (the type used by this module to
+   represent the same information *)
+let reify_patch_site (obj : Data.Patch_space.t) : patch_site KB.t =
+  let open KB.Let in
+  let* location = Data.Patch_space.get_offset_exn obj in
+  let* size = Data.Patch_space.get_size_exn obj in
+  KB.return {location; size}
+
+(* Get the patch_spaces out of the kb monad and into the form used by this
+   module *)
+let reify_patch_sites (obj : Data.t) : patch_site list KB.t =
+  let open KB.Let in
+  let* patch_space_set : Data.Patch_space_set.t =
+    Data.Original_exe.get_patch_spaces obj
+  in
+  let patch_spaces : Data.Patch_space.t list =
+    Data.Patch_space_set.to_list patch_space_set
+  in
+  KB.List.map ~f:reify_patch_site patch_spaces
+
 (* Patches the original exe, to produce a patched exe. *)
 let patch
     ?compute_region:(compute_region=ogre_compute_region)
@@ -369,7 +389,9 @@ let patch
   let reify_patch = reify_patch
     ~compute_region:compute_region ~exe_unit:original_exe_unit in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
-  let patch_sites = naive_find_patch_sites original_exe_filename in
+  let naive_patch_sites = naive_find_patch_sites original_exe_filename in
+  let* provided_patch_sites = reify_patch_sites obj in
+  let patch_sites = naive_patch_sites @ provided_patch_sites in
   let* lang =
     let patch = Data.Patch_set.choose_exn patches in
     Data.Patch.get_lang patch

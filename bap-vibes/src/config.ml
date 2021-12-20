@@ -27,6 +27,12 @@ type patch =
     patch_vars : Hvar.t list
   }
 
+(** A type to represent known regions that may be overwritten with patch code *)
+type patch_space = {
+    space_offset : int64;
+    space_size : int64
+  }
+
 (* The configuration for a run of the VIBES pipeline. *)
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
@@ -35,6 +41,7 @@ type t = {
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
   ogre : string option;
+  patch_spaces : patch_space list;
   wp_params : Wp_params.t;
 }
 
@@ -52,6 +59,7 @@ let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
 let ogre t : string option = t.ogre
+let patch_spaces t : patch_space list = t.patch_spaces
 let wp_params t : Wp_params.t = t.wp_params
 
 (* For displaying a higher var. *)
@@ -94,6 +102,19 @@ let patch_to_string (p : patch) : string =
 let patches_to_string (ps : patch list) : string =
   String.concat ~sep:",\n" (List.map ~f:patch_to_string ps)
 
+(* For displaying a patch space. *)
+let patch_space_to_string (p : patch_space) : string =
+  String.concat ~sep:";\n" [
+      Printf.sprintf "  {";
+      Printf.sprintf "    Space_offset: %s" (Int64.to_string p.space_offset);
+      Printf.sprintf "    Space_size: %s" (Int64.to_string p.space_size);
+      Printf.sprintf "  }";
+    ]
+
+(* For displaying a list of patch spaces *)
+let patch_spaces_to_string (ps : patch_space list) : string =
+  String.concat ~sep:",\n" (List.map ~f:patch_space_to_string ps)
+
 (* For displaying WP params. *)
 let wp_params_to_string (wp_params : Wp_params.t) : string =
   let opt (s : string option) : string =
@@ -109,7 +130,7 @@ let wp_params_to_string (wp_params : Wp_params.t) : string =
   let triple_list (t_list : (string * string * string) list) : string =
     lst @@ List.map t_list ~f:triple
   in
-  let params = [ 
+  let params = [
       Printf.sprintf "func: %s" wp_params.func;
       Printf.sprintf "precond: %s" wp_params.precond;
       Printf.sprintf "postcond: %s" wp_params.postcond;
@@ -118,11 +139,11 @@ let wp_params_to_string (wp_params : Wp_params.t) : string =
       Printf.sprintf "show: %s" (lst wp_params.show);
       Printf.sprintf "use-fun-input-regs: %b" wp_params.use_fun_input_regs;
       Printf.sprintf "fun-specs: %s" (lst wp_params.fun_specs);
-      Printf.sprintf 
+      Printf.sprintf
         "user-fun-specs-orig: %s" (triple_list wp_params.user_func_specs_orig);
       Printf.sprintf
         "user-fun-specs-mod: %s" (triple_list wp_params.user_func_specs_mod);
-    ] 
+    ]
   in
   String.concat ~sep:"\n" params
 
@@ -132,9 +153,13 @@ let pp (ppf : Format.formatter) t : unit =
       Printf.sprintf "Exe: %s" t.exe;
       Printf.sprintf "Patches: %s" (patches_to_string t.patches);
       Printf.sprintf "Output filepath: %s"
-        (Option.value t.patched_exe_filepath ~default:"none provided");
+        (Option.value t.patched_exe_filepath ~default:"<none provided>");
       Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
       Printf.sprintf "Minizinc model: %s" t.minizinc_model_filepath;
+      Printf.sprintf "Ogre file: %s"
+        (Option.value t.ogre ~default:"<none provided>");
+      Printf.sprintf "Patch spaces: %s"
+        (patch_spaces_to_string t.patch_spaces);
       Printf.sprintf "WP-params: %s" (wp_params_to_string t.wp_params);
     ] in
   Format.fprintf ppf "@[%s@]@." info
@@ -156,7 +181,8 @@ let create
     ~max_tries:(max_tries : int option)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
     ~ogre:(ogre : string option)
+    ~patch_spaces:(patch_spaces : patch_space list)
     ~wp_params:(wp_params : Wp_params.t)
   : t =
-  { exe; patches; patched_exe_filepath;
-    max_tries; minizinc_model_filepath; ogre; wp_params }
+  { exe; patches; patched_exe_filepath; max_tries;
+    minizinc_model_filepath; ogre; patch_spaces; wp_params }

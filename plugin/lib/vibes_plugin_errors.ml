@@ -21,6 +21,7 @@ type t =
   | Invalid_hex of string
   | Invalid_property of string
   | Invalid_patch_code of string
+  | Invalid_patch_spaces of string
   | Invalid_max_tries
   | Invalid_loader_data of string
   | Invalid_bsi_data of string
@@ -70,6 +71,8 @@ let pp (ppf : Format.formatter) t : unit =
     | Invalid_hex desc -> desc
     | Invalid_property desc -> desc
     | Invalid_patch_code desc -> desc
+    | Invalid_patch_spaces desc ->
+      "Invalid 'patch-spaces' field: " ^ desc
     | Invalid_max_tries ->
       "optional config json field \"max-tries\" must be an integer"
     | Invalid_loader_data s ->

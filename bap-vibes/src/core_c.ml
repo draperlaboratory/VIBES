@@ -79,7 +79,6 @@ module Eval(T : Theory.Core) = struct
 
   open Theory
   open T
-  open KB.Let
   open KB.Syntax
 
 

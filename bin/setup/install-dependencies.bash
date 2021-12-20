@@ -12,7 +12,7 @@ COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
 # Include the relevant libraries.
 . "${COMMON_LIB_DIR}/utils.bash"
 . "${COMMON_LIB_DIR}/slack.bash"
-. "${COMMON_LIB_DIR}/env.bash"
+. "${THIS_DIR}/env.bash"
 
 # Which branch of WP should we install?
 WP_BRANCH="master"

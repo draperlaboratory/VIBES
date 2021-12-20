@@ -15,6 +15,12 @@ type t
 (** A type to represent patch cody which may either be C or literal assembly *)
 type patch_code = CCode of Cabs.definition | ASMCode of string
 
+(** A type to represent known regions that may be overwritten with patch code *)
+type patch_space = {
+    space_offset : int64;
+    space_size : int64
+  }
+
 (** [patch_name p] returns the name of the patch [p]. *)
 val patch_name : patch -> string
 
@@ -53,6 +59,10 @@ val ogre : t -> string option
 (** [wp_params config] returns the input parameters for the invocation to WP *)
 val wp_params : t -> Wp_params.t
 
+(** [patch_spaces config] returns known dead regions suitable for patch
+   placement *)
+val patch_spaces : t -> patch_space list
+
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
 
@@ -79,6 +89,8 @@ val create_patch :
     - [~max_tries] is the optional number of tries to allow
     - [~minizinc_model_filepath] is the minizinc model file location
     - [~ogre] is the optional filepath to an ogre file
+    - [~patch_spaces] is the list of known empty regions for patch code (which
+        may be empty)
     - [~wp_params] is the parameter struct for WP *)
 val create :
   exe:string
@@ -87,5 +99,6 @@ val create :
   -> max_tries : int option
   -> minizinc_model_filepath:string
   -> ogre:string option
+  -> patch_spaces:patch_space list
   -> wp_params:Wp_params.t
   -> t
