@@ -187,13 +187,8 @@ let gpr (tgt : Theory.target) (lang : Theory.language) : Var.Set.t KB.t =
   Set.filter_map ~f:(maybe_reify) (module Var)
 
 let reg_name (v : var) : string =
-  let name = Var.name v in
-  let name =
-    if String.is_prefix name ~prefix:Ir.tmp_prefix then
-      String.drop_prefix name (String.length Ir.tmp_prefix)
-    else name in
-  let name = try Linear_ssa.orig_name name with _ -> name in
-  name
+  let name = Var.name @@ Ir.drop_prefix v in
+  try Linear_ssa.orig_name name with _ -> name
 
 let preassign_var
     (is_thumb : bool)
