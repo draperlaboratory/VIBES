@@ -32,7 +32,8 @@ val orig_name : string -> string
 val same : var -> var -> bool
 
 (** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"
-    in the sense described in the comment at the beginning of the module. *)
+    in the sense described in the comment at the beginning of the module.
+    [v1] and [v2] must be in the linear SSA form. *)
 val congruent : Var.t -> Var.t -> bool
 
 (** [tranform s] takes the subroutine [s] and converts it into the linear

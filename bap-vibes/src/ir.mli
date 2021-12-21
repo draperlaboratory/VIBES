@@ -144,7 +144,11 @@ val op_var_to_string : op_var -> string
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
+(** The prefix added to the names of all temporary vars. *)
 val tmp_prefix : string
+
+(** Remove [tmp_prefix] from a var, if it exists. *)
+val drop_prefix : var -> var
 
 (** [preassign tgt ir] sets all the variables which are set to
     registers in [tgt] as being the preassigned location for those

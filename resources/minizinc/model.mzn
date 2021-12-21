@@ -28,8 +28,7 @@ array[temp_t] of int : width; % Atom width of temporary. Atoms are subpieces of 
 
 array[operand_t] of set of reg_t : preassign; % preassign operand_t to register.
 
-array[operand_t] of set of operand_t : congruent; % Whether congruent. Congruent operands are actually the same temporary split by linear SSA
-
+array[temp_t] of set of temp_t : congruent; % Whether congruent. Congruent operands are actually the same temporary split by linear SSA.
 
 array[operation_t] of set of opcode_t : operation_opcodes; % map from operation to possible instructions that implement it
 
@@ -181,9 +180,9 @@ constraint forall(t in temp_t)(
     live[t] <- exists(p in users[t])( active[operand_operation[p]] /\ temp[p] = t ) % should be both way implication?
 );
 
-% C6 Congruent operands map to the same register
-constraint forall (p in operand_t, q in operand_t where q in congruent[p])(
-    reg[temp[p]] = reg[temp[q]]
+% C6 Congruent temps map to the same register
+constraint forall (p in temp_t, q in temp_t where q in congruent[p])(
+    reg[p] = reg[q]
 );
 
 %% Instruction Scheduling Constraints

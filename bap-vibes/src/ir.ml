@@ -510,6 +510,13 @@ let preassign_var tgt v =
 
 let tmp_prefix = "__Vibes_tmp_"
 
+let drop_prefix (v : var) : var =
+  let name = Var.name v in
+  if String.is_prefix name ~prefix:tmp_prefix then
+    let name = String.drop_prefix name @@ String.length tmp_prefix in
+    Var.create name @@ Var.typ v
+  else v
+
 (* We freshen temporaries so that they do not clash with register
    names in the Minizinc model. *)
 let freshen_temps v =

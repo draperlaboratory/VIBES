@@ -277,7 +277,23 @@ let serialize_mzn_params
               { set = [] }
             | Some r ->
               { set = [mzn_enum_of_var r] });
-    congruent = List.map ~f:(fun _ -> {set = []} ) operands; (* TODO *)
+    congruent =
+      (* For now, we will compute congruence as a mapping from temps
+         to a set of temps. In the full model, we would lift this
+         representation to a mapping over operands. *)
+      List.map temps ~f:(fun t1 -> {
+            set = match Var.typ t1 with
+              | Type.Mem _ | Type.Unk -> []
+              | Type.Imm _ as typ ->
+                let t1' = Ir.drop_prefix t1 in
+                List.filter_map temps ~f:(fun t2 ->
+                    (* The trivial case of the vars being equal can be ignored. *)
+                    if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
+                    else
+                      let t2' = Ir.drop_prefix t2 in
+                      if not @@ Linear_ssa.congruent t1' t2' then None
+                      else Some (mzn_enum_of_var t2))
+          });
     operation_opcodes = key_map operations params.operation_opcodes
         ~f:(fun ids ->
             { set =

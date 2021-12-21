@@ -17,11 +17,12 @@ let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
   in
   Var.create escaped_name typ
 
+(* The prefix consists of an underscore (1 char), followed by the
+   tid string (8 chars), ending with another underscore (1 char). *)
+let prefix_len = 10
+
 let orig_name (name : string) : string =
-  (* Drop the underscore at the beginning, followed by the tid string,
-     which is always 8 characters. Then, there's a final underscore
-     before we get to the actual var name. *)
-  let name = String.drop_prefix name 10 in
+  let name = String.drop_prefix name prefix_len in
   match String.split name ~on:'_' with
   | [] -> name
   | [name] when not @@ String.is_empty name -> name
@@ -36,9 +37,14 @@ let same (a : var) (b : var) : bool =
   with _ -> false      
 
 let congruent (a : var) (b : var) : bool =
-  let name_1 = String.drop_prefix (Var.name a) 10 in
-  let name_2 = String.drop_prefix (Var.name b) 10 in
-  String.equal name_1 name_2
+  let name_1 = String.drop_prefix (Var.name a) prefix_len in
+  let name_2 = String.drop_prefix (Var.name b) prefix_len in
+  (* We have to be careful feeding in vars which don't fit our naming
+     convention for linear SSA. In particular, the instruction selector
+     may generate additional temporary variables, which happens after
+     we've run the linear SSA pass. *)
+  if String.is_empty name_1 && String.is_empty name_2 then false
+  else String.equal name_1 name_2
 
 let rec linearize_exp ~prefix:(prefix : string) (exp : Bil.exp) : Bil.exp =
   match exp with
