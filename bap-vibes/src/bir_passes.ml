@@ -546,12 +546,13 @@ let create (code : insn)
   let exclude_regs = Registers.collect_exclude_regs tgt hvars in
   let ir = Opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
+  let* arm = Arm.is_arm lang and* thumb = Arm.is_thumb lang in
   let* ir =
-    if Arm.is_arm_or_thumb lang
+    if arm || thumb
     then Arm_specific.split_large_const ir
     else KB.return ir in
   let* ir =
-    if Arm.is_thumb lang
+    if thumb
     then Shape.massage_conditional_calls ir
     else KB.return ir in
   let* ir = Shape.reorder_blks ir in

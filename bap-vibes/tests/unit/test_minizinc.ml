@@ -14,8 +14,38 @@ let ex1 : Ir.t = Test_ir.vir1
 let arm_tgt = Theory.Target.get ~package:"bap" "armv7+le"
 let arm_lang = Theory.Language.read ~package:"bap" "llvm-armv7"
 
-let (mzn_params1 , serial_info1) =
-  Minizinc.serialize_mzn_params arm_tgt arm_lang ex1 []
+module Dummy_kb = struct
+
+  type cls
+  type t = cls KB.obj
+  type computed = (cls, unit) KB.cls KB.value
+  let package = "vibes"
+  let name = "mzn-dummy"
+  let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
+
+  let mzn_serial = KB.Class.property cls ~package:"vibes" "mzn-serial" @@
+    KB.Domain.optional "mzn-serial-domain"
+      ~equal:(fun (params_1, serial_1) (params_2, serial_2) ->
+          Yojson.Safe.equal
+            (Minizinc.mzn_params_serial_to_yojson params_1)
+            (Minizinc.mzn_params_serial_to_yojson params_2) &&
+          Minizinc.equal_serialization_info serial_1 serial_2)
+end
+
+let (mzn_params1, serial_info1) =
+  let open KB.Syntax in
+  let computation =
+    KB.Object.create Dummy_kb.cls >>= fun obj ->
+    Minizinc.serialize_mzn_params arm_tgt arm_lang ex1 [] >>= fun serial ->
+    KB.provide Dummy_kb.mzn_serial obj (Some serial) >>= fun () ->
+    KB.return obj in
+  match KB.run Dummy_kb.cls computation KB.empty with
+  | Error err -> failwith @@ KB.Conflict.to_string err
+  | Ok (obj, _) -> begin
+      match KB.Value.get Dummy_kb.mzn_serial obj with
+      | Some serial -> serial
+      | None -> failwith "Failed to compute the serialization info!"
+    end
 
 let mzn_params_string = Format.asprintf "%a"
     (Yojson.Safe.pretty_print ~std:true)

@@ -18,13 +18,21 @@ open Bap.Std
 (** The abstract representation of [Theory.eff] terms in [ARM_Core]. *)
 type arm_eff
 
-val is_arm_or_thumb : Theory.language -> bool
+(** Returns [true] if the encoding is ARM.
+    Returns a KB error if the encoding is unknown. *)
+val is_arm : Theory.language -> bool KB.t
 
-val is_thumb : Theory.language -> bool
+(** Returns [true] if the encoding is Thumb.
+    Returns a KB error if the encoding is unknown. *)
+val is_thumb : Theory.language -> bool KB.t
+
+(** Returns [true] if the encoding is ARM or Thumb.
+    Returns a KB error if the encoding is unknown. *)
+val is_arm_or_thumb : Theory.language -> bool KB.t
 
 (** Extracts the concrete [Ir.t] from the abstract [arm_eff]
     representation. *)
-val ir : arm_eff -> Ir.t
+val ir : arm_eff -> Ir.t KB.t
 
 (** Performs various ARM specific simplifications of a given [ir]
    program, aimed mostly to conserve space. *)
@@ -34,11 +42,11 @@ val peephole : Ir.t -> Ir.t
 val regs : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 
 (** Returns the set of registers suitable for register allocation on ARM *)
-val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
+val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t KB.t
 
 (** Pre-assigns variables according to specific roles (PC, SP, etc) *)
 (* FIXME: make this happen at variable creation time *)
-val preassign : Theory.target -> Theory.language -> Ir.t -> Ir.t
+val preassign : Theory.target -> Ir.t -> is_thumb:bool -> Ir.t
 
 
 module Pretty :

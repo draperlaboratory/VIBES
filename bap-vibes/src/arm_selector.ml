@@ -3,6 +3,8 @@ open Bap.Std
 open Bap_core_theory
 open KB.Let
 
+module Err = Kb_error
+
 (*-------------------------------------------------------
 *
 * Instruction selection works in the "standard" maximal munch
@@ -132,26 +134,26 @@ let word_ty = Bil.Types.Imm 32
 let bit_ty = Bil.Types.Imm 1
 let mem_ty = Bil.Types.Mem (`r32, `r8)
 
-let is_arm_or_thumb (lang : Theory.language) : bool =
-  assert (not @@ Theory.Language.is_unknown lang);
-  let l = Theory.Language.to_string lang in
-  if String.is_substring l ~substring:"arm" then
-    true
-  else if String.is_substring l ~substring:"thumb" then
-    true
+let is_arm (lang : Theory.language) : bool KB.t =
+  if Theory.Language.is_unknown lang
+  then Err.(fail Unknown_encoding)
   else
-    false
+    KB.return @@
+    String.is_substring ~substring:"arm" @@
+    Theory.Language.to_string lang
 
-let is_thumb (lang : Theory.language) : bool =
-  assert (not @@ Theory.Language.is_unknown lang);
-  let l = Theory.Language.to_string lang in
-  if String.is_substring l ~substring:"arm" then
-    false
-  else if String.is_substring l ~substring:"thumb" then
-    true
+let is_thumb (lang : Theory.language) : bool KB.t =
+  if Theory.Language.is_unknown lang
+  then Err.(fail Unknown_encoding)
   else
-    false
-
+    KB.return @@
+    String.is_substring ~substring:"thumb" @@
+    Theory.Language.to_string lang
+ 
+let is_arm_or_thumb (lang : Theory.language) : bool KB.t =
+  let+ arm = is_arm lang and+ thumb = is_thumb lang in
+  arm || thumb
+ 
 (* FIXME: this feels very redundant: we should just leave the
    responsibility for this in ir.ml or minizinc.ml *)
 let regs (tgt : Theory.target) (_ : Theory.language) =
@@ -161,10 +163,11 @@ let regs (tgt : Theory.target) (_ : Theory.language) =
   let pc = Var.create ~is_virtual:false ~fresh:false "PC" word_ty in
   Var.Set.add bap_regs pc
 
-let gpr (tgt : Theory.target) (lang : Theory.language) =
+let gpr (tgt : Theory.target) (lang : Theory.language) : Var.Set.t KB.t =
+  let+ thumb = is_thumb lang in
   let roles = [Theory.Role.Register.general] in
   let roles =
-    if is_thumb lang
+    if thumb
     then Theory.Role.read ~package:"arm" "thumb"::roles
     else roles
   in
@@ -176,7 +179,7 @@ let gpr (tgt : Theory.target) (lang : Theory.language) =
     let v = Var.reify v in
     let name = Var.name v in
     if String.(is_prefix name ~prefix:"R") &&
-       not ((is_thumb lang) && String.(equal name "R7"))
+       not (thumb && String.(equal name "R7"))
     then Some v
     else None
   in
@@ -193,7 +196,7 @@ let reg_name (v : var) : string =
   name
 
 let preassign_var
-    (lang : Theory.language)
+    (is_thumb : bool)
     (pre : var option)
     (v : var)
   : var option =
@@ -204,7 +207,7 @@ let preassign_var
     (* We assign R11 as the pre-assigned FP register on ARM, and R7
        for Thumb, keeping in line with the ABI (as far as i can
        tell).  *)
-    if is_thumb lang
+    if is_thumb
     then Some (Var.create ~is_virtual ~fresh "R7" (Var.typ v))
     else Some (Var.create ~is_virtual ~fresh "R11" (Var.typ v))
     (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
@@ -223,8 +226,8 @@ let preassign_var
       
 let preassign
     (tgt : Theory.target)
-    (lang : Theory.language)
     (ir : Ir.t)
+    ~(is_thumb : bool)
   : Ir.t =
   let ir = Ir.preassign tgt ir in
   let ir = Ir.map_op_vars ir
@@ -232,7 +235,7 @@ let preassign
           {v with
            pre_assign =
              List.hd_exn v.temps |>
-             preassign_var lang v.pre_assign})
+             preassign_var is_thumb v.pre_assign})
   in ir
 
 (* Appends the effects of s2 to those of s1, respecting the order if they
@@ -533,11 +536,14 @@ module ARM_ops = struct
 end
 
 (* We assume that a block is always created *)
-let ir (t : arm_eff) : Ir.t =
-  assert Core_kernel.(List.is_empty t.current_data
-                      && List.is_empty t.current_ctrl);
-  let blks = t.other_blks in
-  Ir.add_in_vars blks
+let ir (t : arm_eff) : Ir.t KB.t =
+  if not Core_kernel.(
+      List.is_empty t.current_data
+      && List.is_empty t.current_ctrl) then
+    Err.(fail @@ Other "Arm_selector.ir: expected empty data and ctrl")
+  else
+    let blks = t.other_blks in
+    KB.return @@ Ir.add_in_vars blks
 
 
 module ARM_Gen =
@@ -698,10 +704,11 @@ struct
         match Var.typ lhs with
         | Imm _ | Unk ->
           begin
+            let* thumb = is_thumb lang in
             match rhs with
             | BinOp (PLUS, Var a, Int w)
               when Caml.(Linear_ssa.same a lhs
-                         && is_thumb lang
+                         && thumb
                          && Word.to_int_exn w <= 0xFF) ->
               (* Thumb 2 encoding allows adding an 8-bit immediate, when
                  source and destination registers are the same. *)
@@ -822,7 +829,7 @@ struct
 
   let select (tgt : Theory.target) (lang : Theory.language)
       (bs : blk term list) : Ir.t KB.t =
-    let+ bs = select_blks tgt lang bs in
+    let* bs = select_blks tgt lang bs in
     ir bs
 
 end

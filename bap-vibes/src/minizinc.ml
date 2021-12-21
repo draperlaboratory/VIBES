@@ -122,7 +122,7 @@ type serialization_info = {
   temp_map : Var.t String.Map.t;
   operations : Int.t list;
   operands : Var.t list;
-}
+} [@@deriving equal]
 
 (**
    [sol] is produced by processing [sol_serial]
@@ -156,8 +156,14 @@ end
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
 (* Generic minizinc enumeration builder *)
-let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
+let key_map ~f:(f : 'a -> 'c)
+    (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
   List.map keys
+    ~f:(fun t -> Map.find_exn m t |> f)
+
+let key_map_kb ~f:(f : 'a -> 'c KB.t)
+    (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list KB.t =
+  KB.List.map keys
     ~f:(fun t -> Map.find_exn m t |> f)
 
 (** [serialize_man_params] converts the intermediate structure into the serializable structure
@@ -175,7 +181,7 @@ let serialize_mzn_params
     (lang : Theory.language)
     (vir : Ir.t)
     (prev_sols : sol list)
-  : mzn_params_serial * serialization_info =
+  : (mzn_params_serial * serialization_info) KB.t =
   let params = mzn_params_of_vibes_ir vir in
   let opcodes = Ir.all_opcodes vir in
   let opcodes_str = List.map opcodes
@@ -187,13 +193,15 @@ let serialize_mzn_params
   let operations = Int.Map.keys params.operation_opcodes in
   let operands = Var.Set.to_list params.operands in
   let width t = match Var.typ t with
-    | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
-    | Mem _ -> 0
-    | Unk -> failwith "width unimplemented for Unk"
+    | Imm n -> KB.return Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
+    | Mem _ -> KB.return 0
+    | Unk ->
+      Kb_error.(fail @@ Other "Minizinc.serialize_mzn_params: \
+                               width unimplemented for Unk")
   in
+  let* gpr = Arm_selector.gpr tgt lang in
   let gpr =
-    Arm_selector.gpr tgt lang |>
-    Set.to_list |>
+    Set.to_list gpr |>
     List.filter ~f:(fun v ->
         not @@ Set.mem exclude_regs @@ Var.name v) |>
     List.map ~f:Var.sexp_of_t |>
@@ -209,20 +217,27 @@ let serialize_mzn_params
   in
   let regs_of_role r =
     if Theory.Role.(r = Register.general) then
-      gpr
+      KB.return gpr
     else if Theory.Role.(r = Ir.dummy_role) then
-      dummy
+      KB.return dummy
     else if Theory.Role.(r = Ir.preassigned) then
-      regs
+      KB.return regs
     else
-      failwith @@
-      Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
-        Theory.Role.pp r
+      Kb_error.(fail @@ Other (
+          Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
+            Theory.Role.pp r))
   in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
   in
+  let* class_t =
+    key_map_kb operands params.class_
+      ~f:(fun m -> key_map_kb opcodes m
+             ~f:(fun r ->
+                 let+ regs = regs_of_role r in
+                 mzn_enum_def_of_list regs)) in
+  let+ width = KB.List.map temps ~f:width in
   if (List.length regs = 0) then
     (failwith @@ Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt);
   {
@@ -239,13 +254,7 @@ let serialize_mzn_params
     definer =
       key_map temps params.definer
         ~f:(fun t -> t |> Ir.op_var_to_string |> mzn_enum);
-    class_t =
-      begin
-        key_map operands params.class_
-          ~f:(fun m -> key_map opcodes m
-                 ~f:(fun r -> regs_of_role r |> mzn_enum_def_of_list))
-      end;
-
+    class_t;
     users =
       List.map
         ~f:(fun t ->
@@ -270,7 +279,7 @@ let serialize_mzn_params
           List.map
             ~f:(fun o -> o |> Tid.to_string |> mzn_enum)
       };
-    width = List.map ~f:width temps;
+    width;
     preassign = key_map operands params.preassign
         ~f:(function
             | None ->
@@ -417,7 +426,7 @@ let run_minizinc
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
+  let* params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
   Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filepath;

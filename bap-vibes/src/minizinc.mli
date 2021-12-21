@@ -117,7 +117,7 @@ type serialization_info = {
   temp_map : Var.t String.Map.t;
   operations : Int.t list;
   operands : Var.t list;
-}
+} [@@deriving equal]
 
 val serialize_mzn_params :
   ?exclude_regs:String.Set.t ->
@@ -125,8 +125,6 @@ val serialize_mzn_params :
   Theory.language ->
   Ir.t ->
   sol list ->
-  mzn_params_serial * serialization_info
-
-
+  (mzn_params_serial * serialization_info) KB.t
 
 val apply_sol : Ir.t -> sol -> Ir.t

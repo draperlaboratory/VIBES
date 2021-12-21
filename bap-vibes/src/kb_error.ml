@@ -37,6 +37,8 @@ type t =
   | Max_tries of int
   | Minizinc_deserialization of string
   | Core_c_error of string
+  | Unknown_target
+  | Unknown_encoding
   | Other of string
 
 (* A pretty-printer for these errors. *)
@@ -81,6 +83,8 @@ let pp ppf (e : t) =
     | Minizinc_deserialization s -> s
     | Core_c_error s ->
       Format.sprintf "Core C failed with error: %s" s
+    | Unknown_target -> "Target architecture is unknown"
+    | Unknown_encoding -> "Target encoding is unknown"
     | Other s -> s
   in
   Format.fprintf ppf "@[%s@]@." msg

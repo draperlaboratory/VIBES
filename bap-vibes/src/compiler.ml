@@ -38,12 +38,13 @@ let create_vibes_ir
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
+  let* arm = Arm.is_arm lang and* thumb = Arm.is_thumb lang in
   let+ ir =
-    if Arm.is_arm_or_thumb lang then
+    if arm || thumb then
       let+ ir = Arm.ARM_Gen.select tgt lang ir in
-      Arm.preassign tgt lang ir
-    else failwith @@
-      sprintf "Unsupported lang %s" (Theory.Language.to_string lang) in
+      Arm.preassign tgt ir ~is_thumb:thumb
+    else Kb_error.(fail @@ Other (
+        sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
   ir, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)

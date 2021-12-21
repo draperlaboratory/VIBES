@@ -39,6 +39,8 @@ type t =
   | Max_tries of int
   | Minizinc_deserialization of string
   | Core_c_error of string
+  | Unknown_target
+  | Unknown_encoding
   | Other of string
 
 (** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)
