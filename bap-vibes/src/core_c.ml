@@ -81,7 +81,7 @@ module Eval(CT : Theory.Core) = struct
   module T = Theory
   open KB.Syntax
 
-
+  (* If `endian` evaluates to `b1` (true), then we are big-endian. *)
   type ('a, 'b) interp_info = {
     word_sort : 'a T.Bitv.t T.Value.sort;
     byte_sort : 'b T.Bitv.t T.Value.sort;
