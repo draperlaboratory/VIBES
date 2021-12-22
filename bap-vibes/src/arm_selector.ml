@@ -695,14 +695,18 @@ struct
     (* Thumb 2 encoding allows adding an 8-bit immediate, when
        source and destination registers are the same. *)
     | BinOp (PLUS, Var a, Int w)
-      when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
-                 && thumb
-                 && Word.to_int_exn w <= 0xFF) ->
+    | BinOp (PLUS, Int w, Var a)
+      when Core_kernel.(
+          Option.exists lhs ~f:(Linear_ssa.same a)
+          && thumb
+          && Word.to_int_exn w <= 0xFF) ->
       KB.return @@ binop Ops.add word_ty (var a) (const w)
     (* Hack for loading a large constant. *)
     | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
-      when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
-                 && Word.(s = of_int ~width:32 16)) ->
+    | BinOp (OR, BinOp (LSHIFT, Int w, Int s), Var a)
+      when Core_kernel.(
+          Option.exists lhs ~f:(Linear_ssa.same a)
+          && Word.(s = of_int ~width:32 16)) ->
       let op = Ir.simple_op Ops.movt
           (Ir.Var (create_temp word_ty))
           [Ir.Var (Ir.simple_var a); Ir.Const w] in
