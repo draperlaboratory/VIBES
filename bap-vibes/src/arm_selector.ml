@@ -456,24 +456,19 @@ module ARM_ops = struct
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
-    let+ ops =
-      begin
-        match value_val with
-        | Var _ ->
-          let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
-          KB.return [op]
-        | Const _ ->
-          let tmp = Ir.Var (create_temp word_ty) in
-          let mov = Ir.simple_op Ops.mov tmp [value_val] in
-          let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
-          KB.return [op; mov]
-        | _ ->
-          Err.(fail @@ Other (
-              sprintf "str: unsupported `value` operand %s" @@
-              Ir.pretty_operand value_val))
-      end
-    in
-    (* Again, a little cowboy instruction ordering *)
+    let+ ops = match value_val with
+      | Var _ ->
+        let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
+        KB.return [op]
+      | Const _ ->
+        let tmp = Ir.Var (create_temp word_ty) in
+        let mov = Ir.simple_op Ops.mov tmp [value_val] in
+        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
+        KB.return [op; mov]
+      | _ ->
+        Err.(fail @@ Other (
+            sprintf "str: unsupported `value` operand %s" @@
+            Ir.pretty_operand value_val)) in
     let sem = loc_sem @. value_sem @. mem_sem in
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
@@ -487,24 +482,19 @@ module ARM_ops = struct
     let {op_val = mem_val; op_eff = mem_sem} = mem in
     let base = Ir.Var (Ir.simple_var base) in
     let off = Ir.Const off in
-    let+ ops =
-      begin
-        match value_val with
-        | Var _ ->
-          let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
-          KB.return [op]
-        | Const _ ->
-          let tmp = Ir.Var (create_temp word_ty) in
-          let mov = Ir.simple_op Ops.mov tmp [value_val] in
-          let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
-          KB.return [op; mov]
-        | _ ->
-          Err.(fail @@ Other (
-              sprintf "str_base_off: unsupported `value` operand %s" @@
-              Ir.pretty_operand value_val))
-      end
-    in
-    (* Again, a little cowboy instruction ordering *)
+    let+ ops = match value_val with
+      | Var _ ->
+        let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
+        KB.return [op]
+      | Const _ ->
+        let tmp = Ir.Var (create_temp word_ty) in
+        let mov = Ir.simple_op Ops.mov tmp [value_val] in
+        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
+        KB.return [op; mov]
+      | _ ->
+        Err.(fail @@ Other (
+            sprintf "str_base_off: unsupported `value` operand %s" @@
+            Ir.pretty_operand value_val)) in
     let sem = value_sem @. mem_sem in
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
