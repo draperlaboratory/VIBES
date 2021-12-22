@@ -12,17 +12,32 @@ open Bap.Std
 
 (** A higher variable is stored either in a register,
     or at some memory location. *)
-type stored_in
+type stored_in =
+  | Register of string
+  | Memory of memory
+[@@deriving equal, compare]
 
 (** A memory location can be a frame pointer register with an offset,
     or an absolute address which points to global memory. *)
-type memory
+and memory =
+  | Frame of string * word
+  | Global of word
+[@@deriving equal, compare]
 
 (** A higher variable has a name and a value. *)
-type t
+type t = {
+  name : string;
+  value : value;
+} [@@deriving equal, compare]
 
 (** A value can be a constant, or it can have some storage classification. *)
-type value
+and value =
+  | Constant of word
+  | Storage of {
+      at_entry: stored_in;
+      at_exit : stored_in option;
+    }
+[@@deriving equal, compare]
 
 (** Accessors. *)
 val name : t -> string

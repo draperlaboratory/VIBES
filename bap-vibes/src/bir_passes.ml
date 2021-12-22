@@ -427,18 +427,13 @@ module Registers = struct
   let check_hvars_for_existing_stack_locations
       (sp : var) (hvars : Hvar.t list) : unit =
     List.iter hvars ~f:(fun hvar ->
-        let value = Hvar.value hvar in
-        match Hvar.at_entry value with
-        | None -> ()
-        | Some at_entry -> match Hvar.memory at_entry with
-          | None -> ()
-          | Some memory -> match Hvar.frame memory with
-            | None -> ()
-            | Some (reg, offset) ->
-              if String.(reg = Var.name sp) then
-                failwith @@ sprintf
-                  "Existing stack location [%s, %s] used by hvar %s"
-                  reg (Word.to_string offset) (Hvar.name hvar))
+        match Hvar.value hvar with
+        | Hvar.(Storage {at_entry = Memory (Frame (reg, offset)); _}) ->
+            if String.(reg = Var.name sp) then
+              failwith @@ sprintf
+                "Existing stack location [%s, %s] used by hvar %s"
+                reg (Word.to_string offset) (Hvar.name hvar)
+        | _ -> ())
 
   (* Spill higher vars in caller-save registers if we are doing any calls
      in a multi-block patch, since the ABI says they may be clobbered. *)
@@ -474,27 +469,23 @@ module Registers = struct
         spilled := Set.add !spilled v;
         if restore then restored := Set.add !restored v;
         Hvar.create_with_storage name ~at_entry ~at_exit:None in
-      let hvars' = List.map hvars ~f:(fun hvar ->
+      let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
-          let value = Hvar.value hvar in
-          match Hvar.at_entry value with
-          | None -> hvar
-          | Some at_entry -> match Hvar.register at_entry with
-            | None -> hvar
-            | Some v -> match Map.find caller_save v with
-              | None -> hvar
-              | Some (offset, _) -> match Hvar.at_exit value with
-                | None -> spill name v offset
-                | Some at_exit ->
-                  match Hvar.register at_exit with
-                  | Some v' when String.(v = v') ->
-                    spill name v offset ~restore:true
-                  | _ ->
-                    (* XXX: handle the value being restored in a different
-                       destination? *)
-                    failwith @@ sprintf
-                      "Unexpected value for `at_exit` of higher var %s"
-                      name) in
+          match Hvar.value hvar with
+          | Hvar.Storage {at_entry = Register v; at_exit} -> begin
+              match Map.find caller_save v with
+              | None -> KB.return hvar
+              | Some (offset, _) ->
+                match at_exit with
+                | Some Hvar.(Register v') when String.(v = v') ->
+                  KB.return @@ spill name v offset ~restore:true
+                | Some _ ->
+                  Kb_error.(fail @@ Other (
+                      sprintf "Unexpected value for `at_exit` of higher var %s"
+                        name))
+                | None -> KB.return @@ spill name v offset
+            end
+          | _ -> KB.return hvar) in
       let* exits = Helper.exit_blks blks in
       let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
@@ -554,18 +545,11 @@ module Registers = struct
       List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
       String.Set.of_list in
     List.fold hvars ~init:String.Set.empty ~f:(fun acc hvar ->
-        let value = Hvar.value hvar in
-        match Hvar.at_entry value with
-        | None -> acc
-        | Some at_entry ->
-          match Hvar.at_exit value with
-          | None -> acc
-          | Some at_exit ->
-            match Hvar.register at_entry, Hvar.register at_exit with
-            | Some v, Some v'
-              when String.(v = v') && Set.mem callee_save v ->
-              String.Set.add acc v
-            | _ -> acc)
+        match Hvar.value hvar with
+        | Hvar.(Storage {at_entry = Register v; at_exit = Some (Register v')})
+          when String.(v = v') && Set.mem callee_save v ->
+          String.Set.add acc v
+        | _ -> acc)
 
 end
 

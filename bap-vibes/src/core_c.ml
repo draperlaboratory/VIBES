@@ -302,30 +302,26 @@ module Eval(CT : Theory.Core) = struct
     | None -> Err.fail @@ Err.Core_c_error
         (sprintf "expr_to_pure: missing higher var %s for ADDROF expression, \
                   storage classification is required" v)
-    | Some hvar ->
-      let value = Hvar.value hvar in
-      match Hvar.at_entry value with
-      | None -> Err.fail @@ Err.Core_c_error
-          (sprintf "expr_to_pure: higher var %s for ADDROF expression has no \
-                    storage classifier." v)
-      | Some storage -> match Hvar.memory storage with
-        | None -> Err.fail @@ Err.Core_c_error
-            (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
-                      not stored in a memory location." v)
-        | Some memory -> match Hvar.frame memory with
-          | Some (reg, off) ->
+    | Some hvar -> match Hvar.value hvar with
+      | Hvar.Storage {at_entry; _} -> begin
+        match at_entry with
+        | Hvar.(Memory (Frame (reg, off)))  ->
             let reg = T.Var.create info.word_sort @@ T.Var.Ident.of_string reg in
             let+ a =
               CT.add (CT.var reg)
                 (CT.int info.word_sort (Word.to_bitvec off)) in
             T.Value.forget a
-          | None -> match Hvar.global memory with
-            | None -> Err.fail @@ Err.Core_c_error
-                (sprintf "expr_to_pure: higher var %s for ADDROF expression \
-                          is  not stored in a frame or global memory." v)
-            | Some addr ->
-              let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
-              T.Value.forget a
+        | Hvar.(Memory (Global addr)) ->
+          let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
+          T.Value.forget a
+        | _ -> Err.fail @@ Err.Core_c_error
+            (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
+                      not stored in a memory location." v)
+      end
+      | _ -> Err.fail @@ Err.Core_c_error
+          (sprintf "expr_to_pure: higher var %s for ADDROF expression has no \
+                    storage classifier." v)
+
 
   let expr_to_pure info (e : Cabs.expression) (var_map : var_map) : unit pure =
     let rec aux e =

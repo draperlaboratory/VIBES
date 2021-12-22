@@ -70,44 +70,32 @@ let wp_params t : Wp_params.t = t.wp_params
 (* For displaying a higher var. *)
 let string_of_hvar (v : Hvar.t) : string =
   let string_of_loc (v_loc : Hvar.stored_in) : string =
-    match Hvar.register v_loc with
-    | Some reg -> reg
-    | None -> match Hvar.memory v_loc with
-      | None -> failwith "Higher var with storage must be either a \
-                          register or memory!"
-      | Some memory -> match Hvar.frame memory with
-        | Some (fp, offset) ->
-          Format.sprintf "[%s + %s]" fp (Bap.Std.Word.to_string offset)
-        | None -> match Hvar.global memory with
-          | None -> failwith "Higher var with memory storage must be \
-                              either a frame or a global!"
-          | Some addr -> Format.sprintf "[%s]" (Bap.Std.Word.to_string addr)
-  in
+    match v_loc with
+    | Hvar.Register reg -> reg
+    | Hvar.(Memory (Frame (fp, offset))) ->
+      Format.sprintf "[%s + %s]" fp (Bap.Std.Word.to_string offset)
+    | Hvar.(Memory (Global addr)) ->
+      Format.sprintf "[%s]" (Bap.Std.Word.to_string addr) in
   let string_of_value (name : string) (v : Hvar.value) : string =
-    match Hvar.at_entry v with
-    | Some v_loc ->
+    match v with
+    | Storage {at_entry; at_exit} -> begin
       let part_1 =
         Format.sprintf
           "      {\n        name: %s,\n        at-entry: %s\n"
-          name (string_of_loc v_loc) in
-      begin
-        match Hvar.at_exit v with
-        | None -> part_1 ^ "\n      }"
-        | Some v_loc_2 ->
-          let part_2 =
-            Format.sprintf
-              "        at-exit: %s\n      }"
-              (string_of_loc v_loc_2) in
-          String.concat ~sep:"" [part_1; part_2]
-      end
-    | None -> match Hvar.constant v with
-      | None -> failwith "Higher var must be either a constant or have \
-                          a storage classification!"
-      | Some const ->
-        Format.sprintf 
-          "      {\n        name: %s,\n        constant: %s}"
-          name (Bap.Std.Word.to_string const)
-  in
+          name (string_of_loc at_entry) in
+      match at_exit with
+      | None -> part_1 ^ "\n      }"
+      | Some v_loc_2 ->
+        let part_2 =
+          Format.sprintf
+            "        at-exit: %s\n      }"
+            (string_of_loc v_loc_2) in
+        String.concat ~sep:"" [part_1; part_2]
+    end
+    | Constant const ->
+      Format.sprintf 
+        "      {\n        name: %s,\n        constant: %s}"
+        name (Bap.Std.Word.to_string const) in
   string_of_value (Hvar.name v) (Hvar.value v)
 
 (* For displaying a patch. *)

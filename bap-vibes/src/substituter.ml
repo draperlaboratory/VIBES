@@ -37,38 +37,28 @@ let size_of_typ (typ : typ) (name : string) =
 
 let subst_name (tgt : Theory.target) (t : Hvar.t)
     (name : string) (typ : typ) : exp =
-  let value = Hvar.value t in
-  match Hvar.at_entry value with
-  | Some storage -> begin
-      match Hvar.register storage with
-      | Some name -> Bil.var @@ get_reg tgt name
-      | None -> match Hvar.memory storage with
-        | None -> failwith "Higher var with storage must be either a \
-                            register or memory!"
-        | Some memory ->
-          let mem = get_mem tgt |> Bil.var in
-          let endianness =
-            let e = Theory.Target.endianness tgt in
-            if Theory.Endianness.(e = le) then
-              LittleEndian
-            else
-              BigEndian
-          in
-          let size = size_of_typ typ name in
-          match Hvar.frame memory with
-          | Some (loc, off) ->
-            let loc = get_reg tgt loc in
-            Bil.load ~mem:mem ~addr:Bil.(var loc + int off) endianness size
-          | None -> match Hvar.global memory with
-            | None -> failwith "Higher var with memory storage must be \
-                                either a frame or a global!"
-            | Some addr ->
-              Bil.load ~mem ~addr:(Bil.int addr) endianness size
+  match Hvar.value t with
+  | Hvar.Storage {at_entry; _} -> begin
+      match at_entry with
+      | Hvar.Register name -> Bil.var @@ get_reg tgt name
+      | Hvar.Memory memory ->
+        let mem = get_mem tgt |> Bil.var in
+        let endianness =
+          let e = Theory.Target.endianness tgt in
+          if Theory.Endianness.(e = le) then
+            LittleEndian
+          else
+            BigEndian
+        in
+        let size = size_of_typ typ name in
+        match memory with
+        | Hvar.Frame (loc, off) ->
+          let loc = get_reg tgt loc in
+          Bil.load ~mem:mem ~addr:Bil.(var loc + int off) endianness size
+        | Hvar.Global addr ->
+          Bil.load ~mem ~addr:(Bil.int addr) endianness size
     end
-  | None -> match Hvar.constant value with
-    | None -> failwith "Higher var must be either a constant or have \
-                        a storage classification!"
-    | Some const -> Bil.int const
+  | Hvar.Constant const -> Bil.int const
 
 (* This replaces a variable with either the register or the memory
    read it corresponds to *)
@@ -100,49 +90,36 @@ let subst_def
   let name = Var.name lhs in
   match Hvar.find name h_vars with
   | None -> Def.with_rhs ir rhs
-  | Some t ->
-    begin
-      let value = Hvar.value t in
-      match Hvar.at_entry value with
-      | Some storage -> begin
-          match Hvar.register storage with
-          | Some name -> 
-            let lhs = get_reg tgt name in
-            Def.create ~tid:(Term.tid ir) lhs rhs
-          | None -> match Hvar.memory storage with
-            | None -> failwith "Higher var with storage must be either a \
-                                register or memory!"
-            | Some memory ->
-              let mem = get_mem tgt in
-              let lhs = mem in
-              let endianness =
-                let e = Theory.Target.endianness tgt in
-                if Theory.Endianness.(e = le) then
-                  LittleEndian
-                else
-                  BigEndian
-              in
-              let size = size_of_typ typ name in
-              let rhs = match Hvar.frame memory with
-                | Some (loc, off) ->
-                  let loc = get_reg tgt loc in
-                  Bil.
-                    (store ~mem:(var mem) ~addr:(var loc + int off)
-                       rhs endianness size)
-                | None -> match Hvar.global memory with
-                  | None -> failwith "Higher var with memory storage must be \
-                                      either a frame or a global!"
-                  | Some addr ->
-                    Bil.(store ~mem:(var mem) ~addr:(int addr) rhs endianness
-                           size)
-              in
-              Def.create ~tid:(Term.tid ir) lhs rhs
-        end
-      | None -> match Hvar.constant value with
-        | None -> failwith "Higher var must be either a constant or have \
-                            a storage classification!"
-        | Some const -> Def.create ~tid:(Term.tid ir) lhs (Bil.int const)
-    end
+  | Some t -> match Hvar.value t with
+    | Hvar.Storage {at_entry; _} -> begin
+        match at_entry with
+        | Hvar.Register name ->
+          let lhs = get_reg tgt name in
+          Def.create ~tid:(Term.tid ir) lhs rhs
+        | Hvar.Memory memory ->
+          let mem = get_mem tgt in
+          let lhs = mem in
+          let endianness =
+            let e = Theory.Target.endianness tgt in
+            if Theory.Endianness.(e = le) then
+              LittleEndian
+            else
+              BigEndian
+          in
+          let size = size_of_typ typ name in
+          let rhs = match memory with
+            | Hvar.Frame (loc, off) ->
+              let loc = get_reg tgt loc in
+              Bil.
+                (store ~mem:(var mem) ~addr:(var loc + int off)
+                   rhs endianness size)
+            | Hvar.Global addr ->
+              Bil.(store ~mem:(var mem) ~addr:(int addr)
+                     rhs endianness size) in
+          Def.create ~tid:(Term.tid ir) lhs rhs
+      end
+    | Hvar.Constant const ->
+      Def.create ~tid:(Term.tid ir) lhs (Bil.int const)
 
 let subst_label (tgt : Theory.target) (h_vars : Hvar.t list) (label : label) : label KB.t =
   match label with
