@@ -338,7 +338,10 @@ module Eval(CT : Theory.Core) = struct
         let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
         aux index_exp
       | VARIABLE x ->
-        let v = String.Map.find_exn var_map x in
+        let* v = match String.Map.find var_map x with
+          | Some v -> !!v
+          | None -> Err.(fail @@ Other (
+              sprintf "Core_c.expr_to_pure: var %s was not declared" x)) in
         let* vv = CT.var v in
         !!vv
       | CONSTANT c ->
@@ -378,6 +381,10 @@ module Eval(CT : Theory.Core) = struct
     let* empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl in
     let data d = CT.blk T.Label.null !!d !!empty_ctrl in
     let ctrl c = CT.blk T.Label.null !!empty_data !!c in
+    let find_var v = match String.Map.find var_map v with
+      | Some v -> !!v
+      | None -> Err.(fail @@ Other (
+          sprintf "Core_c.stmt_to_eff: var %s was not declared" v)) in
     let rec aux s : unit eff =
       match s with
       | NOP ->
@@ -385,7 +392,7 @@ module Eval(CT : Theory.Core) = struct
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, CALL (VARIABLE f, args))) ->
         let* arg_assignments = assign_args info var_map args in
-        let lval = String.Map.find_exn var_map lval in
+        let* lval = find_var lval in
         let* dst = T.Label.for_name ~package:"core-c" f in
         let* () = declare_call dst in
         let* call = CT.goto dst in
@@ -396,7 +403,7 @@ module Eval(CT : Theory.Core) = struct
         CT.seq !!call_blk !!post_blk
       | COMPUTATION (BINARY (ASSIGN, UNARY (MEMOF, VARIABLE lval), CALL (VARIABLE f, args))) ->
         let* arg_assignments = assign_args info var_map args in
-        let lval = String.Map.find_exn var_map lval in
+        let* lval = find_var lval in
         let* dst = T.Label.for_name ~package:"core-c" f in
         let* () = declare_call dst in
         let* call = CT.goto dst in
@@ -411,7 +418,7 @@ module Eval(CT : Theory.Core) = struct
         let* post_blk = data retval in
         CT.seq !!call_blk !!post_blk
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
-        let lval = String.Map.find_exn var_map lval in
+        let* lval = find_var lval in
         let* rval = expr_to_pure info rval var_map in
         let* assign = CT.set lval !!rval in
         data assign
@@ -475,7 +482,7 @@ module Eval(CT : Theory.Core) = struct
 
 
 
-  let add_def info (def : Cabs.definition) (var_map : var_map) : var_map =
+  let add_def info (def : Cabs.definition) (var_map : var_map) : var_map KB.t =
     match def with
     (* FIXME: handle bitwidth here? *)
     | DECDEF (_typ, _storage, names) ->
@@ -483,18 +490,18 @@ module Eval(CT : Theory.Core) = struct
         let ty = info.word_sort in
         T.Var.define ty s |> T.Var.forget
       in
-      List.fold names ~init:var_map
+      KB.return @@ List.fold names ~init:var_map
         ~f:(fun map name ->
             let (name, _, _, _) = name in
             String.Map.set map ~key:name ~data:(decl name))
-    | _ -> failwith "add_def:Expected DECDEF"
+    | _ -> Err.(fail @@ Other "Core_c.add_def: expected DECDEF")
 
-  let defs_to_map info (defs : Cabs.definition list) : var_map =
-    List.fold defs ~init:String.Map.empty
+  let defs_to_map info (defs : Cabs.definition list) : var_map KB.t =
+    KB.List.fold defs ~init:String.Map.empty
       ~f:(fun map def -> add_def info def map)
 
   let body_to_eff info ((defs, stmt) : Cabs.body) : unit eff =
-    let var_map = defs_to_map info defs in
+    let* var_map = defs_to_map info defs in
     stmt_to_eff info stmt var_map
 
   let c_patch_to_eff (hvars : Hvar.t list) (tgt : T.target)
