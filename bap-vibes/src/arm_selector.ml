@@ -794,7 +794,7 @@ struct
       let+ ss = select_elts lang arg_vars ss in
       ss @. s
 
-  and select_blk (tgt : Theory.target) (lang : Theory.language)
+  and select_blk (_tgt : Theory.target) (lang : Theory.language)
       (b : blk term) ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
     let arg_vars, ignored =
       Term.enum def_t b |> Seq.fold ~init:(([], Tid.Set.empty), false)

@@ -416,7 +416,7 @@ module Registers = struct
             | _ -> None) in
         match call with
         | None -> KB.return blk
-        | Some call ->
+        | Some _call ->
           let+ tid' = Theory.Label.fresh in
           let mem' = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
           let def = Def.create ~tid:tid' mem' @@ Var mem in

@@ -4,8 +4,15 @@
 
 open Bap_core_theory
 
+(** [provide_args dst args] marks [args] as the subroutine arguments that
+    are passed for the call to [dst]. *)
+val provide_args : Theory.label -> Bap.Std.var list -> unit KB.t
+
 (** [collect_args dst] returns the list of arguments needed by the call. *)
 val collect_args : Theory.label -> Bap.Std.var list KB.t
+
+(** [declare_call dst] marks [dst] as a subroutine. *)
+val declare_call : Theory.label -> unit KB.t
 
 (** [is_call dst] returns true if the label is indented to be the
     destination of a "call-like" instruction, i.e. respecting the

@@ -196,7 +196,7 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
       let+ ir =
         v |> Term.to_sequence blk_t
         |> Seq.to_list
-        |> Arm.ARM_Gen.select tgt lang
+        |> Arm.ARM_Gen.select tgt lang ~argument_tids:Tid.Set.empty
       in
       let result =
         ir |> Ir.dummy_reg_alloc
