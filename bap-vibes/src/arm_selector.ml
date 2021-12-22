@@ -473,7 +473,8 @@ module ARM_ops = struct
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
 
-  (* Help take advantage of the loc shape `reg + imm` *)
+  (* Special case of the `str` instruction where the address that we are
+     storing to is of the shape `base + off` (e.g. `str R0, [R1, #8]`). *)
   let str_base_off (mem : arm_pure) (value : arm_pure)
       (base : var) (off : word) : arm_pure KB.t =
     let res = create_temp mem_ty in
