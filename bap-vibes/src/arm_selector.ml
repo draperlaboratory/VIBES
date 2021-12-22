@@ -697,7 +697,8 @@ struct
     | BinOp (PLUS, Var a, Int w)
       when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
                  && thumb
-                 && Word.to_int_exn w <= 0xFF) -> var a + const w
+                 && Word.to_int_exn w <= 0xFF) ->
+      KB.return @@ binop Ops.add word_ty (var a) (const w)
     (* Hack for loading a large constant. *)
     | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
       when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
