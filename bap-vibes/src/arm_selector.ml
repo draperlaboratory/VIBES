@@ -545,11 +545,19 @@ module ARM_ops = struct
   (* Unconditional jump *)
   let goto ?is_call:(is_call=false) tgt arg_vars =
     let opcode = if is_call then Ops.bl else Ops.b in
+    (* XXX: should we figure out how to better describe the effects of the call?
+       Ideally, we should say that the call will clobber the memory and all
+       callee-save registers. We could probably do this at the BIR level, at
+       the return successor of each call site, where we make each effect
+       explicit. *)
     let tmp_branch = create_temp bit_ty in
     (* The arg vars that were set before making this call should be
        marked as dependencies for the callee (since they are the parameters!).
        We don't want them to get clobbered. *)
-    let arg_vars = List.map arg_vars ~f:(fun v -> Ir.Var (Ir.simple_var v)) in
+    let arg_vars = List.map arg_vars ~f:(fun v ->
+        match Var.typ v with
+        | Mem _ -> Ir.Void (Ir.simple_var v)
+        | _ -> Ir.Var (Ir.simple_var v)) in
     control (Ir.simple_op opcode (Void tmp_branch) ([tgt] @ arg_vars)) empty_eff
 
 
@@ -786,36 +794,21 @@ struct
       let+ ss = select_elts lang arg_vars ss in
       ss @. s
 
-  (* A little bit of a hacky way to grab the parameter registers that
-     were most recently set leading up to a `Call` instruction.
-     We're going to use these to signal that the callee depends on them,
-     so they shouldn't be reordered in such a way that they're clobbered. *)
-  and collect_arg_vars (tgt : Theory.target) (b : blk term) : var list =
-    let function_args =
-      Theory.Target.regs tgt ~roles:Theory.Role.Register.[function_argument] |>
-      Set.to_list |> List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
-      String.Set.of_list in
-    let tbl = String.Table.create () in
-    let has_call =
-      Term.enum jmp_t b |> Seq.exists ~f:(fun jmp ->
-          match Jmp.kind jmp with
-          | Call _ -> true
-          | _ -> false) in
-    if has_call then
-      Term.enum def_t b |> Seq.to_list_rev |>
-      List.iter ~f:(fun def ->
-          let lhs = Def.lhs def in
-          let name = reg_name lhs in
-          if Set.mem function_args name then
-            String.Table.change tbl name ~f:(function
-                | Some v -> Some v
-                | None -> Some lhs));
-    String.Table.data tbl
-
   and select_blk (tgt : Theory.target) (lang : Theory.language)
-      (b : blk term) : arm_eff KB.t =
-    let arg_vars = collect_arg_vars tgt b in
-    let+ b_eff = Blk.elts b |> Seq.to_list |> select_elts lang arg_vars in
+      (b : blk term) ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
+    let arg_vars, ignored =
+      Term.enum def_t b |> Seq.fold ~init:(([], Tid.Set.empty), false)
+        ~f:(fun ((acc, ignored), seen_mem) def ->
+            let lhs = Def.lhs def and tid = Term.tid def in
+            if Tid.Set.mem argument_tids tid
+            then (lhs :: acc, ignored), seen_mem
+            else match Var.typ lhs, Def.rhs def with
+              | Mem _, Var m when not seen_mem ->
+                (m :: acc, Tid.Set.add ignored tid), true
+              | _ -> (acc, ignored), seen_mem) |> fst in
+    let+ b_eff = Blk.elts b |> Seq.to_list |> List.filter ~f:(function
+        | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
+        | _ -> true) |> select_elts lang arg_vars in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
       Ir.simple_blk (Term.tid b)
@@ -832,17 +825,17 @@ struct
     }
 
   and select_blks (tgt : Theory.target) (lang : Theory.language)
-      (bs : blk term list) : arm_eff KB.t =
+      (bs : blk term list) ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
     match bs with
     | [] -> KB.return empty_eff
     | b :: bs ->
-      let* b = select_blk tgt lang b in
-      let+ bs = select_blks tgt lang bs in
+      let* b = select_blk tgt lang b ~argument_tids in
+      let+ bs = select_blks tgt lang bs ~argument_tids in
       b @. bs
 
   let select (tgt : Theory.target) (lang : Theory.language)
-      (bs : blk term list) : Ir.t KB.t =
-    let* bs = select_blks tgt lang bs in
+      (bs : blk term list) ~(argument_tids : Tid.Set.t) : Ir.t KB.t =
+    let* bs = select_blks tgt lang bs ~argument_tids in
     ir bs
 
 end

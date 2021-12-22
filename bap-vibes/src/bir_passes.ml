@@ -13,6 +13,7 @@ module Hvar = Higher_var
 type t = {
   ir : blk term list;
   exclude_regs : String.Set.t;
+  argument_tids : Tid.Set.t;
 }
 
 (* Helper functions *)
@@ -379,6 +380,48 @@ end
 (* Handle storage of registers in the presence of ABI information. *)
 module Registers = struct
 
+  (* Collect the tids where the arguments to calls are defined. *)
+  let collect_argument_tids (blks : blk term list) : Tid.Set.t KB.t =
+    KB.List.fold blks ~init:Tid.Set.empty ~f:(fun acc blk ->
+        let+ args =
+          Term.enum jmp_t blk |> KB.Seq.find_map ~f:(fun jmp ->
+              match Jmp.alt jmp with
+              | None -> KB.return None
+              | Some dst -> match Jmp.resolve dst with
+                | First tid ->
+                  let+ args = Core_c.collect_args tid in
+                  Some args
+                | Second _ -> KB.return None) in
+        match args with
+        | None -> acc
+        | Some args ->
+          Term.enum def_t blk |> Seq.to_list |>
+          List.fold_right ~init:(Var.Set.of_list args, acc)
+            ~f:(fun def (remaining, acc) ->
+                let lhs = Def.lhs def in
+                if Var.Set.mem remaining lhs then (
+                  Var.Set.remove remaining lhs,
+                  Tid.Set.add acc @@ Term.tid def
+                ) else (remaining, acc)) |> snd)
+
+  (* Create a fake memory assignment which is a pseudo-argument to
+     the function call. *)
+  let insert_new_mems_at_callsites (tgt : Theory.target)
+      (blks : blk term list) : blk term list KB.t =
+    let mem = Var.reify @@ Theory.Target.data tgt in
+    KB.List.map blks ~f:(fun blk ->
+        let call = Term.enum jmp_t blk |> Seq.find_map ~f:(fun jmp ->
+            match Jmp.kind jmp with
+            | Call call -> Some call
+            | _ -> None) in
+        match call with
+        | None -> KB.return blk
+        | Some call ->
+          let+ tid' = Theory.Label.fresh in
+          let mem' = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
+          let def = Def.create ~tid:tid' mem' @@ Var mem in
+          Term.append def_t blk def)
+  
   (* We shouldn't do any spilling if there are higher vars that depend
      on SP-relative locations in memory. *)
   let check_hvars_for_existing_stack_locations
@@ -540,6 +583,8 @@ let create (code : insn)
   (* BAP will give us the blks in such an order that the first one is the
      entry blk. *)
   let entry_blk = List.hd_exn ir in
+  let* argument_tids = Registers.collect_argument_tids ir in
+  let* ir = Registers.insert_new_mems_at_callsites tgt ir in
   let* ir = Shape.adjust_noreturn_exits ir in
   let* ir, hvars =
     Registers.spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
@@ -558,5 +603,5 @@ let create (code : insn)
   let* ir = Shape.reorder_blks ir in
   let ir = Opt.merge_adjacent ir in
   let+ ir = to_linear_ssa ir in
-  {ir; exclude_regs}
+  {ir; exclude_regs; argument_tids}
 

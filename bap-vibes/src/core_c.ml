@@ -64,6 +64,15 @@ module Err = Kb_error
 
 type var_map = unit Theory.var String.Map.t
 
+let arg_vars = KB.Class.property Theory.Program.cls "arg-vars" @@
+  KB.Domain.optional "arg-vars-domain" ~equal:(List.equal Var.equal)
+
+let provide_args (e : Theory.label) (args : var list) : unit KB.t =
+  KB.provide arg_vars e (Some args)
+
+let collect_args (e : Theory.label) : var list KB.t =
+  let+ args = KB.collect arg_vars e in
+  Option.value ~default:[] args
 
 (* We need to mark calls as such in the KB, so that the instruction selector
    knows to lower to a call instead of a normal jump. *)
@@ -362,15 +371,16 @@ module Eval(CT : Theory.Core) = struct
   let empty_data = T.Effect.empty (T.Effect.Sort.data "C_NOP")
 
   let assign_args info (var_map : var_map)
-      (args : Cabs.expression list) : T.data eff KB.t =
+      (args : Cabs.expression list) : (T.data eff * var list) KB.t =
     let* args =
       KB.List.map args ~f:(fun e -> KB.return @@ expr_to_pure info e var_map) in
     try
       List.mapi args ~f:(fun i a ->
           let r = List.nth_exn info.arg_vars i in
-          CT.set r a)
-      |> KB.List.fold_right ~init:!!empty_data
-        ~f:(fun assn acc -> KB.return @@ CT.seq assn acc)
+          CT.set r a, Var.reify r)
+      |> KB.List.fold_right ~init:(!!empty_data, [])
+        ~f:(fun (assn, r) (acc_eff, acc_args) ->
+            KB.return (CT.seq assn acc_eff, r :: acc_args))
     with _ ->
       Err.fail @@
       Err.Core_c_error "Maximum number of arguments for function call \
@@ -391,9 +401,10 @@ module Eval(CT : Theory.Core) = struct
         KB.return empty_blk
       (* FIXME: handle all "assignment-like" operations in a seperate function *)
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, CALL (VARIABLE f, args))) ->
-        let* arg_assignments = assign_args info var_map args in
+        let* arg_assignments, args = assign_args info var_map args in
         let* lval = find_var lval in
         let* dst = T.Label.for_name ~package:"core-c" f in
+        let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* call_blk =
@@ -402,9 +413,10 @@ module Eval(CT : Theory.Core) = struct
         let* post_blk = data retval in
         CT.seq !!call_blk !!post_blk
       | COMPUTATION (BINARY (ASSIGN, UNARY (MEMOF, VARIABLE lval), CALL (VARIABLE f, args))) ->
-        let* arg_assignments = assign_args info var_map args in
+        let* arg_assignments, args = assign_args info var_map args in
         let* lval = find_var lval in
         let* dst = T.Label.for_name ~package:"core-c" f in
+        let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* call_blk =
@@ -427,15 +439,17 @@ module Eval(CT : Theory.Core) = struct
          In that case, we need a new concrete syntax for jumps.
       *)
       | COMPUTATION (CALL (CONSTANT(CONST_INT s), args)) ->
-        let* arg_assignments = assign_args info var_map args in
+        let* arg_assignments, args = assign_args info var_map args in
         let* dst = T.Label.for_addr ~package:"core-c" @@ Bitvec.(!$s) in
+        let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* call_blk = CT.blk T.Label.null arg_assignments !!call in
         !!call_blk
       | COMPUTATION (CALL (VARIABLE f, args)) ->
-        let* arg_assignments = assign_args info var_map args in
+        let* arg_assignments, args = assign_args info var_map args in
         let* dst = T.Label.for_name ~package:"core-c" f in
+        let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
         let* call_blk = CT.blk T.Label.null arg_assignments !!call in

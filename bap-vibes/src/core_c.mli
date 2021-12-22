@@ -4,8 +4,8 @@
 
 open Bap_core_theory
 
-(** [declare_call dst] tags [dst] as being a function call with bells and whistles. *)
-val declare_call : Theory.label -> unit KB.t
+(** [collect_args dst] returns the list of arguments needed by the call. *)
+val collect_args : Theory.label -> Bap.Std.var list KB.t
 
 (** [is_call dst] returns true if the label is indented to be the
     destination of a "call-like" instruction, i.e. respecting the
