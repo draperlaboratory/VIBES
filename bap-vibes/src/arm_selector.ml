@@ -282,7 +282,7 @@ module ARM_ops = struct
     let _ble = op "ble"
     let _blt = op "blt"
     let _bx = op "bx"
-    
+
   end
 
   let create_temp ty =
