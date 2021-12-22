@@ -547,7 +547,7 @@ module ARM_ops = struct
     let opcode = if is_call then Ops.bl else Ops.b in
     (* XXX: should we figure out how to better describe the effects of the call?
        Ideally, we should say that the call will clobber the memory and all
-       callee-save registers. We could probably do this at the BIR level, at
+       caller-save registers. We could probably do this at the BIR level, at
        the return successor of each call site, where we make each effect
        explicit. *)
     let tmp_branch = create_temp bit_ty in
