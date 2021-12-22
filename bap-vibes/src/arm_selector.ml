@@ -700,7 +700,10 @@ struct
           && thumb
           && Word.to_int_exn w <= 0xFF) ->
       KB.return @@ binop Ops.add word_ty (var a) (const w)
-    (* Hack for loading a large constant. *)
+    (* Hack for loading a large constant. This form is generated
+       by a pass in `Bir_passes` which splits operations, which
+       load constants larger than 65535, into two separate operations,
+       so that the selector can generate a `movw/movt` idiom. *)
     | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
     | BinOp (OR, BinOp (LSHIFT, Int w, Int s), Var a)
       when Core_kernel.(
