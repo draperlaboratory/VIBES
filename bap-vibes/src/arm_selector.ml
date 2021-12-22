@@ -301,10 +301,10 @@ module ARM_ops = struct
      use. Currently doesn't work if variables are instantiated
      with spilled registers! Can be fixed by having seperate Variable
      constructors for spilled and non-spilled registers. *)
-  let arm_mov arg1 arg2 =
+  let arm_mov (arg1 : Ir.operand) (arg2 : arm_pure) : arm_eff KB.t =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
-    | Ir.Var _, Ir.Var _ when not (List.is_empty arg2_sem.current_data) ->
+    | Ir.Var _, Ir.Var _ when not @@ List.is_empty arg2_sem.current_data ->
       (* FIXME: absolute hack! if we have vars here, we can assume
          that the last operation assigned to a temporary, and we can
          just replace that temporary with the known destination, and
@@ -313,8 +313,8 @@ module ARM_ops = struct
         match arg2_sem.current_data with
         | [] -> assert false (* excluded by the guard above *)
         | op :: ops ->
-          let op = { op with Ir.lhs = [arg1] } in
-          {arg2_sem with current_data = op :: ops }
+          let op = {op with Ir.lhs = [arg1]} in
+          KB.return {arg2_sem with current_data = op :: ops}
       end
     | Ir.Var _, Ir.Var _
     | Ir.Var _, Ir.Const _ ->
@@ -325,17 +325,31 @@ module ARM_ops = struct
         match arg2_var with
         | Ir.Const w when Word.to_int_exn w <= 0xFF ->
           let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
-          instr mov arg2_sem
+          KB.return @@ instr mov arg2_sem
         | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
           let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
-          instr mov arg2_sem
-        | Ir.Const _ ->
-          failwith "arm_mov: too large constant"
+          KB.return @@ instr mov arg2_sem
+        | Ir.Const w ->
+          Err.(fail @@ Other (
+              sprintf "arm_mov: too large constant %s" @@ Word.to_string w))
         | _ ->
           let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
-          instr mov arg2_sem
+          KB.return @@ instr mov arg2_sem
       end
-    | _ -> failwith "arm_mov: unexpected arguments!"
+    | Ir.Void _, Ir.Void _ when not @@ List.is_empty arg2_sem.current_data ->
+      (* Same hack as above, but with void operands. *)
+      begin
+        match arg2_sem.current_data with
+        | [] -> assert false
+        | op :: ops ->
+          let op = {op with Ir.lhs = [arg1]} in
+          KB.return {arg2_sem with current_data = op :: ops}
+      end
+    | _ ->
+      Err.(fail @@ Other (
+          sprintf "arm_mov: unexpected arguments (%s, %s)"
+            (Ir.pretty_operand arg1)
+            (Ir.pretty_operand arg2_var)))
 
   let ( := ) x y = arm_mov x y
 
@@ -370,7 +384,7 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
-  let (+) arg1 arg2 =
+  let (+) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     (* If constant arg2 is wider than 3 bits -> emit addw *)
     let { op_val; _ } = arg2 in
     let fits_in_3 w =
@@ -381,68 +395,82 @@ module ARM_ops = struct
     in
     match op_val with
     | Const w when not (fits_in_3 w) ->
-      binop Ops.addw word_ty arg1 arg2
+      KB.return @@ binop Ops.addw word_ty arg1 arg2
     | _ ->
-      binop Ops.add word_ty arg1 arg2
+      KB.return @@ binop Ops.add word_ty arg1 arg2
 
-  let ( * ) arg1 arg2 = binop Ops.mul word_ty arg1 arg2
+  let ( * ) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.mul word_ty arg1 arg2
 
-  let (-) arg1 arg2 = binop Ops.sub word_ty arg1 arg2
+  let (-) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.sub word_ty arg1 arg2
 
-  let (/) arg1 arg2 = binop Ops.sdiv word_ty arg1 arg2
+  let (/) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.sdiv word_ty arg1 arg2
 
-  let udiv arg1 arg2 = binop Ops.udiv word_ty arg1 arg2
+  let udiv (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.udiv word_ty arg1 arg2
 
-  let shl _signed arg1 arg2 = binop Ops.lsl_ word_ty arg1 arg2
+  let shl (_signed : arm_pure)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.lsl_ word_ty arg1 arg2
 
-  let shr signed arg1 arg2 =
-    let b =
+  let shr (signed : arm_pure)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    let+ b =
       match signed.op_val with
-      | Ir.Const w -> (Word.to_int_exn w) <> 0
+      | Ir.Const w -> KB.return ((Word.to_int_exn w) <> 0)
       (* FIXME: Not sure what to do here; generally shifts are done by
          constant amounts, and at any rate it requires a bit of work
          to implement in ARM. Most likely the right thing to do is
          fail gracefully.  *)
-      | _ -> failwith "Arm_gen.shr: arg2 non-constant"
+      | _ -> Err.(fail @@ Other (
+          sprintf "Arm_gen.shr: arg2 non-constant: %s"
+            (Ir.pretty_operand signed.op_val)))
     in
     if b then
       binop Ops.asr_ word_ty arg1 arg2
     else
       binop Ops.lsr_ word_ty arg1 arg2
 
-  let ldr_op bits =
+  let ldr_op (bits : int) : Ir.opcode KB.t =
     if bits = 32 then
-      Ops.ldr
+      KB.return Ops.ldr
     else if bits = 16 then
-      Ops.ldrh
+      KB.return Ops.ldrh
     else if bits = 8 then
-      Ops.ldrb
+      KB.return Ops.ldrb
     else
-      failwith "Arm_selector.ldr: Loading a bit-width that is not 8, 16 or 32!"
+      Err.(fail @@ Other (
+          sprintf "Arm_selector.ldr: Loading a bit-width that is not \
+                   8, 16 or 32 (got %d)!" bits))
 
-  let ldr bits mem loc =
+  let ldr (bits : int) (mem : arm_pure) (loc : arm_pure) : arm_pure KB.t =
+    let+ ldr = ldr_op bits in
     (* Update the semantics of loc with those of mem *)
-    binop (ldr_op bits) word_ty mem loc
+    binop ldr word_ty mem loc
 
-  let str lhs mem value loc =
+  let str (mem : arm_pure) (value : arm_pure) (loc : arm_pure) : arm_pure KB.t =
     let res = create_temp mem_ty in
+    let lhs = Ir.Void (create_temp mem_ty) in
     let {op_val = loc_val; op_eff = loc_sem} = loc in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
-    let ops =
+    let+ ops =
       begin
         match value_val with
         | Var _ ->
           let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
-          [op]
+          KB.return [op]
         | Const _ ->
           let tmp = Ir.Var (create_temp word_ty) in
           let mov = Ir.simple_op Ops.mov tmp [value_val] in
           let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
-          [op; mov]
+          KB.return [op; mov]
         | _ ->
-          let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
-          failwith @@ Format.sprintf "str: unsupported operand %s" op_str
+          Err.(fail @@ Other (
+              sprintf "str: unsupported `value` operand %s" @@
+              Ir.pretty_operand value_val))
       end
     in
     (* Again, a little cowboy instruction ordering *)
@@ -451,26 +479,29 @@ module ARM_ops = struct
     {op_val = Void res; op_eff = sem}
 
   (* Help take advantage of the loc shape `reg + imm` *)
-  let str_base_off lhs mem value base off =
+  let str_base_off (mem : arm_pure) (value : arm_pure)
+      (base : var) (off : word) : arm_pure KB.t =
     let res = create_temp mem_ty in
+    let lhs = Ir.Void (create_temp mem_ty) in
     let {op_val = value_val; op_eff = value_sem} = value in
     let {op_val = mem_val; op_eff = mem_sem} = mem in
     let base = Ir.Var (Ir.simple_var base) in
     let off = Ir.Const off in
-    let ops =
+    let+ ops =
       begin
         match value_val with
         | Var _ ->
           let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
-          [op]
+          KB.return [op]
         | Const _ ->
           let tmp = Ir.Var (create_temp word_ty) in
           let mov = Ir.simple_op Ops.mov tmp [value_val] in
           let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
-          [op; mov]
+          KB.return [op; mov]
         | _ ->
-          let op_str = Ir.sexp_of_operand value_val |> Sexp.to_string in
-          failwith @@ Format.sprintf "str: unsupported operand %s" op_str
+          Err.(fail @@ Other (
+              sprintf "str_base_off: unsupported `value` operand %s" @@
+              Ir.pretty_operand value_val))
       end
     in
     (* Again, a little cowboy instruction ordering *)
@@ -478,13 +509,17 @@ module ARM_ops = struct
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
   
-  let (&&) a b = binop Ops.and_ word_ty a b
+  let (&&) (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.and_ word_ty a b
 
-  let (||) a b = binop Ops.orr word_ty a b
+  let (||) (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.orr word_ty a b
 
-  let xor a b = binop Ops.eor word_ty a b
+  let xor (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.eor word_ty a b
 
-  let equals arg1 arg2 = binop Ops.sub word_ty arg1 arg2
+  let equals (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.sub word_ty arg1 arg2
 
   (* Intuitively we want to generate:
 
@@ -545,31 +580,29 @@ module ARM_Gen =
 struct
   open ARM_ops
 
-  let sel_binop (o : binop) : arm_pure -> arm_pure -> arm_pure =
+  let sel_binop (o : binop) : (arm_pure -> arm_pure -> arm_pure KB.t) KB.t =
     match o with
-    | PLUS -> (+)
-    | MINUS -> (-)
-    | TIMES -> ( * )
-    | DIVIDE -> udiv
-    | SDIVIDE -> (/)
-    | LSHIFT -> shl (const (Word.zero 32))
-    | RSHIFT -> shr (const (Word.zero 32))
-    | ARSHIFT ->  shr (const (Word.one 32))
-    | AND -> (&&)
-    | OR -> (||)
-    | EQ | NEQ -> equals
-    | XOR -> xor
+    | PLUS -> KB.return (+)
+    | MINUS -> KB.return (-)
+    | TIMES -> KB.return ( * )
+    | DIVIDE -> KB.return udiv
+    | SDIVIDE -> KB.return (/)
+    | LSHIFT -> KB.return @@ shl (const (Word.zero 32))
+    | RSHIFT -> KB.return @@ shr (const (Word.zero 32))
+    | ARSHIFT ->  KB.return @@ shr (const (Word.one 32))
+    | AND -> KB.return (&&)
+    | OR -> KB.return (||)
+    | EQ | NEQ -> KB.return equals
+    | XOR -> KB.return xor
     | MOD
     | SMOD
     | LT
     | LE
     | SLT
     | SLE ->
-      let err =
-        Format.sprintf "sel_binop: unsupported operation %s"
-          (Bil.string_of_binop o)
-      in
-      failwith err
+      Err.(fail @@ Other (
+          Format.sprintf "sel_binop: unsupported operation %s"
+            (Bil.string_of_binop o)))
 
   let get_const (v : 'a Theory.Bitv.t Theory.value) : word option =
     let bil = KB.Value.get Exp.slot v in
@@ -588,9 +621,8 @@ struct
     | None -> Ir.Label tid
     | Some addr -> Ir.Offset (Bitvec.to_int addr |> Word.of_int ~width:32)
 
-  open KB.Syntax
-  
   let get_dst (jmp : jmp term) : Ir.operand option KB.t =
+    let open KB.Syntax in
     match Jmp.dst jmp, Jmp.alt jmp with
     | Some dst, None ->
       begin
@@ -603,7 +635,7 @@ struct
       begin
         match Jmp.resolve dst with
         | First dst -> get_label dst >>| Option.return
-        | Second c -> KB.return @@  Option.map
+        | Second c -> KB.return @@ Option.map
             ~f:(fun w -> Ir.Offset w) (get_const c)
       end
     | _ -> KB.return @@ None
@@ -613,81 +645,95 @@ struct
     | NOT -> assert false
     | NEG -> assert false
 
-  (* lhs_mem is for when we have a store operation. This is the destination
-     memory of the operation. *)
-  let rec select_exp ?lhs_mem (lang : Theory.language) (e : Bil.exp) : arm_pure =
+  (* `lhs` is the left-hand side of the Def term that we are selecting from
+     (if any). The selector can make more informed decisions with this info. *)
+  let rec select_exp ?(lhs : var option = None)
+      (lang : Theory.language) (e : Bil.exp) : arm_pure KB.t =
+    let* thumb = is_thumb lang in
     match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
-      let mem = select_mem lang mem in
-      let a = select_exp lang a in
+      let* mem = select_mem lang mem in
+      let* ldr = ldr_op @@ Size.in_bits size in
+      let+ a = select_exp lang a in
       let w = const w in
-      ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
+      ternop ldr word_ty mem a w
     | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
-      let mem = select_mem lang mem in
-      let a = select_exp lang a in
+      let* mem = select_mem lang mem in
+      let* ldr = ldr_op @@ Size.in_bits size in
+      let+ a = select_exp lang a in
       let w = const (Word.neg w) in
-      ternop (ldr_op @@ Size.in_bits size) word_ty mem a w
+      ternop ldr word_ty mem a w
     | Load (mem, loc, _, size) ->
-      let mem = select_exp lang mem in
-      let loc = select_exp lang loc in
+      let* mem = select_exp lang mem in
+      let* loc = select_exp lang loc in
       ldr (Size.in_bits size) mem loc
     | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , _size) ->
-      let mem = select_mem lang mem in
-      let value = select_exp lang value in
-      let lhs = Option.value_exn lhs_mem
-          ~message:"Expected LHS operand for store" in
-      str_base_off lhs mem value a w
+      let* mem = select_mem lang mem in
+      let* value = select_exp lang value in
+      str_base_off mem value a w
     | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , _size) ->
-      let mem = select_mem lang mem in
-      let value = select_exp lang value in
-      let lhs = Option.value_exn lhs_mem
-          ~message:"Expected LHS operand for store" in
-      str_base_off lhs mem value a Word.(-w)
+      let* mem = select_mem lang mem in
+      let* value = select_exp lang value in
+      str_base_off mem value a Word.(-w)
     | Store (mem, loc, value, _, _size) ->
-      let mem = select_exp lang mem in
-      let loc = select_exp lang loc in
-      let value = select_exp lang value in
-      let lhs = Option.value_exn lhs_mem
-          ~message:"Expected LHS operand for store" in
+      let* mem = select_exp lang mem in
+      let* loc = select_exp lang loc in
+      let* value = select_exp lang value in
       (* We have to swap the arguments here, since ARM likes the value
-       first, and the location second *)
-      str lhs mem value loc
+         first, and the location second *)
+      str mem value loc
     | BinOp (PLUS, a, Int w) when Word.(w = zero 32) ->
       select_exp lang a
     | BinOp (MINUS, a, Int w) when Word.(w = zero 32) ->
       select_exp lang a
     (* FIXME: this is amost certainly wrong *)
     | BinOp (PLUS, a, b) when Exp.(a = b) ->
-      let a = select_exp lang a in
+      let* a = select_exp lang a in
       let zero = const (Word.zero 32) in
       let one = const (Word.one 32) in
       shl zero a one
+    (* Thumb 2 encoding allows adding an 8-bit immediate, when
+       source and destination registers are the same. *)
+    | BinOp (PLUS, Var a, Int w)
+      when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
+                 && thumb
+                 && Word.to_int_exn w <= 0xFF) -> var a + const w
+    (* Hack for loading a large constant. *)
+    | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
+      when Caml.(Core_kernel.Option.exists lhs ~f:(Linear_ssa.same a)
+                 && Word.(s = of_int ~width:32 16)) ->
+      let op = Ir.simple_op Ops.movt
+          (Ir.Var (create_temp word_ty))
+          [Ir.Var (Ir.simple_var a); Ir.Const w] in
+      KB.return {
+        op_val = Ir.Var (create_temp word_ty);
+        op_eff = instr op empty_eff}
     | BinOp (o, a, b) ->
-      let a = select_exp lang a in
-      let b = select_exp lang b in
-      sel_binop o a b
+      let* a = select_exp lang a in
+      let* b = select_exp lang b in
+      let* o = sel_binop o in
+      o a b
     | UnOp (o, a) ->
-      let a = select_exp lang a in
+      let+ a = select_exp lang a in
       sel_unop o a
     | Var v ->
       begin
         match Var.typ v with
-        | Imm _ -> var v
-        | Mem _ -> mem v
-        | Unk ->
-          failwith @@
-          Format.asprintf
-            "select_exp: encountered variable %a of unknown type" Var.pp v
+        | Imm _ -> KB.return @@ var v
+        | Mem _ -> KB.return @@ mem v
+        | Unk -> Err.(fail @@ Other (
+            Format.asprintf "select_exp: encountered variable %a of \
+                             unknown type" Var.pp v))
       end
-    | Int w -> const w
-    | Cast (_, _, _) -> failwith "select_exp: Cast is unsupported!"
-    | Let (_, _, _) -> failwith "select_exp: Let is unsupported!"
-    | Unknown (_, _) -> failwith "select_exp: Unknown is unsupported!"
-    | Ite (_, _, _) -> failwith "select_exp: Ite is unsupported!"
-    | Extract (_, _, _) -> failwith "select_exp: Extract is unsupported!"
-    | Concat (_, _) -> failwith "select_exp: Concat is unsupported!"
+    | Int w -> KB.return @@ const w
+    | Cast (_, _, _) -> Err.(fail @@ Other "select_exp: Cast is unsupported!")
+    | Let (_, _, _) -> Err.(fail @@ Other "select_exp: Let is unsupported!")
+    | Unknown (_, _) -> Err.(fail @@ Other "select_exp: Unknown is unsupported!")
+    | Ite (_, _, _) -> Err.(fail @@ Other "select_exp: Ite is unsupported!")
+    | Extract (_, _, _) -> Err.(fail @@ Other "select_exp: Extract is unsupported!")
+    | Concat (_, _) -> Err.(fail @@ Other "select_exp: Concat is unsupported!")
 
-  and select_mem (lang : Theory.language) (m : Bil.exp) : arm_pure =
+  and select_mem (lang : Theory.language) (m : Bil.exp) : arm_pure KB.t =
     select_exp lang m
 
   and select_stmt (lang : Theory.language) (arg_vars : var list) (s : Blk.elt) : arm_eff KB.t =
@@ -698,65 +744,42 @@ struct
       begin
         match Var.typ lhs with
         | Imm _ | Unk ->
-          begin
-            let* thumb = is_thumb lang in
-            match rhs with
-            | BinOp (PLUS, Var a, Int w)
-              when Caml.(Linear_ssa.same a lhs
-                         && thumb
-                         && Word.to_int_exn w <= 0xFF) ->
-              (* Thumb 2 encoding allows adding an 8-bit immediate, when
-                 source and destination registers are the same. *)
-              let arg1 = Ir.Var (Ir.simple_var lhs) in
-              let arg2 = Ir.Var (Ir.simple_var a) in
-              let arg3 = Ir.Const w in
-              let add = Ir.simple_op Ops.add arg1 [arg2; arg3] in
-              KB.return @@ instr add empty_eff
-            | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
-              when Caml.(Linear_ssa.same a lhs
-                         && Word.(s = of_int ~width:32 16)) ->
-              (* Hack for loading a large constant. *)
-              let arg1 = Ir.Var (Ir.simple_var lhs) in
-              let arg2 = select_exp lang (Int w) in
-              let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-              let movt = Ir.simple_op Ops.movt arg1 [Ir.Var (Ir.simple_var a); arg2_val] in
-              KB.return @@ instr movt arg2_sem
-            | _ ->
-              let lhs = Ir.Var (Ir.simple_var lhs) in
-              let rhs = select_exp lang rhs in
-              KB.return (lhs := rhs)
-          end
+          let* rhs = select_exp lang rhs ~lhs:(Some lhs) in
+          let lhs = Ir.Var (Ir.simple_var lhs) in
+          lhs := rhs
         | Mem _ ->
           let lhs_mem = Ir.Void (Ir.simple_var lhs) in
-          let rhs = select_exp lang rhs ~lhs_mem in
-          KB.return rhs.op_eff
+          let* rhs = select_exp lang rhs in
+          lhs_mem := rhs
       end
     | `Jmp jmp ->
+      let open KB.Syntax in
       let cond = Jmp.cond jmp in
       let is_call = is_call jmp in
-      get_dst jmp >>| begin function
-        | None ->
-          let err = Format.asprintf "Unexpected branch: %a" Jmp.pp jmp in
-          failwith err
+      get_dst jmp >>= begin function
+        | None -> Err.(fail @@ Other (
+            Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
         (* NOTE: branches if cond is zero *)
         | Some dst -> match cond with
           | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
-            let cond = select_exp lang cond in
+            let+ cond = select_exp lang cond in
             br ~is_call:is_call cond dst lang
           | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
-            let cond = select_exp lang cond in
+            let+ cond = select_exp lang cond in
             br ~is_call:is_call cond dst lang ~neg:true
           | Int w when Word.(w <> zero 32) ->
-            goto ~is_call:is_call dst arg_vars
+            KB.return @@ goto ~is_call:is_call dst arg_vars
           | cond ->
             (* XXX: this is a hack *)
             let neg = match cond with
               | BinOp (NEQ, _, _) -> true
               | _ -> false in
-            let cond = select_exp lang cond in
+            let+ cond = select_exp lang cond in
             br ~is_call:is_call cond dst lang ~neg
       end
-    | `Phi _ -> failwith "select_stmt: Phi nodes are unsupported!"
+    | `Phi _ ->
+      Err.(fail @@ Other
+             "Arm_selector.select_stmt: Phi nodes are unsupported!")
 
   and select_elts (lang : Theory.language)
       (arg_vars : var list) (elts : Blk.elt list) : arm_eff KB.t =
@@ -907,8 +930,8 @@ module Pretty = struct
           [Neither; Open; Close]
         else begin
           failwith @@
-          sprintf "mk_loc_list: expected to receive 2 or 3 arguments, got %d (op = %s)"
-            len op
+          sprintf "mk_loc_list: expected to receive 2 or 3 arguments, \
+                   got %d (op = %s)" len op
         end
       end
     else
@@ -919,7 +942,10 @@ module Pretty = struct
     (* Don't print the head of the operand if it's void. *)
     let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
     let rhs = if String.(op = "movt") then List.tl_exn rhs else rhs in
-    let l = if String.(op = "str") then rm_void_args rhs else rm_void_args (lhs @ rhs) in
+    let l =
+      if String.(op = "str")
+      then rm_void_args rhs
+      else rm_void_args (lhs @ rhs) in
     let is_loc_list = mk_loc_list op l in
     let l = List.zip_exn is_loc_list l in
     let all_str =
