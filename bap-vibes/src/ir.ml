@@ -563,9 +563,7 @@ let is_defined (defs : OpSet.t) (v : operand) : bool =
         | _ -> is_def)
 
 let add_in_vars_blk (b : blk) : blk =
-  (* We only grab data here, since control effects don't influence
-     dependencies. *)
-  let ops = b.data in
+  let ops = b.data @ b.ctrl in
   let collect_vars_op_list l =
     List.fold l ~init:OpSet.empty
       ~f:(fun set o ->
