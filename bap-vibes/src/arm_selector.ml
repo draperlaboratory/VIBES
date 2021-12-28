@@ -721,11 +721,14 @@ struct
     | BinOp (TIMES, Int w, x) | BinOp (TIMES, x, Int w) ->
       let* x = select_exp lang x in
       let i = Word.to_int_exn w in
+      (* Power of two can be simplified to a left shift. *)
       if Int.is_pow2 i then
-        (* Power of two can be simplified to a left shift. *)
         let zero = const (Word.zero 32) in
-        let sh = const (Word.of_int ~width:32 @@ Int.ctz i) in
-        shl zero x sh
+        let sh = Int.ctz i in
+        (* Greater than 31 is not encodable, but that also just means we're
+           shifting out every bit, so the result is zero. *)
+        if sh > 31 then KB.return zero
+        else shl zero x @@ const @@ Word.of_int sh ~width:32
       else
         (* `mul` requires all operands to be registers. *)
         let tmp = create_temp word_ty in
