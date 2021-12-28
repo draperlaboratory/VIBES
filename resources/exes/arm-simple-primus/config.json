@@ -1,0 +1,25 @@
+{
+  "max-tries": 3,
+  "wp-params": {
+    "func": "main",
+    "postcond" : "(assert (= (bvadd R0_mod #x00000002) R0_orig))"
+  },
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "lisp-code" : "ret-3",
+     "patch-point" : "0x103d4",
+     "patch-size" : 8,
+     "patch-vars": [
+         {"name": "retvar",
+	  "at-entry": {
+              "stored-in": "register",
+              "register": "R0"
+          },
+          "at-exit": {
+              "stored-in": "register",
+	      "register": "R12"
+          }}
+     ]
+    }
+  ]
+}

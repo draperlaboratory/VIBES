@@ -69,9 +69,10 @@ let create_patches
         ~addr:(Config.patch_point p)
     in
     let* () = Data.Patch.set_patch_name obj (Some patch_name) in
+    let* () = Data.Patch.set_patch_code obj (Some (Config.patch_code p)) in
     let* () = match Config.patch_code p with
-      | CCode ccode -> Data.Patch.set_patch_code obj (Some ccode)
       | ASMCode asmcode -> Data.Patch.set_assembly obj (Some [asmcode])
+      | _ -> KB.return ()
     in
     let* () = Data.Patch.set_patch_point obj (Some (Config.patch_point p)) in
     let* () = Data.Patch.set_patch_size obj (Some (Config.patch_size p)) in

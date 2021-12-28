@@ -5,7 +5,7 @@ open !Core_kernel
 module Hvar = Higher_var
 module Wp_params = Bap_wp.Run_parameters
 
-type patch_code = CCode of Cabs.definition | ASMCode of string
+type patch_code = CCode of Cabs.definition | ASMCode of string | PrimusCode of string
 
 (* A type to represent a patch. *)
 type patch =
@@ -104,7 +104,8 @@ let string_of_hvar (v : Hvar.t) : string =
 let patch_to_string (p : patch) : string =
   let code = match p.patch_code with
   | CCode ccode -> Utils.print_c Cprint.print_def ccode
-  | ASMCode asmcode -> asmcode in
+  | ASMCode asmcode -> asmcode
+  | PrimusCode funname -> funname in
   let h_vars =
     String.concat ~sep:"\n" (List.map p.patch_vars ~f:string_of_hvar)
   in

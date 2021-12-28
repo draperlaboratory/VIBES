@@ -5,6 +5,7 @@ open Bap_knowledge
 open Knowledge.Syntax
 open Core_kernel
 open Bap_core_theory
+open Bap_primus.Std
 
 module KB = Knowledge
 open KB.Let
@@ -15,15 +16,28 @@ let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   let module CParser = Core_c.Eval(Core) in
   Data.Patch.init_sem patch >>= fun () ->
   Data.Patch.get_patch_name_exn patch >>= fun name ->
-  Data.Patch.get_patch_code_exn patch >>= fun code ->
   Events.(send @@ Info (Printf.sprintf "Patch %s" name));
-  let code_str = Utils.print_c Cprint.print_def code in
-  Events.(send @@ Info (Printf.sprintf "%s" code_str));
-
+  Data.Patch.get_patch_code_exn patch >>= fun code ->
   (* Get the patch (as BIR). *)
-  let* hvars = Data.Patch.get_patch_vars_exn patch in
-  let* bir = CParser.c_patch_to_eff hvars tgt code in
-
+  let* hvars = Data.Patch.get_patch_vars_exn patch in  
+  let* bir = match code with
+    | CCode code -> begin
+            let code_str = Utils.print_c Cprint.print_def code in
+            Events.(send @@ Info (Printf.sprintf "%s" code_str));
+            CParser.c_patch_to_eff hvars tgt code
+            end
+    | PrimusCode name -> begin
+      Primus.Lisp.Unit.create tgt >>= fun unit ->
+      KB.Object.scoped Theory.Program.cls @@ fun obj ->
+      KB.sequence [
+        KB.provide Theory.Label.unit obj (Some unit);
+        (* KB.provide Theory.Label.addr obj addr; *)
+        KB.provide Primus.Lisp.Semantics.name obj (Some (KB.Name.create name));
+      ] >>= fun () ->
+      KB.collect Theory.Semantics.slot obj
+      end
+    | ASMCode _asm -> Kb_error.fail (Kb_error.Not_implemented "yolo")
+    in
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
   let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
