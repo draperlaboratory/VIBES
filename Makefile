@@ -52,7 +52,7 @@ plugin.uninstall:
 # TEST
 #####################################################
 
-test.unit:
+test.unit: clean
 	$(MAKE) test.unit -C $(LIB_DIR)
 
 test.integration:
