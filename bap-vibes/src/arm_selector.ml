@@ -552,13 +552,15 @@ module ARM_ops = struct
        the return successor of each call site, where we make each effect
        explicit. *)
     let tmp_branch = create_temp bit_ty in
-    (* The arg vars that were set before making this call should be
-       marked as dependencies for the callee (since they are the parameters!).
-       We don't want them to get clobbered. *)
-    let arg_vars = List.map arg_vars ~f:(fun v ->
-        match Var.typ v with
-        | Mem _ -> Ir.Void (Ir.simple_var v)
-        | _ -> Ir.Var (Ir.simple_var v)) in
+    (* The arg vars that were set before making a call should be marked as
+       dependencies for the callee (since they are the parameters!). We don't
+       want them to get clobbered. *)
+    let arg_vars =
+      if is_call then List.map arg_vars ~f:(fun v ->
+          match Var.typ v with
+          | Mem _ -> Ir.Void (Ir.simple_var v)
+          | _ -> Ir.Var (Ir.simple_var v))
+      else [] in
     control (Ir.simple_op opcode (Void tmp_branch) ([tgt] @ arg_vars)) empty_eff
 
 
