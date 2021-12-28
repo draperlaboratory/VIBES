@@ -651,7 +651,8 @@ struct
   let rec select_exp ?(lhs : var option = None)
       (lang : Theory.language) (e : Bil.exp) : arm_pure KB.t =
     let* thumb = is_thumb lang in
-    match e with
+    (* Simplify the expression in isolation. *)
+    match Exp.simpl e ~ignore:Eff.[read] with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
       let* mem = select_mem lang mem in
       let* ldr = ldr_op @@ Size.in_bits size in
@@ -717,6 +718,24 @@ struct
       KB.return {
         op_val = Ir.Var (create_temp word_ty);
         op_eff = instr op empty_eff}
+    | BinOp (TIMES, Int w, x) | BinOp (TIMES, x, Int w) ->
+      let* x = select_exp lang x in
+      let i = Word.to_int_exn w in
+      if Int.is_pow2 i then
+        (* Power of two can be simplified to a left shift. *)
+        let zero = const (Word.zero 32) in
+        let sh = const (Word.of_int ~width:32 @@ Int.ctz i) in
+        shl zero x sh
+      else
+        (* `mul` requires all operands to be registers. *)
+        let tmp = create_temp word_ty in
+        let tmp_op = {op_val = Var tmp; op_eff = empty_eff} in
+        let+ {op_val; op_eff} = x * tmp_op in
+        let mov = Ir.simple_op Ops.mov (Var tmp) [Const w] in
+        {op_val; op_eff = {
+             op_eff with
+             current_data = op_eff.current_data @ [mov];
+           }}
     | BinOp (o, a, b) ->
       let* a = select_exp lang a in
       let* b = select_exp lang b in
