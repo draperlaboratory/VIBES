@@ -9,6 +9,7 @@ open KB.Let
 module Arm = Arm_selector
 module Subst = Substituter
 module Hvar = Higher_var
+module Err = Kb_error
 
 type t = {
   ir : blk term list;
@@ -128,7 +129,7 @@ module Opt = struct
   let short_circ : t = fun blks -> List.map blks ~f:(short_circ_blk blks)
 
   let simplify_exp : exp -> exp = Exp.simpl ~ignore:Eff.[read]
-  
+
   let simplify_blk (blk : blk term) : blk term =
     Term.map def_t blk ~f:(fun def ->
         Def.with_rhs def @@ simplify_exp @@ Def.rhs def) |>
@@ -270,13 +271,13 @@ module Arm_specific = struct
 
   (* The particular pattern we're going to use as a signpost that a split
      happened. *)
-  let idiom (v : var) (shift : word) (upper : word) : exp =
+  let split_idiom (v : var) (shift : word) (upper : word) : exp =
     Bil.(var v lor (int upper lsl int shift))
 
   (* Generic function that will split integers that are too large. *)
   let split
       (prev_tids : (tid * tid) option ref)
-      (saved_temps : var Word.Table.t)
+      (saved : var Word.Table.t)
       (rhs : exp)
       ~(update : exp -> unit)
       ~(add : def term list -> unit) : unit KB.t =
@@ -289,15 +290,15 @@ module Arm_specific = struct
     prev_tids := Some (tid1, tid2);
     let rhs' = (object
       inherit Exp.mapper
-      method! map_int w = match Word.Table.find saved_temps w with
+      method! map_int w = match Word.Table.find saved w with
         | Some v -> Var v
         | None ->
           if Word.to_int_exn w > 0xFFFF then 
             let shift, lower, upper = split_word w in
             let v = Helper.new_tmp 32 in
             let def1 = Def.create ~tid:tid1 v @@ Int lower in
-            let def2 = Def.create ~tid:tid2 v @@ idiom v shift upper in
-            Word.Table.set saved_temps ~key:w ~data:v;
+            let def2 = Def.create ~tid:tid2 v @@ split_idiom v shift upper in
+            Word.Table.set saved ~key:w ~data:v;
             prev_tids := None;
             add [def2; def1];
             Var v
@@ -307,17 +308,47 @@ module Arm_specific = struct
     | None -> update rhs'
     | Some _ -> () 
 
-  (* On ARM, we can't use constants larger than 65535. The typical idiom is
+  (* Special case for when the RHS is just an integer. Here, we avoid using a
+     temporary variable to hold the results of the split. This seems to lead to
+     smaller generated code, which is important. *)
+  let split_no_temp
+      (saved : var Word.Table.t)
+      (rhs : exp Tid.Table.t)
+      (prepend_defs : def term list Tid.Table.t)
+      (tid : tid) (lhs : var) (w : word) : unit KB.t =
+    match Word.Table.find saved w with
+    | Some v -> KB.return @@
+      Tid.Table.set rhs ~key:tid ~data:(Bil.var v)
+    | None ->
+      let shift, lower, upper = split_word w in
+      let+ () =
+        let* tid' = Theory.Label.fresh in
+        let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
+        try
+          KB.return @@ Tid.Table.change prepend_defs tid ~f:(function
+              | None -> Some [def1]
+              | Some _ -> assert false)
+        with Assert_failure _ -> Err.(fail @@ Other (
+            sprintf "Arm_specific.split_no_temp: def %s was already \
+                     split" @@ Tid.to_string tid)) in
+      Word.Table.set saved ~key:w ~data:lhs;
+      Tid.Table.set rhs ~key:tid
+        ~data:(split_idiom lhs shift upper)
+
+  (* On ARM, we can't use constants larger than 65535. The typical approach is
      to load the lower 16 bits first, then load the upper 16 bits, using a
      movw/movt idiom. *)
   let split_large_const (blks : blk term list) : blk term list KB.t =
-    (* This is so we don't create fresh tids that are discareded. *)
+    (* This is so we don't create an excessive amount of fresh tids that are
+       later discarded. *)
     let prev_tids = ref None in
     KB.List.map blks ~f:(fun blk ->
-        (* Mapping from constants to temporaries, just so we can cut down
-           on the number of defs we create. *)
-        let saved_temps = Word.Table.create () in
-        let split = split prev_tids saved_temps in
+        (* Mapping from constants to variables, local to each block. This
+           is so we can cut down on the number of defs we create. An
+           improvement would be to know which temps will be available across
+           which blocks, so that we can get more re-use. *)
+        let saved = Word.Table.create () in
+        let split = split prev_tids saved in
         (* Save the results in these mutable structures. *)
         let prepend_defs = Tid.Table.create () in
         let rhs = Tid.Table.create () in
@@ -328,31 +359,19 @@ module Arm_specific = struct
           Term.enum def_t blk |> KB.Seq.iter ~f:(fun def ->
               let tid = Term.tid def in
               match Def.rhs def with
-              | Int w when Word.to_int_exn w > 0xFFFF -> begin
-                  (* Special case for when the RHS is just an integer.
-                     Here, we avoid using a temporary variable to hold
-                     the results of the split. *)
-                  match Word.Table.find saved_temps w with
-                  | Some v -> KB.return @@
-                    Tid.Table.set rhs ~key:tid ~data:(Bil.var v)
-                  | None ->
-                    let shift, lower, upper = split_word w in
-                    let lhs = Def.lhs def in
-                    let+ () =
-                      let+ tid' = Theory.Label.fresh in
-                      let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
-                      Tid.Table.change prepend_defs tid ~f:(function
-                          | None -> Some [def1]
-                          | Some _ -> assert false) in
-                    Tid.Table.set rhs ~key:tid ~data:(idiom lhs shift upper)
-                end
+              | Int w when Word.to_int_exn w > 0xFFFF ->
+                split_no_temp saved rhs prepend_defs tid (Def.lhs def) w
               | exp ->
-                split exp
-                  ~update:(fun exp -> Tid.Table.set rhs ~key:tid ~data:exp)
-                  ~add:(fun defs ->
-                      Tid.Table.change prepend_defs tid ~f:(function
-                          | None -> Some defs
-                          | Some _ -> assert false))) in
+                try
+                  split exp
+                    ~update:(fun exp -> Tid.Table.set rhs ~key:tid ~data:exp)
+                    ~add:(fun defs ->
+                        Tid.Table.change prepend_defs tid ~f:(function
+                            | None -> Some defs
+                            | Some _ -> assert false))
+                with Assert_failure _ -> Err.(fail @@ Other (
+                    sprintf "Arm_specific.split: def %s was already \
+                             split" @@ Tid.to_string tid))) in
         (* Handle conditions in jmps. We could probably also handle
            jmp destinations, but it would be tricky since they are
            assembled with PC-relative offsets as operands. *)
@@ -366,9 +385,9 @@ module Arm_specific = struct
         let blk =
           Tid.Table.fold prepend_defs ~init:blk
             ~f:(fun ~key:tid ~data:defs blk ->
-                List.fold defs ~init:(blk, tid) ~f:(fun (blk, before) def ->
-                    Term.prepend def_t blk def ~before, Term.tid def) |> fst)
-        in
+                fst @@ List.fold defs ~init:(blk, tid)
+                  ~f:(fun (blk, before) def ->
+                      Term.prepend def_t blk def ~before, Term.tid def)) in
         (* Set the new RHS. *)
         let blk =
           Term.map def_t blk ~f:(fun def ->
@@ -431,15 +450,15 @@ module Registers = struct
   (* We shouldn't do any spilling if there are higher vars that depend
      on SP-relative locations in memory. *)
   let check_hvars_for_existing_stack_locations
-      (sp : var) (hvars : Hvar.t list) : unit =
-    List.iter hvars ~f:(fun hvar ->
+      (sp : var) (hvars : Hvar.t list) : unit KB.t =
+    KB.List.iter hvars ~f:(fun hvar ->
         match Hvar.value hvar with
         | Hvar.(Storage {at_entry = Memory (Frame (reg, offset)); _}) ->
-          if String.(reg = Var.name sp) then
-            failwith @@ sprintf
-              "Existing stack location [%s, %s] used by hvar %s"
-              reg (Word.to_string offset) (Hvar.name hvar)
-        | _ -> ())
+          if String.(reg <> Var.name sp) then KB.return ()
+          else Err.(fail @@ Other (
+              sprintf "Existing stack location [%s, %s] used by hvar %s"
+                reg (Word.to_string offset) (Hvar.name hvar)))
+        | _ -> KB.return ())
 
   (* Spill higher vars in caller-save registers if we are doing any calls
      in a multi-block patch, since the ABI says they may be clobbered. *)
@@ -460,12 +479,12 @@ module Registers = struct
             let name = Var.name v in
             name, (Word.(stride * idx), v)) |>
         String.Map.of_alist_exn in
-      let sp =
+      let* sp =
         match Theory.Target.reg tgt Theory.Role.Register.stack_pointer with
-        | None -> failwith @@
-          sprintf "No stack pointer register for target %s\n%!"
-            (Theory.Target.to_string tgt)
-        | Some v -> Var.reify v in
+        | Some v -> KB.return @@ Var.reify v
+        | None -> Err.(fail @@ Other (
+            sprintf "No stack pointer register for target %s\n%!"
+              (Theory.Target.to_string tgt))) in
       let spilled = ref String.Set.empty
       and restored = ref String.Set.empty in
       (* Find which hvars we need to spill. *)
@@ -486,7 +505,7 @@ module Registers = struct
                 | Some Hvar.(Register v') when String.(v = v') ->
                   KB.return @@ spill name v offset ~restore:true
                 | Some _ ->
-                  Kb_error.(fail @@ Other (
+                  Err.(fail @@ Other (
                       sprintf "Unexpected value for `at_exit` of higher var %s"
                         name))
                 | None -> KB.return @@ spill name v offset
@@ -495,7 +514,8 @@ module Registers = struct
       let* exits = Helper.exit_blks blks in
       let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
-      if not no_regs then check_hvars_for_existing_stack_locations sp hvars;
+      let* () = if no_regs then KB.return ()
+        else check_hvars_for_existing_stack_locations sp hvars in
       if no_regs && sp_align = 0
       then KB.return (blks, hvars')
       else
