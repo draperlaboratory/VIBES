@@ -651,8 +651,7 @@ struct
   let rec select_exp ?(lhs : var option = None)
       (lang : Theory.language) (e : Bil.exp) : arm_pure KB.t =
     let* thumb = is_thumb lang in
-    (* Simplify the expression in isolation. *)
-    match Exp.simpl e ~ignore:Eff.[read] with
+    match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
       let* mem = select_mem lang mem in
       let* ldr = ldr_op @@ Size.in_bits size in

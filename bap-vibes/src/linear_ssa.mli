@@ -28,7 +28,8 @@ open Bap.Std
     is also ["R0"]. Any other patterns will raise an exception. *)
 val orig_name : string -> string
 
-(** [same v1 v2] checks whether [v1] and [v2] have the same [orig_name]. *)
+(** [same v1 v2] checks whether [v1] and [v2] are trivially equal, or have
+    the same [orig_name]. *)
 val same : var -> var -> bool
 
 (** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"

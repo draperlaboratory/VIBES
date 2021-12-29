@@ -53,13 +53,16 @@ module Helper = struct
             then Some blk
             else None)
 
-  (* Returns true if there are calls in the patch *)
+  (* Returns true if the block contains a call to a subroutine. *)
+  let has_call (blk : blk term) : bool =
+    Term.enum jmp_t blk |> Seq.exists ~f:(fun jmp ->
+        match Jmp.kind jmp with
+        | Call _ -> true
+        | _ -> false)
+
+  (* Returns true if there are calls in the IR. *)
   let has_calls (blks : blk term list) : bool =
-    List.exists blks ~f:(fun blk ->
-        Term.enum jmp_t blk |> Seq.exists ~f:(fun jmp ->
-            match Jmp.kind jmp with
-            | Call _ -> true
-            | _ -> false))
+    List.exists blks ~f:has_call
 
 end
 
@@ -68,10 +71,15 @@ module Opt = struct
 
   type t = blk term list -> blk term list
 
+  let simplifier : < map_exp : exp -> exp; .. > = object
+    inherit Exp.mapper
+    method! map_exp (e : exp) : exp = Exp.simpl e ~ignore:Eff.[read]
+  end
+
   (* Returns the block that is the destination of the jump, if it is in
      the supplied list, and the jump is direct. returns [None]
      otherwise. *)
-  let find_tgt blks jmp : blk term option =
+  let find_tgt (blks : blk term list) (jmp : jmp term) : blk term option =
     let dst = Jmp.dst jmp in
     match Option.map ~f:Jmp.resolve dst with
     | Some (First tid) ->
@@ -80,7 +88,7 @@ module Opt = struct
 
   (* If the input block is a single goto statement, returns the
      destination of that jump. Returns [None] otherwise. *)
-  let is_redirect blk : Jmp.dst option =
+  let is_redirect (blk : blk term) : Jmp.dst option =
     match Blk.elts blk |> Seq.to_list with
     | [`Jmp jmp] ->
       let cond = Jmp.cond jmp in
@@ -103,7 +111,8 @@ module Opt = struct
      Note that the optimization does not compute "final" targets, as
      this seems to rarely be useful and would need additional logic to
      handle loops. *)
-  let short_circ_jmp blks jmp : jmp term option =
+  let short_circ_jmp
+      (blks : blk term list) (jmp : jmp term) : jmp term option =
     match find_tgt blks jmp with
     | None -> None
     | Some blk ->
@@ -114,26 +123,35 @@ module Opt = struct
           Some (Jmp.with_dst jmp (Some dst))
       end
 
-  let short_circ_blk blks blk : blk term =
+  let short_circ_blk (blks : blk term list) (blk : blk term) : blk term =
     Term.map jmp_t blk
       ~f:(fun jmp ->
           match short_circ_jmp blks jmp with
           | None -> jmp
           | Some jmp' -> jmp')
 
-  let short_circ blks =
-    List.map blks ~f:(short_circ_blk blks)
+  let short_circ : t = fun blks -> List.map blks ~f:(short_circ_blk blks)
+
+  let simplify_blk (blk : blk term) : blk term =
+    let blk = Term.map def_t blk ~f:(fun def ->
+        let rhs = simplifier#map_exp @@ Def.rhs def in
+        Def.with_rhs def rhs) in
+    let blk = Term.map jmp_t blk ~f:(fun jmp ->
+        let cond = simplifier#map_exp @@ Jmp.cond jmp in
+        Jmp.with_cond jmp cond) in
+    blk
+
+  let simplify : t =  List.map ~f:simplify_blk
 
   (* Applies all the optimizations in the list *)
-  let apply_list (opts : t list) ir =
-    List.fold ~init:ir
-      ~f:(fun current_ir opt -> opt current_ir)
-      opts
+  let apply_list (opts : t list) : t = fun init ->
+    List.fold opts ~init ~f:(fun ir opt -> opt ir)
 
-  let apply (ir : blk term list) : blk term list =
-    (* This list contains all the optimizations we currently apply *)
-    let opts = [short_circ] in
-    apply_list opts ir
+  (* Applies all the optimizations we currently perform. *)
+  let apply : t = apply_list [
+      short_circ;
+      simplify;
+    ]
 
   (* Attempt to merge adjacent blocks which have an edge in between them.
      For this transformation, the blks must be ordered  according to a
@@ -142,24 +160,22 @@ module Opt = struct
     let rec aux acc = function
       | [] -> List.rev acc
       | [blk] -> List.rev (blk :: acc)
-      | blk1 :: blk2 :: rest -> begin
-          let jmps1 = Term.enum jmp_t blk1 |> Seq.to_list in
-          match jmps1 with
-          | [jmp] -> begin
-              match Jmp.kind jmp with
-              | Goto (Direct tid) when Tid.(tid = Term.tid blk2) ->
-                let defs1 = Term.enum def_t blk1 |> Seq.to_list in
-                let defs2 = Term.enum def_t blk2 |> Seq.to_list in
-                let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
-                let new_blk =
-                  Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
-                    ~tid:(Term.tid blk1) () in
-                aux acc (new_blk :: rest)
-              | _ -> aux (blk2 :: blk1 :: acc) rest
-            end
-          | _ -> aux (blk2 :: blk1 :: acc) rest
-        end
-    in
+      | blk1 :: blk2 :: rest ->
+        let jmps1 = Term.enum jmp_t blk1 |> Seq.to_list in
+        match jmps1 with
+        | [jmp] -> begin
+            match Jmp.kind jmp with
+            | Goto (Direct tid) when Tid.(tid = Term.tid blk2) ->
+              let defs1 = Term.enum def_t blk1 |> Seq.to_list in
+              let defs2 = Term.enum def_t blk2 |> Seq.to_list in
+              let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
+              let new_blk =
+                Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
+                  ~tid:(Term.tid blk1) () in
+              aux acc (new_blk :: rest)
+            | _ -> aux (blk2 :: blk1 :: acc) rest
+          end
+        | _ -> aux (blk2 :: blk1 :: acc) rest in
     aux [] ir
 
 end
@@ -380,29 +396,30 @@ end
 (* Handle storage of registers in the presence of ABI information. *)
 module Registers = struct
 
+  (* Collect the args to the call, if any. *)
+  let collect_args (blk : blk term) : var list option KB.t =
+    Term.enum jmp_t blk |> KB.Seq.find_map ~f:(fun jmp ->
+        match Jmp.alt jmp with
+        | None -> KB.return None
+        | Some dst -> match Jmp.resolve dst with
+          | Second _ -> KB.return None
+          | First tid ->
+            let+ args = Core_c.collect_args tid in
+            Some args)
+
   (* Collect the tids where the arguments to calls are defined. *)
   let collect_argument_tids (blks : blk term list) : Tid.Set.t KB.t =
     KB.List.fold blks ~init:Tid.Set.empty ~f:(fun acc blk ->
-        let+ args =
-          Term.enum jmp_t blk |> KB.Seq.find_map ~f:(fun jmp ->
-              match Jmp.alt jmp with
-              | None -> KB.return None
-              | Some dst -> match Jmp.resolve dst with
-                | First tid ->
-                  let+ args = Core_c.collect_args tid in
-                  Some args
-                | Second _ -> KB.return None) in
-        match args with
-        | None -> acc
-        | Some args ->
-          Term.enum def_t blk |> Seq.to_list |>
-          List.fold_right ~init:(Var.Set.of_list args, acc)
-            ~f:(fun def (remaining, acc) ->
-                let lhs = Def.lhs def in
-                if Var.Set.mem remaining lhs then (
-                  Var.Set.remove remaining lhs,
-                  Tid.Set.add acc @@ Term.tid def
-                ) else (remaining, acc)) |> snd)
+        let+ args = collect_args blk in
+        Option.value_map args ~default:acc ~f:(fun args ->
+            Term.enum def_t blk |> Seq.to_list |>
+            List.fold_right ~init:(Var.Set.of_list args, acc)
+              ~f:(fun def (remaining, acc) ->
+                  let lhs = Def.lhs def in
+                  if Var.Set.mem remaining lhs then (
+                    Var.Set.remove remaining lhs,
+                    Tid.Set.add acc @@ Term.tid def
+                  ) else (remaining, acc)) |> snd))
 
   (* Create a fake memory assignment which is a pseudo-argument to
      the function call. *)
@@ -410,18 +427,13 @@ module Registers = struct
       (blks : blk term list) : blk term list KB.t =
     let mem = Var.reify @@ Theory.Target.data tgt in
     KB.List.map blks ~f:(fun blk ->
-        let call = Term.enum jmp_t blk |> Seq.find_map ~f:(fun jmp ->
-            match Jmp.kind jmp with
-            | Call call -> Some call
-            | _ -> None) in
-        match call with
-        | None -> KB.return blk
-        | Some _call ->
-          let+ tid' = Theory.Label.fresh in
-          let mem' = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
-          let def = Def.create ~tid:tid' mem' @@ Var mem in
-          Term.append def_t blk def)
-  
+        if Helper.has_call blk then
+          let+ tid = Theory.Label.fresh in
+          let lhs = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
+          let def = Def.create ~tid lhs @@ Var mem in
+          Term.append def_t blk def
+        else KB.return blk)
+
   (* We shouldn't do any spilling if there are higher vars that depend
      on SP-relative locations in memory. *)
   let check_hvars_for_existing_stack_locations
@@ -429,10 +441,10 @@ module Registers = struct
     List.iter hvars ~f:(fun hvar ->
         match Hvar.value hvar with
         | Hvar.(Storage {at_entry = Memory (Frame (reg, offset)); _}) ->
-            if String.(reg = Var.name sp) then
-              failwith @@ sprintf
-                "Existing stack location [%s, %s] used by hvar %s"
-                reg (Word.to_string offset) (Hvar.name hvar)
+          if String.(reg = Var.name sp) then
+            failwith @@ sprintf
+              "Existing stack location [%s, %s] used by hvar %s"
+              reg (Word.to_string offset) (Hvar.name hvar)
         | _ -> ())
 
   (* Spill higher vars in caller-save registers if we are doing any calls

@@ -30,11 +30,11 @@ let orig_name (name : string) : string =
   | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name
 
 let same (a : var) (b : var) : bool =
-  try
-    String.equal
-      (orig_name @@ Var.name a)
-      (orig_name @@ Var.name b)
-  with _ -> false      
+  let a = Var.name a and b = Var.name b in
+  String.equal a b || begin try
+      String.equal (orig_name a) (orig_name b)
+    with _ -> false      
+  end
 
 let congruent (a : var) (b : var) : bool =
   let name_1 = String.drop_prefix (Var.name a) prefix_len in
