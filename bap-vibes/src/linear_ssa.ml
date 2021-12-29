@@ -33,7 +33,7 @@ let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in
   String.equal a b || begin try
       String.equal (orig_name a) (orig_name b)
-    with _ -> false      
+    with _ -> false
   end
 
 let congruent (a : var) (b : var) : bool =
