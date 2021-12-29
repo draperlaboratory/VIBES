@@ -71,11 +71,6 @@ module Opt = struct
 
   type t = blk term list -> blk term list
 
-  let simplifier : < map_exp : exp -> exp; .. > = object
-    inherit Exp.mapper
-    method! map_exp (e : exp) : exp = Exp.simpl e ~ignore:Eff.[read]
-  end
-
   (* Returns the block that is the destination of the jump, if it is in
      the supplied list, and the jump is direct. returns [None]
      otherwise. *)
@@ -132,14 +127,13 @@ module Opt = struct
 
   let short_circ : t = fun blks -> List.map blks ~f:(short_circ_blk blks)
 
+  let simplify_exp : exp -> exp = Exp.simpl ~ignore:Eff.[read]
+  
   let simplify_blk (blk : blk term) : blk term =
-    let blk = Term.map def_t blk ~f:(fun def ->
-        let rhs = simplifier#map_exp @@ Def.rhs def in
-        Def.with_rhs def rhs) in
-    let blk = Term.map jmp_t blk ~f:(fun jmp ->
-        let cond = simplifier#map_exp @@ Jmp.cond jmp in
-        Jmp.with_cond jmp cond) in
-    blk
+    Term.map def_t blk ~f:(fun def ->
+        Def.with_rhs def @@ simplify_exp @@ Def.rhs def) |>
+    Term.map jmp_t ~f:(fun jmp ->
+        Jmp.with_cond jmp @@ simplify_exp @@ Jmp.cond jmp)
 
   let simplify : t =  List.map ~f:simplify_blk
 
@@ -149,8 +143,8 @@ module Opt = struct
 
   (* Applies all the optimizations we currently perform. *)
   let apply : t = apply_list [
-      short_circ;
       simplify;
+      short_circ;
     ]
 
   (* Attempt to merge adjacent blocks which have an edge in between them.
