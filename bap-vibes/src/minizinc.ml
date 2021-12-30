@@ -294,13 +294,11 @@ let serialize_mzn_params
             set = match Var.typ t1 with
               | Type.Mem _ | Type.Unk -> []
               | Type.Imm _ as typ ->
-                let t1' = Ir.drop_prefix t1 in
                 List.filter_map temps ~f:(fun t2 ->
                     (* The trivial case of the vars being equal can be ignored. *)
                     if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
                     else
-                      let t2' = Ir.drop_prefix t2 in
-                      if not @@ Linear_ssa.congruent t1' t2' then None
+                      if not @@ Linear_ssa.congruent t1 t2 then None
                       else Some (mzn_enum_of_var t2))
           });
     operation_opcodes = key_map operations params.operation_opcodes

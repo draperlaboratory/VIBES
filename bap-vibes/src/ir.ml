@@ -163,7 +163,16 @@ let simple_op opcode arg args =
     (* Operands need to have unique ids *)
     operands = List.map ~f:freshen_operand args;
   }
-  
+
+let write_multiple_op opcode written args =
+  { id = create_id ();
+    lhs = written;
+    opcodes = [opcode];
+    optional = false;
+    (* Operands need to have unique ids *)
+    operands = List.map ~f:freshen_operand args;
+  } 
+
 let op_no_args opcode =
   { id = create_id ();
     lhs = [];
@@ -500,40 +509,6 @@ let dummy_reg_alloc t =
         | None ->
           let var = List.hd_exn v.temps in
           {v with pre_assign = Some (Var.create "R0" (Var.typ var))})
-
-let preassign_var tgt v =
-  let regs = Theory.Target.regs tgt |> Set.to_sequence in
-  let regs = Seq.map regs ~f:Var.reify in
-  if Seq.mem ~equal:Var.equal regs v
-  then Some v
-  else None
-
-let tmp_prefix = "__Vibes_tmp_"
-
-let drop_prefix (v : var) : var =
-  let name = Var.name v in
-  if String.is_prefix name ~prefix:tmp_prefix then
-    let name = String.drop_prefix name @@ String.length tmp_prefix in
-    Var.create name @@ Var.typ v
-  else v
-
-(* We freshen temporaries so that they do not clash with register
-   names in the Minizinc model. *)
-let freshen_temps v =
-  let name = Var.name v in
-  let typ = Var.typ v in
-  Var.create (tmp_prefix ^ name) typ
-
-(* Preassign variables with names equal to a register in the target to
-   the corresponding register, and freshen the temp name. *)
-let preassign (tgt : Theory.target) (ir : t) : t =
-  map_op_vars ir
-    ~f:(fun v ->
-        {v with
-         temps = List.map ~f:freshen_temps v.temps;
-         pre_assign = List.hd_exn v.temps |> preassign_var tgt
-        })
-
 
 module Operand =
 struct

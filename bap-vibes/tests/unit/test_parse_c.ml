@@ -2,10 +2,23 @@ open Core_kernel
 open Bap_core_theory
 open KB.Let
 open Bap_vibes
+open Bap.Std
 open OUnit2
 
+let massage_bil sem =
+  let mapper = object(self)
+    inherit Stmt.mapper
+    method! map_var (v : var) : exp =
+      Var (Substituter.undo_reg_name v)
+    method! map_move (v : var) (e : exp) : stmt list =
+      let v = Substituter.undo_reg_name v in
+      let e = self#map_exp e in
+      Bil.[v := e]
+  end in
+  Stmt.map mapper sem
+  
 let eff_to_str sem =
-  Format.asprintf "%a" (KB.Value.pp_slots ["bap:bil"]) sem |>
+  Format.asprintf "%a" Bil.pp sem |>
   String.filter ~f:(fun c -> not Char.(c = '\"'))
 
 let compare_sem sem str =
@@ -24,6 +37,7 @@ let assert_parse_eq ?(hvars = []) s1 s2 =
         let* (module T) = Theory.require theory in
         let module Eval = Core_c.Eval(T) in
         let* sem = Eval.c_patch_to_eff hvars (Helpers.the_target ()) ast in
+        let sem = massage_bil @@ Insn.bil sem in
         let sem_str = eff_to_str sem in
         KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
       end
@@ -31,7 +45,7 @@ let assert_parse_eq ?(hvars = []) s1 s2 =
 let test_var_decl _ =
   assert_parse_eq
     "int x, y, z;"
-    "(())"
+    "{ }"
 
 let test_assign _ =
   assert_parse_eq

@@ -101,6 +101,11 @@ module Eval(CT : Theory.Core) = struct
     hvars     : Hvar.t list;
   }
 
+  let make_reg (v : unit T.var) : unit T.var =
+    let sort = T.Var.sort v in
+    let v = Substituter.make_reg @@ Var.reify v in
+    T.Var.create sort @@ Var.ident v
+  
   let mk_interp_info (hvars : Hvar.t list)
       (tgt : T.target) : ('a, 'b) interp_info KB.t =
     let bits = T.Target.bits tgt in
@@ -119,8 +124,8 @@ module Eval(CT : Theory.Core) = struct
       byte_sort = byte_sort;
       mem_var = T.Target.data tgt;
       endian;
-      ret_var = Option.value_exn ret_var;
-      arg_vars = Set.to_list arg_vars;
+      ret_var = make_reg @@ Option.value_exn ret_var;
+      arg_vars = Set.to_list arg_vars |> List.map ~f:make_reg;
       hvars;
     }
 

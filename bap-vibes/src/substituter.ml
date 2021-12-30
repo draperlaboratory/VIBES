@@ -11,17 +11,37 @@ let err msg = Kb_error.fail @@ Kb_error.Higher_vars_not_substituted msg
 
 exception Subst_err of string
 
+(* BAP seems to prefix an underscore when it's just `$reg` so we will
+   just make it explicit. *)
+let reg_prefix = "_$reg"
+
+let make_reg_name (v : string) : string = reg_prefix ^ v
+
+let make_reg (v : var) : var =
+  let name = Var.name v and typ = Var.typ v in
+  Var.create (make_reg_name name) typ
+
+let get_reg_name (v : string) : string option =
+  if String.is_prefix v ~prefix:reg_prefix then
+    Some (String.drop_prefix v @@ String.length reg_prefix)
+  else None
+
+let undo_reg_name (v : var) : var =
+  let name = Var.name v and typ = Var.typ v in
+  match get_reg_name name with
+  | Some name -> Var.create name typ
+  | None -> v
+
 (* Find a register with a given name in a target arch. *)
-let get_reg tgt name =
-  let regs = Theory.Target.regs tgt in
-  let reg = Set.find regs
-      ~f:(fun v -> String.(Theory.Var.name v = name))
-  in
-  match reg with
-  | Some r -> Var.reify r
-  | None -> raise
-              (Subst_err
-                 (Format.sprintf "Register %s not found in target arch!" name))
+let get_reg (tgt : Theory.target) (name : string) : var =
+  Theory.Target.regs tgt |>
+  Set.find ~f:(fun v -> String.(Theory.Var.name v = name)) |>
+  function
+  | Some r -> make_reg @@ Var.reify r
+  | None ->
+    raise
+      (Subst_err
+         (Format.sprintf "Register %s not found in target arch!" name))
 
 let get_mem tgt =
   let mem = Theory.Target.data tgt in

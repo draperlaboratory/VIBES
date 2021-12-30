@@ -3,6 +3,8 @@
 open Core_kernel
 open Bap.Std
 
+(* Use the tid of the blk as the prefix, dropping the '%' at
+   the beginning. *)
 let prefix_from (blk : Blk.t) : string =
   let tid = Term.tid blk in
   let tid_str = Tid.to_string tid in
@@ -13,8 +15,7 @@ let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
   let typ = Var.typ var in
   let new_name = prefix ^ "_" ^ name in
   let escaped_name =
-    String.substr_replace_all new_name ~pattern:"." ~with_:"_"
-  in
+    String.substr_replace_all new_name ~pattern:"." ~with_:"_" in
   Var.create escaped_name typ
 
 (* The prefix consists of an underscore (1 char), followed by the
@@ -23,11 +24,16 @@ let prefix_len = 10
 
 let orig_name (name : string) : string =
   let name = String.drop_prefix name prefix_len in
-  match String.split name ~on:'_' with
-  | [] -> name
-  | [name] when not @@ String.is_empty name -> name
-  | [name; _] -> name
-  | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name
+  let name, is_reg =
+    Substituter.get_reg_name name |>
+    Option.value_map ~default:(name, false) ~f:(fun name ->
+        name, true) in
+  let name = match String.split name ~on:'_' with
+    | [] -> name
+    | [name] when not @@ String.is_empty name -> name
+    | [name; _] -> name
+    | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name in
+  if is_reg then Substituter.make_reg_name name else name
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in

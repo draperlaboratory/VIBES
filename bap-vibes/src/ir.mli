@@ -99,6 +99,7 @@ type operation = {
 } [@@deriving compare, equal, sexp]
 
 val simple_op : opcode -> operand -> operand list -> operation
+val write_multiple_op : opcode -> operand list -> operand list -> operation
 
 val op_no_args : opcode -> operation
 
@@ -143,17 +144,6 @@ val op_var_to_string : op_var -> string
 
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
-
-(** The prefix added to the names of all temporary vars. *)
-val tmp_prefix : string
-
-(** Remove [tmp_prefix] from a var, if it exists. *)
-val drop_prefix : var -> var
-
-(** [preassign tgt ir] sets all the variables which are set to
-    registers in [tgt] as being the preassigned location for those
-    variables. *)
-val preassign : Theory.target -> t -> t
 
 (** [preassign_map] builds a total dictionary from op_var ids to
     pre assigned registers. *)

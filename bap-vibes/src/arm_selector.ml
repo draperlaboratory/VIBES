@@ -6,110 +6,110 @@ open KB.Let
 module Err = Kb_error
 
 (*-------------------------------------------------------
-*
-* Instruction selection works in the "standard" maximal munch
-* manner: we match against a portion of the AST, call the selector
-* recursively and generate opcodes.
-*
-*
-*
-*  The approach attempts to create a small DSL for opcodes and their
-*  operands, ultimately "smart" constructors for [Ir.t] blocks, and
-*  then use ordinary OCaml pattern matching, with DSL terms on the
-*  right hand side.
-*
-*
-* since BIR constructs may be at a higher-level than ARM ones, and be
-* nested, we need to flatten the terms, as well as disentangle the
-* different kinds of operations. We roughly follow the Core Theory
-* division of data and control _effects_, and _pure_ operations which
-* simply create data, we do _not_ distinguish a memory and non-memory
-* operations, since we need to track dependencies between sequential
-* memory reads and writes (though the variable name for memory doesn't
-* really matter in the end).
-*
-* This results in 2 types:
-*
-* - [arm_eff] which contains the data required for the control and data
-*   operations in the current block, as well as the other blocks
-*   involved in the computation.
-*
-* - [arm_pure], which contains a variable or constant which represents
-*   the value being computed, as well as the effects required to compute
-*   that value (in the form of an [arm_eff] field.
-*
-* Every value is assumed to fit in a "standard" 32 bit register, so
-* anything involving memory, or "double" width words have to be handled
-* explicitly. It's currently an issue that we don't track bit-widths
-* explicitly, since it may result in errors down the line, if we assume
-* widths of registers or operands incorrectly. It sure simplifies the
-* code though.
-*
-*
-* There's a bunch of "preassign" operations throughout the module, since
-* this allows the front-end to use special variable names, which we then
-* know will be correctly allocated to specific registers, e.g. PC or
-* SP. A little care must be taken depending on whether we're generating
-* ARM proper or Thumb. There are probably some land mines here, since
-* some instructions do not allow some registers, and this is not necessarily
-* enforced by our constraints.
-*
-* We also provide the set of "allowed" general purpose registers, to be
-* used by the minizinc back end when doing selection.
-*
-* The general approach to emitting instructions for BIL expressions is
-* the following:
-* 1. Recursively emit instructions for the sub-terms.
-* 2. Generate a fresh temp to store the result.
-* 3. Select the appropriate opcode, and move the result into the
-*    generated temp.
-* 4. Union the set of all effects that participated in building the
-*    result.
-* 5. Return the resulting [arm_pure] record.
-*
-* The opcodes are roughly just the ARM assembly mnemonic strings,
-* they're created in the specific [Ops] module. Actually building
-* the opcodes with their arguments (the aforementioned DSL) is done in
-* the [Arm_ops] module.
-*
-* The selection is done by a series of pattern matching code, namely the
-* [select_FOO] functions, where [FOO] is one of [exp], [stmt] or [blk].
-*
-* The pretty printer takes the resulting Vibes IR block, and is
-* relatively straightforward except for various idiosyncrasies of the
-* ARM assembly syntax:
-*
-* Roughly the only real issue is adding square brackets at the
-* appropriate places. For example, the [str] operation can support
-* (among many others!) the syntaxes [str r0, [r1, #42]], [str r0, [r1]]
-* etc.
-*
-* We do that by marking operands by one of four tags (of a type called
-* [bracket]): [Open], [Close], [Neither] or [Both]. These tags mark
-* whether to open a square bracket, close one, enclose the operand or
-* neither. Roughly we just create a parallel list of the same length as operands.
-*
-* We do this in kind of a hacky way, but I'm not sure how to do this
-* better.
-*
-* Pretty printing is also the time when we resolve offsets: we do the
-* arithmetic required to make them correct relative the the original
-* binary, even though they may be in the patch location. See
-* [arm_operand_pretty] for details.
-*
-*
-* Finally, we create a peephole optimization which, *after register
-* allocation*, deletes all instructions of the form [mov ri ri] (or of
-* the form [add ri #0]). This is the only point when this can be done,
-* since before register allocation we do not know if the [mov] will be
-* of that form.
-*
-* Sadly there is no way to have an explicit [nop] generated at the moment.
-*
-*
-*
-*
-*---------------------------------------------------------*)
+ *
+ * Instruction selection works in the "standard" maximal munch
+ * manner: we match against a portion of the AST, call the selector
+ * recursively and generate opcodes.
+ *
+ *
+ *
+ *  The approach attempts to create a small DSL for opcodes and their
+ *  operands, ultimately "smart" constructors for [Ir.t] blocks, and
+ *  then use ordinary OCaml pattern matching, with DSL terms on the
+ *  right hand side.
+ *
+ *
+ * since BIR constructs may be at a higher-level than ARM ones, and be
+ * nested, we need to flatten the terms, as well as disentangle the
+ * different kinds of operations. We roughly follow the Core Theory
+ * division of data and control _effects_, and _pure_ operations which
+ * simply create data, we do _not_ distinguish a memory and non-memory
+ * operations, since we need to track dependencies between sequential
+ * memory reads and writes (though the variable name for memory doesn't
+ * really matter in the end).
+ *
+ * This results in 2 types:
+ *
+ * - [arm_eff] which contains the data required for the control and data
+ *   operations in the current block, as well as the other blocks
+ *   involved in the computation.
+ *
+ * - [arm_pure], which contains a variable or constant which represents
+ *   the value being computed, as well as the effects required to compute
+ *   that value (in the form of an [arm_eff] field.
+ *
+ * Every value is assumed to fit in a "standard" 32 bit register, so
+ * anything involving memory, or "double" width words have to be handled
+ * explicitly. It's currently an issue that we don't track bit-widths
+ * explicitly, since it may result in errors down the line, if we assume
+ * widths of registers or operands incorrectly. It sure simplifies the
+ * code though.
+ *
+ *
+ * There's a bunch of "preassign" operations throughout the module, since
+ * this allows the front-end to use special variable names, which we then
+ * know will be correctly allocated to specific registers, e.g. PC or
+ * SP. A little care must be taken depending on whether we're generating
+ * ARM proper or Thumb. There are probably some land mines here, since
+ * some instructions do not allow some registers, and this is not necessarily
+ * enforced by our constraints.
+ *
+ * We also provide the set of "allowed" general purpose registers, to be
+ * used by the minizinc back end when doing selection.
+ *
+ * The general approach to emitting instructions for BIL expressions is
+ * the following:
+ * 1. Recursively emit instructions for the sub-terms.
+ * 2. Generate a fresh temp to store the result.
+ * 3. Select the appropriate opcode, and move the result into the
+ *    generated temp.
+ * 4. Union the set of all effects that participated in building the
+ *    result.
+ * 5. Return the resulting [arm_pure] record.
+ *
+ * The opcodes are roughly just the ARM assembly mnemonic strings,
+ * they're created in the specific [Ops] module. Actually building
+ * the opcodes with their arguments (the aforementioned DSL) is done in
+ * the [Arm_ops] module.
+ *
+ * The selection is done by a series of pattern matching code, namely the
+ * [select_FOO] functions, where [FOO] is one of [exp], [stmt] or [blk].
+ *
+ * The pretty printer takes the resulting Vibes IR block, and is
+ * relatively straightforward except for various idiosyncrasies of the
+ * ARM assembly syntax:
+ *
+ * Roughly the only real issue is adding square brackets at the
+ * appropriate places. For example, the [str] operation can support
+ * (among many others!) the syntaxes [str r0, [r1, #42]], [str r0, [r1]]
+ * etc.
+ *
+ * We do that by marking operands by one of four tags (of a type called
+ * [bracket]): [Open], [Close], [Neither] or [Both]. These tags mark
+ * whether to open a square bracket, close one, enclose the operand or
+ * neither. Roughly we just create a parallel list of the same length as operands.
+ *
+ * We do this in kind of a hacky way, but I'm not sure how to do this
+ * better.
+ *
+ * Pretty printing is also the time when we resolve offsets: we do the
+ * arithmetic required to make them correct relative the the original
+ * binary, even though they may be in the patch location. See
+ * [arm_operand_pretty] for details.
+ *
+ *
+ * Finally, we create a peephole optimization which, *after register
+ * allocation*, deletes all instructions of the form [mov ri ri] (or of
+ * the form [add ri #0]). This is the only point when this can be done,
+ * since before register allocation we do not know if the [mov] will be
+ * of that form.
+ *
+ * Sadly there is no way to have an explicit [nop] generated at the moment.
+ *
+ *
+ *
+ *
+ *---------------------------------------------------------*)
 
 
 
@@ -149,11 +149,11 @@ let is_thumb (lang : Theory.language) : bool KB.t =
     KB.return @@
     String.is_substring ~substring:"thumb" @@
     Theory.Language.to_string lang
- 
+
 let is_arm_or_thumb (lang : Theory.language) : bool KB.t =
   let+ arm = is_arm lang and+ thumb = is_thumb lang in
   arm || thumb
- 
+
 (* FIXME: this feels very redundant: we should just leave the
    responsibility for this in ir.ml or minizinc.ml *)
 let regs (tgt : Theory.target) (_ : Theory.language) =
@@ -171,10 +171,10 @@ let gpr (tgt : Theory.target) (lang : Theory.language) : Var.Set.t KB.t =
     then Theory.Role.read ~package:"arm" "thumb"::roles
     else roles
   in
-  let exclude = [
-    Theory.Role.Register.stack_pointer;
-    Theory.Role.Register.frame_pointer
-  ] in
+  let exclude = Theory.Role.Register.[
+      stack_pointer;
+      frame_pointer;
+    ] in
   let maybe_reify v =
     let v = Var.reify v in
     let name = Var.name v in
@@ -186,52 +186,39 @@ let gpr (tgt : Theory.target) (lang : Theory.language) : Var.Set.t KB.t =
   Theory.Target.regs ~exclude:exclude ~roles:roles tgt |>
   Set.filter_map ~f:(maybe_reify) (module Var)
 
-let reg_name (v : var) : string =
-  let name = Var.name @@ Ir.drop_prefix v in
-  try Linear_ssa.orig_name name with _ -> name
+(* Assuming the var is in linear SSA form, we undo this form,
+   and then check if it's a register name. *)
+let reg_name (v : var) : string option =
+  let name = Var.name v in
+  let name = try Linear_ssa.orig_name name with _ -> name in
+  Substituter.get_reg_name name
 
 let preassign_var
     (is_thumb : bool)
     (pre : var option)
-    (v : var)
-  : var option =
-  let name = reg_name v in
-  let is_virtual = false and fresh = false in
-  match name with
-  | "FP" ->
+    (v : var) : var option =
+  let typ = Var.typ v in
+  match reg_name v with
+  | None -> pre
+  | Some "FP" ->
     (* We assign R11 as the pre-assigned FP register on ARM, and R7
        for Thumb, keeping in line with the ABI (as far as i can
        tell).  *)
     if is_thumb
-    then Some (Var.create ~is_virtual ~fresh "R7" (Var.typ v))
-    else Some (Var.create ~is_virtual ~fresh "R11" (Var.typ v))
-    (* FIXME: preassign all non-virtual variables? (or just the ones in tgt.regs?) *)
-  | "PC" -> Some (Var.create ~is_virtual ~fresh "PC" (Var.typ v))
-  | "SP" -> Some (Var.create ~is_virtual ~fresh "SP" (Var.typ v))
-  | _ ->
-    if (String.length name = 2
-        && Char.(name.[0] = 'R')
-        && Char.is_digit name.[1])
-    || (String.length name = 3
-        && Char.(name.[0] = 'R')
-        && Char.is_digit name.[1]
-        && Char.is_digit name.[2])
-    then Some (Var.create ~is_virtual ~fresh name (Var.typ v))
-    else pre
-      
+    then Some (Var.create "R7" typ)
+    else Some (Var.create "R11" typ)
+  | Some name -> Some (Var.create name typ)
+
 let preassign
-    (tgt : Theory.target)
+    (_tgt : Theory.target)
     (ir : Ir.t)
-    ~(is_thumb : bool)
-  : Ir.t =
-  let ir = Ir.preassign tgt ir in
-  let ir = Ir.map_op_vars ir
-      ~f:(fun v ->
-          {v with
-           pre_assign =
-             List.hd_exn v.temps |>
-             preassign_var is_thumb v.pre_assign})
-  in ir
+    ~(is_thumb : bool) : Ir.t =
+  Ir.map_op_vars ir
+    ~f:(fun v ->
+        {v with
+         pre_assign =
+           List.hd_exn v.temps |>
+           preassign_var is_thumb v.pre_assign})
 
 (* Appends the effects of s2 to those of s1, respecting the order if they
    are not in seperate blocks. *)
@@ -499,7 +486,7 @@ module ARM_ops = struct
     let sem = value_sem @. mem_sem in
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
-  
+
   let (&&) (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.and_ word_ty a b
 
@@ -527,7 +514,7 @@ module ARM_ops = struct
       if is_call then
         if neg then Ops.blne else Ops.bleq
       else
-        if neg then Ops.bne else Ops.beq in
+      if neg then Ops.bne else Ops.beq in
     let {op_val = cond_val; op_eff = cond_eff} = cond in
     (* the order of operations here is actually important! *)
     let tmp_flag, tmp_taken =
@@ -893,7 +880,7 @@ module Pretty = struct
       Open | Close | Neither | Both
 
   let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
-      : (string, Kb_error.t) result =
+    : (string, Kb_error.t) result =
     let pretty_aux =
       match o with
       | Var v ->

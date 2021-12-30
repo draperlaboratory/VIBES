@@ -93,6 +93,7 @@ let test_substitute_1 (_ : test_ctxt) : unit =
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rax = Var.create "RAX" (Bil.Imm 64) in
+  let rax_reg = Substituter.make_reg rax in
   let num_3 = Word.of_int ~width:64 3 in
   let code =
     Bil.[
@@ -104,9 +105,9 @@ let test_substitute_1 (_ : test_ctxt) : unit =
   in
   let expected =
     Bil.[
-      rax := int @@ num_3;
-      if_ (var rax = int num_3)
-        [jmp (var rax)]
+      rax_reg := int @@ num_3;
+      if_ (var rax_reg = int num_3)
+        [jmp (var rax_reg)]
         [];
     ] |> to_bir
   in
@@ -137,6 +138,7 @@ let test_substitute_2 (_ : test_ctxt) : unit =
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rbp = Var.create "RBP" (Bil.Imm 64) in
+  let rbp_reg = Substituter.make_reg rbp in
   let mem = Var.create "mem" (Bil.Mem (`r64, `r8)) in
   let num_3 = Word.of_int ~width:64 3 in
   let num_14 = Word.of_string "0x14:64" in
@@ -153,18 +155,18 @@ let test_substitute_2 (_ : test_ctxt) : unit =
       mem :=
         store
           ~mem:(var mem)
-          ~addr:(var rbp + int num_14)
+          ~addr:(var rbp_reg + int num_14)
           (int num_3)
           LittleEndian
           `r64;
       if_ (load
              ~mem:(var mem)
-             ~addr:(var rbp + int num_14)
+             ~addr:(var rbp_reg + int num_14)
              LittleEndian `r64
            = int num_3)
         [jmp (load
              ~mem:(var mem)
-             ~addr:(var rbp + int num_14)
+             ~addr:(var rbp_reg + int num_14)
              LittleEndian `r64)]
         []
     ] |> to_bir

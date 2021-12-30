@@ -529,15 +529,18 @@ module Registers = struct
           Int.round_up ~to_multiple_of:(Theory.Target.data_alignment tgt) in
         let space = Word.of_int ~width @@
           if no_regs then sp_align else sp_align + space in
+        let sp = Substituter.make_reg sp in
         let push v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
+          let reg = Substituter.make_reg reg in
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
         let pop v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
+          let reg = Substituter.make_reg reg in
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
