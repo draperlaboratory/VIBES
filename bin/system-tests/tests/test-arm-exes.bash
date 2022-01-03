@@ -228,9 +228,9 @@ test_arm_primus () {
     print_header "Checking ${TEST_DIR}"
 
     # Check the precompiled executables.
-    run_arm_exe "${MAIN_EXE}" 15
-    run_arm_exe "${PATCH_EXE}" 17
-    
+    run_arm_exe "${MAIN_EXE}" 5
+    run_arm_exe "${PATCH_EXE}" 3
+
     # Check that vibes patches correctly.
     run_make "make clean -C ${TEST_DIR}" 0
     run_make "make patch.reference -C ${TEST_DIR}" 0

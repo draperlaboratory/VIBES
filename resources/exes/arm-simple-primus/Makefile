@@ -57,6 +57,7 @@ patch: $(PATCHED_PROG)
 $(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
 	bap vibes $(REF_PROG) \
                 --config=config.json \
+				--primus-lisp-load=patch \
                 -o $(PATCHED_PROG_FOR_TESTING) \
                 --verbose
 	chmod +x $(PATCHED_PROG_FOR_TESTING)
