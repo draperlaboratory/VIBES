@@ -310,12 +310,15 @@ module Eval(CT : Theory.Core) = struct
     | Some hvar -> match Hvar.value hvar with
       | Hvar.Storage {at_entry; _} -> begin
         match at_entry with
-        | Hvar.(Memory (Frame (reg, off)))  ->
-            let reg = T.Var.create info.word_sort @@ T.Var.Ident.of_string reg in
-            let+ a =
-              CT.add (CT.var reg)
-                (CT.int info.word_sort (Word.to_bitvec off)) in
-            T.Value.forget a
+        | Hvar.(Memory (Frame (reg, off))) ->
+          let reg =
+            T.Var.create info.word_sort @@
+            T.Var.Ident.of_string @@
+            Substituter.make_reg_name reg in
+          let+ a =
+            CT.add (CT.var reg)
+              (CT.int info.word_sort (Word.to_bitvec off)) in
+          T.Value.forget a
         | Hvar.(Memory (Global addr)) ->
           let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
           T.Value.forget a
