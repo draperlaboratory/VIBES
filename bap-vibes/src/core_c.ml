@@ -328,11 +328,11 @@ module Eval(CT : Theory.Core) = struct
           let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
           T.Value.forget a
         | _ -> Err.fail @@ Err.Core_c_error
-            (sprintf "expr_to_pure: higher var %s for ADDROF expression is \
+            (sprintf "addr_of_var: higher var %s for ADDROF expression is \
                       not stored in a memory location." v)
       end
       | _ -> Err.fail @@ Err.Core_c_error
-          (sprintf "expr_to_pure: higher var %s for ADDROF expression has no \
+          (sprintf "addr_of_var: higher var %s for ADDROF expression has no \
                     storage classifier." v)
 
 
