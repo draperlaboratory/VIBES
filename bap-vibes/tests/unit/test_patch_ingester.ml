@@ -27,7 +27,7 @@ let test_ingest (_ : test_ctxt) : unit =
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
     | (p :: []) ->
-      Data.Patch.get_bir p >>= fun bir ->
+      Data.Patch.get_sem p >>= fun bir ->
       Patches.Ret_3.prog 32 >>= fun expected ->
       let open Bap.Std in
       let expected = KB.Value.get Bil.slot expected in
@@ -61,7 +61,7 @@ let test_ingest_with_no_patch (_ : test_ctxt) : unit =
   let result = KB.run Data.cls computation KB.empty in
 
   (* The ingester should diverge with the appropriate error. *)
-  let expected = Kb_error.Problem Kb_error.Missing_patch_name in
+  let expected = Kb_error.Problem Kb_error.Missing_patch_code in
   H.assert_error Data.Patched_exe.patches expected result
 
 (* Test that [Patch_ingester.ingest] errors with no addr_size in the KB. *)
@@ -100,7 +100,7 @@ let test_ingest_with_no_patch_vars (_ : test_ctxt) : unit =
     KB.Object.create Data.Patch.patch >>= fun patch ->
 
     let code = H.dummy_code in
-    Data.Patch.set_patch_code patch (Some code) >>= fun () ->
+    Data.Patch.set_patch_code patch (Some (CCode code)) >>= fun () ->
     Data.Patch.set_patch_name patch (Some H.patch) >>= fun () ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->

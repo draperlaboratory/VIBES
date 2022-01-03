@@ -2,7 +2,6 @@
    We expect much evolution here... *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 open Knowledge.Syntax
@@ -151,13 +150,10 @@ module Patch = struct
     | Some value -> KB.return value
 
   let set_patch_code (obj : t) (data : Config.patch_code option) : unit KB.t =
-    KB.provide patch_code obj data (* (Option.map ~f:(fun c -> Config.CCode c) data) *)
+    KB.provide patch_code obj data
 
   let get_patch_code (obj : t) : Config.patch_code option KB.t =
-    KB.collect patch_code obj (* >>= fun res ->
-    match res with
-    | Some (CCode code) -> KB.return (Some code)
-    | _ -> KB.return None *)
+    KB.collect patch_code obj
 
   let get_patch_code_exn (obj : t) : Config.patch_code KB.t =
     get_patch_code obj >>= fun result ->
@@ -193,13 +189,13 @@ module Patch = struct
     KB.Object.create Theory.Program.cls >>= fun lab ->
     KB.provide patch_label obj (Some lab)
 
-  let set_bir (obj : t) (sem : Insn.t) : unit KB.t =
+  let set_sem (obj : t) (sem : Theory.Semantics.t) : unit KB.t =
     KB.collect patch_label obj >>= fun olab ->
     (* FIXME: fail more gracefully *)
     let lab = Option.value_exn olab in
     KB.provide Theory.Semantics.slot lab sem
 
-  let get_bir (obj : t) : Insn.t KB.t =
+  let get_sem (obj : t) : Theory.Semantics.t KB.t =
     KB.collect patch_label obj >>= fun olab ->
     (* FIXME: fail more gracefully *)
     let lab = Option.value_exn olab in

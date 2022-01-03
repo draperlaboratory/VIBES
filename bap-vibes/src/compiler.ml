@@ -61,20 +61,24 @@ let create_vibes_ir
   ir, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)
-let compile_one_vibes_ir
-  (isel_model_filepath : string option) 
+let compile_one_vibes_ir 
+  (isel_model_filepath : string option)
   (count : int KB.t)
   (patch : Data.Patch.t) : int KB.t =
-  count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
-    | Some _asm ->
-      Events.(send @@ Info "The patch has no IR to translate.\n");
-      KB.return () (* Assembly already set. Presumably by the user. *)
-    | None ->
+  count >>= fun n ->
+  Data.Patch.get_patch_code_exn patch >>= (fun code ->
+  match code with
+    | ASMCode _asm ->
+         Events.(send @@ Info "Assembly patch has no IR to translate.\n");
+         KB.return ()
+    | PrimusCode _ | CCode _ ->
+  begin
       let info_str =
-        Format.sprintf "Translating patch %d BIR to VIBES IR..." n
+        Format.asprintf "Translating patch %s BIR to VIBES IR..."
+          (string_of_int n)
       in
       Events.(send @@ Info info_str);
-      Data.Patch.get_bir patch >>= fun bir ->
+      Data.Patch.get_sem patch >>= fun bir ->
 
       let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp bir in
       Events.(send @@ Info info_str);
@@ -103,34 +107,35 @@ let compile_one_assembly
      Ir.t ->
      (Ir.t * Minizinc.sol) KB.t)
     (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
-  count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
-    | Some _asm ->
-      Events.(send @@ Info "The patch already has assembly\n");
-      Events.(send @@ Rule);
-      KB.return () (* Assembly already set. Presumably by the user. *)
-    | None ->
-      let info_str =
-        Format.asprintf "Translating patch %s VIBES IR to assembly..."
-          (string_of_int n)
-      in
-      Events.(send @@ Info info_str);
-      Data.Patch.get_raw_ir_exn patch >>= fun ir ->
-      Data.Patch.get_exclude_regs patch >>= fun exclude_regs ->
-      let exclude_regs = Option.value exclude_regs ~default:String.Set.empty in
-      Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
-      Data.Patch.get_target patch >>= fun target ->
-      Data.Patch.get_lang patch >>= fun lang ->
-      let prev_sols = Set.to_list prev_sols in
-      create_assembly
-        (solver target lang prev_sols ~exclude_regs)
-        ir >>= fun (assembly, new_sol) ->
-      Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
-      Events.(send @@ Info "The patch has the following assembly:\n");
-      Events.(send @@ Rule);
-      Events.(send @@ Info (String.concat ~sep:"\n" assembly));
-      Events.(send @@ Rule);
-      Data.Patch.add_minizinc_solution patch new_sol 
-  end >>= fun () -> KB.return (n + 1)
+  count >>= fun n ->
+    Data.Patch.get_patch_code_exn patch >>= (fun asm ->
+    match asm with
+    | ASMCode asm -> KB.return [asm]
+    | PrimusCode _ | CCode _ ->
+      begin
+        let info_str =
+          Format.asprintf "Translating patch %s VIBES IR to assembly..."
+            (string_of_int n)
+        in
+        Events.(send @@ Info info_str);
+        Data.Patch.get_raw_ir_exn patch >>= fun ir ->
+        Data.Patch.get_exclude_regs patch >>= fun exclude_regs ->
+        Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
+        Data.Patch.get_target patch >>= fun target ->
+        Data.Patch.get_lang patch >>= fun lang ->
+        let prev_sols = Set.to_list prev_sols in
+        create_assembly
+          (solver target lang prev_sols ~exclude_regs)
+          ir >>= fun (assembly, new_sol) ->
+        Data.Patch.add_minizinc_solution patch new_sol >>= fun () -> 
+        KB.return assembly
+      end) >>= fun assembly ->
+  Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
+  Events.(send @@ Info "The patch has the following assembly:\n");
+  Events.(send @@ Rule);
+  Events.(send @@ Info (String.concat ~sep:"\n" assembly));
+  Events.(send @@ Rule);
+  KB.return (n + 1)
 
 (* Converts the patch (as BIR) to VIBES IR instructions. *)
 let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =

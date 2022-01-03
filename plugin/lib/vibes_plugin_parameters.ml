@@ -87,7 +87,9 @@ let validate_patch_name (obj : Json.t) : (string, error) Stdlib.result =
    into a [Cabs.definition] *)
 let validate_patch_code (nm : string) (obj : Json.t)
   : (Vibes_config.patch_code, error) Stdlib.result =
-  match Json.Util.member "patch-code" obj, Json.Util.member "asm-code" obj, Json.Util.member "lisp-code" obj  with
+  match Json.Util.member "patch-code" obj,
+        Json.Util.member "asm-code" obj,
+        Json.Util.member "lisp-code" obj  with
   | `String s, `Null, `Null ->
           (match Parse_c.parse_c_patch s with
           | Ok code -> Ok (Vibes_config.CCode code)

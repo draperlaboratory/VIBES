@@ -2,7 +2,6 @@
     properties that the VIBES toolchain defines and manipulates *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 
@@ -86,8 +85,8 @@ module Patch : sig
      that will contain the semantics. This *must* be called before
      set_bir! *)
   val init_sem : t -> unit KB.t
-  val set_bir : t -> insn -> unit KB.t
-  val get_bir : t -> insn KB.t
+  val set_sem : t -> Theory.Semantics.t -> unit KB.t
+  val get_sem : t -> Theory.Semantics.t KB.t
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t
   val get_raw_ir : t -> Ir.t option KB.t
