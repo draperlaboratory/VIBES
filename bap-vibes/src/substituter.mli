@@ -24,6 +24,11 @@ val get_reg_name : string -> string option
 (** [undo_reg_name v] will remove the register marker from [v] if it exists. *)
 val undo_reg_name : var -> var
 
+(** [get_reg tgt v] does the same as [make_reg_name v], but checks to see if
+    [v] is actually a register according to [tgt]. Raises [Subst_err] upon
+    failure. *)
+val get_reg : Theory.target -> string -> var
+
 (** [substitute tgt h_vars patch_code] replaces higher level variables [h_vars]
     with lower-level locations in the provided [patch_code]. *)
 val substitute :

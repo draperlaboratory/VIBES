@@ -92,6 +92,7 @@ module Eval(CT : Theory.Core) = struct
 
   (* If `endian` evaluates to `b1` (true), then we are big-endian. *)
   type ('a, 'b) interp_info = {
+    tgt       : Theory.target;
     word_sort : 'a T.Bitv.t T.Value.sort;
     byte_sort : 'b T.Bitv.t T.Value.sort;
     mem_var   : ('a, 'b) T.Mem.t T.var;
@@ -120,6 +121,7 @@ module Eval(CT : Theory.Core) = struct
        it's the most common. Otherwise we need to query [tgt]
        more... *)
     {
+      tgt;
       word_sort = word_sort;
       byte_sort = byte_sort;
       mem_var = T.Target.data tgt;
@@ -305,16 +307,19 @@ module Eval(CT : Theory.Core) = struct
   let addr_of_var info (v : string)  : unit pure =
     match Hvar.find v info.hvars with
     | None -> Err.fail @@ Err.Core_c_error
-        (sprintf "expr_to_pure: missing higher var %s for ADDROF expression, \
+        (sprintf "addr_of_var: missing higher var %s for ADDROF expression, \
                   storage classification is required" v)
     | Some hvar -> match Hvar.value hvar with
       | Hvar.Storage {at_entry; _} -> begin
         match at_entry with
         | Hvar.(Memory (Frame (reg, off))) ->
+          let* reg = try KB.return @@ Substituter.get_reg info.tgt reg with
+            | Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
+                (sprintf "addr_of_var: substitution failed: %s" msg) in
           let reg =
             T.Var.create info.word_sort @@
             T.Var.Ident.of_string @@
-            Substituter.make_reg_name reg in
+            Var.name reg in
           let+ a =
             CT.add (CT.var reg)
               (CT.int info.word_sort (Word.to_bitvec off)) in
