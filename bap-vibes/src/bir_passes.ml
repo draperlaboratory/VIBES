@@ -149,28 +149,38 @@ module Opt = struct
     ]
 
   (* Attempt to merge adjacent blocks which have an edge in between them.
-     For this transformation, the blks must be ordered  according to a
-     reverse postorder DFS traversal. *)
+     For this transformation, the blks must be ordered according to a
+     reverse postorder DFS traversal.
+
+     NOTE: after this, the CFG is no longer reliable. Fallthrough edges
+     will be made implicit by the ordering of the blocks!
+ *)
   let merge_adjacent (ir : blk term list) : blk term list =
     let rec aux acc = function
       | [] -> List.rev acc
       | [blk] -> List.rev (blk :: acc)
       | blk1 :: blk2 :: rest ->
         let jmps1 = Term.enum jmp_t blk1 |> Seq.to_list in
-        match jmps1 with
-        | [jmp] -> begin
+        match List.last jmps1 with
+        | Some jmp -> begin
             match Jmp.kind jmp with
-            | Goto (Direct tid) when Tid.(tid = Term.tid blk2) ->
-              let defs1 = Term.enum def_t blk1 |> Seq.to_list in
-              let defs2 = Term.enum def_t blk2 |> Seq.to_list in
-              let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
-              let new_blk =
-                Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
-                  ~tid:(Term.tid blk1) () in
-              aux acc (new_blk :: rest)
+            | Goto (Direct tid) when Tid.(tid = Term.tid blk2) -> begin
+                match jmps1 with
+                | [_] ->
+                  let defs1 = Term.enum def_t blk1 |> Seq.to_list in
+                  let defs2 = Term.enum def_t blk2 |> Seq.to_list in
+                  let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
+                  let new_blk =
+                    Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
+                      ~tid:(Term.tid blk1) () in
+                  aux acc (new_blk :: rest)
+                | _ ->
+                  let blk1 = Term.remove jmp_t blk1 @@ Term.tid jmp in
+                  aux acc (blk1 :: blk2 :: rest)
+              end
             | _ -> aux (blk2 :: blk1 :: acc) rest
           end
-        | _ -> aux (blk2 :: blk1 :: acc) rest in
+        | None -> aux (blk2 :: blk1 :: acc) rest in
     aux [] ir
 
 end
@@ -222,32 +232,6 @@ module Shape = struct
             | None -> jmp)) in
     let extra = Option.value_map !extra ~default:[] ~f:List.return in
     blks @ extra @ !extra_ind
-
-  (* On Thumb, the selector will try to create a conditional `bl` instruction,
-     which is illegal, so we need to insert a new block for the call, with
-     a conditional goto to this new block. *)
-  let massage_conditional_calls (blks : blk term list) : blk term list KB.t =
-    let new_blks = ref [] in
-    let kind = Tid.Table.create () in
-    let+ () = KB.List.iter blks ~f:(fun blk ->
-        Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
-            let tid = Term.tid jmp in
-            match Jmp.kind jmp with
-            | Call call when Exp.(Jmp.cond jmp <> Int Word.b1) ->
-              let* tid' = Theory.Label.fresh in
-              let+ tid'' = Theory.Label.fresh in
-              let blk' = Blk.create ~tid:tid' ~jmps:[
-                  Jmp.create_call ~tid:tid'' call;
-                ] () in
-              new_blks := blk' :: !new_blks;
-              Tid.Table.set kind ~key:tid ~data:(Goto (Direct tid'))
-            | _ -> KB.return ())) in
-    let blks =
-      List.map blks ~f:(Term.map jmp_t ~f:(fun jmp ->
-          match Tid.Table.find kind @@ Term.tid jmp with
-          | Some kind -> Jmp.with_kind jmp kind
-          | None -> jmp)) in
-    blks @ !new_blks
 
   (* Order the blocks according to a reverse postorder DFS traversal.
      This should minimize the number of extra jumps we need to insert. *)
@@ -608,10 +592,6 @@ let run (code : insn)
   let* ir =
     if arm || thumb
     then Arm_specific.split_large_const ir
-    else KB.return ir in
-  let* ir =
-    if thumb
-    then Shape.massage_conditional_calls ir
     else KB.return ir in
   let* ir = Shape.reorder_blks ir in
   let ir = Opt.merge_adjacent ir in

@@ -326,6 +326,7 @@ module ARM_ops = struct
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
     let ite cnd = op ("ite " ^ Cond.to_string cnd) 
+    let it cnd = op ("it " ^ Cond.to_string cnd) 
     
   end
   
@@ -630,17 +631,23 @@ module ARM_ops = struct
     | _ -> binop_cmp is_thumb is_cond LE arg1 arg2
 
   (* Conditional jump. *)
-  let br ?(is_call : bool = false)
+  let br ?(is_call : bool = false) (is_thumb : bool)
       (cond : arm_pure) (tgt : Ir.operand) : arm_eff =
     let {op_eff = cond_eff; _} = cond in
     (* We insert a pseudo-op at the end of the condition's effects,
        which is just the name of the condition. *)
     let cnd, cond_eff = match cond_eff.current_data with
-      | {opcodes; _} :: rest -> begin
-          let name = Ir.Opcode.name @@ List.hd_exn opcodes in
+      | op :: rest -> begin
+          let name = Ir.Opcode.name @@ List.hd_exn op.opcodes in
           match Cond.of_string name with
           | None -> None, cond_eff
-          | Some cond -> Some cond, {cond_eff with current_data = rest}
+          | Some cond ->
+            let current_data =
+              if Core_kernel.(is_thumb && is_call) then
+                let tmp = Ir.Void (create_temp bit_ty) in
+                Ir.simple_op Ops.(it cond) tmp op.lhs :: rest
+              else rest in
+            Some cond, {cond_eff with current_data}
       end
       | _ -> None, cond_eff in
     let opcode = if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
@@ -937,7 +944,7 @@ struct
             KB.return @@ goto dst call_params ~is_call
           | _ ->
             let+ cond = select_exp is_thumb cond ~is_cond:true in
-            br cond dst ~is_call
+            br is_thumb cond dst ~is_call
       end
     | `Phi _ ->
       Err.(fail @@ Other
