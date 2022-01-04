@@ -32,17 +32,17 @@ let create_vibes_ir
     (sp_align : int)
     (code : insn) : (Ir.t * String.Set.t) KB.t =
   let* {ir; exclude_regs; argument_tids} =
-    Bir_passes.create code ~tgt ~lang ~hvars ~sp_align in
+    Bir_passes.run code ~tgt ~lang ~hvars ~sp_align in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
-  let* arm = Arm.is_arm lang and* thumb = Arm.is_thumb lang in
+  let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
   let+ ir =
-    if arm || thumb then
-      let+ ir = Arm.ARM_Gen.select tgt lang ir ~argument_tids in
-      Arm.preassign tgt ir ~is_thumb:thumb
+    if is_arm || is_thumb then
+      let+ ir = Arm.ARM_Gen.select ir ~argument_tids ~is_thumb in
+      Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
   ir, exclude_regs

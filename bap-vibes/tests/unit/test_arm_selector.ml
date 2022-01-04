@@ -222,12 +222,12 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
   let test =
     begin
       let* _ = Core_c.declare_call func in
-      let tgt = Helpers.the_target () in
       let lang = Helpers.the_lang () in
+      let* is_thumb = Arm.is_thumb lang in
       let+ ir =
         v |> Term.to_sequence blk_t
         |> Seq.to_list
-        |> Arm.ARM_Gen.select tgt lang ~argument_tids:Tid.Set.empty
+        |> Arm.ARM_Gen.select ~is_thumb ~argument_tids:Tid.Set.empty
       in
       let result =
         ir |> Ir.dummy_reg_alloc

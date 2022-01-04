@@ -48,7 +48,6 @@ val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t KB.t
 (* FIXME: make this happen at variable creation time *)
 val preassign : Theory.target -> Ir.t -> is_thumb:bool -> Ir.t
 
-
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
@@ -57,13 +56,14 @@ end
 
 module ARM_Gen :
 sig
-  (** [select blks] performs instruction selection: it translates
-      sequences of BIR blocks to the appropriate ARM opcodes (keeping
-      the operands abstract. *)
+  (** [select blks ~is_thumb ~argument_tids] performs instruction selection:
+      it translates the sequence of BIR blocks [blks] to the appropriate ARM
+      opcodes (keeping the operands abstract). [is_thumb] indicates whether
+      the Thumb encoding is being targeted. [argument_tids] indicates the
+      tids where function arguments are set before a call. *)
   val select :
-    Theory.target ->
-    Theory.language ->
     blk term list ->
+    is_thumb:bool ->
     argument_tids:Tid.Set.t ->
     Ir.t KB.t
 end
