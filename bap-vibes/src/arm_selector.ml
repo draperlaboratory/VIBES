@@ -637,7 +637,9 @@ struct
     | NEG -> KB.return (~-)
 
   (* `lhs` is the left-hand side of the Def term that we are selecting from
-     (if any). The selector can make more informed decisions with this info. *)
+     (if any). The selector can make more informed decisions with this info.
+     Note that this only applies to the top-level expression, not intermediate
+     operations generated from subexpressions. *)
   let rec select_exp ?(lhs : var option = None)
       (is_thumb : bool) (e : Bil.exp) : arm_pure KB.t =
     match e with
@@ -701,10 +703,10 @@ struct
           Option.exists lhs ~f:(Linear_ssa.same a)
           && Word.(s = of_int ~width:32 16)) ->
       let op = Ir.simple_op Ops.movt
-          (Ir.Var (create_temp word_ty))
-          [Ir.Var (Ir.simple_var a); Ir.Const w] in
+          (Var (create_temp word_ty))
+          [Var (Ir.simple_var a); Const w] in
       KB.return {
-        op_val = Ir.Var (create_temp word_ty);
+        op_val = Var (create_temp word_ty);
         op_eff = instr op empty_eff}
     | BinOp (TIMES, Int w, x) | BinOp (TIMES, x, Int w) ->
       let* x = select_exp is_thumb x in
@@ -727,6 +729,19 @@ struct
              op_eff with
              current_data = op_eff.current_data @ [mov];
            }}
+    (* Immediate shift value must be within the range 1-32. *)
+    | BinOp (ARSHIFT as o, x, Int w)
+      when Core_kernel.(Word.(w < one 32 || w > of_int ~width:32 32)) ->
+      select_exp_binop_integer is_thumb o w x ~swap:true
+    (* Immediate shift value must be within the range 0-31. *)
+    | BinOp ((LSHIFT | RSHIFT), _, Int w)
+      when Word.(w > of_int ~width:32 31) ->
+      KB.return @@ const @@ Word.zero 32
+    (* Move the immediate operand to an temporary. *)
+    | BinOp ((LSHIFT | RSHIFT | ARSHIFT) as o, Int w, x)
+    | BinOp ((OR | AND | XOR) as o, Int w, x)
+    | BinOp ((OR | AND | XOR) as o, x, Int w) ->
+      select_exp_binop_integer is_thumb o w x
     | BinOp (o, a, b) ->
       let* a = select_exp is_thumb a in
       let* b = select_exp is_thumb b in
@@ -765,6 +780,8 @@ struct
           lhs := rhs
         | Mem _ ->
           let lhs_mem = Ir.Void (Ir.simple_var lhs) in
+          (* We don't need to pass the lhs for mem assign, since
+             none of the patterns we match against will apply here. *)
           let* rhs = select_exp is_thumb rhs in
           lhs_mem := rhs
       end
@@ -797,6 +814,18 @@ struct
       Err.(fail @@ Other
              "Arm_selector.select_stmt: Phi nodes are unsupported!")
 
+  and select_exp_binop_integer ?(swap = false) (is_thumb : bool)
+      (o : binop) (lhs : word) (rhs : exp) : arm_pure KB.t =
+      let* rhs = select_exp is_thumb rhs in
+      let* o = sel_binop o in
+      let op = Ir.simple_op Ops.mov
+          (Var (create_temp word_ty)) [Const lhs] in
+      let lhs = {
+        op_val = Ir.Var (create_temp word_ty);
+        op_eff = instr op empty_eff;
+      } in
+      if swap then o rhs lhs else o lhs rhs
+  
   and select_elts (is_thumb : bool) (call_params : Ir.operand list)
       (elts : Blk.elt list) : arm_eff KB.t =
     match elts with

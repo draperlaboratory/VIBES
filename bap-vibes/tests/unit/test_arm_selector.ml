@@ -176,6 +176,7 @@ module Prog18 = struct
 end
 
 module Prog19 = struct
+
   let (!!) i = Bil.int (Word.of_int ~width:32 i)
 
   let prog =
@@ -219,6 +220,20 @@ module Prog23 = struct
 
   let prog =
     let bil = Bil.[v1 := lnot @@ var v2; v2 := unop neg @@ var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+module Prog24 = struct
+
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+    let bil = Bil.[
+        v1 := !!1 lsl !!3;
+        v2 := !!1 lsl var v1;
+        v3 := var v2 lor !!6;
+      ] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
@@ -378,6 +393,17 @@ let test_ir23 ctxt =
   test_ir ctxt Prog23.prog
     [blk_pat ^ ":"; "mvn R0, R0"; "neg R0, R0"]
 
+let test_ir24 ctxt =
+  test_ir ctxt Prog24.prog [
+    blk_pat ^ ":";
+    "mov R0, #1";
+    "lsl R0, R0, #3";
+    "mov R0, #1";
+    "lsl R0, R0, R0";
+    "mov R0, #6";
+    "orr R0, R0, R0";
+  ]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -401,4 +427,5 @@ let suite =
     "Test Arm.ir 21" >:: test_ir21;
     "Test Arm.ir 22" >:: test_ir22;
     "Test Arm.ir 23" >:: test_ir23;
+    "Test Arm.ir 24" >:: test_ir24;
   ]
