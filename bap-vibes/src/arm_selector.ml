@@ -702,12 +702,10 @@ struct
       when Core_kernel.(
           Option.exists lhs ~f:(Linear_ssa.same a)
           && Word.(s = of_int ~width:32 16)) ->
-      let op = Ir.simple_op Ops.movt
-          (Var (create_temp word_ty))
-          [Var (Ir.simple_var a); Const w] in
-      KB.return {
-        op_val = Var (create_temp word_ty);
-        op_eff = instr op empty_eff}
+      let tmp = Ir.Var (create_temp word_ty) in
+      let op = Ir.simple_op Ops.movt tmp [Var (Ir.simple_var a); Const w] in
+      KB.return {op_val = tmp; op_eff = instr op empty_eff}
+    (* `mul` requires all operands to be registers. *)
     | BinOp (TIMES, Int w, x) | BinOp (TIMES, x, Int w) ->
       let* x = select_exp is_thumb x in
       let i = Word.to_int_exn w in
@@ -720,11 +718,10 @@ struct
         if sh > 31 then KB.return zero
         else shl zero x @@ const @@ Word.of_int sh ~width:32
       else
-        (* `mul` requires all operands to be registers. *)
-        let tmp = create_temp word_ty in
-        let tmp_op = {op_val = Var tmp; op_eff = empty_eff} in
+        let tmp = Ir.Var (create_temp word_ty) in
+        let tmp_op = {op_val = tmp; op_eff = empty_eff} in
         let+ {op_val; op_eff} = x * tmp_op in
-        let mov = Ir.simple_op Ops.mov (Var tmp) [Const w] in
+        let mov = Ir.simple_op Ops.mov tmp [Const w] in
         {op_val; op_eff = {
              op_eff with
              current_data = op_eff.current_data @ [mov];
@@ -818,12 +815,9 @@ struct
       (o : binop) (lhs : word) (rhs : exp) : arm_pure KB.t =
       let* rhs = select_exp is_thumb rhs in
       let* o = sel_binop o in
-      let op = Ir.simple_op Ops.mov
-          (Var (create_temp word_ty)) [Const lhs] in
-      let lhs = {
-        op_val = Ir.Var (create_temp word_ty);
-        op_eff = instr op empty_eff;
-      } in
+      let tmp = Ir.Var (create_temp word_ty) in
+      let op = Ir.simple_op Ops.mov tmp [Const lhs] in
+      let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
       if swap then o rhs lhs else o lhs rhs
   
   and select_elts (is_thumb : bool) (call_params : Ir.operand list)
