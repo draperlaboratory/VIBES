@@ -309,7 +309,10 @@ module ARM_ops = struct
     | Ir.Var _, Ir.Const _ ->
       (* Check if the second arg is a constant greater than 255, in which case
           we want movw rather than mov. If it's greater than 65535, then it
-         needs to be split into two operations (movw/movt). *)
+         needs to be split into two operations (movw/movt). This case is
+         currently handled in a BIR pass before we begin selection, since
+         these large constants can also make their way into a load or store
+         instruction, for example. *)
       begin
         match arg2_var with
         | Ir.Const w when Word.to_int_exn w <= 0xFF ->
@@ -318,9 +321,8 @@ module ARM_ops = struct
         | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
           let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
-        | Ir.Const w ->
-          Err.(fail @@ Other (
-              sprintf "arm_mov: too large constant %s" @@ Word.to_string w))
+        | Ir.Const w -> Err.(fail @@ Other (
+            sprintf "arm_mov: too large constant %s" @@ Word.to_string w))
         | _ ->
           let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
