@@ -46,10 +46,10 @@ module Shape : sig
   
 end
 
-(** [create code ~tgt ~lang ~hvars ~sp_align] creates the BIR from the patch
+(** [run code ~tgt ~lang ~hvars ~sp_align] creates the BIR from the patch
     code [code], then applies a series of transformations to it. The resulting
     code is then ready to be handed off to the instruction selector. *)
-val create :
+val run :
   insn ->
   tgt:Theory.target ->
   lang:Theory.language ->
