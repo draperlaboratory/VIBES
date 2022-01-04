@@ -247,6 +247,8 @@ module ARM_ops = struct
     let addw = op "addw"
     let mul = op "mul"
     let sub = op "sub"
+    let neg = op "neg"
+    let mvn = op "mvn"
     let lsl_ = op "lsl"
     let lsr_ = op "lsr"
     let asr_ = op "asr"
@@ -345,7 +347,7 @@ module ARM_ops = struct
 
   let const c = {op_val = Ir.Const c; op_eff = empty_eff}
 
-  let _uop o ty arg =
+  let uop o ty arg =
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
     let op = Ir.simple_op o (Ir.Var res) [arg_val] in
@@ -385,6 +387,12 @@ module ARM_ops = struct
       KB.return @@ binop Ops.addw word_ty arg1 arg2
     | _ ->
       KB.return @@ binop Ops.add word_ty arg1 arg2
+
+  let ( ~- ) (arg : arm_pure) : arm_pure KB.t =
+    KB.return @@ uop Ops.neg word_ty arg
+
+  let ( ~~ ) (arg : arm_pure) : arm_pure KB.t =
+    KB.return @@ uop Ops.mvn word_ty arg 
 
   let ( * ) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.mul word_ty arg1 arg2
@@ -621,10 +629,10 @@ struct
       end
     | _ -> KB.return @@ None
 
-  let sel_unop (o : unop) : arm_pure -> arm_pure =
+  let sel_unop (o : unop) : (arm_pure -> arm_pure KB.t) KB.t =
     match o with
-    | NOT -> assert false
-    | NEG -> assert false
+    | NOT -> KB.return (~~)
+    | NEG -> KB.return (~-)
 
   (* `lhs` is the left-hand side of the Def term that we are selecting from
      (if any). The selector can make more informed decisions with this info. *)
@@ -723,8 +731,9 @@ struct
       let* o = sel_binop o in
       o a b
     | UnOp (o, a) ->
-      let+ a = select_exp is_thumb a in
-      sel_unop o a
+      let* a = select_exp is_thumb a in
+      let* o = sel_unop o in
+      o a
     | Var v -> begin
         match Var.typ v with
         | Imm _ -> KB.return @@ var v

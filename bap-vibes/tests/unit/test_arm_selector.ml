@@ -215,6 +215,14 @@ module Prog22 = struct
 
 end
 
+module Prog23 = struct
+
+  let prog =
+    let bil = Bil.[v1 := lnot @@ var v2; v2 := unop neg @@ var v3] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
 module Arm = Arm_selector
 
 let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
@@ -366,6 +374,10 @@ let test_ir22 ctxt =
   test_ir ctxt Prog22.prog
     [blk_pat ^ ":"; "movw R0, #65535"; "movt R0, #1"]
 
+let test_ir23 ctxt =
+  test_ir ctxt Prog23.prog
+    [blk_pat ^ ":"; "mvn R0, R0"; "neg R0, R0"]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -388,4 +400,5 @@ let suite =
     "Test Arm.ir 20" >:: test_ir20;
     "Test Arm.ir 21" >:: test_ir21;
     "Test Arm.ir 22" >:: test_ir22;
+    "Test Arm.ir 23" >:: test_ir23;
   ]
