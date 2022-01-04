@@ -111,7 +111,22 @@ module Err = Kb_error
  *
  *---------------------------------------------------------*)
 
+module Congruent_temps = struct
+  
+  type cls
+  type t = cls KB.obj
+  type computed = (cls, unit) KB.cls KB.value
+  let package = "vibes"
+  let name = "congruent-temps"
+  let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
 
+  let slot : (cls, (Ir.op_var * Ir.op_var) option) KB.slot =
+    KB.Class.property cls ~package "congruent-vars" @@
+    KB.Domain.optional "congruent-vars-domain"
+      ~equal:(fun (a1, b1) (a2, b2) ->
+          Ir.equal_op_var a1 a2 && Ir.equal_op_var b1 b2)
+
+end
 
 type arm_eff = {
   (* These are the move/load/store operations in the current block *)
@@ -234,19 +249,65 @@ let (@.) (s1 : arm_eff) (s2 : arm_eff) : arm_eff =
 
 module ARM_ops = struct
 
+  module Cond = struct
+
+    type t = EQ | NE | LE | GT | LT | GE | HI | LO | HS | LS
+
+    let to_string : t -> string = function
+      | EQ -> "eq"
+      | NE -> "ne"
+      | LE -> "le"
+      | GT -> "gt"
+      | LT -> "lt"
+      | GE -> "ge"
+      | HI -> "hi"
+      | LO -> "lo"
+      | HS -> "hs"
+      | LS -> "ls"
+
+    let of_string : string -> t option = function
+      | "eq" -> Some EQ
+      | "ne" -> Some NE
+      | "le" -> Some LE
+      | "gt" -> Some GT
+      | "lt" -> Some LT
+      | "ge" -> Some GE
+      | "hi" -> Some HI
+      | "lo" -> Some LO
+      | "hs" -> Some HS
+      | "ls" -> Some LS
+      | _ -> None
+    
+    let opposite : t -> t = function
+      | EQ -> NE
+      | NE -> EQ
+      | LE -> GT
+      | GT -> LE
+      | LT -> GE
+      | GE -> LT
+      | HI -> LS
+      | LO -> HS
+      | HS -> LO
+      | LS -> HI
+    
+  end
+  
   module Ops = struct
 
     include Ir.Opcode
 
-    let op s = create ~arch:"arm" s
+    let op ?(cnd : Cond.t option = None) s =
+      let s = s ^ Option.value_map cnd ~default:"" ~f:Cond.to_string in
+      create ~arch:"arm" s
 
-    let mov = op "mov"
+    let movcc cnd = op "mov" ~cnd
+    let mov is_thumb = op (if is_thumb then "movs" else "mov")
     let movw = op "movw"
     let movt = op "movt"
-    let add = op "add"
+    let add is_thumb = op (if is_thumb then "adds" else "add")
     let addw = op "addw"
     let mul = op "mul"
-    let sub = op "sub"
+    let sub is_thumb = op (if is_thumb then "subs" else "sub")
     let neg = op "neg"
     let mvn = op "mvn"
     let lsl_ = op "lsl"
@@ -262,18 +323,12 @@ module ARM_ops = struct
     let cmp = op "cmp"
     let sdiv = op "sdiv"
     let udiv = op "udiv"
-    let b = op "b"
-    let bl = op "bl"
-    let beq = op "beq"
-    let bleq = op "bleq"
-    let bne = op "bne"
-    let blne = op "blne"
-    let _ble = op "ble"
-    let _blt = op "blt"
-    let _bx = op "bx"
-
+    let b ?(cnd = None) () = op "b" ~cnd
+    let bl ?(cnd = None) () = op "bl" ~cnd
+    let ite cnd = op ("ite " ^ Cond.to_string cnd) 
+    
   end
-
+  
   let create_temp ty =
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
     Ir.simple_var
@@ -290,7 +345,8 @@ module ARM_ops = struct
      use. Currently doesn't work if variables are instantiated
      with spilled registers! Can be fixed by having seperate Variable
      constructors for spilled and non-spilled registers. *)
-  let arm_mov (arg1 : Ir.operand) (arg2 : arm_pure) : arm_eff KB.t =
+  let arm_mov (is_thumb : bool)
+      (arg1 : Ir.operand) (arg2 : arm_pure) : arm_eff KB.t =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
     | Ir.Var _, Ir.Var _ when not @@ List.is_empty arg2_sem.current_data ->
@@ -316,7 +372,7 @@ module ARM_ops = struct
       begin
         match arg2_var with
         | Ir.Const w when Word.to_int_exn w <= 0xFF ->
-          let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+          let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
         | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
           let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
@@ -324,7 +380,7 @@ module ARM_ops = struct
         | Ir.Const w -> Err.(fail @@ Other (
             sprintf "arm_mov: too large constant %s" @@ Word.to_string w))
         | _ ->
-          let mov = Ir.simple_op Ops.mov arg1 [arg2_var] in
+          let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
       end
     | Ir.Void _, Ir.Void _ when not @@ List.is_empty arg2_sem.current_data ->
@@ -341,8 +397,6 @@ module ARM_ops = struct
           sprintf "arm_mov: unexpected arguments (%s, %s)"
             (Ir.pretty_operand arg1)
             (Ir.pretty_operand arg2_var)))
-
-  let ( := ) x y = arm_mov x y
 
   let var v = {op_val = Ir.Var (Ir.simple_var v); op_eff = empty_eff}
   let mem v = {op_val = Ir.Void (Ir.simple_var v); op_eff = empty_eff}
@@ -375,7 +429,7 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
-  let (+) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+  let add (is_thumb : bool) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     (* If constant arg2 is wider than 3 bits -> emit addw *)
     let { op_val; _ } = arg2 in
     let fits_in_3 w =
@@ -388,7 +442,7 @@ module ARM_ops = struct
     | Const w when not (fits_in_3 w) ->
       KB.return @@ binop Ops.addw word_ty arg1 arg2
     | _ ->
-      KB.return @@ binop Ops.add word_ty arg1 arg2
+      KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2
 
   let ( ~- ) (arg : arm_pure) : arm_pure KB.t =
     KB.return @@ uop Ops.neg word_ty arg
@@ -399,8 +453,8 @@ module ARM_ops = struct
   let ( * ) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.mul word_ty arg1 arg2
 
-  let (-) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
-    KB.return @@ binop Ops.sub word_ty arg1 arg2
+  let sub (is_thumb : bool) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.(sub is_thumb) word_ty arg1 arg2
 
   let (/) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.sdiv word_ty arg1 arg2
@@ -447,7 +501,8 @@ module ARM_ops = struct
     (* Update the semantics of loc with those of mem *)
     binop ldr word_ty mem loc
 
-  let str (mem : arm_pure) (value : arm_pure) (loc : arm_pure) : arm_pure KB.t =
+  let str (is_thumb : bool)
+      (mem : arm_pure) (value : arm_pure) (loc : arm_pure) : arm_pure KB.t =
     let res = create_temp mem_ty in
     let lhs = Ir.Void (create_temp mem_ty) in
     let {op_val = loc_val; op_eff = loc_sem} = loc in
@@ -459,7 +514,7 @@ module ARM_ops = struct
         KB.return [op]
       | Const _ ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.mov tmp [value_val] in
+        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
         KB.return [op; mov]
       | _ ->
@@ -472,7 +527,7 @@ module ARM_ops = struct
 
   (* Special case of the `str` instruction where the address that we are
      storing to is of the shape `base + off` (e.g. `str R0, [R1, #8]`). *)
-  let str_base_off (mem : arm_pure) (value : arm_pure)
+  let str_base_off (is_thumb : bool) (mem : arm_pure) (value : arm_pure)
       (base : var) (off : word) : arm_pure KB.t =
     let res = create_temp mem_ty in
     let lhs = Ir.Void (create_temp mem_ty) in
@@ -486,7 +541,7 @@ module ARM_ops = struct
         KB.return [op]
       | Const _ ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.mov tmp [value_val] in
+        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
         KB.return [op; mov]
       | _ ->
@@ -506,37 +561,95 @@ module ARM_ops = struct
   let xor (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.eor word_ty a b
 
-  let equals (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
-    KB.return @@ binop Ops.sub word_ty arg1 arg2
+  (* Specialization of binops for generating comparisons. *)
+  let binop_cmp (is_thumb : bool) (is_cond : bool) (cond : Cond.t)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    let tmp_flag = Ir.Void (create_temp bit_ty) in
+    let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
+    let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val] in
+    let sem = arg1_sem @. arg2_sem in
+    if is_cond then
+      (* XXX: we have suboptimal abstractions available to us, so we insert
+         a fake operation at the end. *)
+      let fake = Ir.simple_op (Ops.op "" ~cnd:(Some cond)) tmp_flag [] in
+      let sem = {sem with current_data = fake :: cmp :: sem.current_data} in
+      KB.return @@ {op_val = tmp_flag; op_eff = sem}
+    else
+      let tmp_cmp, ite =
+        if is_thumb then
+          let tmp_ite = Ir.Void (create_temp bit_ty) in
+          tmp_ite, [Ir.simple_op Ops.(ite cond) tmp_ite [tmp_flag]]
+        else tmp_flag, [] in
+      let tmp1 = create_temp word_ty in
+      let tmp2 = create_temp word_ty in
+      (* These temps need to be unique, but VIBES IR also needs to know
+         that they are congruent (i.e. they must map to the same register). *)
+      let* cong = KB.Object.create Congruent_temps.cls in
+      let* () = KB.provide Congruent_temps.slot cong @@ Some (tmp1, tmp2) in
+      let then_ = Ops.movcc @@ Some cond in
+      let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
+      let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in
+      let else_ = Ir.simple_op else_ (Var tmp2) [Const Word.(zero 32); tmp_cmp] in
+      let ops = (else_ :: then_ :: ite) @ [cmp] in
+      let sem = {sem with current_data = ops @ sem.current_data} in
+      KB.return @@ {op_val = Var tmp1; op_eff = sem}
 
-  (* Intuitively we want to generate:
+  let equals
+      (is_thumb : bool)
+      (is_cond : bool) : arm_pure -> arm_pure -> arm_pure KB.t =
+    binop_cmp is_thumb is_cond EQ
+      
+  let not_equals
+      (is_thumb : bool)
+      (is_cond : bool) : arm_pure -> arm_pure -> arm_pure KB.t =
+    binop_cmp is_thumb is_cond NE
 
-     ..cond.. //fills variable [cond_val]
-     CMP cond_val 0
-     BEQ tgt // or BLEQ if is_call is true
-  *)
-  (* Generally, boolean operations will be handled by a normal (word
-     size) value, with value 0 if false and non-zero if true. It will
-     be the job of branching operations to call [cmp ? ?] and check
-     the appropriate flags. *)
-  let br ?(neg : bool = false) ?(is_call : bool = false)
+  let less_than (is_thumb : bool) (is_cond : bool)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    match arg1.op_val with
+    | Ir.Const _ -> binop_cmp is_thumb is_cond HI arg2 arg1
+    | _ -> binop_cmp is_thumb is_cond LO arg1 arg2
+
+  let less_or_equal (is_thumb : bool) (is_cond : bool)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    match arg1.op_val with
+    | Ir.Const _ -> binop_cmp is_thumb is_cond HS arg2 arg1
+    | _ -> binop_cmp is_thumb is_cond LS arg1 arg2
+
+  let signed_less_than (is_thumb : bool) (is_cond : bool)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    match arg1.op_val with
+    | Ir.Const _ -> binop_cmp is_thumb is_cond GT arg2 arg1
+    | _ -> binop_cmp is_thumb is_cond LT arg1 arg2
+
+  let signed_less_or_equal (is_thumb : bool) (is_cond : bool)
+      (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    match arg1.op_val with
+    | Ir.Const _ -> binop_cmp is_thumb is_cond GE arg2 arg1
+    | _ -> binop_cmp is_thumb is_cond LE arg1 arg2
+
+  (* Conditional jump. *)
+  let br ?(is_call : bool = false)
       (cond : arm_pure) (tgt : Ir.operand) : arm_eff =
-    let opcode =
-      if is_call then
-        if neg then Ops.blne else Ops.bleq
-      else
-      if neg then Ops.bne else Ops.beq in
-    let {op_val = cond_val; op_eff = cond_eff} = cond in
+    let {op_eff = cond_eff; _} = cond in
+    (* We insert a pseudo-op at the end of the condition's effects,
+       which is just the name of the condition. *)
+    let cnd, cond_eff = match cond_eff.current_data with
+      | {opcodes; _} :: rest -> begin
+          let name = Ir.Opcode.name @@ List.hd_exn opcodes in
+          match Cond.of_string name with
+          | None -> None, cond_eff
+          | Some cond -> Some cond, {cond_eff with current_data = rest}
+      end
+      | _ -> None, cond_eff in
+    let opcode = if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
     (* the order of operations here is actually important! *)
-    let tmp_flag, tmp_taken =
-      create_temp bit_ty, create_temp bit_ty
-    in
-    let cmp = Ir.simple_op Ops.cmp (Void tmp_flag)
-        [cond_val; Const (Word.of_int ~width:32 0)] in
+    let tmp_taken = create_temp bit_ty in
     let beq = Ir.simple_op opcode (Void tmp_taken) [tgt] in
     let blks = cond_eff.other_blks in
     {
-      current_data = cmp :: cond_eff.current_data;
+      current_data = cond_eff.current_data;
       current_ctrl = [beq];
       other_blks = blks
     }
@@ -544,7 +657,7 @@ module ARM_ops = struct
   (* Unconditional jump *)
   let goto ?(is_call : bool = false) (tgt : Ir.operand)
       (call_params : Ir.operand list) : arm_eff =
-    let opcode = if is_call then Ops.bl else Ops.b in
+    let opcode = if is_call then Ops.bl () else Ops.b () in
     (* XXX: should we figure out how to better describe the effects of the call?
        Ideally, we should say that the call will clobber the memory and all
        caller-save registers. We could probably do this at the BIR level, at
@@ -571,10 +684,11 @@ module ARM_Gen =
 struct
   open ARM_ops
 
-  let sel_binop (o : binop) : (arm_pure -> arm_pure -> arm_pure KB.t) KB.t =
+  let sel_binop ~(is_thumb : bool) ~(is_cond : bool)
+      (o : binop) : (arm_pure -> arm_pure -> arm_pure KB.t) KB.t =
     match o with
-    | PLUS -> KB.return (+)
-    | MINUS -> KB.return (-)
+    | PLUS -> KB.return @@ add is_thumb
+    | MINUS -> KB.return @@ sub is_thumb
     | TIMES -> KB.return ( * )
     | DIVIDE -> KB.return udiv
     | SDIVIDE -> KB.return (/)
@@ -583,14 +697,14 @@ struct
     | ARSHIFT ->  KB.return @@ shr (const (Word.one 32))
     | AND -> KB.return (&&)
     | OR -> KB.return (||)
-    | EQ | NEQ -> KB.return equals
+    | EQ -> KB.return @@ equals is_thumb is_cond
+    | NEQ -> KB.return @@ not_equals is_thumb is_cond
+    | LT -> KB.return @@ less_than is_thumb is_cond
+    | LE -> KB.return @@ less_or_equal is_thumb is_cond
+    | SLT -> KB.return @@ signed_less_than is_thumb is_cond
+    | SLE -> KB.return @@ signed_less_or_equal is_thumb is_cond
     | XOR -> KB.return xor
-    | MOD
-    | SMOD
-    | LT
-    | LE
-    | SLT
-    | SLE ->
+    | MOD | SMOD ->
       Err.(fail @@ Other (
           Format.sprintf "sel_binop: unsupported operation %s"
             (Bil.string_of_binop o)))
@@ -639,8 +753,14 @@ struct
   (* `lhs` is the left-hand side of the Def term that we are selecting from
      (if any). The selector can make more informed decisions with this info.
      Note that this only applies to the top-level expression, not intermediate
-     operations generated from subexpressions. *)
-  let rec select_exp ?(lhs : var option = None)
+     operations generated from subexpressions.
+
+     `is_cond` also applies to top-level expressions. We're going to use this
+     when handling the condition for a branch instruction. This lets us
+     generate better code and not have to write a specialized version of this
+     function.
+ *)
+  let rec select_exp ?(is_cond = false) ?(lhs : var option = None)
       (is_thumb : bool) (e : Bil.exp) : arm_pure KB.t =
     match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
@@ -662,18 +782,18 @@ struct
     | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , _size) ->
       let* mem = select_exp is_thumb mem in
       let* value = select_exp is_thumb value in
-      str_base_off mem value a w
+      str_base_off is_thumb mem value a w
     | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , _size) ->
       let* mem = select_exp is_thumb mem in
       let* value = select_exp is_thumb value in
-      str_base_off mem value a Word.(-w)
+      str_base_off is_thumb mem value a Word.(-w)
     | Store (mem, loc, value, _, _size) ->
       let* mem = select_exp is_thumb mem in
       let* loc = select_exp is_thumb loc in
       let* value = select_exp is_thumb value in
       (* We have to swap the arguments here, since ARM likes the value
          first, and the location second *)
-      str mem value loc
+      str is_thumb mem value loc
     | BinOp (PLUS, a, Int w) when Word.(w = zero 32) ->
       select_exp is_thumb a
     | BinOp (MINUS, a, Int w) when Word.(w = zero 32) ->
@@ -692,7 +812,7 @@ struct
           Option.exists lhs ~f:(Linear_ssa.same a)
           && is_thumb
           && Word.to_int_exn w <= 0xFF) ->
-      KB.return @@ binop Ops.add word_ty (var a) (const w)
+      KB.return @@ binop Ops.(add is_thumb) word_ty (var a) (const w)
     (* Hack for loading a large constant. This form is generated
        by a pass in `Bir_passes` which splits operations, which
        load constants larger than 65535, into two separate operations,
@@ -721,7 +841,7 @@ struct
         let tmp = Ir.Var (create_temp word_ty) in
         let tmp_op = {op_val = tmp; op_eff = empty_eff} in
         let+ {op_val; op_eff} = x * tmp_op in
-        let mov = Ir.simple_op Ops.mov tmp [Const w] in
+        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [Const w] in
         {op_val; op_eff = {
              op_eff with
              current_data = op_eff.current_data @ [mov];
@@ -742,14 +862,27 @@ struct
     | BinOp (o, a, b) ->
       let* a = select_exp is_thumb a in
       let* b = select_exp is_thumb b in
-      let* o = sel_binop o in
+      let* o = sel_binop ~is_thumb ~is_cond o in
       o a b
-    | UnOp (o, a) ->
-      let* a = select_exp is_thumb a in
-      let* o = sel_unop o in
-      o a
+    | UnOp (o, a) -> begin
+        match o, Type.infer_exn a with
+        | NOT, Imm 1 ->
+          (* Lazy way to compute the negation of that boolean. *)
+          let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
+          select_exp is_thumb identity ~is_cond
+        | _ ->
+          let* a = select_exp is_thumb a in
+          let* o = sel_unop o in
+          o a
+      end
     | Var v -> begin
         match Var.typ v with
+        | Imm 1 when is_cond ->
+          (* Lazy way to compute the boolean. *)
+          let v = var v in
+          let c = const @@ Word.zero 32 in
+          let* o = sel_binop ~is_thumb ~is_cond NEQ in
+          o v c
         | Imm _ -> KB.return @@ var v
         | Mem _ -> KB.return @@ mem v
         | Unk -> Err.(fail @@ Other (
@@ -764,6 +897,15 @@ struct
     | Extract (_, _, _) -> Err.(fail @@ Other "select_exp: Extract is unsupported!")
     | Concat (_, _) -> Err.(fail @@ Other "select_exp: Concat is unsupported!")
 
+  and select_exp_binop_integer ?(swap = false)
+      (is_thumb : bool) (o : binop) (lhs : word) (rhs : exp) : arm_pure KB.t =
+      let* rhs = select_exp is_thumb rhs in
+      let* o = sel_binop ~is_thumb ~is_cond:false o in
+      let tmp = Ir.Var (create_temp word_ty) in
+      let op = Ir.simple_op Ops.(mov is_thumb) tmp [Const lhs] in
+      let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
+      if swap then o rhs lhs else o lhs rhs
+
   and select_stmt (is_thumb : bool) (call_params : Ir.operand list)
       (s : Blk.elt) : arm_eff KB.t =
     match s with
@@ -774,13 +916,13 @@ struct
         | Imm _ | Unk ->
           let* rhs = select_exp is_thumb rhs ~lhs:(Some lhs) in
           let lhs = Ir.Var (Ir.simple_var lhs) in
-          lhs := rhs
+          arm_mov is_thumb lhs rhs
         | Mem _ ->
           let lhs_mem = Ir.Void (Ir.simple_var lhs) in
           (* We don't need to pass the lhs for mem assign, since
              none of the patterns we match against will apply here. *)
           let* rhs = select_exp is_thumb rhs in
-          lhs_mem := rhs
+          arm_mov is_thumb lhs_mem rhs
       end
     | `Jmp jmp ->
       let open KB.Syntax in
@@ -791,34 +933,15 @@ struct
             Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
         (* NOTE: branches if cond is zero *)
         | Some dst -> match cond with
-          | BinOp(EQ, cond, Int w) when Word.(w = zero 32) ->
-            let+ cond = select_exp is_thumb cond in
+          | Int w when Word.(w <> b0) ->
+            KB.return @@ goto dst call_params ~is_call
+          | _ ->
+            let+ cond = select_exp is_thumb cond ~is_cond:true in
             br cond dst ~is_call
-          | BinOp(NEQ, cond, Int w) when Word.(w = zero 32) ->
-            let+ cond = select_exp is_thumb cond in
-            br cond dst ~neg:true ~is_call
-          | Int w when Word.(w <> zero 32) ->
-            KB.return @@ goto ~is_call dst call_params
-          | cond ->
-            (* XXX: this is a hack *)
-            let neg = match cond with
-              | BinOp (NEQ, _, _) -> true
-              | _ -> false in
-            let+ cond = select_exp is_thumb cond in
-            br cond dst ~neg ~is_call
       end
     | `Phi _ ->
       Err.(fail @@ Other
              "Arm_selector.select_stmt: Phi nodes are unsupported!")
-
-  and select_exp_binop_integer ?(swap = false) (is_thumb : bool)
-      (o : binop) (lhs : word) (rhs : exp) : arm_pure KB.t =
-      let* rhs = select_exp is_thumb rhs in
-      let* o = sel_binop o in
-      let tmp = Ir.Var (create_temp word_ty) in
-      let op = Ir.simple_op Ops.mov tmp [Const lhs] in
-      let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
-      if swap then o rhs lhs else o lhs rhs
   
   and select_elts (is_thumb : bool) (call_params : Ir.operand list)
       (elts : Blk.elt list) : arm_eff KB.t =
@@ -952,10 +1075,17 @@ module Pretty = struct
     let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
     (* movt has a pseudo-argument at the beginning. *)
     let rhs = if String.(op = "movt") then List.tl_exn rhs else rhs in
+    (* conditional move may have pseudo-arguments at the end *)
+    let rhs =
+      if String.is_prefix op ~prefix:"mov" &&
+         String.length op > 3
+      then [List.hd_exn rhs]
+      else rhs in
+    (* ite needs to print the condition. *)
     let l = rm_void_args (lhs @ rhs) in
     mk_loc_list op l >>= fun is_loc_list ->
     List.zip_exn is_loc_list l |>
-    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc o) |>
+    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty o ~is_loc) |>
     Result.all >>| fun all_str ->
     String.concat @@ List.intersperse all_str ~sep:", "
 
@@ -982,26 +1112,28 @@ let is_nop (op : Ir.operation) : bool =
   let open Ir in
   let { opcodes; lhs; operands; _ } = op in
   let opcode = List.hd_exn opcodes in
-  let open ARM_ops.Ops in
-  if Ir.Opcode.(opcode = mov) then begin
-    match lhs, operands with
-    | [Var a1], [Var a2] -> begin
-        match (a1.pre_assign, a2.pre_assign) with
-        (* r := r *)
-        | Some v1, Some v2 -> Var.(v1 = v2)
-        | _ -> false
-      end
-    | _ -> false
-  end else if Ir.Opcode.(opcode = add || opcode = sub) then begin
-    match lhs, operands with
-    | [Var a1], [Var a2; Const w] -> begin
-        match (a1.pre_assign, a2.pre_assign) with
-        (* r := r +/- 0 *)
-        | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
-        | _ -> false
-      end
-    | _ -> false
-  end else false
+  match Ir.Opcode.name opcode with
+  | "mov" | "movs" -> begin
+      match lhs, operands with
+      | [Var a1], [Var a2] -> begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r *)
+          | Some v1, Some v2 -> Var.(v1 = v2)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  | "add" | "adds" | "sub" | "subs" -> begin
+      match lhs, operands with
+      | [Var a1], [Var a2; Const w] -> begin
+          match (a1.pre_assign, a2.pre_assign) with
+          (* r := r +/- 0 *)
+          | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
+          | _ -> false
+        end
+      | _ -> false
+    end
+  | _ -> false
 
 (* Removes spurious data operations *)
 let filter_nops (ops : Ir.operation list) : Ir.operation list =

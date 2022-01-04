@@ -114,8 +114,13 @@ let build_patch
     | None -> ""
     | Some j -> abs_jmp Int64.(j - patch.patch_loc)
   in
-  binary_of_asm l
-    (patch_loc :: patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
+  binary_of_asm l begin
+    ".syntax unified\n" ::
+    patch_loc ::
+    patch_relative ::
+    patch_start ::
+    (patch.assembly @ [patch_jmp])
+  end
 
 
 let patch_size (l : Theory.language) (patch : patch)

@@ -238,6 +238,16 @@ module Prog24 = struct
 
 end
 
+module Prog25 = struct
+
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+    let bil = Bil.[if_ (var v1 > !!42) [v1 := !!3] [v1 := !!4]] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
 module Arm = Arm_selector
 
 let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
@@ -326,7 +336,7 @@ let test_ir12 ctxt =
     [
       blk_pat ^ ":";
       "cmp R0, #0";
-      "beq " ^ blk_pat;
+      "bne " ^ blk_pat;
       "b " ^ blk_pat;
 
       blk_pat ^ ":";
@@ -404,6 +414,25 @@ let test_ir24 ctxt =
     "orr R0, R0, R0";
   ]
 
+let test_ir25 ctxt =
+  test_ir ctxt Prog25.prog
+    [
+      blk_pat ^ ":";
+      "cmp R0, #42";
+      "bhi " ^ blk_pat;
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #4";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #3";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+    ]
+
 let suite =
   [
     "Test Arm.ir 1" >:: test_ir1;
@@ -428,4 +457,5 @@ let suite =
     "Test Arm.ir 22" >:: test_ir22;
     "Test Arm.ir 23" >:: test_ir23;
     "Test Arm.ir 24" >:: test_ir24;
+    "Test Arm.ir 25" >:: test_ir25;
   ]

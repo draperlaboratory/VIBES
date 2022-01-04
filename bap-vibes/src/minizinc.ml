@@ -227,6 +227,15 @@ let serialize_mzn_params
           Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
             Theory.Role.pp r))
   in
+  let* congruent_temps = KB.objects Arm_selector.Congruent_temps.cls in
+  let* congruent_temps =
+    Seq.to_list congruent_temps |>
+    KB.List.filter_map ~f:(fun obj ->
+        let+ cong = KB.collect Arm_selector.Congruent_temps.slot obj in
+        match cong with
+        | None -> None
+        | Some (op1, op2) ->
+          Some (List.hd_exn op1.temps, List.hd_exn op2.temps)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
@@ -298,7 +307,10 @@ let serialize_mzn_params
                     (* The trivial case of the vars being equal can be ignored. *)
                     if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
                     else
-                      if not @@ Linear_ssa.congruent t1 t2 then None
+                      if not @@ Linear_ssa.congruent t1 t2 then
+                        match List.Assoc.find congruent_temps t1 ~equal:Var.equal with
+                        | Some t2' when Var.(t2 = t2') -> Some (mzn_enum_of_var t2)
+                        | _ -> None
                       else Some (mzn_enum_of_var t2))
           });
     operation_opcodes = key_map operations params.operation_opcodes
