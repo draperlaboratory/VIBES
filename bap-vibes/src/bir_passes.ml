@@ -617,4 +617,3 @@ let run (code : insn)
   let ir = Opt.merge_adjacent ir in
   let+ ir = to_linear_ssa ir in
   {ir; exclude_regs; argument_tids}
-
