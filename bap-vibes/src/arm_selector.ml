@@ -853,35 +853,21 @@ module Pretty = struct
   (* We use this function when generating ARM, since the assembler
      doesn't like leading digits, % or @ in labels. *)
   let tid_to_string (t : tid) : string =
-    let name = Tid.name t in
     let name =
-      String.strip ~drop:Char.(fun c -> c = '%' || c = '@') name
-    in
-    let fst = String.get name 0 in
-    let name =
-      if Char.is_digit fst then
-        "blk" ^ name
-      else name
-    in
-    name
+      Tid.name t |> String.strip ~drop:Char.(fun c -> c = '%' || c = '@') in
+    if Char.is_digit name.[0] then "blk" ^ name else name
 
-  type bracket =
-      Open | Close | Neither | Both
+  type bracket = Open | Close | Neither | Both
 
-  let arm_operand_pretty ~is_loc:is_loc (o : Ir.operand)
-    : (string, Kb_error.t) result =
+  let arm_operand_pretty (o : Ir.operand)
+      ~(is_loc : bracket) : (string, Kb_error.t) result =
     let pretty_aux =
       match o with
       | Var v ->
         let error =
           Kb_error.Missing_semantics
             "arm_operand_pretty: operand.pre_assign field is empty" in
-        let res =
-          Result.map
-            (Result.of_option v.pre_assign ~error:error)
-            ~f:(fun reg -> Var.to_string reg)
-        in
-        res
+        Result.of_option v.pre_assign ~error |> Result.map ~f:Var.to_string
       | Const w ->
         (* A little calisthenics to get this to look nice *)
         Result.return @@ Format.asprintf "#%a" Word.pp_dec w
@@ -904,62 +890,52 @@ module Pretty = struct
           | Both -> Format.asprintf "[%s]" p
         )
 
-  let rm_void_args (args : Ir.operand list) : Ir.operand list =
-    List.filter args
-      ~f:(function | Void _ -> false | _ -> true)
+  let rm_void_args : Ir.operand list -> Ir.operand list =
+    List.filter ~f:(function Ir.Void _ -> false | _ -> true)
 
   (* FIXME: Absolute hack *)
   (* We mark where the bracket location start and end in the argument list. *)
-  let mk_loc_list (op : string) (args : 'a list) : bracket list =
+  let mk_loc_list
+      (op : string)
+      (args : 'a list) : (bracket list, Kb_error.t) result =
     let len = List.length args in
     let init_neither len = List.init len ~f:(fun _ -> Neither) in
-    if String.(op = "ldr" || op = "ldrh" || op = "ldrb" || op = "str") then
-      begin
-        if len = 2 then
-          [Neither; Both]
-        else if len = 3 then
-          [Neither; Open; Close]
-        else begin
-          failwith @@
+    match op with
+    | "ldr" | "ldrh" | "ldrb" | "str" ->
+      if len = 2 then Result.return [Neither; Both]
+      else if len = 3 then Result.return [Neither; Open; Close]
+      else Result.fail @@ Kb_error.Other (
           sprintf "mk_loc_list: expected to receive 2 or 3 arguments, \
-                   got %d (op = %s)" len op
-        end
-      end
-    else
-      init_neither len
+                   got %d (op = %s)" len op)
+    | _ -> Result.return @@ init_neither len
 
-  let arm_operands_pretty (op : string) (lhs : Ir.operand list) (rhs : Ir.operand list)
-    : (string, Kb_error.t) result =
-    (* Don't print the head of the operand if it's void. *)
+  let arm_operands_pretty
+      (op : string)
+      (lhs : Ir.operand list)
+      (rhs : Ir.operand list) : (string, Kb_error.t) result =
+    let open Result.Monad_infix in
+    (* bl may have pseudo-arguments, so ignore them. *)
     let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
+    (* movt has a pseudo-argument at the beginning. *)
     let rhs = if String.(op = "movt") then List.tl_exn rhs else rhs in
-    let l =
-      if String.(op = "str")
-      then rm_void_args rhs
-      else rm_void_args (lhs @ rhs) in
-    let is_loc_list = mk_loc_list op l in
-    let l = List.zip_exn is_loc_list l in
-    let all_str =
-      List.map l
-        ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc:is_loc o) |>
-      Result.all
-    in
-    let all_str = Result.map ~f:(List.intersperse ~sep:", ") all_str in
-    Result.map ~f:String.concat all_str
+    let l = rm_void_args (lhs @ rhs) in
+    mk_loc_list op l >>= fun is_loc_list ->
+    List.zip_exn is_loc_list l |>
+    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty ~is_loc o) |>
+    Result.all >>| fun all_str ->
+    String.concat @@ List.intersperse all_str ~sep:", "
 
   let arm_op_pretty (t : Ir.operation) : (string, Kb_error.t) result =
-    let op = List.hd_exn t.opcodes in
-    Result.(opcode_pretty op >>= fun op ->
-            arm_operands_pretty op
-              t.lhs
-              t.operands >>= (fun operands ->
-                  return (Format.asprintf "%s %s" op operands)))
+    let open Result.Monad_infix in
+    List.hd_exn t.opcodes |> opcode_pretty >>= fun op ->
+    arm_operands_pretty op t.lhs t.operands >>|
+    Format.asprintf "%s %s" op
 
   let arm_blk_pretty (t : Ir.blk) : (string list, Kb_error.t) result =
+    let open Result.Monad_infix in
     let all_ops = t.data @ t.ctrl in
-    let opcodes = List.map ~f:arm_op_pretty all_ops |> Result.all in
-    let lab = Format.asprintf "%s:" (tid_to_string t.id) in
-    Result.map opcodes ~f:(fun opcodes -> lab::opcodes)
+    List.map ~f:arm_op_pretty all_ops |> Result.all >>| fun opcodes ->
+    Format.asprintf "%s:" (tid_to_string t.id) :: opcodes
 
   let arm_ir_pretty (t : Ir.t) : (string list, Kb_error.t) result =
     List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
@@ -973,32 +949,25 @@ let is_nop (op : Ir.operation) : bool =
   let { opcodes; lhs; operands; _ } = op in
   let opcode = List.hd_exn opcodes in
   let open ARM_ops.Ops in
-  if Ir.Opcode.(opcode = mov) then
-    begin
-      match lhs, operands with
-      | [Var a1], [Var a2] ->
-        begin
-          match (a1.pre_assign, a2.pre_assign) with
-          (* r := r *)
-          | Some v1, Some v2 -> Var.(v1 = v2)
-          | _ -> false
-        end
-      | _ -> false
-    end
-  else if Ir.Opcode.(opcode = add || opcode = sub) then
-    begin
-      match lhs, operands with
-      | [Var a1], [Var a2; Const w] ->
-        begin
-          match (a1.pre_assign, a2.pre_assign) with
-          (* r := r +/- 0 *)
-          | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
-          | _ -> false
-        end
-      | _ -> false
-    end
-  else
-    false
+  if Ir.Opcode.(opcode = mov) then begin
+    match lhs, operands with
+    | [Var a1], [Var a2] -> begin
+        match (a1.pre_assign, a2.pre_assign) with
+        (* r := r *)
+        | Some v1, Some v2 -> Var.(v1 = v2)
+        | _ -> false
+      end
+    | _ -> false
+  end else if Ir.Opcode.(opcode = add || opcode = sub) then begin
+    match lhs, operands with
+    | [Var a1], [Var a2; Const w] -> begin
+        match (a1.pre_assign, a2.pre_assign) with
+        (* r := r +/- 0 *)
+        | Some v1, Some v2 -> Var.(v1 = v2) && Word.(w = zero 32)
+        | _ -> false
+      end
+    | _ -> false
+  end else false
 
 (* Removes spurious data operations *)
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
