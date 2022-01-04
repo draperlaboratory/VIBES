@@ -28,7 +28,7 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
-    (isel_model_filepath : string)
+    (isel_model_filepath : string option)
     (tgt: Theory.target)
     (lang : Theory.language)
     (hvars : Higher_var.t list)
@@ -37,9 +37,9 @@ let create_vibes_ir
   let ir = Bir_opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
   let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
-  let* ir = if String.is_empty isel_model_filepath then
-    Arm.ARM_Gen.select ir
-  else
+  let* ir = match isel_model_filepath with
+   | None -> Arm.ARM_Gen.select ir
+   | Some isel_model_filepath ->
     begin
     Events.(send @@ Info "Running Minizinc instruction selector.");
     List.iter ir ~f:(fun blk ->
@@ -52,7 +52,7 @@ let create_vibes_ir
   KB.return ir
 
 (* Compile one patch from BIR to VIBES IR *)
-let compile_one_vibes_ir (isel_model_filepath : string)
+let compile_one_vibes_ir (isel_model_filepath : string option)
   (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
   count >>= fun n ->
   Data.Patch.get_assembly patch >>= (fun asm ->
@@ -125,7 +125,7 @@ let compile_one_assembly
   KB.return (n + 1)
 
 (* Converts the patch (as BIR) to VIBES IR instructions. *)
-let compile_ir ?(isel_model_filepath = "") (obj : Data.t) : unit KB.t =
+let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting IR compiler");
   Data.Patched_exe.get_patches obj >>= fun patches ->
   let size : string = string_of_int (Data.Patch_set.length patches) in

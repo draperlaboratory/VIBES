@@ -310,6 +310,21 @@ let validate_minizinc_model_filepath (obj : Json.t)
       | Error e -> Err.fail e
     end
 
+let validate_minizinc_isel_filepath (obj : Json.t)
+    : (string option, error) Stdlib.result =
+  match Json.Util.member "minizinc-isel-filepath" obj with
+  | `String s ->
+    begin
+      if (String.length s) > 0 then
+        begin
+          let realpath = Vibes_plugin_utils.realpath s in
+          match realpath with
+          | Ok path -> Err.return (Some path)
+          | Error e -> Err.fail e
+        end
+      else Err.fail (Errors.Invalid_minizinc_isel_filepath)
+    end
+  | _ -> Ok None
 let validate_ogre (obj : Json.t)
   : (string option, error) Stdlib.result =
   match Json.Util.member "ogre" obj with
@@ -337,8 +352,11 @@ let create
   validate_ogre config_json >>= fun ogre ->
   validate_minizinc_model_filepath config_json >>=
     fun minizinc_model_filepath ->
+  validate_minizinc_isel_filepath config_json >>=
+    fun minizinc_isel_filepath ->
   validate_patch_spaces config_json >>= fun patch_spaces ->
   let result = Vibes_config.create
     ~exe ~patches ~patched_exe_filepath ~max_tries
-    ~minizinc_model_filepath ~ogre ~patch_spaces ~wp_params in
+    ~minizinc_model_filepath ~ogre ~patch_spaces ~wp_params
+    ~minizinc_isel_filepath in
   Ok result

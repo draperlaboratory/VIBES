@@ -24,6 +24,7 @@ type t =
   | Invalid_patch_spaces of string
   | Invalid_max_tries
   | Invalid_loader_data of string
+  | Invalid_minizinc_isel_filepath
   | No_such_file of string
 
 let pp (ppf : Format.formatter) t : unit =
@@ -74,6 +75,8 @@ let pp (ppf : Format.formatter) t : unit =
       "optional config json field \"max-tries\" must be an integer"
     | Invalid_loader_data s ->
       "error in optional loader data field \"ogre\": " ^ s
+    | Invalid_minizinc_isel_filepath ->
+      "minizinc_isel_filepath does not point to valid file"
     | No_such_file desc -> desc
   in
   Format.fprintf ppf "@[%s@]" msg
