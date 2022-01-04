@@ -173,10 +173,11 @@ val op_classes : t -> (Theory.role Opcode.Map.t) Var.Map.t
     fresh id, if the operation is "var-like" (Var or Void) *)
 val freshen_operand : operand -> operand
 
-
+(** [freshen_operands] gives a new unique tid to every operand. *)
 val freshen_operands : t -> t
-val freshen_operation_ids : t -> t
 
+(** [freshen_operation_ids] gives a unique tid to every operation *)
+val freshen_operation_ids : t -> t
 
 (** [add_in_vars t] initializes the [in] field of every block. It
     operates by collecting all the variables appearing on rhs that are

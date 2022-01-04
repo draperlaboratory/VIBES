@@ -44,7 +44,7 @@ type t = {
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
-  minizinc_isel_filepath : string;
+  minizinc_isel_filepath : string option;
   ogre : string option;
   patch_spaces : patch_space list;
   wp_params : Wp_params.t;
@@ -64,7 +64,7 @@ let patches t : patch list = t.patches
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
-let minizinc_isel_filepath t : string = t.minizinc_isel_filepath
+let minizinc_isel_filepath t : string option = t.minizinc_isel_filepath
 let ogre t : string option = t.ogre
 let patch_spaces t : patch_space list = t.patch_spaces
 let wp_params t : Wp_params.t = t.wp_params
@@ -202,7 +202,7 @@ let create
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
-    ~minizinc_isel_filepath:(minizinc_isel_filepath : string)
+    ~minizinc_isel_filepath:(minizinc_isel_filepath : string option)
     ~ogre:(ogre : string option)
     ~patch_spaces:(patch_spaces : patch_space list)
     ~wp_params:(wp_params : Wp_params.t)

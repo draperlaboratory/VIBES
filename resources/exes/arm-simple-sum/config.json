@@ -4,7 +4,7 @@
     "func": "main",
     "postcond": "(assert (= R0_mod #x00000009))"
   },
-  "minizinc-isel-model":"../../minizinc/isel_model.mzn",
+  "minizinc-isel-filepath":"../../minizinc/isel_model.mzn",
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar, temp; 

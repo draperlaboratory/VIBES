@@ -59,7 +59,7 @@ val minizinc_model_filepath : t -> string
 
 (** [minizinc_isel_filepath config] returns the path to the minizinc iinstruction 
     selection model.*)
-val minizinc_isel_filepath : t -> string
+val minizinc_isel_filepath : t -> string option
 
 (** [ogre config] returns the contents of the user-provided ogre file for use in
    the raw loader, if provided *)
@@ -111,7 +111,7 @@ val create :
   -> patched_exe_filepath:string option
   -> max_tries : int option
   -> minizinc_model_filepath:string
-  -> minizinc_isel_filepath:string
+  -> minizinc_isel_filepath:string option
   -> ogre:string option
   -> patch_spaces:patch_space list
   -> wp_params:Wp_params.t

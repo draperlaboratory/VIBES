@@ -9,7 +9,7 @@ open Bap_core_theory
 (** [compile_ir obj] converts the patch (which is BIL) associated with the
     provided [obj] into VIBES IR. It stores this IR
     into slots of the patches of the [obj]. *)
-    val compile_ir : ?isel_model_filepath:string -> Data.t -> unit KB.t
+    val compile_ir : ?isel_model_filepath:string option -> Data.t -> unit KB.t
 
 (** [compile_assembly obj] converts the patch IR associated with the
     provided [obj] into assembly. It stores this assembly and the minizinc
