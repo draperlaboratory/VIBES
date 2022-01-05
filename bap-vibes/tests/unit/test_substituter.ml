@@ -189,8 +189,8 @@ let test_substitute_2 (_ : test_ctxt) : unit =
 let test_substitute_error (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
       create_with_storage "x"
-        ~at_entry:(stored_in_register "EAX")
-        ~at_exit:(Some (stored_in_register "RAX"));
+        ~at_entry:(stored_in_register "FAKEREGISTER1")
+        ~at_exit:(Some (stored_in_register "FAKEREGISTER2"));
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
