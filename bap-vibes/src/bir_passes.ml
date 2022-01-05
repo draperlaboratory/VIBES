@@ -579,7 +579,10 @@ let run (code : insn)
   let ir = Blk.from_insns [code] in
   (* BAP will give us the blks in such an order that the first one is the
      entry blk. *)
-  let entry_blk = List.hd_exn ir in
+  let* entry_blk = match ir with
+    | blk :: _ -> KB.return blk
+    | [] -> Err.(fail @@ Other (
+        "Bir_passes: Blk.from_insns returned an empty list of blks")) in
   let* argument_tids = Registers.collect_argument_tids ir in
   let* ir = Registers.insert_new_mems_at_callsites tgt ir in
   let* ir = Shape.adjust_noreturn_exits ir in
