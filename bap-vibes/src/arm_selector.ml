@@ -445,19 +445,19 @@ module ARM_ops = struct
     | _ ->
       KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2
 
-  let ( ~- ) (arg : arm_pure) : arm_pure KB.t =
+  let neg (arg : arm_pure) : arm_pure KB.t =
     KB.return @@ uop Ops.neg word_ty arg
 
-  let ( ~~ ) (arg : arm_pure) : arm_pure KB.t =
+  let lognot (arg : arm_pure) : arm_pure KB.t =
     KB.return @@ uop Ops.mvn word_ty arg 
 
-  let ( * ) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+  let mul (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.mul word_ty arg1 arg2
 
   let sub (is_thumb : bool) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.(sub is_thumb) word_ty arg1 arg2
 
-  let (/) (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+  let sdiv (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.sdiv word_ty arg1 arg2
 
   let udiv (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
@@ -553,10 +553,10 @@ module ARM_ops = struct
     let sem = {sem with current_data = ops @ sem.current_data} in
     {op_val = Void res; op_eff = sem}
 
-  let (&&) (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
+  let logand (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.and_ word_ty a b
 
-  let (||) (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
+  let logor (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.orr word_ty a b
 
   let xor (a : arm_pure) (b : arm_pure) : arm_pure KB.t =
@@ -643,7 +643,7 @@ module ARM_ops = struct
           | None -> None, cond_eff
           | Some cond ->
             let current_data =
-              if Core_kernel.(is_thumb && is_call) then
+              if is_thumb && is_call then
                 let tmp = Ir.Void (create_temp bit_ty) in
                 Ir.simple_op Ops.(it cond) tmp op.lhs :: rest
               else rest in
@@ -678,13 +678,9 @@ end
 
 (* We assume that a block is always created *)
 let ir (t : arm_eff) : Ir.t KB.t =
-  if not Core_kernel.(
-      List.is_empty t.current_data
-      && List.is_empty t.current_ctrl) then
-    Err.(fail @@ Other "Arm_selector.ir: expected empty data and ctrl")
-  else
-    let blks = t.other_blks in
-    KB.return @@ Ir.add_in_vars blks
+  if not (List.is_empty t.current_data && List.is_empty t.current_ctrl)
+  then Err.(fail @@ Other "Arm_selector.ir: expected empty data and ctrl")
+  else KB.return @@ Ir.add_in_vars t.other_blks
 
 
 module ARM_Gen =
@@ -696,14 +692,14 @@ struct
     match o with
     | PLUS -> KB.return @@ add is_thumb
     | MINUS -> KB.return @@ sub is_thumb
-    | TIMES -> KB.return ( * )
+    | TIMES -> KB.return mul
     | DIVIDE -> KB.return udiv
-    | SDIVIDE -> KB.return (/)
+    | SDIVIDE -> KB.return sdiv
     | LSHIFT -> KB.return @@ shl (const (Word.zero 32))
     | RSHIFT -> KB.return @@ shr (const (Word.zero 32))
     | ARSHIFT ->  KB.return @@ shr (const (Word.one 32))
-    | AND -> KB.return (&&)
-    | OR -> KB.return (||)
+    | AND -> KB.return logand
+    | OR -> KB.return logor
     | EQ -> KB.return @@ equals is_thumb is_cond
     | NEQ -> KB.return @@ not_equals is_thumb is_cond
     | LT -> KB.return @@ less_than is_thumb is_cond
@@ -754,8 +750,8 @@ struct
 
   let sel_unop (o : unop) : (arm_pure -> arm_pure KB.t) KB.t =
     match o with
-    | NOT -> KB.return (~~)
-    | NEG -> KB.return (~-)
+    | NOT -> KB.return lognot
+    | NEG -> KB.return neg
 
   (* `lhs` is the left-hand side of the Def term that we are selecting from
      (if any). The selector can make more informed decisions with this info.
@@ -813,12 +809,9 @@ struct
       shl zero a one
     (* Thumb 2 encoding allows adding an 8-bit immediate, when
        source and destination registers are the same. *)
-    | BinOp (PLUS, Var a, Int w)
-    | BinOp (PLUS, Int w, Var a)
-      when Core_kernel.(
-          Option.exists lhs ~f:(Linear_ssa.same a)
-          && is_thumb
-          && Word.to_int_exn w <= 0xFF) ->
+    | BinOp (PLUS, Var a, Int w) | BinOp (PLUS, Int w, Var a)
+      when Option.exists lhs ~f:(Linear_ssa.same a)
+        && is_thumb && Word.to_int_exn w <= 0xFF ->
       KB.return @@ binop Ops.(add is_thumb) word_ty (var a) (const w)
     (* Hack for loading a large constant. This form is generated
        by a pass in `Bir_passes` which splits operations, which
@@ -826,15 +819,13 @@ struct
        so that the selector can generate a `movw/movt` idiom. *)
     | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
     | BinOp (OR, BinOp (LSHIFT, Int w, Int s), Var a)
-      when Core_kernel.(
-          Option.exists lhs ~f:(Linear_ssa.same a)
-          && Word.(s = of_int ~width:32 16)) ->
+      when Option.exists lhs ~f:(Linear_ssa.same a)
+        && Word.(s = of_int ~width:32 16) ->
       let tmp = Ir.Var (create_temp word_ty) in
       let op = Ir.simple_op Ops.movt tmp [Var (Ir.simple_var a); Const w] in
       KB.return {op_val = tmp; op_eff = instr op empty_eff}
-    (* `mul` requires all operands to be registers. *)
-    | BinOp (TIMES, Int w, x) | BinOp (TIMES, x, Int w) ->
-      let* x = select_exp is_thumb x in
+    (* Move the immediate operand to a temporary. *)
+    | BinOp (TIMES as o, Int w, x) | BinOp (TIMES as o, x, Int w) ->
       let i = Word.to_int_exn w in
       (* Power of two can be simplified to a left shift. *)
       if Int.is_pow2 i then
@@ -843,16 +834,10 @@ struct
         (* Greater than 31 is not encodable, but that also just means we're
            shifting out every bit, so the result is zero. *)
         if sh > 31 then KB.return zero
-        else shl zero x @@ const @@ Word.of_int sh ~width:32
-      else
-        let tmp = Ir.Var (create_temp word_ty) in
-        let tmp_op = {op_val = tmp; op_eff = empty_eff} in
-        let+ {op_val; op_eff} = x * tmp_op in
-        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [Const w] in
-        {op_val; op_eff = {
-             op_eff with
-             current_data = op_eff.current_data @ [mov];
-           }}
+        else
+          let* x = select_exp is_thumb x in
+          shl zero x @@ const @@ Word.of_int sh ~width:32
+      else select_exp_binop_integer is_thumb o w x
     (* Immediate shift value must be within the range 1-32. *)
     | BinOp (ARSHIFT as o, x, Int w)
       when Core_kernel.(Word.(w < one 32 || w > of_int ~width:32 32)) ->
@@ -861,7 +846,7 @@ struct
     | BinOp ((LSHIFT | RSHIFT), _, Int w)
       when Word.(w > of_int ~width:32 31) ->
       KB.return @@ const @@ Word.zero 32
-    (* Move the immediate operand to an temporary. *)
+    (* Move the immediate operand to a temporary. *)
     | BinOp ((LSHIFT | RSHIFT | ARSHIFT) as o, Int w, x)
     | BinOp ((OR | AND | XOR) as o, Int w, x)
     | BinOp ((OR | AND | XOR) as o, x, Int w) ->
