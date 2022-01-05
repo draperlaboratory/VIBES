@@ -244,6 +244,7 @@ let (@.) (s1 : arm_eff) (s2 : arm_eff) : arm_eff =
 
 module ARM_ops = struct
 
+  (* Condition codes used in ARM. *)
   module Cond = struct
 
     type t = EQ | NE | LE | GT | LT | GE | HI | LO | HS | LS
@@ -259,19 +260,6 @@ module ARM_ops = struct
       | LO -> "lo"
       | HS -> "hs"
       | LS -> "ls"
-
-    let of_string : string -> t option = function
-      | "eq" -> Some EQ
-      | "ne" -> Some NE
-      | "le" -> Some LE
-      | "gt" -> Some GT
-      | "lt" -> Some LT
-      | "ge" -> Some GE
-      | "hi" -> Some HI
-      | "lo" -> Some LO
-      | "hs" -> Some HS
-      | "ls" -> Some LS
-      | _ -> None
 
     let opposite : t -> t = function
       | EQ -> NE
@@ -328,6 +316,26 @@ module ARM_ops = struct
   let create_temp ty =
     Var.create ~is_virtual:true ~fresh:true "tmp" ty |>
     Ir.simple_var
+
+  (* Helper data structure for generating conditional branches. *)
+  module Branch = struct
+
+    type t = {
+      generate : Cond.t -> Ir.operation;
+      is_call : bool;
+    }
+
+    let create (dst : Ir.operand) ~(is_call : bool) : t = {
+      generate = (fun cnd ->
+          let cnd = Some cnd in
+          let opcode =
+            if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
+          let tmp_taken = create_temp bit_ty in
+          Ir.simple_op opcode (Void tmp_taken) [dst]);
+      is_call;
+    }
+
+  end
 
   (* defaults to data instructions, since they are way more common *)
   let instr i sem =
@@ -553,19 +561,35 @@ module ARM_ops = struct
 
   (* Specialization of binops for generating comparisons. *)
   let binop_cmp (cond : Cond.t) (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(is_thumb : bool) ~(is_cond : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) ~(branch : Branch.t option) : arm_pure KB.t =
     let tmp_flag = Ir.Void (create_temp bit_ty) in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
     let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
-    if is_cond then
-      (* XXX: we have suboptimal abstractions available to us, so we insert
-         a fake operation at the end. *)
-      let fake = Ir.simple_op (Ops.op "" ~cnd:(Some cond)) tmp_flag [] in
-      let sem = {sem with current_data = fake :: cmp :: sem.current_data} in
+    match branch with
+    | Some {generate; is_call} ->
+      (* The comparison is used by a branch instruction, so use the
+         `generate` function to add it to the ctrl semantics. It should
+         be the only one in the current block. *)
+      let* () = match sem.current_ctrl with
+        | [] -> KB.return ()
+        | _ -> Err.fail @@ Other
+            "Arm_selector.binop_cmp: encountered a branch with non-empty \
+             ctrl semantics" in
+      let current_data =
+        if is_thumb && is_call then
+          (* Thumb requires an `it` block for conditional calls. *)
+          let tmp_it = Ir.Void (create_temp bit_ty) in
+          let it = Ir.simple_op Ops.(it cond) tmp_it [tmp_flag] in
+          it :: cmp :: sem.current_data
+        else cmp :: sem.current_data in
+      let br = generate cond in
+      let sem = {sem with current_data; current_ctrl = [br]} in
+      (* Keep in mind, `op_val` should be discarded. *)
       KB.return @@ {op_val = tmp_flag; op_eff = sem}
-    else
+    | None ->
+      (* Store the result of the comparison in an intermediate destination. *)
       let tmp_cmp, ite =
         if is_thumb then
           let tmp_ite = Ir.Void (create_temp bit_ty) in
@@ -585,65 +609,35 @@ module ARM_ops = struct
       let sem = {sem with current_data = ops @ sem.current_data} in
       KB.return @@ {op_val = Var tmp1; op_eff = sem}
 
-  let equals ~(is_thumb : bool) ~(is_cond : bool)
-    : arm_pure -> arm_pure -> arm_pure KB.t = binop_cmp EQ ~is_thumb ~is_cond
+  let equals ~(is_thumb : bool) ~(branch : Branch.t option)
+    : arm_pure -> arm_pure -> arm_pure KB.t = binop_cmp EQ ~is_thumb ~branch
 
-  let not_equals ~(is_thumb : bool) ~(is_cond : bool)
-    : arm_pure -> arm_pure -> arm_pure KB.t = binop_cmp NE ~is_thumb ~is_cond
+  let not_equals ~(is_thumb : bool) ~(branch : Branch.t option)
+    : arm_pure -> arm_pure -> arm_pure KB.t = binop_cmp NE ~is_thumb ~branch
 
   let less_than (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(is_thumb : bool) ~(is_cond : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) ~(branch : Branch.t option) : arm_pure KB.t =
     match arg1.op_val with
-    | Ir.Const _ -> binop_cmp HI arg2 arg1 ~is_thumb ~is_cond
-    | _ -> binop_cmp LO arg1 arg2 ~is_thumb ~is_cond
+    | Ir.Const _ -> binop_cmp HI arg2 arg1 ~is_thumb ~branch
+    | _ -> binop_cmp LO arg1 arg2 ~is_thumb ~branch
 
   let less_or_equal (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(is_thumb : bool) ~(is_cond : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) ~(branch : Branch.t option) : arm_pure KB.t =
     match arg1.op_val with
-    | Ir.Const _ -> binop_cmp HS arg2 arg1 ~is_thumb ~is_cond
-    | _ -> binop_cmp LS arg1 arg2 ~is_thumb ~is_cond
+    | Ir.Const _ -> binop_cmp HS arg2 arg1 ~is_thumb ~branch
+    | _ -> binop_cmp LS arg1 arg2 ~is_thumb ~branch
 
   let signed_less_than (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(is_thumb : bool) ~(is_cond : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) ~(branch : Branch.t option) : arm_pure KB.t =
     match arg1.op_val with
-    | Ir.Const _ -> binop_cmp GT arg2 arg1 ~is_thumb ~is_cond
-    | _ -> binop_cmp LT arg1 arg2 ~is_thumb ~is_cond 
+    | Ir.Const _ -> binop_cmp GT arg2 arg1 ~is_thumb ~branch
+    | _ -> binop_cmp LT arg1 arg2 ~is_thumb ~branch 
 
   let signed_less_or_equal (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(is_thumb : bool) ~(is_cond : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) ~(branch : Branch.t option) : arm_pure KB.t =
     match arg1.op_val with
-    | Ir.Const _ -> binop_cmp GE arg2 arg1 ~is_thumb ~is_cond
-    | _ -> binop_cmp LE arg1 arg2 ~is_thumb ~is_cond
-
-  (* Conditional jump. *)
-  let br ?(is_call : bool = false) 
-      (cond : arm_pure) (tgt : Ir.operand) ~(is_thumb : bool) : arm_eff =
-    let {op_eff = cond_eff; _} = cond in
-    (* We insert a pseudo-op at the end of the condition's effects,
-       which is just the name of the condition. *)
-    let cnd, cond_eff = match cond_eff.current_data with
-      | op :: rest -> begin
-          let name = Ir.Opcode.name @@ List.hd_exn op.opcodes in
-          match Cond.of_string name with
-          | None -> None, cond_eff
-          | Some cond ->
-            let current_data =
-              if is_thumb && is_call then
-                let tmp = Ir.Void (create_temp bit_ty) in
-                Ir.simple_op Ops.(it cond) tmp op.lhs :: rest
-              else rest in
-            Some cond, {cond_eff with current_data}
-        end
-      | _ -> None, cond_eff in
-    let opcode = if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
-    let tmp_taken = create_temp bit_ty in
-    let beq = Ir.simple_op opcode (Void tmp_taken) [tgt] in
-    let blks = cond_eff.other_blks in
-    {
-      current_data = cond_eff.current_data;
-      current_ctrl = [beq];
-      other_blks = blks
-    }
+    | Ir.Const _ -> binop_cmp GE arg2 arg1 ~is_thumb ~branch
+    | _ -> binop_cmp LE arg1 arg2 ~is_thumb ~branch
 
   (* Unconditional jump *)
   let goto ?(is_call : bool = false) (tgt : Ir.operand)
@@ -671,7 +665,7 @@ module ARM_Gen =
 struct
   open ARM_ops
 
-  let sel_binop ~(is_thumb : bool) ~(is_cond : bool)
+  let sel_binop ~(is_thumb : bool) ~(branch : Branch.t option)
       (o : binop) : (arm_pure -> arm_pure -> arm_pure KB.t) KB.t =
     match o with
     | PLUS -> KB.return @@ add ~is_thumb
@@ -684,12 +678,12 @@ struct
     | ARSHIFT ->  KB.return @@ shr ~signed:(const (Word.one 32))
     | AND -> KB.return logand
     | OR -> KB.return logor
-    | EQ -> KB.return @@ equals ~is_thumb ~is_cond
-    | NEQ -> KB.return @@ not_equals ~is_thumb ~is_cond
-    | LT -> KB.return @@ less_than ~is_thumb ~is_cond
-    | LE -> KB.return @@ less_or_equal ~is_thumb ~is_cond
-    | SLT -> KB.return @@ signed_less_than ~is_thumb ~is_cond
-    | SLE -> KB.return @@ signed_less_or_equal ~is_thumb ~is_cond
+    | EQ -> KB.return @@ equals ~is_thumb ~branch
+    | NEQ -> KB.return @@ not_equals ~is_thumb ~branch
+    | LT -> KB.return @@ less_than ~is_thumb ~branch
+    | LE -> KB.return @@ less_or_equal ~is_thumb ~branch
+    | SLT -> KB.return @@ signed_less_than ~is_thumb ~branch
+    | SLE -> KB.return @@ signed_less_or_equal ~is_thumb ~branch
     | XOR -> KB.return xor
     | MOD | SMOD -> Err.(fail @@ Other (
         Format.sprintf "sel_binop: unsupported operation %s"
@@ -746,7 +740,7 @@ struct
      generate better code and not have to write a specialized version of this
      function.
   *)
-  let rec select_exp ?(is_cond = false) ?(lhs : var option = None)
+  let rec select_exp ?(branch : Branch.t option = None) ?(lhs : var option = None)
       (e : Bil.exp) ~(is_thumb : bool) : arm_pure KB.t =
     let exp = select_exp ~is_thumb
     and exp_binop_integer = select_exp_binop_integer ~is_thumb in
@@ -835,14 +829,14 @@ struct
     | BinOp (o, a, b) ->
       let* a = exp a in
       let* b = exp b in
-      let* o = sel_binop ~is_thumb ~is_cond o in
+      let* o = sel_binop o ~is_thumb ~branch in
       o a b
     | UnOp (o, a) -> begin
         match o, Type.infer_exn a with
         | NOT, Imm 1 ->
           (* Lazy way to compute the negation of that boolean. *)
           let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
-          exp identity ~is_cond
+          exp identity ~branch
         | _ ->
           let* a = exp a in
           let* o = sel_unop o in
@@ -850,11 +844,11 @@ struct
       end
     | Var v -> begin
         match Var.typ v with
-        | Imm 1 when is_cond ->
+        | Imm 1 when Option.is_some branch ->
           (* Lazy way to compute the boolean. *)
           let v = var v in
           let c = const @@ Word.zero 32 in
-          let* o = sel_binop ~is_thumb ~is_cond NEQ in
+          let* o = sel_binop NEQ ~is_thumb ~branch in
           o v c
         | Imm _ -> KB.return @@ var v
         | Mem _ -> KB.return @@ mem v
@@ -873,7 +867,7 @@ struct
   and select_exp_binop_integer ?(swap : bool = false)
       (o : binop) (lhs : word) (rhs : exp) ~(is_thumb : bool) : arm_pure KB.t =
     let* rhs = select_exp rhs ~is_thumb in
-    let* o = sel_binop o ~is_thumb ~is_cond:false in
+    let* o = sel_binop o ~is_thumb ~branch:None in
     let tmp = Ir.Var (create_temp word_ty) in
     let op = Ir.simple_op Ops.(mov is_thumb) tmp [Const lhs] in
     let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
@@ -896,7 +890,7 @@ struct
           let lhs_mem = Ir.Void (Ir.simple_var lhs) in
           (* We don't need to pass the lhs for mem assign, since
              none of the patterns we match against will apply here. *)
-          let* rhs = select_exp rhs ~is_thumb in
+          let* rhs = exp rhs in
           mov lhs_mem rhs
       end
     | `Jmp jmp ->
@@ -911,8 +905,9 @@ struct
           | Int w when Word.(w <> b0) ->
             KB.return @@ goto dst call_params ~is_call
           | _ ->
-            let+ cond = exp cond ~is_cond:true in
-            br cond dst ~is_thumb ~is_call
+            let+ {op_eff = eff; _} =
+              exp cond ~branch:(Some (Branch.create dst ~is_call)) in
+            eff
       end
     | `Phi _ ->
       Err.(fail @@ Other
