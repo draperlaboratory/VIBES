@@ -735,7 +735,7 @@ struct
      Note that this only applies to the top-level expression, not intermediate
      operations generated from subexpressions.
 
-     `is_cond` also applies to top-level expressions. We're going to use this
+     `branch` also applies to top-level expressions. We're going to use this
      when handling the condition for a branch instruction. This lets us
      generate better code and not have to write a specialized version of this
      function.
