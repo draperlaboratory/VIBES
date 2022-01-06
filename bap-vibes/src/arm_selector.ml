@@ -208,6 +208,10 @@ let reg_name (v : var) : string option =
   let name = try Linear_ssa.orig_name name with _ -> name in
   Substituter.get_reg_name name
 
+let is_stack_pointer (v : var) : bool = match reg_name v with
+  | Some "SP" -> true
+  | _ -> false
+
 let preassign_var (pre : var option) (v : var)
     ~(is_thumb : bool) : var option =
   let typ = Var.typ v in
@@ -283,14 +287,18 @@ module ARM_ops = struct
       let s = s ^ Option.value_map cnd ~default:"" ~f:Cond.to_string in
       create ~arch:"arm" s
 
+    (* With Thumb, there are cases where we need to set the flags to get the
+       narrow encoding of the instruction (and other cases where this is the
+       opposite). *)
+    
     let movcc cnd = op "mov" ~cnd
-    let mov is_thumb = op (if is_thumb then "movs" else "mov")
+    let mov set_flags = op (if set_flags then "movs" else "mov")
     let movw = op "movw"
     let movt = op "movt"
-    let add is_thumb = op (if is_thumb then "adds" else "add")
+    let add set_flags = op (if set_flags then "adds" else "add")
     let addw = op "addw"
     let mul = op "mul"
-    let sub is_thumb = op (if is_thumb then "subs" else "sub")
+    let sub set_flags = op (if set_flags then "subs" else "sub")
     let neg = op "neg"
     let mvn = op "mvn"
     let lsl_ = op "lsl"
@@ -776,10 +784,13 @@ struct
       lsl_ a @@ const @@ Word.one 32
     (* Thumb 2 encoding allows adding an 8-bit immediate, when
        source and destination registers are the same. *)
-    | BinOp (PLUS, Var a, Int w) | BinOp (PLUS, Int w, Var a)
+    | BinOp ((PLUS | MINUS) as o, Var a, Int w)
+    | BinOp ((PLUS | MINUS) as o, Int w, Var a)
       when Option.exists lhs ~f:(Linear_ssa.same a)
         && is_thumb && Word.to_int_exn w <= 0xFF ->
-      KB.return @@ binop Ops.(add is_thumb) word_ty (var a) (const w)
+      let set_flags = not @@ is_stack_pointer a in
+      let op = if Caml.(o = PLUS) then Ops.add else Ops.sub in
+      KB.return @@ binop (op set_flags) word_ty (var a) (const w)
     (* Hack for loading a large constant. This form is generated
        by a pass in `Bir_passes` which splits operations, which
        load constants larger than 65535, into two separate operations,
