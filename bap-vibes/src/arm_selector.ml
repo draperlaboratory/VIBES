@@ -468,23 +468,14 @@ module ARM_ops = struct
   let udiv (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.udiv word_ty arg1 arg2
 
-  let shl (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+  let lsl_ (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
     KB.return @@ binop Ops.lsl_ word_ty arg1 arg2
 
-  let shr (arg1 : arm_pure) (arg2 : arm_pure)
-      ~(signed : arm_pure) : arm_pure KB.t =
-    let+ b = match signed.op_val with
-      | Ir.Const w -> KB.return ((Word.to_int_exn w) <> 0)
-      (* FIXME: Not sure what to do here; generally shifts are done by
-         constant amounts, and at any rate it requires a bit of work
-         to implement in ARM. Most likely the right thing to do is
-         fail gracefully.  *)
-      | _ -> Err.(fail @@ Other (
-          sprintf "Arm_gen.shr: arg2 non-constant: %s"
-            (Ir.pretty_operand signed.op_val)))
-    in
-    if b then binop Ops.asr_ word_ty arg1 arg2
-    else binop Ops.lsr_ word_ty arg1 arg2
+  let lsr_ (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.lsr_ word_ty arg1 arg2
+
+  let asr_ (arg1 : arm_pure) (arg2 : arm_pure) : arm_pure KB.t =
+    KB.return @@ binop Ops.asr_ word_ty arg1 arg2
 
   let ldr_op (bits : int) : Ir.opcode KB.t =
     if bits = 32 then KB.return Ops.ldr
@@ -673,9 +664,9 @@ struct
     | TIMES -> KB.return mul
     | DIVIDE -> KB.return udiv
     | SDIVIDE -> KB.return sdiv
-    | LSHIFT -> KB.return shl
-    | RSHIFT -> KB.return @@ shr ~signed:(const (Word.zero 32))
-    | ARSHIFT ->  KB.return @@ shr ~signed:(const (Word.one 32))
+    | LSHIFT -> KB.return lsl_
+    | RSHIFT -> KB.return @@ lsr_
+    | ARSHIFT ->  KB.return @@ asr_
     | AND -> KB.return logand
     | OR -> KB.return logor
     | EQ -> KB.return @@ equals ~is_thumb ~branch
@@ -782,8 +773,7 @@ struct
     (* FIXME: this is amost certainly wrong *)
     | BinOp (PLUS, a, b) when Exp.(a = b) ->
       let* a = exp a in
-      let one = const (Word.one 32) in
-      shl a one
+      lsl_ a @@ const @@ Word.one 32
     (* Thumb 2 encoding allows adding an 8-bit immediate, when
        source and destination registers are the same. *)
     | BinOp (PLUS, Var a, Int w) | BinOp (PLUS, Int w, Var a)
@@ -813,7 +803,7 @@ struct
         if sh > 31 then KB.return zero
         else
           let* x = exp x in
-          shl x @@ const @@ Word.of_int sh ~width:32
+          lsl_ x @@ const @@ Word.of_int sh ~width:32
       else exp_binop_integer o w x
     (* Immediate shift value must be within the range 1-32. *)
     | BinOp (ARSHIFT as o, x, Int w)
@@ -868,7 +858,7 @@ struct
      whose operands must all be registers. Therefore, if one of the operands
      is an immediate value, it must be loaded into a register first using an
      intermediate operation.
-     
+
      `swap` will swap the order of the operands `lhs` and `rhs`.
   *)
   and select_exp_binop_integer ?(swap : bool = false)
