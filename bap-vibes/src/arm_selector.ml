@@ -864,6 +864,13 @@ struct
     | Extract (_, _, _) -> Err.(fail @@ Other "select_exp: Extract is unsupported!")
     | Concat (_, _) -> Err.(fail @@ Other "select_exp: Concat is unsupported!")
 
+  (* Helper function for selecting instructions that correspond to binops, but
+     whose operands must all be registers. Therefore, if one of the operands
+     is an immediate value, it must be loaded into a register first using an
+     intermediate operation.
+     
+     `swap` will swap the order of the operands `lhs` and `rhs`.
+  *)
   and select_exp_binop_integer ?(swap : bool = false)
       (o : binop) (lhs : word) (rhs : exp) ~(is_thumb : bool) : arm_pure KB.t =
     let* rhs = select_exp rhs ~is_thumb in
