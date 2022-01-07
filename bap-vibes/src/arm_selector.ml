@@ -839,8 +839,12 @@ struct
       let* o = sel_binop o ~is_thumb ~branch in
       o a b
     | UnOp (o, a) -> begin
-        match o, Type.infer_exn a with
-        | NOT, Imm 1 ->
+        match o, Type.infer a with
+        | _ , Error e ->
+          Err.fail @@ Other
+            (sprintf "Arm_selector.select_exp: Type.infer failed: %s"
+               (Type.Error.to_string e))
+        | NOT, Ok (Imm 1) ->
           (* Lazy way to compute the negation of that boolean. *)
           let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
           select_exp identity ~branch ~is_thumb ~lhs:None
