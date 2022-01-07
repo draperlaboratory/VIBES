@@ -943,6 +943,17 @@ struct
 
   and select_blk (b : blk term)
       ~(is_thumb : bool) ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
+    (* NOTE: `argument_tids` contains the set of def tids where we
+       assign parameter registers before a call. These are guaranteed to
+       be present in the same block of their corresponding call (see the
+       implementation in Core_c).
+
+       The same applies to the spurious memory assignment before the call.
+       This is a signpost for Minizinc, so that it knows that the call
+       depends on the current state of the memory. This way, the scheduler
+       won't reorder loads and stores in a way that breaks the generated
+       code.
+    *)
     let call_params, ignored =
       Term.enum def_t b |> Seq.fold ~init:(([], Tid.Set.empty), false)
         ~f:(fun ((acc, ignored), seen_mem) def ->
