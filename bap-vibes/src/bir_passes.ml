@@ -608,8 +608,8 @@ end
 
 (* VIBES IR requires linear SSA form. *)
 let to_linear_ssa (blks : blk term list) : blk term list KB.t =
-  let+ sub = Helper.create_sub blks in
-  sub |> Sub.ssa |> Linear_ssa.transform |> Term.enum blk_t |> Seq.to_list
+  let* sub = Helper.create_sub blks in
+  sub |> Sub.ssa |> Linear_ssa.transform
 
 let run (code : insn)
     ~(tgt : Theory.target)

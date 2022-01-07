@@ -20,6 +20,7 @@
     if two variables are "congruent" in this sense. *)
 
 open Bap.Std
+open Bap_core_theory
 
 (** [orig_name name] removes the SSA naming conventions from [name].
 
@@ -38,5 +39,5 @@ val same : var -> var -> bool
 val congruent : Var.t -> Var.t -> bool
 
 (** [tranform s] takes the subroutine [s] and converts it into the linear
-    SSA form described above. *)
-val transform : Sub.t -> Sub.t
+    SSA form described above, returning the blocks only. *)
+val transform : Sub.t -> Blk.t list KB.t

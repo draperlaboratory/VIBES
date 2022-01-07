@@ -2,6 +2,9 @@
 
 open Core_kernel
 open Bap.Std
+open Bap_core_theory
+
+open KB.Let
 
 (* Use the tid of the blk as the prefix, dropping the '%' at
    the beginning. *)
@@ -52,7 +55,7 @@ let congruent (a : var) (b : var) : bool =
   if String.is_empty name_1 && String.is_empty name_2 then false
   else String.equal name_1 name_2
 
-let rec linearize_exp ~prefix:(prefix : string) (exp : Bil.exp) : Bil.exp =
+let rec linearize_exp ~(prefix : string) (exp : Bil.exp) : Bil.exp =
   match exp with
   | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
     let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
@@ -95,21 +98,34 @@ let rec linearize_exp ~prefix:(prefix : string) (exp : Bil.exp) : Bil.exp =
     Bil.Concat (new_sub_exp_1, new_sub_exp_2)
   | Bil.Unknown (_, _) -> exp
 
-let linearize_def ~prefix:(prefix : string) (def : Def.t) : Def.t =
+let linearize_phi ~(prefix : string) (phi : Phi.t) : Phi.t KB.t =
+  ignore prefix;
+  ignore phi;
+  Kb_error.(fail @@ Not_implemented "Linear_ssa.linearize_phi: unimplemented")
+
+let linearize_def ~(prefix : string) (def : Def.t) : Def.t KB.t =
   let lhs = Def.lhs def in
   let new_lhs = linearize lhs ~prefix in
   let new_def = Def.with_lhs def new_lhs in
   let rhs = Def.rhs new_def in
   let new_rhs = linearize_exp rhs ~prefix in
-  Def.with_rhs new_def new_rhs
+  KB.return @@ Def.with_rhs new_def new_rhs
 
-let linearize_jmp ~prefix:(prefix : string) (jmp : Jmp.t) : Jmp.t =
-  Jmp.map_exp jmp ~f:(fun exp -> linearize_exp exp ~prefix)
+let linearize_jmp ~(prefix : string) (jmp : Jmp.t) : Jmp.t KB.t =
+  KB.return @@ Jmp.map_exp jmp ~f:(linearize_exp ~prefix)
 
-let linearize_blk (blk : Blk.t) : Blk.t =
+let linearize_blk (blk : Blk.t) : Blk.t KB.t =
   let prefix = prefix_from blk in
-  let blk' = Term.map def_t blk ~f:(fun def -> linearize_def def ~prefix) in
-  Term.map jmp_t blk' ~f:(fun jmp -> linearize_jmp jmp ~prefix)
-
-let transform (sub : Sub.t) : Sub.t =
-  Term.map blk_t sub ~f:(fun blk -> linearize_blk blk)
+  let* phis =
+    Term.enum phi_t blk |> Seq.to_list |>
+    KB.List.map ~f:(linearize_phi ~prefix) in
+  let* defs =
+    Term.enum def_t blk |> Seq.to_list |>
+    KB.List.map ~f:(linearize_def ~prefix) in
+  let+ jmps =
+    Term.enum jmp_t blk |> Seq.to_list |>
+    KB.List.map ~f:(linearize_jmp ~prefix) in
+  Blk.create ~phis ~defs ~jmps ~tid:(Term.tid blk) ()
+  
+let transform (sub : Sub.t) : Blk.t list KB.t =
+  Term.enum blk_t sub |> Seq.to_list |> KB.List.map ~f:linearize_blk

@@ -1,7 +1,23 @@
 open Core_kernel
 open Bap_vibes
 open Bap.Std
+open Bap_core_theory
 open OUnit2
+
+module Dummy_kb = struct
+
+  type cls
+  type t = cls KB.obj
+  type computed = (cls, unit) KB.cls KB.value
+  let package = "vibes"
+  let name = "linear-ssa-dummy"
+  let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
+
+  let blks = KB.Class.property cls ~package:"vibes" "linear-ssa-blks" @@
+    KB.Domain.optional "linear-ssa-blks-domain" ~equal:(List.equal Blk.equal)
+
+end
+
 
 let prefix_from (blk : Blk.t) : string =
   let tid = Term.tid blk in
@@ -65,9 +81,20 @@ let test_transform (_ : test_ctxt) : unit =
   let blk_2 = Blk.create () ~defs:[def_2] in
   let orig_sub = Sub.create () ~name:"foo" ~blks:[blk_1; blk_2] in
   let sub = Sub.ssa orig_sub in
-  let result = Linear_ssa.transform sub in
+  let computation =
+    let open KB.Syntax in
+    KB.Object.create Dummy_kb.cls >>= fun obj ->
+    Linear_ssa.transform sub >>= fun blks ->
+    KB.provide Dummy_kb.blks obj (Some blks) >>= fun () ->
+    KB.return obj in
+  let result =  match KB.run Dummy_kb.cls computation KB.empty with
+    | Error err -> failwith @@ KB.Conflict.to_string err
+    | Ok (obj, _) -> begin
+        match KB.Value.get Dummy_kb.blks obj with
+      | Some blks -> blks
+      | None -> failwith "Failed to compute the linear SSA form!"
+      end in
   (* Build the subroutine we expect it to produce. *)
-  let tid = Term.tid sub in
   let blks = Seq.to_list (Term.enum blk_t sub) in
   let tids = List.map blks ~f:Term.tid in
   let prefixes = List.map blks ~f:prefix_from in
@@ -83,9 +110,9 @@ let test_transform (_ : test_ctxt) : unit =
   let def_2 = Def.create var_2 value ~tid:(Term.tid def_2) in
   let blk_1 = Blk.create () ~tid:(List.nth_exn tids 0) ~defs:[def_1] in
   let blk_2 = Blk.create () ~tid:(List.nth_exn tids 1) ~defs:[def_2] in
-  let expected = Sub.create () ~name:"foo" ~tid ~blks:[blk_1; blk_2] in
-  let sub_1 = Sub.to_string result in
-  let sub_2 = Sub.to_string expected in
+  let expected = [blk_1; blk_2] in
+  let sub_1 = List.map result ~f:Blk.to_string |> String.concat ~sep:"\n" in
+  let sub_2 = List.map expected ~f:Blk.to_string |> String.concat ~sep:"\n" in
   let err =
     Format.sprintf
       "failed to linear SSA sub:\nexpected:\n%sgot:\n%s"
