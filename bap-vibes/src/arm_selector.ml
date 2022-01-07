@@ -962,6 +962,10 @@ struct
             then (Ir.Var (Ir.simple_var lhs) :: acc, ignored), seen_mem
             else match Var.typ lhs, Def.rhs def with
               | Mem _, Var m when not seen_mem ->
+                (* We do not want to actually generate code for this.
+                   It is just a signpost for the selector to collect the most
+                   recent version of the memory so we can pass it as a
+                   dependency of the call. *)
                 let m = Ir.Void (Ir.simple_var m) in
                 (m :: acc, Tid.Set.add ignored tid), true
               | _ -> (acc, ignored), seen_mem) |> fst in
