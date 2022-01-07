@@ -954,21 +954,28 @@ struct
        won't reorder loads and stores in a way that breaks the generated
        code.
     *)
-    let call_params, ignored =
-      Term.enum def_t b |> Seq.fold ~init:(([], Tid.Set.empty), false)
-        ~f:(fun ((acc, ignored), seen_mem) def ->
-            let lhs = Def.lhs def and tid = Term.tid def in
-            if Tid.Set.mem argument_tids tid
-            then (Ir.Var (Ir.simple_var lhs) :: acc, ignored), seen_mem
-            else match Var.typ lhs, Def.rhs def with
-              | Mem _, Var m when not seen_mem ->
+    let* call_params, ignored =
+      Term.enum def_t b |> KB.Seq.fold ~init:([], Tid.Set.empty)
+        ~f:(fun (acc, ignored) def ->
+            let lhs = Def.lhs def in
+            let tid = Term.tid def in
+            if Tid.Set.mem argument_tids tid then
+              match Var.typ lhs, Def.rhs def with
+              | Imm _, _ | Unk, _ ->
+                KB.return (Ir.Var (Ir.simple_var lhs) :: acc, ignored)
+              | Mem _, Var m ->
                 (* We do not want to actually generate code for this.
                    It is just a signpost for the selector to collect the most
                    recent version of the memory so we can pass it as a
                    dependency of the call. *)
-                let m = Ir.Void (Ir.simple_var m) in
-                (m :: acc, Tid.Set.add ignored tid), true
-              | _ -> (acc, ignored), seen_mem) |> fst in
+                KB.return (
+                  Ir.Void (Ir.simple_var m) :: acc,
+                  Tid.Set.add ignored tid)
+              | Mem _, _ -> Err.fail @@ Other
+                  (sprintf "Arm_selector.select_blk: unexpected RHS for call \
+                            param mem %s at tid %s"
+                     (Var.to_string lhs) (Tid.to_string tid))
+            else KB.return (acc, ignored)) in
     let+ b_eff = Blk.elts b |> Seq.to_list |> List.filter ~f:(function
         | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
         | _ -> true) |> select_elts call_params ~is_thumb in

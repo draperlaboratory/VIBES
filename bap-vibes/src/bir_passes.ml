@@ -280,17 +280,19 @@ end
 (* ARM-specific transformations *)
 module Arm_specific = struct
 
+  (* Shift value for the upper 16-bit half. *)
+  let shift_val = Word.of_int ~width:32 16
+  
   (* Split the word into the lower and upper 16-bit halves. *)
-  let split_word (w : word) : word * word * word =
-    let shift = Word.of_int ~width:32 16 in
+  let split_word (w : word) : word * word =
     let lower = Word.(w land of_int ~width:32 0xFFFF) in
-    let upper = Word.(w lsr shift) in
-    shift, lower, upper
+    let upper = Word.(w lsr shift_val) in
+    lower, upper
 
   (* The particular pattern we're going to use as a signpost that a split
      happened. *)
-  let split_idiom (v : var) (shift : word) (upper : word) : exp =
-    Bil.(var v lor (int upper lsl int shift))
+  let split_idiom (v : var) (upper : word) : exp =
+    Bil.(var v lor (int upper lsl int shift_val))
 
   (* Generic function that will split integers that are too large. *)
   let split
@@ -312,10 +314,10 @@ module Arm_specific = struct
         | Some v -> Var v
         | None ->
           if Word.to_int_exn w > 0xFFFF then 
-            let shift, lower, upper = split_word w in
+            let lower, upper = split_word w in
             let v = Helper.new_tmp 32 in
             let def1 = Def.create ~tid:tid1 v @@ Int lower in
-            let def2 = Def.create ~tid:tid2 v @@ split_idiom v shift upper in
+            let def2 = Def.create ~tid:tid2 v @@ split_idiom v upper in
             Word.Table.set saved ~key:w ~data:v;
             prev_tids := None;
             add [def2; def1];
@@ -338,7 +340,7 @@ module Arm_specific = struct
     | Some v -> KB.return @@
       Tid.Table.set rhs ~key:tid ~data:(Bil.var v)
     | None ->
-      let shift, lower, upper = split_word w in
+      let lower, upper = split_word w in
       let+ () =
         let* tid' = Theory.Label.fresh in
         let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
@@ -351,7 +353,7 @@ module Arm_specific = struct
                      split" @@ Tid.to_string tid)) in
       Word.Table.set saved ~key:w ~data:lhs;
       Tid.Table.set rhs ~key:tid
-        ~data:(split_idiom lhs shift upper)
+        ~data:(split_idiom lhs upper)
 
   (* On ARM, we can't use constants larger than 65535. The typical approach is
      to load the lower 16 bits first, then load the upper 16 bits, using a
@@ -424,8 +426,8 @@ module Arm_specific = struct
 
 end
 
-(* Handle storage of registers in the presence of ABI information. *)
-module Registers = struct
+(* Handle storage classification in the presence of ABI information. *)
+module ABI = struct
 
   (* Collect the args to the call, if any. *)
   let collect_args (blk : blk term) : var list option KB.t =
@@ -452,18 +454,22 @@ module Registers = struct
                     Tid.Set.add acc @@ Term.tid def
                   ) else (remaining, acc)) |> snd))
 
-  (* Create a fake memory assignment which is a pseudo-argument to
-     the function call. *)
+  (* Create a fake memory assignment which is a signpost to the selector
+     that the most recently assigned memory is a dependency (or "argument")
+     of the function call. *)
   let insert_new_mems_at_callsites (tgt : Theory.target)
-      (blks : blk term list) : blk term list KB.t =
+      (blks : blk term list) : (blk term list * Tid.Set.t) KB.t =
     let mem = Var.reify @@ Theory.Target.data tgt in
-    KB.List.map blks ~f:(fun blk ->
-        if Helper.has_call blk then
-          let+ tid = Theory.Label.fresh in
-          let lhs = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
-          let def = Def.create ~tid lhs @@ Var mem in
-          Term.append def_t blk def
-        else KB.return blk)
+    let+ blks, tids = KB.List.fold blks ~init:([], Tid.Set.empty)
+        ~f:(fun (blks, tids) blk ->
+            if Helper.has_call blk then
+              let+ tid = Theory.Label.fresh in
+              let lhs = Var.create (Var.name mem ^ "_call") (Var.typ mem) in
+              let def = Def.create ~tid lhs @@ Var mem in
+              let blk = Term.append def_t blk def in
+              blk :: blks, Tid.Set.add tids tid
+            else KB.return (blk :: blks, tids)) in
+    List.rev blks, tids
 
   (* We shouldn't do any spilling if there are higher vars that depend
      on SP-relative locations in memory. *)
@@ -617,12 +623,13 @@ let run (code : insn)
     | blk :: _ -> KB.return blk
     | [] -> Err.(fail @@ Other (
         "Bir_passes: Blk.from_insns returned an empty list of blks")) in
-  let* argument_tids = Registers.collect_argument_tids ir in
-  let* ir = Registers.insert_new_mems_at_callsites tgt ir in
+  let* argument_tids = ABI.collect_argument_tids ir in
+  let* ir, mem_argument_tids = ABI.insert_new_mems_at_callsites tgt ir in
+  let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
   let* ir = Shape.adjust_noreturn_exits ir in
   let* ir, hvars =
-    Registers.spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
-  let exclude_regs = Registers.collect_exclude_regs tgt hvars in
+    ABI.spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
+  let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   let ir = Opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
   let* arm = Arm.is_arm lang and* thumb = Arm.is_thumb lang in
