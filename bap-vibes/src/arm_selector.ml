@@ -738,11 +738,17 @@ struct
      when handling the condition for a branch instruction. This lets us
      generate better code and not have to write a specialized version of this
      function.
+
+     NOTE: these parameters generally are NOT to be passed to subexpressions
+     (e.g. recursive calls to this function). These calls are meant to handle
+     intermediate operations (which would store their results in a temporary
+     variable). If these arguments are applied to those recursive calls, then
+     things could go very wrong.
   *)
   let rec select_exp ?(branch : Branch.t option = None) ?(lhs : var option = None)
       (e : Bil.exp) ~(is_thumb : bool) : arm_pure KB.t =
-    let exp = select_exp ~is_thumb
-    and exp_binop_integer = select_exp_binop_integer ~is_thumb in
+    let exp = select_exp ~is_thumb ~branch:None ~lhs:None in
+    let exp_binop_integer = select_exp_binop_integer ~is_thumb in
     match e with
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
       let* mem = exp mem in
@@ -837,7 +843,7 @@ struct
         | NOT, Imm 1 ->
           (* Lazy way to compute the negation of that boolean. *)
           let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
-          exp identity ~branch
+          select_exp identity ~branch ~is_thumb ~lhs:None
         | _ ->
           let* a = exp a in
           let* o = sel_unop o in
