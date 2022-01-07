@@ -216,8 +216,18 @@ module Shape = struct
   let adjust_noreturn_exits (blks : blk term list) : blk term list KB.t =
     let* exits = Helper.exit_blks blks in
     let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
-    let extra = ref None and extra_ind = ref [] in
-    let tbl = Tid.Table.create () in
+    (* This is the block that we may insert as a continuation
+       for `call ... with noreturn`. Since such calls don't have any
+       specific destination for the return, we can just re-use this
+       block for that purpose. *)
+    let extra_noret = ref None in
+    (* Returns to indirect targets, on the other hand, require us
+       to make a unique block for each target. *)
+    let extra_indirect = ref [] in
+    (* Maps jmp tids to blk tids. The blk tids refer to the new
+       return destination for the jmp. *)
+    let rewrite_tbl = Tid.Table.create () in
+    (* Collect information about jmps that need to be rewrtitten. *)
     let+ () = KB.List.iter blks ~f:(fun blk ->
         let tid = Term.tid blk in
         if Set.mem exits tid then
@@ -232,28 +242,30 @@ module Shape = struct
                     let blk' = Blk.create ~tid:tid' ~jmps:[
                         Jmp.create_goto label;
                       ] () in
-                    extra_ind := blk' :: !extra_ind;
-                    Tid.Table.set tbl ~key:tid ~data:tid'
+                    extra_indirect := blk' :: !extra_indirect;
+                    Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
                   | None ->
-                    let+ tid' = match !extra with
+                    let+ tid' = match !extra_noret with
                       | Some blk' -> KB.return @@ Term.tid blk'
                       | None ->
                         let+ tid' = Theory.Label.fresh in
                         let blk' = Blk.create ~tid:tid' () in
-                        extra := Some blk';
+                        extra_noret := Some blk';
                         tid' in
-                    Tid.Table.set tbl ~key:tid ~data:tid'
+                    Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
                 end
               | _ -> KB.return ())
         else KB.return ()) in
+    (* Rewrite the return destination for each call. *)
     let blks = List.map blks ~f:(fun blk ->
         Term.map jmp_t blk ~f:(fun jmp ->
             let tid = Term.tid jmp in
-            match Tid.Table.find tbl tid with
+            match Tid.Table.find rewrite_tbl tid with
             | Some tid' -> Jmp.(with_dst jmp @@ Some (resolved tid'))
             | None -> jmp)) in
-    let extra = Option.value_map !extra ~default:[] ~f:List.return in
-    blks @ extra @ !extra_ind
+    (* Append the generated blocks. *)
+    let extra = Option.value_map !extra_noret ~default:[] ~f:List.return in
+    blks @ extra @ !extra_indirect
 
   (* Order the blocks according to a reverse postorder DFS traversal.
      This should minimize the number of extra jumps we need to insert. *)
