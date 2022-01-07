@@ -65,6 +65,12 @@ module Helper = struct
   let has_calls (blks : blk term list) : bool =
     List.exists blks ~f:has_call
 
+  (* Returns true if the jmp is unconditional. *)
+  let is_unconditional (jmp : jmp term) : bool =
+    match Jmp.cond jmp with
+    | Int w -> Word.(w = b1)
+    | _ -> false
+  
 end
 
 (* Optimizations *)
@@ -152,36 +158,52 @@ module Opt = struct
      For this transformation, the blks must be ordered according to a
      reverse postorder DFS traversal.
 
-     NOTE: after this, the CFG is no longer reliable. Fallthrough edges
-     will be made implicit by the ordering of the blocks!
+     NOTE: after this, generating a CFG (using `Sub.to_cfg`) has some
+     caveats. Fallthrough edges will be made implicit by the ordering of
+     the blocks, and thus they will not be present in the generated CFG.
  *)
   let merge_adjacent (ir : blk term list) : blk term list =
-    let rec aux acc = function
-      | [] -> List.rev acc
-      | [blk] -> List.rev (blk :: acc)
+    (* `finished_blks` are blocks we will not try to optimize further.
+       They are to be inserted in reverse order of `ir`. *)
+    let rec aux ~finished_blks = function
+      | [] -> List.rev finished_blks
+      | [blk] -> List.rev (blk :: finished_blks)
       | blk1 :: blk2 :: rest ->
         let jmps1 = Term.enum jmp_t blk1 |> Seq.to_list in
+        (* We're starting with the last jmp first. We will attempt to
+           pop it from the blk, and see if further optimization can be
+           performed. *)
         match List.last jmps1 with
-        | Some jmp -> begin
+        | Some jmp when Helper.is_unconditional jmp -> begin
             match Jmp.kind jmp with
             | Goto (Direct tid) when Tid.(tid = Term.tid blk2) -> begin
                 match jmps1 with
                 | [_] ->
+                  (* It's the only jmp in the blk, so merge the two
+                     adjacent blocks together. Then, try to optimize
+                     the merged block. *)
+                  let phis1 = Term.enum phi_t blk1 |> Seq.to_list in
+                  let phis2 = Term.enum phi_t blk2 |> Seq.to_list in
                   let defs1 = Term.enum def_t blk1 |> Seq.to_list in
                   let defs2 = Term.enum def_t blk2 |> Seq.to_list in
                   let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
                   let new_blk =
-                    Blk.create ~defs:(defs1 @ defs2) ~jmps:jmps2
+                    Blk.create
+                      ~phis:(phis1 @ phis2)
+                      ~defs:(defs1 @ defs2)
+                      ~jmps:jmps2
                       ~tid:(Term.tid blk1) () in
-                  aux acc (new_blk :: rest)
+                  aux ~finished_blks (new_blk :: rest)
                 | _ ->
+                  (* It wasn't the only jmp in the blk, so just remove it,
+                     and try optimizing it again. *)
                   let blk1 = Term.remove jmp_t blk1 @@ Term.tid jmp in
-                  aux acc (blk1 :: blk2 :: rest)
+                  aux ~finished_blks (blk1 :: blk2 :: rest)
               end
-            | _ -> aux (blk2 :: blk1 :: acc) rest
+            | _ -> aux ~finished_blks:(blk1 :: finished_blks) (blk2 :: rest)
           end
-        | None -> aux (blk2 :: blk1 :: acc) rest in
-    aux [] ir
+        | _ -> aux ~finished_blks:(blk1 :: finished_blks) (blk2 :: rest) in
+    aux ~finished_blks:[] ir
 
 end
 
