@@ -34,7 +34,13 @@ type def_match = {
   mdef : Def.t
 } [@@deriving equal, sexp, compare, hash]
 
-(** 
+(** [jmp_match] holds a matchee field Jmp.t [mjmp] and a pattern Jmp.t [pjmp] *)
+type jmp_match = {
+  pjmp : Jmp.t;
+  mjmp : Jmp.t
+} [@@deriving equal, sexp, compare, hash]
+
+(**
  [match_] holds a mapping from pattern [Var.t] and [Tid.t] to matchee [Exp.t] and [Tid.t] respectively.
  Variables from the pattern may match literals. Note that pattern Var.t match to Exp.t, which may be 
 *)
@@ -42,62 +48,61 @@ type match_ = {
   vmap : Exp.t Var.Map.t;
   blk_map : blk_match Tid.Map.t;
   def_map : def_match Tid.Map.t;
+  jmp_map : jmp_match Tid.Map.t
   (* TODO
   phi_map : phi_match Tid.Map.t;
-  jmp_map : jmp_match Tid.Map.t
   *)
 } [@@deriving sexp]
 
 let empty_match_ : match_ =
   {blk_map = Tid.Map.empty;
   def_map = Tid.Map.empty;
-  vmap = Var.Map.empty}
+  vmap = Var.Map.empty;
+  jmp_map = Tid.Map.empty}
 
 (**
   Because we are matching over graph structures, when we check the validity of some node
   match, it may produce new obligations that other nodes must match.
   We do not immediately recurse to check these obligations but instead
-  output them as an [obligations] data structure.
+  output them as obligations.
   In this way, already checked obligations can be memoized, avoiding an infinite loop.
-  [obligations] is very similar to [match_] above except it can hold duplicates.
+  Obligations is related to the [match_] structure above, basically one constructor
+  per field of the match_ record.
 *)
-type obligations = {
-  vars : (Var.t * Exp.t) list
+
+module Obligations = struct
+  type t = Var of Var.t * Exp.t | Def of def_match | Blk of blk_match | Jmp of jmp_match
+end
+module Ob = Obligations
+
+(*
+ [env] is required because when looking in Jmp.t we need to turn Tid.t back to Blk.t
+ There may be other information that needs to go in [env] down the line
+*)
+
+type env = {
+  blk_map : Blk.t Tid.Map.t
 }
 
 (**
-  [get_candidates] generates all feasible candidate matches. The difficulty is
-  trying to not generate obviously bad candidates, which must be filtered away and are
-  wasted effort.
-  For the moment, this function is implemented as naively as possibly. It is obvious this
-  can be improved. It can however be tricky to maintain completeness of candidates while
-  pruning, so even this naive version can be useful as a reference implementation
-*)
-let get_candidates (matchee : Blk.t list) (pat : Blk.t list) : match_ list =
-  (* We use List based nondeterminism for search *)
-  let (let*) x f = List.bind ~f x in
-  List.fold pat ~init:[empty_match_]
-    ~f:(fun acc pblk ->
-     let* {blk_map; vmap; def_map} = acc in
-     (* Guess block from matchee *)
-     let* mblk = matchee in
-     (* TODO: filter feasible block matches here *)
-     let blk_map = Tid.Map.add_exn blk_map ~key:(Term.tid pblk) ~data:{pblk; mblk} in
+  [check_exp] checks the compatbility of a matchee expressions and pattern expression.
+  It lightly checks compatibility of expressions and leaves the remaining check as a 
+  [Ob.Var] check
+  It is a design choice to not make check_exp called in the obligations loop.
+  Perhaps it should.
 
-      (* Enumerate all possible def correspondences within blk correspondence *)
-     let* def_map =
-      let mdefs = Term.enum def_t mblk |> Seq.to_list in
-      let pdefs = Term.enum def_t pblk |> Seq.to_list in
-      List.fold pdefs ~init:[def_map] ~f:(fun acc (pdef) ->
-        let* tmap = acc in
-        let* mdef = mdefs in
-        (* TODO: filter feasible def matches here *)
-        let ptid = Term.tid pdef in
-        List.return (Tid.Map.add_exn tmap ~key:ptid ~data:{pdef; mdef})
-      ) in
-      (* TODO: Generate jmp and phi correspondences *)
-      List.return {blk_map; def_map; vmap}
-    )
+  *)
+let check_exp ~mexp:(mexp : exp) ~pexp:(pexp : exp) : Ob.t list option =
+    match pexp with
+    | Var pv ->
+              begin
+              match mexp with
+                | Var _ | Int _ -> Some ([Var (pv, mexp)])
+                | _ -> failwith (sprintf "Isel.check_exp: Matchee not in Flattened Form %a" Exp.pps mexp)
+              end
+    | Int _i -> if (Exp.equal mexp pexp) then (Some []) else None
+    | _ -> failwith (sprintf "Isel.check_exp: Pattern not in Flattened Form %a" Exp.pps pexp)
+
 
 (**
   [check_def] given a candidate match between a pattern [Def.t] and matchee
@@ -105,41 +110,36 @@ let get_candidates (matchee : Blk.t list) (pat : Blk.t list) : match_ list =
   will produce `Some obligations` with remaining obligations / inferred match
   candidates that should also be checked.
 *)
-let check_def (mdef : Def.t) (pdef : Def.t) : obligations option =
+(*
+TODO or at least be careful.
+check_def and check_jmp should be checking that the block it belongs to is a block that makes sense.
+This is fine *)
+let check_def (mdef : Def.t) (pdef : Def.t) : Ob.t list option =
   let open Bil in
   let (let*) x f = Option.bind ~f x in
   let mlhs = Def.lhs mdef in
   let mrhs = Def.rhs mdef in
   let plhs = Def.lhs pdef in
   let prhs = Def.rhs pdef in
-  (* For checking operands of BinOp and UnOp *)
-  let check_operand vmap m p =
-    match p with
-    | Var pv ->
-              begin
-              match m with
-                | Var _ | Int _ -> Some ((pv, m) :: vmap)
-                | _ -> failwith (sprintf "Isel.check_def: Matchee not in Flattened Form %a" Exp.pps m)
-              end
-    | Int _i -> if (Exp.equal m p) then (Some vmap) else None
-    | _ -> failwith (sprintf "Isel.check_def: Pattern not in Flattened Form %a" Exp.pps p)
-  in
   (* The left hand side of Def.t must be matchable *)
-  let vmap = [(plhs, Var mlhs)] in
-  let* vmap = match mrhs, prhs with
+  let obs = [Ob.Var (plhs, Var mlhs)] in
+  let obs = match mrhs, prhs with
 
   | BinOp (binop, a, b), BinOp (binop', pa, pb) ->
       if Int.(compare_binop binop binop' = 0) then
         begin
-        let* vmap = check_operand vmap a pa in
-        check_operand vmap b pb
+        let* obsa = check_exp ~mexp:a ~pexp:pa in
+        let* obsb = check_exp ~mexp:b ~pexp:pb in
+        Some (obsa @ obsb @ obs)
         end
      else None
   | _, BinOp (_,_ ,_) -> None
   | BinOp (_,_ ,_), _ -> None
 
   | UnOp(unop, a), UnOp(unop', pa) ->
-    if Int.(compare_unop unop unop' = 0) then check_operand vmap a pa else None
+    if Int.(compare_unop unop unop' = 0)
+      then let* obsa = check_exp ~mexp:a ~pexp:pa in Some (obsa @ obs)
+      else None
   | _, UnOp(_,_) -> None
   | UnOp(_,_), _ -> None
 
@@ -147,9 +147,10 @@ let check_def (mdef : Def.t) (pdef : Def.t) : obligations option =
     Store (pmem , paddr, pval_, pendian, psize)  ->
       if (Size.equal size psize && Int.(0 = compare_endian endian pendian)) then
         begin
-          let* vmap = check_operand vmap mem pmem in
-          let* vmap = check_operand vmap addr paddr in
-          check_operand vmap val_ pval_
+          let* obs_mem = check_exp ~mexp:mem ~pexp:pmem in
+          let* obs_addr = check_exp ~mexp:addr ~pexp:paddr in
+          let* obs_val = check_exp ~mexp:val_ ~pexp:pval_ in
+          Some (obs_mem @ obs_addr @ obs_val @ obs)
         end
       else None
   | _, Store(_,_,_,_,_) -> None
@@ -158,9 +159,9 @@ let check_def (mdef : Def.t) (pdef : Def.t) : obligations option =
   | Load (mem, addr, endian, size), Load (pmem, paddr, pendian, psize) ->
     if (Size.equal size psize && Int.(0 = compare_endian endian pendian)) then
       begin
-        let* vmap = check_operand vmap mem pmem in
-        let* vmap = check_operand vmap addr paddr in
-        Some vmap
+        let* obs_mem = check_exp ~mexp:mem ~pexp:pmem in
+        let* obs_addr = check_exp ~mexp:addr ~pexp:paddr in
+        Some (obs_mem @ obs_addr @ obs)
       end
     else None
   | _ , Load (_,_,_,_) -> None
@@ -169,13 +170,13 @@ let check_def (mdef : Def.t) (pdef : Def.t) : obligations option =
   | _ , Let (_, _ ,_ ) -> failwith "Let should not appear. Not in Flattened Form"
 
   (* If pattern is Var pv, then pv can match a literal or var*)
-  | Int _,   Var pv -> Some ((pv, mrhs) :: vmap)
-  | Var _,   Var pv -> Some ((pv, mrhs) :: vmap)
+  | Int _,   Var pv -> Some (Ob.Var (pv, mrhs) :: obs)
+  | Var _,   Var pv -> Some (Ob.Var (pv, mrhs) :: obs)
   | _,   Var _pv -> None
   (* Variables in matchee should only match variables in pattern *)
   | Var _mv, _ -> None
   (* Literal ints only match same literal ints *)
-  | _  , Int _p -> if Exp.equal prhs mrhs then Some vmap else None
+  | _  , Int _p -> if Exp.equal prhs mrhs then Some obs else None
   (* TODO: Other cases
   | Cast of cast * int * exp
   | Let of var * exp * exp
@@ -186,48 +187,180 @@ let check_def (mdef : Def.t) (pdef : Def.t) : obligations option =
   *)
   | _, _ -> failwith (Format.sprintf "uncaught case {matchee : %a ; pattern : %a} in Isel.check_def" Exp.pps mrhs Exp.pps prhs)
   in
-  Some {
-    vars = vmap;
-  }
+  obs
 
 (**
-    [check_defs] takes in a partial match_ and returns a new [Some match_] with more 
-    implied information added or [None] if the match_ does not pass the definition matching
-    check.
+  [check_jmp] checks the compatibility of a Jmp match.
 *)
-let check_defs (match_ : match_) : match_ option  =
+let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
   let (let*) x f = Option.bind x ~f in
-  let add_vmap vmap ~key ~data =
-    match Var.Map.add vmap ~key ~data with
-    | `Ok vmap -> Some vmap
-    | `Duplicate -> let e' = Var.Map.find_exn vmap key in
-                   if Exp.equal data e' then Some vmap else None 
+  (* let mdst = Jmp.dst mjmp in
+  let pdst = Jmp.dst pjmp in
+  let malt = Jmp.alt mjmp in
+  let palt = Jmp.alt pjmp in
+  let mguard = Jmp.guard mjmp in
+  let pguard = Jmp.guard pjmp in
+  let* vmap = match mguard, pguard with
+  | Some mv, Some pv -> Some {vmap = [mv,pv]}
+  | None, None -> Some empty
+  | _ ,_ -> None
   in
-  let* vmap =
-    Tid.Map.fold match_.def_map ~init:(Some match_.vmap)
-      ~f:(fun ~key:_ ~data:{pdef; mdef} acc ->
-        match acc with
-        | None -> None (* fold had already failed to be consistent *)
-        | Some vmap ->
-            let* {vars} = check_def mdef pdef in
-            List.fold_until vars ~init:vmap
-              ~f:(fun vmap (v, e) ->
-                    match add_vmap vmap ~key:v ~data:e with
-                    | None -> Stop None
-                    | Some vmap -> Continue vmap
-                  )
-              ~finish:(fun vmap -> Some vmap)
-    ) in
-  Some {match_ with vmap}
+  let obligations = match mdst, pdst with
+  | Some mdst, Some pdst -> {ob with blk_map = [mdst, pdst]}
+  | None, None -> obligations
+  | _, _ -> None 
+  let obligations = match malt, palt with
+  | Some mdst, Some pdst -> {ob with blk_map = [mdst, pdst] :: ob.blk_map}
+  | None, None -> obligations
+  | _, _ -> None *)
+  let mkind = Jmp.kind mjmp in
+  let pkind = Jmp.kind pjmp in
+  let mcond = Jmp.cond mjmp in
+  let pcond = Jmp.cond pjmp in 
+  (* maybe this is the same as operand above. Should I be concerened that Int don't appear in the match? 
+  I could consider them fused in some sense with the insturction maybe
+  I should transition to using match_ as obligation
+  *)
+  let* obs = check_exp ~mexp:mcond ~pexp:pcond in
+  match mkind, pkind with
+  | Call _mc, Call _pc -> failwith "unsupported call" (* if Int.(compare_call mc pc = 0) then Some empty_obligations else None *)
+  | Goto (Direct mtid), Goto (Direct ptid)
+  | Ret (Direct mtid), Ret (Direct ptid) ->
+      let mblk = Tid.Map.find_exn env.blk_map mtid in
+      let pblk = Tid.Map.find_exn env.blk_map ptid in
+      Some ((Ob.Blk {mblk; pblk}) :: obs) (* Hmm, it will be hard here to *)
+  | Goto (Indirect mexp), Goto (Indirect pexp)
+  | Ret (Indirect mexp), Ret (Indirect pexp) ->
+      let* obs' = check_exp ~mexp ~pexp in
+      Some (obs' @ obs)
+  | _, _ -> None
+
+(* Todo? Just for homegeneity *)
+let check_var _pv _mexp = Some ()
+let check_blk _mblk _pblk = Some ()
+
+(**
+  [merge_obligations] performs a loop putting the obligations into the match
+
+  propagate_obligations?
+  check_obligations?
+
+Very reptitive and yet I'm not sure how to improve
+If you attempt to you get a mess
+let add_tid_map
+let add_term 
+
+  let check_term ~check ~mterm ~pterm term_match map update = 
+  begin
+    let ptid = Term.tid pterm in
+    match Tid.Map.add map ~key:ptid ~data:term_match with
+    | `Ok map -> let* obs' = check mterm pterm in
+                 loop (obs' @ obs) (update map)
+    | `Duplicate -> let match' = Tid.Map.find_exn jmp_map ptid in
+                    let mtid' = Term.tid jmp_match'.mjmp in
+                    let mtid = Term.tid mjmp in
+                    if Tid.(mtid' = mtid) then loop obs match_ else None
+  end
+*)
+let merge_obligations obs match_ env : match_ option =
+  let (let*) x f = Option.bind x ~f in
+  let rec loop obs match_ =
+    match obs with
+    | [] -> Some match_
+    | (Ob.Var (pv, mexp)) :: obs ->
+      begin
+        let vmap = match_.vmap in
+        match Var.Map.add vmap ~key:pv ~data:mexp with
+        | `Ok vmap -> let* () = check_var pv mexp in
+                      loop obs {match_ with vmap}
+        | `Duplicate -> let e' = Var.Map.find_exn vmap pv in
+                        if Exp.(mexp = e') then loop obs match_ else None
+      end
+    | (Ob.Blk {mblk; pblk}) :: obs ->
+      begin
+        let blk_map = match_.blk_map in
+        let ptid = Term.tid pblk in
+        match Tid.Map.add blk_map ~key:ptid ~data:{mblk; pblk} with
+        | `Ok blk_map -> let* () = check_blk mblk pblk in
+                        loop obs {match_ with blk_map}
+        | `Duplicate -> let blk_match' = Tid.Map.find_exn blk_map ptid in
+                        let mtid' = Term.tid blk_match'.mblk in
+                        let mtid = Term.tid mblk in
+                        if Tid.(mtid' = mtid) then loop obs match_ else None
+      end
+    | (Ob.Def ({mdef; pdef} as def_match)) :: obs ->
+      begin
+        let def_map = match_.def_map in
+        let ptid = Term.tid pdef in
+        match Tid.Map.add def_map ~key:ptid ~data:def_match with
+        | `Ok def_map -> let* obs' = check_def mdef pdef in
+                         loop (obs' @ obs) {match_ with def_map}
+        | `Duplicate -> let def_match' = Tid.Map.find_exn def_map ptid in
+                        let mtid' = Term.tid def_match'.mdef in
+                        let mtid = Term.tid mdef in
+                        if Tid.(mtid' = mtid) then loop obs match_ else None
+      end
+    | (Ob.Jmp ({pjmp; mjmp} as jmp_match)) :: obs ->
+      begin
+        let jmp_map = match_.jmp_map in
+        let ptid = Term.tid pjmp in
+        match Tid.Map.add jmp_map ~key:ptid ~data:jmp_match with
+        | `Ok jmp_map -> let* obs' = check_jmp mjmp pjmp env in
+                        loop (obs' @ obs) {match_ with jmp_map}
+        | `Duplicate -> let jmp_match' = Tid.Map.find_exn jmp_map ptid in
+                        let mtid' = Term.tid jmp_match'.mjmp in
+                        let mtid = Term.tid mjmp in
+                        if Tid.(mtid' = mtid) then loop obs match_ else None
+      end
+  in
+  loop obs match_
+
 
 (* [match_bir] returns all possible matches of a pattern with a matchee.
    It generates candidates and then filters them. *)
-let match_bir ~matchee ~pat : match_ list =
-  let candidates = get_candidates matchee pat in
-  let opt_cands = List.map candidates ~f:check_defs in
-  List.filter_opt opt_cands
+let match_bir ~matchee:(matchee : Blk.t list)
+              ~pat:(pat : Blk.t list) : match_ list =
+  (* We use List based nondeterminism for search *)
+  let (let*) x f = List.bind ~f x in
+  let blk_tid_map = List.map matchee ~f:(fun blk -> (Term.tid blk, blk)) in
+  let env = { blk_map = Tid.Map.of_alist_exn blk_tid_map  } in
+  let matches = List.fold pat ~init:[empty_match_]
+    ~f:(fun matches pblk ->
+     (* Guess block from matchee *)
+     let* mblk = matchee in
+     (* Add to each match_ *)
+     let matches = List.filter_map matches ~f:(fun match_ ->
+              merge_obligations [Ob.Blk {mblk; pblk}] match_ env)
+          
+     in
+     (* Enumerate all possible def correspondences within blk correspondence *)
+     let mdefs = Term.enum def_t mblk |> Seq.to_list in
+     let pdefs = Term.enum def_t pblk |> Seq.to_list in
+     (* Add to each match_ *)
+     let matches = List.fold pdefs ~init:matches ~f:(fun matches pdef ->
+        let* mdef = mdefs in
+        List.filter_map matches ~f:(fun match_ -> 
+          merge_obligations [Ob.Def {pdef; mdef}] match_ env)
+        )
+     in
+     (* Enumerate all possible jmp correspondences within blk correspondence *)
+    let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
+    let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
+    let matches =
+        List.fold pjmps ~init:matches ~f:(fun matches pjmp ->
+          let* mjmp = mjmps in
+          List.filter_map matches ~f:(fun match_ ->
+            merge_obligations [Ob.Jmp {pjmp; mjmp}] match_ env)
+        )
+    in
+    matches
+      (* TODO: Generate phi correspondences *)
+      (* Perhaps enumerate over all variables at the end? *)
+    )
+  in
+  matches
 
-let build_matches matchee (pats : Blk.t list String.Map.t) = 
+let build_matches matchee (pats : Blk.t list String.Map.t) =
   String.Map.map pats ~f:(fun pat ->
     match_bir ~matchee ~pat
     )
