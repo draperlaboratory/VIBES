@@ -5,13 +5,13 @@ open Bap_vibes
 open Bap.Std
 open OUnit2
 
-let massage_bil sem =
+let fix_bil_names sem =
   let mapper = object(self)
     inherit Stmt.mapper
     method! map_var (v : var) : exp =
-      Var (Substituter.undo_reg_name v)
+      Var (Substituter.unmark_reg v |> Option.value ~default:v)
     method! map_move (v : var) (e : exp) : stmt list =
-      let v = Substituter.undo_reg_name v in
+      let v = Substituter.unmark_reg v |> Option.value ~default:v in
       let e = self#map_exp e in
       Bil.[v := e]
   end in
@@ -37,7 +37,7 @@ let assert_parse_eq ?(hvars = []) s1 s2 =
         let* (module T) = Theory.require theory in
         let module Eval = Core_c.Eval(T) in
         let* sem = Eval.c_patch_to_eff hvars (Helpers.the_target ()) ast in
-        let sem = massage_bil @@ Insn.bil sem in
+        let sem = fix_bil_names @@ Insn.bil sem in
         let sem_str = eff_to_str sem in
         KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
       end

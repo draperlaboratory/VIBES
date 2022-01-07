@@ -25,7 +25,7 @@ let prefix_len = 10
 let orig_name (name : string) : string =
   let name = String.drop_prefix name prefix_len in
   let name, is_reg =
-    Substituter.get_reg_name name |>
+    Substituter.unmark_reg_name name |>
     Option.value_map ~default:(name, false) ~f:(fun name ->
         name, true) in
   let name = match String.split name ~on:'_' with
@@ -33,7 +33,7 @@ let orig_name (name : string) : string =
     | [name] when not @@ String.is_empty name -> name
     | [name; _] -> name
     | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name in
-  if is_reg then Substituter.make_reg_name name else name
+  if is_reg then Substituter.mark_reg_name name else name
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in

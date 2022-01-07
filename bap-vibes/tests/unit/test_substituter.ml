@@ -93,7 +93,7 @@ let test_substitute_1 (_ : test_ctxt) : unit =
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rax = Var.create "RAX" (Bil.Imm 64) in
-  let rax_reg = Substituter.make_reg rax in
+  let rax_reg = Substituter.mark_reg rax in
   let num_3 = Word.of_int ~width:64 3 in
   let code =
     Bil.[
@@ -138,7 +138,7 @@ let test_substitute_2 (_ : test_ctxt) : unit =
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rbp = Var.create "RBP" (Bil.Imm 64) in
-  let rbp_reg = Substituter.make_reg rbp in
+  let rbp_reg = Substituter.mark_reg rbp in
   let mem = Var.create "mem" (Bil.Mem (`r64, `r8)) in
   let num_3 = Word.of_int ~width:64 3 in
   let num_14 = Word.of_string "0x14:64" in

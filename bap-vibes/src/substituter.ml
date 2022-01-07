@@ -15,33 +15,35 @@ exception Subst_err of string
    just make it explicit. *)
 let reg_prefix = "_$reg"
 
-let make_reg_name (v : string) : string = reg_prefix ^ v
+let mark_reg_name (v : string) : string = reg_prefix ^ v
 
-let make_reg (v : var) : var =
-  let name = Var.name v and typ = Var.typ v in
-  Var.create (make_reg_name name) typ
-
-let get_reg_name (v : string) : string option =
-  if String.is_prefix v ~prefix:reg_prefix then
-    Some (String.drop_prefix v @@ String.length reg_prefix)
-  else None
-
-let undo_reg_name (v : var) : var =
-  let name = Var.name v and typ = Var.typ v in
-  match get_reg_name name with
-  | Some name -> Var.create name typ
-  | None -> v
+let mark_reg (v : var) : var =
+  let name = Var.name v in
+  let typ = Var.typ v in
+  Var.create (mark_reg_name name) typ
 
 (* Find a register with a given name in a target arch. *)
-let get_reg (tgt : Theory.target) (name : string) : var =
+let mark_reg_exn (tgt : Theory.target) (name : string) : var =
   Theory.Target.regs tgt |>
   Set.find ~f:(fun v -> String.(Theory.Var.name v = name)) |>
   function
-  | Some r -> make_reg @@ Var.reify r
+  | Some r -> mark_reg @@ Var.reify r
   | None ->
     raise
       (Subst_err
          (Format.sprintf "Register %s not found in target arch!" name))
+
+let unmark_reg_name (v : string) : string option =
+  if String.is_prefix v ~prefix:reg_prefix then
+    Some (String.drop_prefix v @@ String.length reg_prefix)
+  else None
+
+let unmark_reg (v : var) : var option =
+  let name = Var.name v in
+  let typ = Var.typ v in
+  match unmark_reg_name name with
+  | Some name -> Some (Var.create name typ)
+  | None -> None
 
 let get_mem tgt =
   let mem = Theory.Target.data tgt in
@@ -60,7 +62,7 @@ let subst_name (tgt : Theory.target) (t : Hvar.t)
   match Hvar.value t with
   | Hvar.Storage {at_entry; _} -> begin
       match at_entry with
-      | Hvar.Register name -> Bil.var @@ get_reg tgt name
+      | Hvar.Register name -> Bil.var @@ mark_reg_exn tgt name
       | Hvar.Memory memory ->
         let mem = get_mem tgt |> Bil.var in
         let endianness =
@@ -73,7 +75,7 @@ let subst_name (tgt : Theory.target) (t : Hvar.t)
         let size = size_of_typ typ name in
         match memory with
         | Hvar.Frame (loc, off) ->
-          let loc = get_reg tgt loc in
+          let loc = mark_reg_exn tgt loc in
           Bil.load ~mem:mem ~addr:Bil.(var loc + int off) endianness size
         | Hvar.Global addr ->
           Bil.load ~mem ~addr:(Bil.int addr) endianness size
@@ -114,7 +116,7 @@ let subst_def
     | Hvar.Storage {at_entry; _} -> begin
         match at_entry with
         | Hvar.Register name ->
-          let lhs = get_reg tgt name in
+          let lhs = mark_reg_exn tgt name in
           Def.create ~tid:(Term.tid ir) lhs rhs
         | Hvar.Memory memory ->
           let mem = get_mem tgt in
@@ -129,7 +131,7 @@ let subst_def
           let size = size_of_typ typ name in
           let rhs = match memory with
             | Hvar.Frame (loc, off) ->
-              let loc = get_reg tgt loc in
+              let loc = mark_reg_exn tgt loc in
               Bil.
                 (store ~mem:(var mem) ~addr:(var loc + int off)
                    rhs endianness size)
