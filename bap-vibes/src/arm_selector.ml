@@ -330,8 +330,15 @@ module ARM_ops = struct
   (* Helper data structure for generating conditional branches. *)
   module Branch = struct
 
+    (* `generate` accepts the condition and returns the corresponding
+       branch instruction, along with the fake destination operand.
+
+       `is_call` denotes whether this is a conditional call or not.
+       We bookkeep this information because on Thumb a conditional
+       call needs to be placed inside of an IT block.
+    *)
     type t = {
-      generate : Cond.t -> Ir.operation;
+      generate : Cond.t -> Ir.operation * Ir.operand;
       is_call : bool;
     }
 
@@ -340,8 +347,9 @@ module ARM_ops = struct
           let cnd = Some cnd in
           let opcode =
             if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
-          let tmp_taken = create_temp bit_ty in
-          Ir.simple_op opcode (Void tmp_taken) [dst]);
+          let tmp = Ir.Void (create_temp bit_ty) in
+          let op = Ir.simple_op opcode tmp [dst] in
+          op, tmp);
       is_call;
     }
 
@@ -585,10 +593,10 @@ module ARM_ops = struct
           let it = Ir.simple_op Ops.(it cond) tmp_it [tmp_flag] in
           it :: cmp :: sem.current_data
         else cmp :: sem.current_data in
-      let br = generate cond in
+      let br, op_val = generate cond in
       let sem = {sem with current_data; current_ctrl = [br]} in
       (* Keep in mind, `op_val` should be discarded. *)
-      KB.return @@ {op_val = tmp_flag; op_eff = sem}
+      KB.return @@ {op_val; op_eff = sem}
     | None ->
       (* Store the result of the comparison in an intermediate destination. *)
       let tmp_cmp, ite =
