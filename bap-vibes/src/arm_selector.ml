@@ -290,7 +290,7 @@ module ARM_ops = struct
     (* With Thumb, there are cases where we need to set the flags to get the
        narrow encoding of the instruction (and other cases where this is the
        opposite). *)
-    
+
     let movcc cnd = op "mov" ~cnd
     let mov set_flags = op (if set_flags then "movs" else "mov")
     let movw = op "movw"
@@ -316,8 +316,10 @@ module ARM_ops = struct
     let udiv = op "udiv"
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
-    let ite cnd = op ("ite " ^ Cond.to_string cnd) 
-    let it cnd = op ("it " ^ Cond.to_string cnd) 
+
+    (* Workaround for issue with minizinc not correctly handling spaces. *)
+    let ite cnd = op ("ite_" ^ Cond.to_string cnd) 
+    let it cnd = op ("it_" ^ Cond.to_string cnd) 
 
   end
 
@@ -1015,7 +1017,14 @@ end
 module Pretty = struct
 
   let opcode_pretty i : (string, Kb_error.t) result =
-    Result.return @@ Ir.Opcode.name i
+    let name = Ir.Opcode.name i in
+    let name =
+      (* Workaround for issue with minizinc not correctly handling spaces. *)
+      if String.is_prefix name ~prefix:"it_"
+      || String.is_prefix name ~prefix:"ite_"
+      then String.substr_replace_all name ~pattern:"_" ~with_:" "
+      else name in
+    Result.return name
 
   (* We use this function when generating ARM, since the assembler
      doesn't like leading digits, % or @ in labels. *)
