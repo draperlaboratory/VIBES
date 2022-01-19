@@ -33,7 +33,7 @@ type mzn_params = {
   latency : unit;
   (* width : int Var.Map.t; Vars in Bap have width. Unnecessary? *)
   preassign : var option Var.Map.t;
-  operation_opcodes : (Ir.opcode list) Tid.Map.t;
+  operation_opcodes : (Ir.opcode list) Int.Map.t;
   operand_operation : Ir.operation Var.Map.t;
   congruent : (Ir.op_var * Ir.op_var) list;
   operands : Var.Set.t;
@@ -120,9 +120,9 @@ type mzn_params_serial = {
 type serialization_info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
-  operations : Tid.t list;
+  operations : Int.t list;
   operands : Var.t list;
-}
+} [@@deriving equal]
 
 (**
    [sol] is produced by processing [sol_serial]
@@ -137,10 +137,10 @@ type serialization_info = {
 
 type sol = {
   reg : var Var.Map.t;
-  opcode : Ir.opcode Tid.Map.t;
+  opcode : Ir.opcode Int.Map.t;
   temp : Var.t Var.Map.t;
-  active : bool Tid.Map.t;
-  issue : int Tid.Map.t;
+  active : bool Int.Map.t;
+  issue : int Int.Map.t;
 } [@@deriving sexp, compare]
 
 module Sol = struct
@@ -156,8 +156,14 @@ end
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
 (* Generic minizinc enumeration builder *)
-let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
+let key_map ~f:(f : 'a -> 'c)
+    (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
   List.map keys
+    ~f:(fun t -> Map.find_exn m t |> f)
+
+let key_map_kb ~f:(f : 'a -> 'c KB.t)
+    (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list KB.t =
+  KB.List.map keys
     ~f:(fun t -> Map.find_exn m t |> f)
 
 (** [serialize_man_params] converts the intermediate structure into the serializable structure
@@ -170,11 +176,12 @@ let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list
 
 *)
 let serialize_mzn_params
+    ?(exclude_regs : String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (lang : Theory.language)
     (vir : Ir.t)
     (prev_sols : sol list)
-  : mzn_params_serial * serialization_info =
+  : (mzn_params_serial * serialization_info) KB.t =
   let params = mzn_params_of_vibes_ir vir in
   let opcodes = Ir.all_opcodes vir in
   let opcodes_str = List.map opcodes
@@ -183,16 +190,20 @@ let serialize_mzn_params
           Ppx_sexp_conv_lib.Sexp.to_string)
   in
   let blocks = Var.Map.data params.temp_block |> Tid.Set.of_list |> Tid.Set.to_list in
-  let operations = Tid.Map.keys params.operation_opcodes in
+  let operations = Int.Map.keys params.operation_opcodes in
   let operands = Var.Set.to_list params.operands in
   let width t = match Var.typ t with
-    | Imm n -> Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
-    | Mem _ -> 0
-    | Unk -> failwith "width unimplemented for Unk"
+    | Imm n -> KB.return Float.( (of_int n) / 32.0 |> round_up |> to_int) (* fishy. Use divmod? *)
+    | Mem _ -> KB.return 0
+    | Unk ->
+      Kb_error.(fail @@ Other "Minizinc.serialize_mzn_params: \
+                               width unimplemented for Unk")
   in
+  let* gpr = Arm_selector.gpr tgt lang in
   let gpr =
-    Arm_selector.gpr tgt lang |>
-    Set.to_list |>
+    Set.to_list gpr |>
+    List.filter ~f:(fun v ->
+        not @@ Set.mem exclude_regs @@ Var.name v) |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
@@ -206,20 +217,36 @@ let serialize_mzn_params
   in
   let regs_of_role r =
     if Theory.Role.(r = Register.general) then
-      gpr
+      KB.return gpr
     else if Theory.Role.(r = Ir.dummy_role) then
-      dummy
+      KB.return dummy
     else if Theory.Role.(r = Ir.preassigned) then
-      regs
+      KB.return regs
     else
-      failwith @@
-      Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
-        Theory.Role.pp r
+      Kb_error.(fail @@ Other (
+          Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
+            Theory.Role.pp r))
   in
+  let* congruent_temps = KB.objects Arm_selector.Congruent_temps.cls in
+  let* congruent_temps =
+    Seq.to_list congruent_temps |>
+    KB.List.filter_map ~f:(fun obj ->
+        let+ cong = KB.collect Arm_selector.Congruent_temps.slot obj in
+        match cong with
+        | None -> None
+        | Some (op1, op2) ->
+          Some (List.hd_exn op1.temps, List.hd_exn op2.temps)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
   in
+  let* class_t =
+    key_map_kb operands params.class_
+      ~f:(fun m -> key_map_kb opcodes m
+             ~f:(fun r ->
+                 let+ regs = regs_of_role r in
+                 mzn_enum_def_of_list regs)) in
+  let+ width = KB.List.map temps ~f:width in
   if (List.length regs = 0) then
     (failwith @@ Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt);
   {
@@ -228,7 +255,7 @@ let serialize_mzn_params
     opcode_t = mzn_enum_def_of_list opcodes_str;
     temp_t = mzn_enum_def_of_list temp_names;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
-    operation_t = mzn_enum_def_of_list (List.map operations ~f:Tid.to_string);
+    operation_t = mzn_enum_def_of_list (List.map operations ~f:Int.to_string);
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
     operand_operation =
       key_map operands params.operand_operation
@@ -236,13 +263,7 @@ let serialize_mzn_params
     definer =
       key_map temps params.definer
         ~f:(fun t -> t |> Ir.op_var_to_string |> mzn_enum);
-    class_t =
-      begin
-        key_map operands params.class_
-          ~f:(fun m -> key_map opcodes m
-                 ~f:(fun r -> regs_of_role r |> mzn_enum_def_of_list))
-      end;
-
+    class_t;
     users =
       List.map
         ~f:(fun t ->
@@ -267,14 +288,31 @@ let serialize_mzn_params
           List.map
             ~f:(fun o -> o |> Tid.to_string |> mzn_enum)
       };
-    width = List.map ~f:width temps;
+    width;
     preassign = key_map operands params.preassign
         ~f:(function
             | None ->
               { set = [] }
             | Some r ->
               { set = [mzn_enum_of_var r] });
-    congruent = List.map ~f:(fun _ -> {set = []} ) operands; (* TODO *)
+    congruent =
+      (* For now, we will compute congruence as a mapping from temps
+         to a set of temps. In the full model, we would lift this
+         representation to a mapping over operands. *)
+      List.map temps ~f:(fun t1 -> {
+            set = match Var.typ t1 with
+              | Type.Mem _ | Type.Unk -> []
+              | Type.Imm _ as typ ->
+                List.filter_map temps ~f:(fun t2 ->
+                    (* The trivial case of the vars being equal can be ignored. *)
+                    if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
+                    else
+                      if not @@ Linear_ssa.congruent t1 t2 then
+                        match List.Assoc.find congruent_temps t1 ~equal:Var.equal with
+                        | Some t2' when Var.(t2 = t2') -> Some (mzn_enum_of_var t2)
+                        | _ -> None
+                      else Some (mzn_enum_of_var t2))
+          });
     operation_opcodes = key_map operations params.operation_opcodes
         ~f:(fun ids ->
             { set =
@@ -336,13 +374,13 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
     opcode =
       List.map2_exn
         ~f:(fun op opcode -> (op, Sexp.of_string opcode |> Ir.opcode_of_sexp))
-        names.operations (strip_enum s.opcode) |> Tid.Map.of_alist_exn;
+        names.operations (strip_enum s.opcode) |> Int.Map.of_alist_exn;
     temp =
       List.map2_exn
         ~f:(fun op temp -> (op , String.Map.find_exn names.temp_map temp))
         names.operands (strip_enum s.temp) |> Var.Map.of_alist_exn;
-    active = List.zip_exn names.operations s.active |> Tid.Map.of_alist_exn;
-    issue = List.zip_exn names.operations s.issue |> Tid.Map.of_alist_exn
+    active = List.zip_exn names.operations s.active |> Int.Map.of_alist_exn;
+    issue = List.zip_exn names.operations s.issue |> Int.Map.of_alist_exn
   }
 
 (** [apply_sol] takes a [sol] and applies it to a [Ir.t].
@@ -355,11 +393,11 @@ let apply_sol (vir : Ir.t) (sol : sol) : Ir.t =
       { b with
         data =
           List.filter b.data
-            ~f:(fun o -> Tid.Map.find_exn sol.active o.id) |>
+            ~f:(fun o -> Int.Map.find_exn sol.active o.id) |>
           List.sort
             ~compare:(fun o1 o2 -> compare_int
-                         (Tid.Map.find_exn sol.issue o1.id)
-                         (Tid.Map.find_exn sol.issue o2.id));
+                         (Int.Map.find_exn sol.issue o1.id)
+                         (Int.Map.find_exn sol.issue o2.id));
       }
     ) in
   (* Put register and temporary selection into operands *)
@@ -383,6 +421,7 @@ let delete_empty_blocks vir =
   {vir with blks = blks}
 
 let run_minizinc
+    ?(exclude_regs: String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (lang : Theory.language)
     ~filepath:(model_filepath : string)
@@ -397,7 +436,7 @@ let run_minizinc
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols in
+  let* params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
   Yojson.Safe.to_file params_filepath (mzn_params_serial_to_yojson params);
   let minizinc_args = ["--output-mode"; "json";
                        "-o"; solution_filepath;

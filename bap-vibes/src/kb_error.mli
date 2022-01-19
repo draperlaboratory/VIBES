@@ -24,6 +24,7 @@ type t =
   | Missing_patch_vars
   | Missing_patch_space_offset
   | Missing_patch_space_size
+  | Missing_sp_align
   | Missing_func
   | Missing_property
   | Missing_raw_ir
@@ -38,6 +39,8 @@ type t =
   | Max_tries of int
   | Minizinc_deserialization of string
   | Core_c_error of string
+  | Unknown_target
+  | Unknown_encoding
   | Other of string
 
 (** [pp ppf e] is a pretty-printer for the error [e] on formatter [ppf]. *)

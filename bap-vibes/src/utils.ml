@@ -64,7 +64,7 @@ let load_exe (filename : string)
     else
       "llvm"
   in
-  let input = Project.Input.file ~loader:loader ~filename in
+  let input = Project.Input.file ~loader ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
     begin
@@ -73,7 +73,7 @@ let load_exe (filename : string)
       if Seq.is_empty subs then
         failwith
         @@ Format.sprintf
-          "load_exe: An empty program was generated, using loader %s."
+          "load_exe: An empty program was generated using loader %s."
           loader
       else
         Ok (proj, prog)

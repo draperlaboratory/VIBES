@@ -114,8 +114,13 @@ let build_patch
     | None -> ""
     | Some j -> abs_jmp Int64.(j - patch.patch_loc)
   in
-  binary_of_asm l
-    (patch_loc :: patch_relative :: patch_start :: (patch.assembly @ [patch_jmp]))
+  binary_of_asm l begin
+    ".syntax unified\n" ::
+    patch_loc ::
+    patch_relative ::
+    patch_start ::
+    (patch.assembly @ [patch_jmp])
+  end
 
 
 let patch_size (l : Theory.language) (patch : patch)
@@ -244,7 +249,8 @@ let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
   let rec find_site_aux patch_sites =
     match patch_sites with
     (* FIXME: fail more gracefully here *)
-    | [] -> failwith "Couldn't fit patch anywhere"
+    | [] -> failwith @@
+      sprintf "Couldn't fit patch anywhere (%Ld bytes long)" patch_size
     | p :: ps -> if p.size >= patch_size
       then
         let new_patch_site =

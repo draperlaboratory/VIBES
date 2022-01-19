@@ -8,7 +8,8 @@ module KB = Knowledge
 module H = Helpers
 
 
-let dummy_solver _ _ ~filepath:_ _ vir =
+let dummy_solver ?(exclude_regs = String.Set.empty) _ _ ~filepath:_ _ vir =
+  ignore exclude_regs;
   KB.return (vir, Test_minizinc.dummy_sol)
 
 (* Test that [Compiler.compile] works as expected. *)

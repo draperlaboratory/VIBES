@@ -52,11 +52,8 @@ let prog_exn (proj : (Project.t * string, Error.t) result)
   (Project.program p, s)
 
 (* Some dummy values that can be used in tests. *)
-let dummy_target =
-  Theory.Target.declare
-    ~bits:32
-    ~byte:8
-    "dummy_tgt"
+let the_target () = Theory.Target.read ~package:"bap" "armv7+le"
+let the_lang () = Theory.Language.read ~package:"bap" "llvm-armv7"
 let patch = "ret-3"
 let patch_point_str = "0x3f"
 let patch_point = Bitvec.of_string patch_point_str

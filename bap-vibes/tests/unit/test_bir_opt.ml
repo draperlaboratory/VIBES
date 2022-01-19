@@ -29,10 +29,15 @@ let blk_dir =
   let jmp = Jmp.create ~cond:(Bil.Var cond) kind in
   Blk.create ~jmps:[jmp] ()
 
+let blk_uncond_dir =
+  let kind = Goto (Direct (Term.tid blk_redir)) in
+  let jmp = Jmp.create ~cond:(Bil.Int Word.b1) kind in
+  Blk.create ~jmps:[jmp] ()
+
 (* Tests that the optimization actually happened *)
 let test_success _ =
   let blks = [blk_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
@@ -51,7 +56,7 @@ let test_success _ =
 (* Optimization shouldn't happen because the second jump is conditional *)
 let test_failure_branch _ =
   let blks = [blk_cond_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
@@ -67,7 +72,7 @@ let test_failure_branch _ =
 (* Optimization shouldn't happen because the second block has data effects *)
 let test_failure_mov _ =
   let blks = [blk_mov_redir; blk_dir] in
-  let opts = Bir_opt.apply blks in
+  let opts = Bir_passes.Opt.apply blks in
   let blk_dir = List.find opts ~f:(fun b -> Tid.(Term.tid b = Term.tid blk_dir)) in
   match Option.map blk_dir ~f:(fun b -> Term.enum jmp_t b |> Seq.to_list) with
   | None -> assert_failure "didn't find block!"
@@ -80,9 +85,56 @@ let test_failure_mov _ =
     end
   | _ -> assert_failure "Unexpected block shape!"
 
+let test_merge _ =
+  let blks = [blk_dir; blk_uncond_dir; blk_redir] in
+  let opts = Bir_passes.Opt.merge_adjacent blks in
+  match opts with
+  | [blk1; blk2] ->
+    let tid1 = Term.tid blk1 in
+    let tid2 = Term.tid blk2 in
+    let tid1_expected = Term.tid blk_dir in
+    let tid2_expected = Term.tid blk_uncond_dir in
+    assert_bool
+      (sprintf "Expected result to be blks (%s, %s), got (%s, %s)"
+         (Tid.to_string tid1)
+         (Tid.to_string tid2)
+         (Tid.to_string tid1_expected)
+         (Tid.to_string tid2_expected))
+      Tid.(tid1 = tid1_expected && tid2 = tid2_expected);
+    assert_bool
+      (sprintf "Expected blk %s to be unchanged, got:\n\n%s"
+         (Tid.to_string tid1) (Blk.to_string blk1))
+      Blk.(blk1 = blk_dir);
+    begin
+      match Term.enum jmp_t blk2 |> Seq.to_list with
+      | [jmp] -> begin
+          match Jmp.kind jmp with
+          | Goto label -> begin
+              match label with
+              | Indirect e ->
+                assert_bool
+                  (sprintf "Expected result of blk %s to be %s, got %s"
+                     (Tid.to_string tid2)
+                     (Exp.to_string indirect_tgt)
+                     (Exp.to_string e))
+                  Exp.(e = indirect_tgt)
+              | _ -> assert_failure
+                       (sprintf "Expected indirect label for blk %s" @@
+                        Tid.to_string tid2)
+            end            
+          | _ -> assert_failure
+                   (sprintf "Expected goto for blk %s" @@
+                    Tid.to_string tid2)
+        end        
+      | _ -> assert_failure
+               (sprintf "Expected singleton jmp for blk %s" @@
+                Tid.to_string tid2)
+    end
+  | _ -> assert_failure "Expected singleton block as result"
 
 let suite = [
   "Test success" >:: test_success;
   "Test failure branch" >:: test_failure_branch;
   "Test failure mov" >:: test_failure_mov;
+  "Test merge" >:: test_merge;
 ]

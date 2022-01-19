@@ -15,12 +15,36 @@
 open Bap_core_theory
 open Bap.Std
 
+module Congruent_temps : sig
+
+  type cls
+  type t = cls KB.obj
+  type computed = (cls, unit) KB.cls KB.value
+
+  val name : string
+  val cls : (cls, unit) KB.cls
+  val slot : (cls, (Ir.op_var * Ir.op_var) option) KB.slot
+  
+end
+
 (** The abstract representation of [Theory.eff] terms in [ARM_Core]. *)
 type arm_eff
 
+(** Returns [true] if the encoding is ARM.
+    Returns a KB error if the encoding is unknown. *)
+val is_arm : Theory.language -> bool KB.t
+
+(** Returns [true] if the encoding is Thumb.
+    Returns a KB error if the encoding is unknown. *)
+val is_thumb : Theory.language -> bool KB.t
+
+(** Returns [true] if the encoding is ARM or Thumb.
+    Returns a KB error if the encoding is unknown. *)
+val is_arm_or_thumb : Theory.language -> bool KB.t
+
 (** Extracts the concrete [Ir.t] from the abstract [arm_eff]
     representation. *)
-val ir : arm_eff -> Ir.t
+val ir : arm_eff -> Ir.t KB.t
 
 (** Performs various ARM specific simplifications of a given [ir]
    program, aimed mostly to conserve space. *)
@@ -30,12 +54,11 @@ val peephole : Ir.t -> Ir.t
 val regs : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
 
 (** Returns the set of registers suitable for register allocation on ARM *)
-val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
+val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t KB.t
 
 (** Pre-assigns variables according to specific roles (PC, SP, etc) *)
 (* FIXME: make this happen at variable creation time *)
-val preassign : Theory.target -> Theory.language -> Ir.t -> Ir.t
-
+val preassign : Theory.target -> Ir.t -> is_thumb:bool -> Ir.t
 
 module Pretty :
 sig
@@ -45,8 +68,14 @@ end
 
 module ARM_Gen :
 sig
-  (** [select blks] performs instruction selection: it translates
-      sequences of BIR blocks to the appropriate ARM opcodes (keeping
-      the operands abstract. *)
-  val select : blk term list -> Ir.t KB.t
+  (** [select blks ~is_thumb ~argument_tids] performs instruction selection:
+      it translates the sequence of BIR blocks [blks] to the appropriate ARM
+      opcodes (keeping the operands abstract). [is_thumb] indicates whether
+      the Thumb encoding is being targeted. [argument_tids] indicates the
+      tids where function arguments are set before a call. *)
+  val select :
+    blk term list ->
+    is_thumb:bool ->
+    argument_tids:Tid.Set.t ->
+    Ir.t KB.t
 end

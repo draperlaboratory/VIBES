@@ -18,6 +18,7 @@ type t =
   | Missing_higher_var_at_entry
   | Missing_higher_var_at_exit
   | Config_not_parsed of string
+  | Invalid_sp_align of string
   | Invalid_hex of string
   | Invalid_property of string
   | Invalid_patch_code of string
@@ -65,6 +66,7 @@ let pp (ppf : Format.formatter) t : unit =
       "missing 'at-exit' field for a higher variable"
     | Config_not_parsed s ->
       "error finding or parsing config JSON file: " ^ s
+    | Invalid_sp_align desc -> desc
     | Invalid_hex desc -> desc
     | Invalid_property desc -> desc
     | Invalid_patch_code desc -> desc

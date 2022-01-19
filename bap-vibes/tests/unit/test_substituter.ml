@@ -85,13 +85,15 @@ let str_of_blks (code : blk term list) =
 
 (* Verify that a higher var stored in a register is handled correctly. *)
 let test_substitute_1 (_ : test_ctxt) : unit =
-  let h_vars =
-    [
-      Hvar.create "x" (Hvar.Register "RAX") (Hvar.Register "RAX");
+  let h_vars = Hvar.[
+      create_with_storage "x"
+        ~at_entry:(stored_in_register "RAX")
+        ~at_exit:(Some (stored_in_register "RAX"));
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rax = Var.create "RAX" (Bil.Imm 64) in
+  let rax_reg = Substituter.mark_reg rax in
   let num_3 = Word.of_int ~width:64 3 in
   let code =
     Bil.[
@@ -103,9 +105,9 @@ let test_substitute_1 (_ : test_ctxt) : unit =
   in
   let expected =
     Bil.[
-      rax := int @@ num_3;
-      if_ (var rax = int num_3)
-        [jmp (var rax)]
+      rax_reg := int @@ num_3;
+      if_ (var rax_reg = int num_3)
+        [jmp (var rax_reg)]
         [];
     ] |> to_bir
   in
@@ -126,14 +128,17 @@ let test_substitute_1 (_ : test_ctxt) : unit =
 
 (* Verify that a higher var stored on the stack is handled correctly. *)
 let test_substitute_2 (_ : test_ctxt) : unit =
-  let h_vars =
-    [
-      Hvar.create "x"
-        (Hvar.Memory ("RBP", Word.of_string "0x14:64")) (Hvar.Register "RAX");
+  let h_vars = Hvar.[
+      create_with_storage "x"
+        ~at_entry:(stored_in_memory
+                     (create_frame "RBP" @@
+                      Word.of_int ~width:64 0x14))
+        ~at_exit:(Some (stored_in_register "RAX"));
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let rbp = Var.create "RBP" (Bil.Imm 64) in
+  let rbp_reg = Substituter.mark_reg rbp in
   let mem = Var.create "mem" (Bil.Mem (`r64, `r8)) in
   let num_3 = Word.of_int ~width:64 3 in
   let num_14 = Word.of_string "0x14:64" in
@@ -150,18 +155,18 @@ let test_substitute_2 (_ : test_ctxt) : unit =
       mem :=
         store
           ~mem:(var mem)
-          ~addr:(var rbp + int num_14)
+          ~addr:(var rbp_reg + int num_14)
           (int num_3)
           LittleEndian
           `r64;
       if_ (load
              ~mem:(var mem)
-             ~addr:(var rbp + int num_14)
+             ~addr:(var rbp_reg + int num_14)
              LittleEndian `r64
            = int num_3)
         [jmp (load
              ~mem:(var mem)
-             ~addr:(var rbp + int num_14)
+             ~addr:(var rbp_reg + int num_14)
              LittleEndian `r64)]
         []
     ] |> to_bir
@@ -182,15 +187,18 @@ let test_substitute_2 (_ : test_ctxt) : unit =
 
 (* Verify that substitution errors are raised correctly. *)
 let test_substitute_error (_ : test_ctxt) : unit =
-  let h_vars =
-    [
-      Hvar.create "x" (Hvar.Register "EAX") (Hvar.Register "RAX");
+  let h_vars = Hvar.[
+      create_with_storage "x"
+        ~at_entry:(stored_in_register "FAKEREGISTER1")
+        ~at_exit:(Some (stored_in_register "FAKEREGISTER2"));
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
   let code = Bil.[x := var x] in
 
   match get_result h_vars code with
+  | exception (Substituter.Subst_err _) ->
+    assert_bool "Ok" true
   | Ok result ->
     let msg = Format.asprintf
       "Expected error, but got a value: '%s'" (str_of_blks result)
@@ -199,11 +207,9 @@ let test_substitute_error (_ : test_ctxt) : unit =
   | Error e ->
     begin
       match e with
-      | Kb_error.Problem (Kb_error.Higher_vars_not_substituted _) ->
-        assert_bool "Ok" true
       | _ ->
         let msg = Format.asprintf
-          "Expected Kb_error.Higher_vars_not_substituted but got '%a'"
+          "Expected Substituter.Subst_err exception, but got error '%a'"
           KB.Conflict.pp e
         in
         assert_bool msg false
