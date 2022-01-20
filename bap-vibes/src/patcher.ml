@@ -191,18 +191,15 @@ let patch_file (lang : Theory.language)
         Core_kernel.List.iter patches
           ~f:(fun patch ->
               Out.seek file patch.patch_loc;
-              let patch_binary = build_patch lang patch in
               let patch_binary =
-                Result.map_error patch_binary
-                  ~f:(Format.asprintf "%a" Kb_error.pp)
-              in
-              let _, patch_binary = Result.ok_or_failwith patch_binary in
+                build_patch lang patch |>
+                Result.map_error ~f:(Format.asprintf "%a" Kb_error.pp) |>
+                Result.ok_or_failwith |> snd in 
               (* Shave off the extra bytes at the beginning if we shifted
                  the patch origin. *)
-              let patch_binary = match patch.org_offset with
-                | Some off -> String.drop_prefix patch_binary off
-                | None -> patch_binary in
-              Out.output_string file patch_binary
+              Option.value_map patch.org_offset ~default:patch_binary
+                ~f:(String.drop_prefix patch_binary) |>
+              Out.output_string file
             ));
   tmp_patched_exe_filename
 
