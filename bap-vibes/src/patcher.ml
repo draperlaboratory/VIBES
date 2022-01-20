@@ -322,7 +322,8 @@ let place_patches
         (placed_patch :: acc, new_patch_site :: patch_sites)
     else (* Patch does not fit inplace*)
       (* Find patch_site that works *)
-      let patch_size = patch_size + jmp_instr_size in
+      let patch_size =
+        if not has_literal then patch_size + jmp_instr_size else patch_size in
       let (patch_loc, patch_sites) = find_site_greedy patch_sites patch_size in
       let (jmp_to_patch, placed_patch) = external_patch_site patch patch_loc in
       (* TODO: We could also insert the unused original space into
