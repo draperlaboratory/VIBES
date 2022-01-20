@@ -28,7 +28,8 @@ type placed_patch = {
   orig_loc : int64;
   orig_size : int64;
   patch_loc : int64;
-  jmp : int64 option
+  jmp : int64 option;
+  org_offset : int option;
 }
 
 (** A [patch_region] represents the location of the (to be placed)

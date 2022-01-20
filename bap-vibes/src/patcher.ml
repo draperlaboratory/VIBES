@@ -28,7 +28,8 @@ type placed_patch = {
   orig_loc : int64;
   orig_size : int64;
   patch_loc : int64;
-  jmp : int64 option
+  jmp : int64 option;
+  org_offset : int option;
 } [@@deriving sexp, equal]
 
 let tgt_flag (l : Theory.language) : string =
@@ -60,17 +61,17 @@ let size_of_literal_pool (l : Theory.language) (filename : string) : int64 =
     match cmd "ldr.*, \\[pc, .*\\]" with
     | 0L -> 0L
     | _ ->
-      let padding =
+      let thumb_padding =
         (* Padding may have been inserted on Thumb to avoid unaligned
            access. This never happens on ARM since everything ends up
            4 byte-aligned. *)
         if is_thumb then Int64.(cmd "\\.short" * 2L) else 0L in
       let consts = Int64.(cmd "\\.word" * 4L) in
-      Int64.(padding + consts)
+      Int64.(thumb_padding + consts)
 
 (* Check if a literal pool was inserted at the end of our patch. *)
 let check_for_literal_pool (l : Theory.language) (assembly : string list)
-  : (bool * string, Kb_error.t) result =
+  : (int64 * string, Kb_error.t) result =
   let (let*) x f = Result.bind x ~f in
   (* Write assembly to temporary file *)
   let asm_filename = Stdlib.Filename.temp_file "vibes-assembly" ".asm" in
@@ -95,8 +96,8 @@ let check_for_literal_pool (l : Theory.language) (assembly : string list)
   in
   Events.(send @@ Info info_str);
   let* _ = Utils.run_process assembler args in
-  let has_literal = Int64.(size_of_literal_pool l with_elf_filename <> 0L) in
-  Result.return (has_literal, with_elf_filename)
+  let literal = size_of_literal_pool l with_elf_filename in
+  Result.return (literal, with_elf_filename)
 
 (** [binary_of_asm] uses external programs to convert assembly code to binary *)
 let binary_of_asm (with_elf_filename : string) : (string, Kb_error.t) Result.t =
@@ -131,7 +132,7 @@ let jmp_instr_size : int64 = 4L
 let build_patch
     (l : Theory.language)
     (patch : placed_patch)
-  : (bool * string, Kb_error.t) Result.t =
+  : (int64 * string, Kb_error.t) Result.t =
   let (let*) x f = Result.bind x ~f in
   (* [abs_jmp] produces assembly for an unconditional jmp *)
   let abs_jmp (abs_addr : int64) : string =
@@ -140,37 +141,40 @@ let build_patch
       Constants.relative_patch_placement
       Int64.(patch.patch_loc - patch.orig_loc)
   in
-  let patch_loc = Printf.sprintf ".equiv %s, %Ld\n"
-      Constants.patch_location patch.patch_loc in
-  let patch_start = Printf.sprintf "%s:" Constants.patch_start_label in
   let patch_jmp = match patch.jmp with
     | None -> ""
     | Some j -> abs_jmp Int64.(j - patch.patch_loc)
   in
+  let patch_loc = Printf.sprintf ".equiv %s, %Ld\n"
+      Constants.patch_location patch.patch_loc in
+  let patch_start = Printf.sprintf "%s:" Constants.patch_start_label in
+  let org = match patch.org_offset with
+    | Some off -> Printf.sprintf ".org %d" off
+    | None -> "" in
   let asm =
     ".syntax unified\n" ::
     patch_loc ::
     patch_relative ::
+    org ::
     patch_start ::
     (patch.assembly @ [patch_jmp]) in
-  let* has_literal, objfile = check_for_literal_pool l asm in
+  let* literal, objfile = check_for_literal_pool l asm in
   let* bin = binary_of_asm objfile in
-  Result.return (has_literal, bin)
+  Result.return (literal, bin)
 
 let patch_size (l : Theory.language) (patch : patch)
-  : (int64 * bool, Kb_error.t) Result.t =
-  let placed_patch =
-    {
-      assembly = patch.assembly;
-      orig_loc = patch.orig_loc;
-      orig_size = patch.orig_size;
-      patch_loc = patch.orig_loc;
-      jmp = None
-    }
-  in
+  : (int64 * int64, Kb_error.t) Result.t =
+  let placed_patch = {
+    assembly = patch.assembly;
+    orig_loc = patch.orig_loc;
+    orig_size = patch.orig_size;
+    patch_loc = patch.orig_loc;
+    jmp = None;
+    org_offset = None;
+  } in
   build_patch l placed_patch |>
-  Result.map ~f:(fun (has_literal, b) ->
-      String.length b |> Int64.of_int, has_literal)
+  Result.map ~f:(fun (literal, b) ->
+      String.length b |> Int64.of_int, literal)
 
 (** [patch_file] takes a filename and a list of patch binaries and
     locations and returns the filename of a patched file *)
@@ -186,7 +190,10 @@ let patch_file (lang : Theory.language)
         Out.output_string file orig_exe;
         Core_kernel.List.iter patches
           ~f:(fun patch ->
-              Out.seek file patch.patch_loc;
+              let loc = match patch.org_offset with
+                | None -> patch.patch_loc
+                | Some off -> Int64.(patch.patch_loc - of_int off) in
+              Out.seek file loc;
               let patch_binary = build_patch lang patch in
               let patch_binary =
                 Result.map_error patch_binary
@@ -219,26 +226,29 @@ let naive_find_patch_sites (filename : string) : patch_site list =
 
 (** [exact_fit_patch] builds a placed_patch that fits exactly in the
     old location *)
-let exact_fit_patch (patch : patch) : placed_patch = {
+let exact_fit_patch ?(org_offset : int option = None)
+    (patch : patch) : placed_patch = {
   assembly = patch.assembly;
   orig_loc = patch.orig_loc;
   orig_size = patch.orig_size;
   patch_loc = patch.orig_loc;
-  jmp = None
+  jmp = None;
+  org_offset;
 }
 
 (** [loose_fit_patch] builds a placed_patch that fits loosely in the
     old location and hence needs an extra jump placed. This also
     returns the remainder of the space as a [patch_site] for possible
     further patch placement *)
-let loose_fit_patch (patch : patch) (patch_size : int64) : placed_patch * patch_site =
+let loose_fit_patch ?(org_offset : int option = None)
+    (patch : patch) (patch_size : int64) : placed_patch * patch_site =
   let open Int64 in
   let patch_site = {
     location = patch.orig_loc + patch_size + jmp_instr_size;
     size = patch.orig_size - jmp_instr_size - patch_size
   } in
   let placed_patch = {
-    (exact_fit_patch patch) with
+    (exact_fit_patch patch ~org_offset) with
     jmp = Some Int64.(patch.orig_loc + patch.orig_size)
   } in
   (placed_patch, patch_site)
@@ -298,8 +308,23 @@ let place_patches
     (patch_sites : patch_site list) : placed_patch list =
   let open Int64 in
   let process_patch (acc, patch_sites) patch =
-    let patch_size, has_literal =
+    let patch_size, literal =
       patch_size lang patch |> Result.ok |> Option.value_exn in
+    let has_literal = literal <> 0L in
+    let org_offset =
+      (* When we actually insert the patch into the binary, the literal pool
+         may become unaligned, so objcopy may insert extra padding at the site
+         of the pool. Unfortunately, this will mess up the PC-relative loads
+         that access this pool, since the offsets from PC will now be incorrect.
+         To get around this, we will to trick the assembler into putting our
+         code at a different origin, and then fix it up when we call objcopy. *)
+      if has_literal then
+        let align_size = rem (patch_size - literal) 4L in
+        let align_loc = rem patch.orig_loc 4L in
+        if align_size <> 0L && align_loc <> 0L
+        then Some (to_int_exn align_size)
+        else None
+      else None in
     (* If a literal pool was inserted at the end, then we need to insert
        a jump. *)
     if has_literal then
@@ -310,7 +335,7 @@ let place_patches
     then
       (* If patch exactly fits *)
       if patch_size = patch.orig_size then
-        let exact = exact_fit_patch patch in
+        let exact = exact_fit_patch patch ~org_offset in
         let exact = if not has_literal then exact else {
             exact with
             jmp = Some Int64.(patch.orig_loc + patch.orig_size)
@@ -318,7 +343,7 @@ let place_patches
         (exact :: acc, patch_sites)
       else (* Inexact fit. Add jmp, put leftover space in patch_sites *)
         let placed_patch, new_patch_site =
-          loose_fit_patch patch (patch_size - jmp_instr_size) in
+          loose_fit_patch patch (patch_size - jmp_instr_size) ~org_offset in
         (placed_patch :: acc, new_patch_site :: patch_sites)
     else (* Patch does not fit inplace*)
       (* Find patch_site that works *)
