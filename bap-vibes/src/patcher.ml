@@ -61,9 +61,10 @@ let size_of_literal_pool (l : Theory.language) (filename : string) : int64 =
     | 0L -> 0L
     | _ ->
       let padding =
-        (* Padding may have been inserted on Thumb to avoid unaligned access. *)
-        if String.is_substring l ~substring:"thumb"
-        then Int64.(cmd "\\.short" * 2L) else 0L in
+        (* Padding may have been inserted on Thumb to avoid unaligned
+           access. This never happens on ARM since everything ends up
+           4 byte-aligned. *)
+        if is_thumb then Int64.(cmd "\\.short" * 2L) else 0L in
       let consts = Int64.(cmd "\\.word" * 4L) in
       Int64.(padding + consts)
 
