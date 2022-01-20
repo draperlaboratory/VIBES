@@ -397,8 +397,8 @@ module ARM_ops = struct
         | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
           let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
-        | Ir.Const w ->
-          let ldr = Ir.simple_op Ops.ldr arg1 Ir.[Bigconst w] in
+        | Ir.Const _ ->
+          let ldr = Ir.simple_op Ops.ldr arg1 [arg2_var] in
           KB.return @@ instr ldr arg2_sem
         | _ ->
           let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
@@ -428,9 +428,9 @@ module ARM_ops = struct
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
     match arg_val with
-    | Ir.Const w ->
+    | Ir.Const _ ->
       let tmp = Ir.Var (create_temp word_ty) in
-      let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+      let ldr = Ir.simple_op Ops.ldr tmp [arg_val] in
       let op = Ir.simple_op o (Ir.Var res) [tmp] in
       let sem = {arg_sem with current_data = op::ldr::arg_sem.current_data} in
       {op_val = Ir.Var res; op_eff = sem}
@@ -448,7 +448,7 @@ module ARM_ops = struct
       (* For binops that allow constant operands, the limit seems
          to be 12 bits according to the manual. *)
       let tmp = Ir.Var (create_temp word_ty) in
-      let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+      let ldr = Ir.simple_op Ops.ldr tmp [arg2_val] in
       let op = Ir.simple_op o (Ir.Var res) [arg1_val; tmp] in
       let sem = arg1_sem @. arg2_sem in
       let sem = {sem with current_data = op::ldr::sem.current_data} in
@@ -541,9 +541,9 @@ module ARM_ops = struct
         let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
         KB.return [op; mov]
-      | Const w ->
+      | Const _ ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+        let ldr = Ir.simple_op Ops.ldr tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
         KB.return [op; ldr]
       | _ ->
@@ -573,9 +573,9 @@ module ARM_ops = struct
         let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
         KB.return [op; mov]
-      | Const w ->
+      | Const _ ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+        let ldr = Ir.simple_op Ops.ldr tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
         KB.return [op; ldr]
       | _ ->
@@ -802,7 +802,7 @@ struct
     | Load (mem, Int addr, _, size) ->
       let* mem = exp mem in
       let tmp = Ir.Var (create_temp word_ty) in
-      let op = Ir.simple_op Ops.ldr tmp Ir.[Bigconst addr] in
+      let op = Ir.simple_op Ops.ldr tmp Ir.[Const addr] in
       let a = {op_val = tmp; op_eff = instr op empty_eff} in
       let+ ldr = ldr_op @@ Size.in_bits size in
       ternop ldr word_ty mem a @@ const (Word.zero 32)
@@ -821,7 +821,7 @@ struct
     | Store (mem, Int addr, value, _, _size) ->
       let* mem = exp mem in
       let tmp = Ir.Var (create_temp word_ty) in
-      let op = Ir.simple_op Ops.ldr tmp Ir.[Bigconst addr] in
+      let op = Ir.simple_op Ops.ldr tmp Ir.[Const addr] in
       let loc = {op_val = tmp; op_eff = instr op empty_eff} in
       let* value = exp value in
       str mem value loc ~is_thumb
@@ -1073,7 +1073,7 @@ module Pretty = struct
 
   type bracket = Open | Close | Neither | Both
 
-  let arm_operand_pretty (o : Ir.operand)
+  let arm_operand_pretty (op : string) (o : Ir.operand)
       ~(is_loc : bracket) : (string, Kb_error.t) result =
     let pretty_aux =
       match o with
@@ -1084,9 +1084,14 @@ module Pretty = struct
         Result.of_option v.pre_assign ~error |> Result.map ~f:Var.to_string
       | Const w ->
         (* A little calisthenics to get this to look nice *)
-        Result.return @@ Format.asprintf "#%a" Word.pp_dec w
-      | Bigconst w ->
-        Result.return @@ Format.asprintf "=%a" Word.pp_dec w
+        let prefix = match op with
+          | "ldr" -> begin
+              match is_loc with
+              | Neither -> '='
+              | _ -> '#'
+            end
+          | _ -> '#' in
+        Result.return @@ Format.asprintf "%c%a" prefix Word.pp_dec w
       | Label l -> Result.return @@ tid_to_string l
       | Void _ -> Result.fail @@ Kb_error.Other "Tried printing a Void operand!"
       | Offset c ->
@@ -1109,10 +1114,10 @@ module Pretty = struct
   let rm_void_args : Ir.operand list -> Ir.operand list =
     List.filter ~f:(function Ir.Void _ -> false | _ -> true)
 
-  let is_bigconst : Ir.operand -> bool = function
-    | Ir.Bigconst _ -> true
+  let is_const : Ir.operand -> bool = function
+    | Const _ -> true
     | _ -> false
-  
+
   (* FIXME: Absolute hack *)
   (* We mark where the bracket location start and end in the argument list. *)
   let mk_loc_list
@@ -1121,7 +1126,7 @@ module Pretty = struct
     let len = List.length args in
     let init_neither len = List.init len ~f:(fun _ -> Neither) in
     match op with
-    | "ldr" when len = 2 && is_bigconst (List.nth_exn args 1) ->
+    | "ldr" when len = 2 && is_const (List.nth_exn args 1) ->
       Result.return [Neither; Neither]
     | "ldr" | "ldrh" | "ldrb" | "str" ->
       if len = 2 then Result.return [Neither; Both]
@@ -1149,7 +1154,7 @@ module Pretty = struct
     let l = rm_void_args (lhs @ rhs) in
     mk_loc_list op l >>= fun is_loc_list ->
     List.zip_exn is_loc_list l |>
-    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty o ~is_loc) |>
+    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty op o ~is_loc) |>
     Result.all >>| fun all_str ->
     String.concat @@ List.intersperse all_str ~sep:", "
 

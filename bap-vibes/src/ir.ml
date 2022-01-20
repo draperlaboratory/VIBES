@@ -104,7 +104,6 @@ let given_var v ~reg:reg =
 type operand =
   | Var of op_var
   | Const of Word.t
-  | Bigconst of Word.t
   | Label of Tid.t
   | Void of op_var
   | Offset of Word.t [@@deriving compare, equal, sexp]
@@ -251,7 +250,7 @@ let var_operands (ops : operand list) : op_var list =
   List.fold ~f:(fun acc o ->
       match o with
       | Var v | Void v -> v :: acc
-      | Const _ | Bigconst _ | Label _ | Offset _ -> acc
+      | Const _ | Label _ | Offset _ -> acc
     ) ~init:[] ops
 
 module Blk = struct
@@ -290,7 +289,7 @@ module Blk = struct
     List.concat_map (all_operands blk)
       ~f:(fun op ->
           match op with
-          | Const _ | Bigconst _ | Label _ | Offset _ -> []
+          | Const _ | Label _ | Offset _ -> []
           | Var op | Void op -> op.temps) |>
     Var.Set.of_list
 
@@ -474,7 +473,6 @@ let pretty_operand o =
           ~f:(Var.to_string) o.pre_assign) |>
        Option.value ~default:"N/A")
   | Const c -> Word.to_string c
-  | Bigconst c -> sprintf "=%s" @@ Word.to_string c
   | Label l -> Tid.to_string l
   | Offset c -> Format.asprintf "Offset(%d)" (Word.to_int_exn c)
 
