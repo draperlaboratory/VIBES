@@ -52,7 +52,6 @@ end
 val run :
   insn ->
   tgt:Theory.target ->
-  lang:Theory.language ->
   hvars:Higher_var.t list ->
   sp_align:int ->
   t KB.t

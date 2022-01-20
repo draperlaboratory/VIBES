@@ -294,7 +294,6 @@ module ARM_ops = struct
     let movcc cnd = op "mov" ~cnd
     let mov set_flags = op (if set_flags then "movs" else "mov")
     let movw = op "movw"
-    let movt = op "movt"
     let add set_flags = op (if set_flags then "adds" else "add")
     let addw = op "addw"
     let mul = op "mul"
@@ -386,11 +385,10 @@ module ARM_ops = struct
     | Ir.Var _, Ir.Var _
     | Ir.Var _, Ir.Const _ ->
       (* Check if the second arg is a constant greater than 255, in which case
-          we want movw rather than mov. If it's greater than 65535, then it
-         needs to be split into two operations (movw/movt). This case is
-         currently handled in a BIR pass before we begin selection, since
-         these large constants can also make their way into a load or store
-         instruction, for example. *)
+         we want movw rather than mov. If it's greater than 65535, then we
+         will use the ldr pseudo instruction. The assembler will store the
+         constant in a literal pool at the end of our patch, and it will
+         access this constant with a PC-relative load. *)
       begin
         match arg2_var with
         | Ir.Const w when Word.to_int_exn w <= 0xFF ->
@@ -399,8 +397,9 @@ module ARM_ops = struct
         | Ir.Const w when Word.to_int_exn w <= 0xFFFF ->
           let mov = Ir.simple_op Ops.movw arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
-        | Ir.Const w -> Err.(fail @@ Other (
-            sprintf "arm_mov: too large constant %s" @@ Word.to_string w))
+        | Ir.Const w ->
+          let ldr = Ir.simple_op Ops.ldr arg1 Ir.[Bigconst w] in
+          KB.return @@ instr ldr arg2_sem
         | _ ->
           let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
@@ -428,18 +427,37 @@ module ARM_ops = struct
   let uop o ty arg =
     let res = create_temp ty in
     let {op_val = arg_val; op_eff = arg_sem} = arg in
-    let op = Ir.simple_op o (Ir.Var res) [arg_val] in
-    let sem = {arg_sem with current_data = op::arg_sem.current_data} in
-    {op_val = Ir.Var res; op_eff = sem}
+    match arg_val with
+    | Ir.Const w ->
+      let tmp = Ir.Var (create_temp word_ty) in
+      let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+      let op = Ir.simple_op o (Ir.Var res) [tmp] in
+      let sem = {arg_sem with current_data = op::ldr::arg_sem.current_data} in
+      {op_val = Ir.Var res; op_eff = sem}
+    | _ ->
+      let op = Ir.simple_op o (Ir.Var res) [arg_val] in
+      let sem = {arg_sem with current_data = op::arg_sem.current_data} in
+      {op_val = Ir.Var res; op_eff = sem}
 
   let binop o ty arg1 arg2 =
     let res = create_temp ty in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-    let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val] in
-    let sem = arg1_sem @. arg2_sem in
-    let sem = {sem with current_data = op::sem.current_data} in
-    {op_val = Ir.Var res; op_eff = sem}
+    match arg2_val with
+    | Ir.Const w when Word.to_int_exn w >= 4096 ->
+      (* For binops that allow constant operands, the limit seems
+         to be 12 bits according to the manual. *)
+      let tmp = Ir.Var (create_temp word_ty) in
+      let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+      let op = Ir.simple_op o (Ir.Var res) [arg1_val; tmp] in
+      let sem = arg1_sem @. arg2_sem in
+      let sem = {sem with current_data = op::ldr::sem.current_data} in
+      {op_val = Ir.Var res; op_eff = sem}
+    | _ ->
+      let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val] in
+      let sem = arg1_sem @. arg2_sem in
+      let sem = {sem with current_data = op::sem.current_data} in
+      {op_val = Ir.Var res; op_eff = sem}
 
   let ternop o ty arg1 arg2 arg3 =
     let res = create_temp ty in
@@ -453,16 +471,15 @@ module ARM_ops = struct
 
   let add (arg1 : arm_pure) (arg2 : arm_pure)
       ~(is_thumb : bool) : arm_pure KB.t =
-    (* If constant arg2 is wider than 3 bits -> emit addw *)
-    let { op_val; _ } = arg2 in
+    let {op_val; _} = arg2 in
     let fits_in_3 w =
       let open Word in
       let width = bitwidth w in
-      of_int ~width 0 <= w &&
-      w <= of_int ~width 7
+      of_int ~width 0 <= w && w <= of_int ~width 7
     in
     match op_val with
-    | Const w when not (fits_in_3 w) ->
+    | Const w when not (fits_in_3 w) && Word.to_int_exn w < 4096 ->
+      (* addw can accept up to 12 bits for the immediate. *)
       KB.return @@ binop Ops.addw word_ty arg1 arg2
     | _ ->
       KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2
@@ -519,11 +536,16 @@ module ARM_ops = struct
       | Var _ ->
         let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
         KB.return [op]
-      | Const _ ->
+      | Const w when Word.to_int_exn w <= 0xFFFF ->
         let tmp = Ir.Var (create_temp word_ty) in
         let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
         KB.return [op; mov]
+      | Const w ->
+        let tmp = Ir.Var (create_temp word_ty) in
+        let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
+        KB.return [op; ldr]
       | _ ->
         Err.(fail @@ Other (
             sprintf "str: unsupported `value` operand %s" @@
@@ -546,11 +568,16 @@ module ARM_ops = struct
       | Var _ ->
         let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
         KB.return [op]
-      | Const _ ->
+      | Const w when Word.to_int_exn w <= 0xFFFF ->
         let tmp = Ir.Var (create_temp word_ty) in
         let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
         KB.return [op; mov]
+      | Const w ->
+        let tmp = Ir.Var (create_temp word_ty) in
+        let ldr = Ir.simple_op Ops.ldr tmp Ir.[Bigconst w] in
+        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
+        KB.return [op; ldr]
       | _ ->
         Err.(fail @@ Other (
             sprintf "str_base_off: unsupported `value` operand %s" @@
@@ -772,6 +799,13 @@ struct
       let+ a = exp a in
       let w = const (Word.neg w) in
       ternop ldr word_ty mem a w
+    | Load (mem, Int addr, _, size) ->
+      let* mem = exp mem in
+      let tmp = Ir.Var (create_temp word_ty) in
+      let op = Ir.simple_op Ops.ldr tmp Ir.[Bigconst addr] in
+      let a = {op_val = tmp; op_eff = instr op empty_eff} in
+      let+ ldr = ldr_op @@ Size.in_bits size in
+      ternop ldr word_ty mem a @@ const (Word.zero 32)
     | Load (mem, loc, _, size) ->
       let* mem = exp mem in
       let* loc = exp loc in
@@ -784,6 +818,13 @@ struct
       let* mem = exp mem in
       let* value = exp value in
       str_base_off mem value a Word.(-w) ~is_thumb
+    | Store (mem, Int addr, value, _, _size) ->
+      let* mem = exp mem in
+      let tmp = Ir.Var (create_temp word_ty) in
+      let op = Ir.simple_op Ops.ldr tmp Ir.[Bigconst addr] in
+      let loc = {op_val = tmp; op_eff = instr op empty_eff} in
+      let* value = exp value in
+      str mem value loc ~is_thumb
     | Store (mem, loc, value, _, _size) ->
       let* mem = exp mem in
       let* loc = exp loc in
@@ -807,17 +848,6 @@ struct
       let set_flags = not @@ is_stack_pointer a in
       let op = if Caml.(o = PLUS) then Ops.add else Ops.sub in
       KB.return @@ binop (op set_flags) word_ty (var a) (const w)
-    (* Hack for loading a large constant. This form is generated
-       by a pass in `Bir_passes` which splits operations, which
-       load constants larger than 65535, into two separate operations,
-       so that the selector can generate a `movw/movt` idiom. *)
-    | BinOp (OR, Var a, BinOp (LSHIFT, Int w, Int s))
-    | BinOp (OR, BinOp (LSHIFT, Int w, Int s), Var a)
-      when Option.exists lhs ~f:(Linear_ssa.same a)
-        && Word.(s = of_int ~width:32 16) ->
-      let tmp = Ir.Var (create_temp word_ty) in
-      let op = Ir.simple_op Ops.movt tmp [Var (Ir.simple_var a); Const w] in
-      KB.return {op_val = tmp; op_eff = instr op empty_eff}
     (* Move the immediate operand to a temporary. *)
     | BinOp (TIMES as o, Int w, x) | BinOp (TIMES as o, x, Int w) ->
       let i = Word.to_int_exn w in
@@ -1055,6 +1085,8 @@ module Pretty = struct
       | Const w ->
         (* A little calisthenics to get this to look nice *)
         Result.return @@ Format.asprintf "#%a" Word.pp_dec w
+      | Bigconst w ->
+        Result.return @@ Format.asprintf "=%a" Word.pp_dec w
       | Label l -> Result.return @@ tid_to_string l
       | Void _ -> Result.fail @@ Kb_error.Other "Tried printing a Void operand!"
       | Offset c ->
@@ -1077,14 +1109,20 @@ module Pretty = struct
   let rm_void_args : Ir.operand list -> Ir.operand list =
     List.filter ~f:(function Ir.Void _ -> false | _ -> true)
 
+  let is_bigconst : Ir.operand -> bool = function
+    | Ir.Bigconst _ -> true
+    | _ -> false
+  
   (* FIXME: Absolute hack *)
   (* We mark where the bracket location start and end in the argument list. *)
   let mk_loc_list
       (op : string)
-      (args : 'a list) : (bracket list, Kb_error.t) result =
+      (args : Ir.operand list) : (bracket list, Kb_error.t) result =
     let len = List.length args in
     let init_neither len = List.init len ~f:(fun _ -> Neither) in
     match op with
+    | "ldr" when len = 2 && is_bigconst (List.nth_exn args 1) ->
+      Result.return [Neither; Neither]
     | "ldr" | "ldrh" | "ldrb" | "str" ->
       if len = 2 then Result.return [Neither; Both]
       else if len = 3 then Result.return [Neither; Open; Close]

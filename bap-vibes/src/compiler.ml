@@ -32,7 +32,7 @@ let create_vibes_ir
     (sp_align : int)
     (code : insn) : (Ir.t * String.Set.t) KB.t =
   let* {ir; exclude_regs; argument_tids} =
-    Bir_passes.run code ~tgt ~lang ~hvars ~sp_align in
+    Bir_passes.run code ~tgt ~hvars ~sp_align in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
