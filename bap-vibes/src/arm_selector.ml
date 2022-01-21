@@ -362,12 +362,17 @@ module ARM_ops = struct
   let control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
+  (* Check if the constant is greater than 255, in which case we want 
+     movw rather than mov. If it's greater than 65535, then we will use
+     the ldr pseudo instruction. The assembler will store the constant
+     in a literal pool at the end of our patch, and it will access this
+     constant with a PC-relative load. *)
   let mov_const (c : word) ~(is_thumb : bool) : Ir.opcode =
     match Word.to_int_exn c with
     | n when n <= 0xFF -> Ops.mov is_thumb
     | n when n <= 0xFFFF -> Ops.movw
     | _ -> Ops.ldr 
-  
+
   (* Some cowboy type checking here, to check which kind of mov to
      use. Currently doesn't work if variables are instantiated
      with spilled registers! Can be fixed by having seperate Variable
@@ -376,37 +381,27 @@ module ARM_ops = struct
       ~(is_thumb : bool) : arm_eff KB.t =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
-    | Ir.Var _, Ir.Var _ when not @@ List.is_empty arg2_sem.current_data ->
-      (* FIXME: absolute hack! if we have vars here, we can assume
-         that the last operation assigned to a temporary, and we can
-         just replace that temporary with the known destination, and
-         return that as the effect. *)
-      begin
+    | Ir.Var _, Ir.Var _
+      when not @@ List.is_empty arg2_sem.current_data -> begin
+        (* FIXME: absolute hack! if we have vars here, we can assume
+           that the last operation assigned to a temporary, and we can
+           just replace that temporary with the known destination, and
+           return that as the effect. *)
         match arg2_sem.current_data with
         | [] -> assert false (* excluded by the guard above *)
         | op :: ops ->
           let op = {op with Ir.lhs = [arg1]} in
           KB.return {arg2_sem with current_data = op :: ops}
       end
-    | Ir.Var _, Ir.Var _
-    | Ir.Var _, Ir.Const _ ->
-      (* Check if the second arg is a constant greater than 255, in which case
-         we want movw rather than mov. If it's greater than 65535, then we
-         will use the ldr pseudo instruction. The assembler will store the
-         constant in a literal pool at the end of our patch, and it will
-         access this constant with a PC-relative load. *)
-      begin
-        match arg2_var with
-        | Ir.Const w ->
-          let mov = Ir.simple_op (mov_const w ~is_thumb) arg1 [arg2_var] in
-          KB.return @@ instr mov arg2_sem
-        | _ ->
-          let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
-          KB.return @@ instr mov arg2_sem
-      end
-    | Ir.Void _, Ir.Void _ when not @@ List.is_empty arg2_sem.current_data ->
-      (* Same hack as above, but with void operands. *)
-      begin
+    | Ir.Var _, Ir.Var _ ->
+      let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
+      KB.return @@ instr mov arg2_sem
+    | Ir.Var _, Ir.Const w ->
+      let mov = Ir.simple_op (mov_const w ~is_thumb) arg1 [arg2_var] in
+      KB.return @@ instr mov arg2_sem
+    | Ir.Void _, Ir.Void _
+      when not @@ List.is_empty arg2_sem.current_data -> begin
+        (* Same hack as above, but with void operands. *)
         match arg2_sem.current_data with
         | [] -> assert false
         | op :: ops ->
@@ -491,7 +486,7 @@ module ARM_ops = struct
     KB.return @@ uop Ops.mvn word_ty arg ~is_thumb
 
   let mul (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.mul word_ty arg1 arg2 ~is_thumb
 
   let sub (arg1 : arm_pure) (arg2 : arm_pure)
@@ -499,23 +494,23 @@ module ARM_ops = struct
     KB.return @@ binop Ops.(sub is_thumb) word_ty arg1 arg2 ~is_thumb
 
   let sdiv (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.sdiv word_ty arg1 arg2 ~is_thumb
 
   let udiv (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.udiv word_ty arg1 arg2 ~is_thumb
 
   let lsl_ (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.lsl_ word_ty arg1 arg2 ~is_thumb
 
   let lsr_ (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.lsr_ word_ty arg1 arg2 ~is_thumb
 
   let asr_ (arg1 : arm_pure) (arg2 : arm_pure)
-    ~(is_thumb : bool) : arm_pure KB.t =
+      ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.asr_ word_ty arg1 arg2 ~is_thumb
 
   let ldr_op (bits : int) : Ir.opcode KB.t =
