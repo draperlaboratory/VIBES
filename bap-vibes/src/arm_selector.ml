@@ -1058,12 +1058,12 @@ module Isel = struct
     let pat = String.Map.find_exn patterns "mov" |> List.hd_exn in
     let blkid = Term.tid pat in
     let operand v = Ir.Var (Ir.simple_var v) in
-    let operation = Ir.simple_op mov (operand z) [operand x] in
+    let operation = Ir.simple_op (mov false) (operand z) [operand x] in
     { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
     congruent = []}
 
   let templates = String.Map.of_alist_exn [
-    "add", binop_template (String.Map.find_exn patterns "add") add;
+    "add", binop_template (String.Map.find_exn patterns "add") (add false);
     "mov", mov_template;
     "str", store_template;
     "ld",  load_template

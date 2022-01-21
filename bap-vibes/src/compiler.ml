@@ -61,7 +61,10 @@ let create_vibes_ir
   ir, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)
-let compile_one_vibes_ir (count : int KB.t) (patch : Data.Patch.t) (isel_model_filepath : string) : int KB.t =
+let compile_one_vibes_ir
+  (isel_model_filepath : string option) 
+  (count : int KB.t)
+  (patch : Data.Patch.t) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
       Events.(send @@ Info "The patch has no IR to translate.\n");
