@@ -362,7 +362,8 @@ module ARM_ops = struct
   let control j sem =
     {sem with current_ctrl = j::sem.current_ctrl}
 
-  let mov_const c ~is_thumb = match Word.to_int_exn c with
+  let mov_const (c : word) ~(is_thumb : bool) : Ir.opcode =
+    match Word.to_int_exn c with
     | n when n <= 0xFF -> Ops.mov is_thumb
     | n when n <= 0xFFFF -> Ops.movw
     | _ -> Ops.ldr 
@@ -542,21 +543,11 @@ module ARM_ops = struct
       | Var _ ->
         let op = Ir.simple_op Ops.str lhs [mem_val; value_val; loc_val] in
         KB.return [op]
-      | Const w when Word.to_int_exn w <= 0xFF ->
+      | Const w ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
+        let mov = Ir.simple_op (mov_const w ~is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
         KB.return [op; mov]
-      | Const w when Word.to_int_exn w <= 0xFFFF ->
-        let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.movw tmp [value_val] in
-        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
-        KB.return [op; mov]
-      | Const _ ->
-        let tmp = Ir.Var (create_temp word_ty) in
-        let ldr = Ir.simple_op Ops.ldr tmp [value_val] in
-        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; loc_val] in
-        KB.return [op; ldr]
       | _ ->
         Err.(fail @@ Other (
             sprintf "str: unsupported `value` operand %s" @@
@@ -579,21 +570,11 @@ module ARM_ops = struct
       | Var _ ->
         let op = Ir.simple_op Ops.str lhs [mem_val; value_val; base; off] in
         KB.return [op]
-      | Const w when Word.to_int_exn w <= 0xFF ->
+      | Const w ->
         let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.(mov is_thumb) tmp [value_val] in
+        let mov = Ir.simple_op (mov_const w ~is_thumb) tmp [value_val] in
         let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
         KB.return [op; mov]
-      | Const w when Word.to_int_exn w <= 0xFFFF ->
-        let tmp = Ir.Var (create_temp word_ty) in
-        let mov = Ir.simple_op Ops.movw tmp [value_val] in
-        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
-        KB.return [op; mov]
-      | Const _ ->
-        let tmp = Ir.Var (create_temp word_ty) in
-        let ldr = Ir.simple_op Ops.ldr tmp [value_val] in
-        let op = Ir.simple_op Ops.str lhs [mem_val; tmp; base; off] in
-        KB.return [op; ldr]
       | _ ->
         Err.(fail @@ Other (
             sprintf "str_base_off: unsupported `value` operand %s" @@
