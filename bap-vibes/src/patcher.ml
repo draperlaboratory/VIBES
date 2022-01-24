@@ -302,24 +302,28 @@ let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
     At the moment it is just greedy.
 *)
 let place_patches
+    (tgt : Theory.target)
     (lang : Theory.language)
     (patches : patch list)
     (patch_sites : patch_site list) : placed_patch list =
   let open Int64 in
+  let align = Theory.Target.data_alignment tgt |> of_int in
   let process_patch (acc, patch_sites) patch =
     let patch_size, literal =
       patch_size lang patch |> Result.ok |> Option.value_exn in
     let has_literal = literal <> 0L in
     let org_offset =
-      (* When we actually insert the patch into the binary, the literal pool
-         may become unaligned, so objcopy may insert extra padding at the site
-         of the pool. Unfortunately, this will mess up the PC-relative loads
-         that access this pool, since the offsets from PC will now be incorrect.
-         To get around this, we will to trick the assembler into putting our
-         code at a different origin, and then fix it up when we call objcopy. *)
+      (* If we have a literal pool in the patch, then objcopy may insert extra
+         padding if it determines that an unaligned memory access is possible. 
+         We need to anticipate this by telling the assembler that our patch will
+         be at some offset from the origin. We will then fix up the code once
+         we actually insert the patch into the new binary. *)
       if has_literal then
-        let align_size = rem (patch_size - literal) 4L in
-        let align_loc = rem patch.orig_loc 4L in
+        (* Minus the size of the literal pool + padding, is the size of the
+           patch code itself aligned? *)
+        let align_size = rem (patch_size - literal) align in
+        (* Is the patch location aligned? *)
+        let align_loc = rem patch.orig_loc align in
         if align_size <> 0L && align_loc <> 0L
         then Some (to_int_exn align_size)
         else None
@@ -456,14 +460,16 @@ let patch
   let naive_patch_sites = naive_find_patch_sites original_exe_filename in
   let* provided_patch_sites = reify_patch_sites obj in
   let patch_sites = naive_patch_sites @ provided_patch_sites in
+  let* target =
+    let patch = Data.Patch_set.choose_exn patches in
+    Data.Patch.get_target patch in
   let* lang =
     let patch = Data.Patch_set.choose_exn patches in
-    Data.Patch.get_lang patch
-  in
+    Data.Patch.get_lang patch in
   Events.(send @@ Info "Found Patch Sites:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_patch_site patch_sites));
   Events.(send @@ Info "Solving patch placement...");
-  let placed_patches = place_patches lang patch_list patch_sites in
+  let placed_patches = place_patches target lang patch_list patch_sites in
   Events.(send @@ Info "Patch Placement Solution:");
   Events.(send @@ Info (Format.asprintf "%a" Sexp.pp_hum @@ sexp_of_list sexp_of_placed_patch placed_patches));
   Events.(send @@ Info "Patching file...");

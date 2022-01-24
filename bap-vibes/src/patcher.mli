@@ -48,6 +48,7 @@ val patch :
   unit KB.t
 
 val place_patches :
+  Theory.target ->
   Theory.language ->
   patch list ->
   patch_site list ->

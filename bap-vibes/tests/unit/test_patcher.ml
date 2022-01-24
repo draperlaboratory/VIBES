@@ -11,9 +11,9 @@ module H = Helpers
 
 let dummy_patch n m : Patcher.patch = {
   assembly = [ Printf.sprintf ".rept %Ld" n;
-  "nop";
-  ".endr"
-  ];
+               "nop";
+               ".endr"
+             ];
   orig_loc = 0L;
   orig_size = m
 }
@@ -22,38 +22,41 @@ let dummy_compute_region ~loc:_ _ =
   Or_error.return Patcher.{ region_addr = 0L; region_offset = 0L }
 
 let test_patch_placer_exact_fit _ =
+  let tgt = H.the_target () in
   let lang = Arm_target.llvm_a32 in
   let patch = dummy_patch 2L 8L in
   let patch_sites = [] in
-  let placed_patch = Patcher.place_patches lang [patch] patch_sites |> List.hd_exn in
+  let placed_patch = Patcher.place_patches tgt lang [patch] patch_sites |> List.hd_exn in
   assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
   assert_equal placed_patch.jmp None
 
 let test_patch_placer_loose_fit _ =
+  let tgt = H.the_target () in
   let lang = Arm_target.llvm_a32 in
-    let patch = dummy_patch 1L 8L in
-    let patch_sites : Patcher.patch_site list = [{
+  let patch = dummy_patch 1L 8L in
+  let patch_sites : Patcher.patch_site list = [{
       location = 100L;
       size = 128L
     }] in
-    let placed_patch = Patcher.place_patches lang [patch] patch_sites |> List.hd_exn in
-    assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
-    assert_equal ~printer:Int64.to_string 8L (Option.value_exn placed_patch.jmp)
+  let placed_patch = Patcher.place_patches tgt lang [patch] patch_sites |> List.hd_exn in
+  assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
+  assert_equal ~printer:Int64.to_string 8L (Option.value_exn placed_patch.jmp)
 
-  let test_patch_placer_no_fit _ =
+let test_patch_placer_no_fit _ =
+  let tgt = H.the_target () in
   let lang = Arm_target.llvm_a32 in
-    let patch = dummy_patch 8L 4L in
-    let patch_sites : Patcher.patch_site list = [{
+  let patch = dummy_patch 8L 4L in
+  let patch_sites : Patcher.patch_site list = [{
       location = 100L;
       size = 128L
     }] in
-    match Patcher.place_patches lang [patch] patch_sites with
-    | [orig_jmp; placed_patch] ->
+  match Patcher.place_patches tgt lang [patch] patch_sites with
+  | [orig_jmp; placed_patch] ->
     assert_equal ~printer:Int64.to_string placed_patch.patch_loc 100L;
     assert_equal ~printer:Int64.to_string 4L (Option.value_exn placed_patch.jmp);
     assert_equal 0L orig_jmp.patch_loc;
     assert_equal 100L (Option.value_exn orig_jmp.jmp)
-    | _ -> assert_failure "List is wrong size"
+  | _ -> assert_failure "List is wrong size"
 
 (* A dummy patcher, that returns a fixed filename. *)
 let patcher _ ~filename:_ _ = H.patched_exe
