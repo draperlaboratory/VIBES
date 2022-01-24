@@ -317,16 +317,34 @@ let place_patches
          padding if it determines that an unaligned memory access is possible. 
          We need to anticipate this by telling the assembler that our patch will
          be at some offset from the origin. We will then fix up the code once
-         we actually insert the patch into the new binary. *)
+         we actually insert the patch into the new binary.
+
+         Consider the following cases in a Thumb binary (ARM doesn't apply to
+         this problem since everything is always aligned by the same boundary):
+
+         1) Our patch is inserted at an address that is aligned by 2.
+
+            a) If the patch ends on an address that is aligned by 4, then the
+               size of our patch has a remainder of 2. Therefore, padding will
+               be inserted between our patch code and the literal pool. Since
+               the start of our patch is misaligned, we need to adjust the
+               origin such that all PC-relative offsets end up the same as if
+               our patch was inserted at an aligned boundary.
+
+            b) Otherwise, the patch ends on an address that is aligned by 2,
+               so the assembler will incorrectly insert padding between our
+               patch and the literal pool. Therefore, we need to adjust the
+               origin of our patch for the assembler.
+
+         2) Our patch is inserted at an address that is aligned by 4. Whether
+            or not padding is inserted by the assembler, we have a relative
+            starting position of 0, so objcopy won't insert padding behind our
+            backs, and thus our PC-relative offsets remain consistent.
+      *)
       if has_literal then
-        (* Minus the size of the literal pool + padding, is the size of the
-           patch code itself aligned? *)
-        let align_size = rem (patch_size - literal) align in
         (* Is the patch location aligned? *)
         let align_loc = rem patch.orig_loc align in
-        if align_size <> 0L && align_loc <> 0L
-        then Some (to_int_exn align_size)
-        else None
+        if align_loc <> 0L then Some (to_int_exn align_loc) else None
       else None in
     (* If a literal pool was inserted at the end, then we need to insert
        a jump. *)
