@@ -307,7 +307,7 @@ let place_patches
     (patches : patch list)
     (patch_sites : patch_site list) : placed_patch list =
   let open Int64 in
-  let align = Theory.Target.data_alignment tgt |> of_int in
+  let align = (Theory.Target.code_alignment tgt |> of_int) lsr 3 in
   let process_patch (acc, patch_sites) patch =
     let patch_size, literal =
       patch_size lang patch |> Result.ok |> Option.value_exn in
