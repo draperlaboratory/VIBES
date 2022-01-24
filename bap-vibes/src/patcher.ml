@@ -322,7 +322,7 @@ let place_patches
          Consider the following cases in a Thumb binary (ARM doesn't apply to
          this problem since everything is always aligned by the same boundary):
 
-         1) Our patch is inserted at an address that is aligned by 2.
+         1) Our patch is inserted at an address that is aligned by 2 (but not 4):
 
             a) If the patch ends on an address that is aligned by 4, then the
                size of our patch has a remainder of 2. Therefore, padding will
