@@ -10,10 +10,11 @@ module H = Helpers
 
 
 let dummy_patch n m : Patcher.patch = {
-  assembly = [ Printf.sprintf ".rept %Ld" n;
-               "nop";
-               ".endr"
-             ];
+  assembly = [
+    Printf.sprintf ".rept %Ld" n;
+    "nop";
+    ".endr"
+  ];
   orig_loc = 0L;
   orig_size = m
 }
