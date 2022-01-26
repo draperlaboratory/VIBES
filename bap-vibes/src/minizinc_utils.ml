@@ -29,6 +29,7 @@ type reg = mzn_enum [@@deriving yojson]
 
 let mzn_enum (x : string) : mzn_enum = {e = x}
 let mzn_enum_def_of_list (tags : string list) : mzn_enum_def = {set = List.map ~f:mzn_enum tags}
+let mzn_set_of_list l = {set = l}
 
 let mzn_enum_of_var (v : var) : mzn_enum = Var.sexp_of_t v |> Sexp.to_string |> mzn_enum
 

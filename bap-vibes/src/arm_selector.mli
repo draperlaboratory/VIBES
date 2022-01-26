@@ -62,8 +62,7 @@ val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t KB.t
 val preassign : Theory.target -> Ir.t -> is_thumb:bool -> Ir.t
 
 module Isel : sig
-  val patterns : Isel.Pattern.t String.Map.t
-  val templates : Isel.Template.t String.Map.t
+  val patterns : Isel.info
 end
 
 module Pretty :

@@ -50,21 +50,28 @@ open Bap.Std
 open Bap_knowledge
 module KB = Knowledge
 
+(*
+  Patterns are the things looked for in the source program
+*)
 module Pattern : sig
-    type t = Blk.t list
+    type t
 end
 
+(*
+    Every pattern has a template. Templates describe how to take match information from a
+    match produced by a Pattern.t and turn it into VIBES IR. 
+*)
 module Template : sig
-    type t = Ir.t
+    type t
 end
+
+type info = (Pattern.t * Template.t) String.Map.t
 
 module Utils : sig
-    val binop_pat : binop -> Pattern.t
-    val binop_template : Pattern.t -> Ir.Opcode.t -> Template.t
-    val store_pat : Pattern.t
-    val store_template : Template.t
-    val load_pat : Pattern.t
-    val load_template : Template.t
+    val binop : binop -> Ir.Opcode.t -> Pattern.t * Template.t
+    val store : Pattern.t * Template.t
+    val load : Pattern.t * Template.t
+    val mov : Ir.Opcode.t -> Pattern.t * Template.t
     val def_pat : Def.t -> Pattern.t
     val x : Var.t
     val z : Var.t
@@ -73,6 +80,5 @@ end
 val run :
     isel_model_filepath:string ->
     Blk.t list ->
-    Pattern.t String.Map.t ->
-    Template.t String.Map.t ->
+    info ->
     Ir.t KB.t

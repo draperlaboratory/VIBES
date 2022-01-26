@@ -7,10 +7,10 @@ module KB = Knowledge
 It is assumed that the instruction selector is receiving an SSA and flattened BIR
 data structure.
 
-Flattening the BIR (making the right hand side of a Def a non resursive expression)
-simplifies significantly the problem and brings the data struture in correspondence
+Flattening the BIR (making the right hand side of a Def a non recursive expression)
+simplifies significantly the problem and brings the data structure in correspondence
 with the nodes of the Blindell universal instruction selection paper.
-Def.t become identified with Blindell's computation nodes.
+[Def.t] become identified with Blindell's computation nodes.
 
 *)
 
@@ -90,7 +90,6 @@ type env = {
   [Ob.Var] check
   It is a design choice to not make check_exp called in the obligations loop.
   Perhaps it should.
-
   *)
 let check_exp ~mexp:(mexp : exp) ~pexp:(pexp : exp) : Ob.t list option =
     match pexp with
@@ -104,16 +103,18 @@ let check_exp ~mexp:(mexp : exp) ~pexp:(pexp : exp) : Ob.t list option =
     | _ -> failwith (sprintf "Isel.check_exp: Pattern not in Flattened Form %a" Exp.pps pexp)
 
 
+(*
+  TODO or at least be careful.
+  [check_def] and [check_jmp] should be checking that the block it belongs to is also
+  an obligation. This is fine because of how [match_bir] is structured where it
+  only attempts def and jump matches if their blocks are already merged. *)
+
 (**
   [check_def] given a candidate match between a pattern [Def.t] and matchee
   [Def.t], this will produce None if this candidate match is impossible or
   will produce `Some obligations` with remaining obligations / inferred match
   candidates that should also be checked.
 *)
-(*
-TODO or at least be careful.
-check_def and check_jmp should be checking that the block it belongs to is a block that makes sense.
-This is fine *)
 let check_def (mdef : Def.t) (pdef : Def.t) : Ob.t list option =
   let open Bil in
   let (let*) x f = Option.bind ~f x in
@@ -124,7 +125,6 @@ let check_def (mdef : Def.t) (pdef : Def.t) : Ob.t list option =
   (* The left hand side of Def.t must be matchable *)
   let obs = [Ob.Var (plhs, Var mlhs)] in
   let obs = match mrhs, prhs with
-
   | BinOp (binop, a, b), BinOp (binop', pa, pb) ->
       if Int.(compare_binop binop binop' = 0) then
         begin
@@ -235,35 +235,24 @@ let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
       Some (obs' @ obs)
   | _, _ -> None
 
-(* Todo? Just for homegeneity *)
+(* Todo? Just for homegeneous use of [check_*] in [match_bir]. *)
 let check_var _pv _mexp = Some ()
 let check_blk _mblk _pblk = Some ()
 
 (**
-  [merge_obligations] performs a loop putting the obligations into the match
-
-  propagate_obligations?
-  check_obligations?
-
-Very reptitive and yet I'm not sure how to improve
-If you attempt to you get a mess
-let add_tid_map
-let add_term 
-
-  let check_term ~check ~mterm ~pterm term_match map update = 
-  begin
-    let ptid = Term.tid pterm in
-    match Tid.Map.add map ~key:ptid ~data:term_match with
-    | `Ok map -> let* obs' = check mterm pterm in
-                 loop (obs' @ obs) (update map)
-    | `Duplicate -> let match' = Tid.Map.find_exn jmp_map ptid in
-                    let mtid' = Term.tid jmp_match'.mjmp in
-                    let mtid = Term.tid mjmp in
-                    if Tid.(mtid' = mtid) then loop obs match_ else None
-  end
+  [merge_obligations] performs a loop putting obligations into a partial match_
+  Very repetitive and yet I'm not sure how to improve.
+  If you attempt to abstract over the pieces that are in common you get a mess in my opinion.
 *)
-let merge_obligations obs match_ env : match_ option =
+let merge_obligations
+  (obs : Ob.t list)
+  (match_ : match_)
+  (env : env) : match_ option =
   let (let*) x f = Option.bind x ~f in
+  (*  [obs] is a worklist of obligations to be checked.
+      It is vitally important that one checks in the match_ to see whether this obligation
+      has already been discharged before calling a [check_*] function. Otherwise you will
+      possibly end up in an infinite loop *)
   let rec loop obs match_ =
     match obs with
     | [] -> Some match_
@@ -306,11 +295,11 @@ let merge_obligations obs match_ env : match_ option =
         let ptid = Term.tid pjmp in
         match Tid.Map.add jmp_map ~key:ptid ~data:jmp_match with
         | `Ok jmp_map -> let* obs' = check_jmp mjmp pjmp env in
-                        loop (obs' @ obs) {match_ with jmp_map}
-        | `Duplicate -> let jmp_match' = Tid.Map.find_exn jmp_map ptid in
-                        let mtid' = Term.tid jmp_match'.mjmp in
-                        let mtid = Term.tid mjmp in
-                        if Tid.(mtid' = mtid) then loop obs match_ else None
+                         loop (obs' @ obs) {match_ with jmp_map}
+        | `Duplicate  -> let jmp_match' = Tid.Map.find_exn jmp_map ptid in
+                         let mtid' = Term.tid jmp_match'.mjmp in
+                         let mtid = Term.tid mjmp in
+                         if Tid.(mtid' = mtid) then loop obs match_ else None
       end
   in
   loop obs match_
@@ -331,8 +320,26 @@ let match_bir ~matchee:(matchee : Blk.t list)
      (* Add to each match_ *)
      let matches = List.filter_map matches ~f:(fun match_ ->
               merge_obligations [Ob.Blk {mblk; pblk}] match_ env)
-          
      in
+     (* The ordering of jumps _does_ matter, so we only allow complete matching on the
+        entire ctrl section of the block. This can be considered a more typical match,
+        whereas Def.t matching is taking into account a kind of commutativity.
+        The ctrl section is a kind of monolithic all or nothing matching *)
+    let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
+    let matches = if Int.(List.length pjmps = 0) then matches 
+      else begin
+        let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
+        let match_or_unequal = List.fold2 pjmps mjmps
+          ~init:matches ~f:(fun matches pjmp mjmp ->
+          List.filter_map matches ~f:(fun match_ ->
+            merge_obligations [Ob.Jmp {pjmp; mjmp}] match_ env)
+          )
+        in
+        match match_or_unequal with
+        | Ok matches -> matches
+        | Unequal_lengths -> [] (* failure *)
+      end
+    in
      (* Enumerate all possible def correspondences within blk correspondence *)
      let mdefs = Term.enum def_t mblk |> Seq.to_list in
      let pdefs = Term.enum def_t pblk |> Seq.to_list in
@@ -343,39 +350,16 @@ let match_bir ~matchee:(matchee : Blk.t list)
           merge_obligations [Ob.Def {pdef; mdef}] match_ env)
         )
      in
-     (* Enumerate all possible jmp correspondences within blk correspondence *)
-    let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
-    let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
-    let matches =
-        List.fold pjmps ~init:matches ~f:(fun matches pjmp ->
-          let* mjmp = mjmps in
-          List.filter_map matches ~f:(fun match_ ->
-            merge_obligations [Ob.Jmp {pjmp; mjmp}] match_ env)
-        )
-    in
     matches
       (* TODO: Generate phi correspondences *)
-      (* Perhaps enumerate over all variables at the end? *)
+      (* Perhaps enumerate over all variables at the end? Variables should only appear as
+         subterms of other pieces, so they shouldbe all covered. *)
     )
   in
   matches
 
-let build_matches matchee (pats : Blk.t list String.Map.t) =
-  String.Map.map pats ~f:(fun pat ->
-    match_bir ~matchee ~pat
-    )
-
-
 module Serial = struct
   open Minizinc_utils
-  (* TODO: These should be moved into Minizinc.ml *)
-  (* Phantom types make yojson_deriving produce function with unused variables.
-   This sets off a warning *)
-  let mzn_map_of_yojson = fun _ -> [%of_yojson: 'b list]
-  let mzn_map_to_yojson = fun _ -> [%to_yojson: 'b list]
-  let mzn_set_of_list l = {set = l}
-  let mzn_enum (x : string) : mzn_enum = {e = x}
-
   type operand = mzn_enum [@@deriving yojson] (* datum? *)
   type operation = mzn_enum [@@deriving yojson]
   type match_id = int [@@deriving yojson]
@@ -454,7 +438,7 @@ module Serial = struct
       operandsDefinedByMatch = free_operands :: serial.operandsDefinedByMatch
     }
 
-  let build_serial matchee matches =
+  let build_serial (matchee : Blk.t list) (matches : match_ list) : Yojson.Safe.t =
     let serial = empty in
     let serial = serial_of_matches matches serial in
     let serial = null_def_pattern matchee serial in
@@ -468,6 +452,13 @@ module Serial = struct
       dmatch : (operand, match_id) mzn_map;
       _objective : int
     } [@@deriving yojson]
+
+    let filter_templates (sol : sol_serial) (templates : 'a list) =
+      (* This [List.tl_exn] is to remove the null def pattern *)
+      List.map2_exn (List.tl_exn sol.sel) templates
+      ~f:(fun sel temp -> if sel then Some temp else None) |> List.filter_opt
+
+
 end (* Serial *)
 end (* Pattern *)
 
@@ -496,12 +487,14 @@ module Template = struct
                  Exp.pps mexp)
           end
       | _ -> failwith "undealt with operand case"
-      ) 
+      )
     in
     template
 
 
 end
+
+type info = (Pattern.t * Template.t) String.Map.t
 
 module Utils = struct
   let memvar (name : string) : Var.t = Var.create name (Mem (Size.addr_of_int_exn 64, Size.r8))
@@ -511,17 +504,26 @@ module Utils = struct
   let y = var64 "y"
   let z = var64 "z"
   let (:=) lhs rhs = Def.create lhs rhs
-  let binop_pat op = def_pat (z := Bil.binop op (Bil.var x) (Bil.var y))
 
-  let binop_template pat opcode : Ir.t =
+  let binop (binop : binop) (opcode : Ir.opcode) : Pattern.t * Template.t =
+    let pat = def_pat (z := Bil.binop binop (Bil.var x) (Bil.var y)) in
     let blkid = List.hd_exn pat |> Term.tid in
     let operand v = Ir.Var (Ir.simple_var v) in
     let operation = Ir.simple_op opcode (operand z) [operand x; operand y] in
-    { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
-     congruent = []
+    pat, { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
+      congruent = []
     }
 
-  let store_pat_temp : Pattern.pat * Ir.t = 
+  let mov (opcode : Ir.opcode): Pattern.t * Template.t =
+      let pat = def_pat (Def.create z (Bil.var x)) in
+      let blkid = Term.tid (List.hd_exn pat) in
+      let operand v = Ir.Var (Ir.simple_var v) in
+      let operation = Ir.simple_op opcode (operand z) [operand x] in
+      pat,
+      { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
+        congruent = []}
+
+  let store : Pattern.pat * Template.t =
       let mem = memvar "mem" in
       let mem' = memvar "mem'" in
       let addr = var64 "addr" in
@@ -541,10 +543,8 @@ module Utils = struct
           congruent = []}
       in
       ([pat], template)
-    let store_pat : Pattern.t = let (pat, _) = store_pat_temp in pat
-    let store_template : Template.t = let (_, template) = store_pat_temp in template
 
-    let load_pat_temp : Pattern.t * Template.t =
+    let load : Pattern.t * Template.t =
       let mem = memvar "mem" in
       let addr = var64 "addr" in
       let value = var64 "val" in
@@ -563,13 +563,10 @@ module Utils = struct
     in
     ([pat], template)
 
-    let load_pat : Pattern.t = let (pat, _) = load_pat_temp in pat
-    let load_template : Template.t = let (_, template) = load_pat_temp in template
-
 end
 
 (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
-let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk = 
+let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   assert (Tid.equal blk1.id blk2.id);
   assert ((List.length blk1.ctrl) + (List.length blk2.ctrl) <= 1);
   {
@@ -595,25 +592,23 @@ let merge_ir (vir1 : Ir.t) (vir2 : Ir.t) : Ir.t =
 let run
   ~isel_model_filepath:(isel_model_filepath : string)
   (matchee : Blk.t list)
-  (pats : Pattern.t String.Map.t) 
-  (templates : Template.t String.Map.t) =
+  (pats : (Pattern.t * Template.t) String.Map.t) =
   Events.(send @@ Info "Running Instruction Selector.\n");
   let open Knowledge.Syntax in
-  let matches = Pattern.build_matches matchee pats in
-  let match_templates = String.Map.mapi matches ~f:(fun ~key ~data ->
-    let template = String.Map.find_exn templates key in
-    List.map data ~f:(fun match_ -> ( match_ , Template.instantiate_ir_template match_ template ))
-  ) in
-  let match_templates = String.Map.to_alist match_templates in
-  let match_templates = List.concat_map match_templates ~f:(fun (_name, matches) -> matches) in
-  let matches = List.map match_templates ~f:(fun (match_, _template) -> match_) in
+  let matches = String.Map.map pats ~f:(fun (pat,template) ->
+    let matches = Pattern.match_bir ~matchee ~pat in
+    List.map matches ~f:(fun match_ -> 
+      match_, Template.instantiate_ir_template match_ template)
+    )
+  in
+  let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
+  let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
   let* sol_json = Minizinc_utils.run_minizinc ~model_filepath:isel_model_filepath params in
   let* sol_serial = match Pattern.Serial.sol_serial_of_yojson sol_json with
     | Ok sol_serial -> KB.return sol_serial
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
-  let good_templates = List.zip_exn (List.tl_exn sol_serial.sel) match_templates |>
-        List.filter_map ~f:(fun (use,(_, template)) -> if use then Some template else None) in
+  let good_templates = Pattern.Serial.filter_templates sol_serial templates in
   let vir = List.reduce ~f:merge_ir good_templates in
   let vir = Option.value ~default:Ir.empty vir in
   KB.return vir
