@@ -54,7 +54,7 @@ module KB = Knowledge
   Patterns are the things looked for in the source program
 *)
 module Pattern : sig
-    type t
+  type t
 end
 
 (*
@@ -62,23 +62,23 @@ end
     match produced by a Pattern.t and turn it into VIBES IR. 
 *)
 module Template : sig
-    type t
+  type t
 end
 
 type info = (Pattern.t * Template.t) String.Map.t
 
 module Utils : sig
-    val binop : binop -> Ir.Opcode.t -> Pattern.t * Template.t
-    val store : Pattern.t * Template.t
-    val load : Pattern.t * Template.t
-    val mov : Ir.Opcode.t -> Pattern.t * Template.t
-    val def_pat : Def.t -> Pattern.t
-    val x : Var.t
-    val z : Var.t
+  val binop : binop -> Ir.Opcode.t -> Pattern.t * Template.t
+  val store : Pattern.t * Template.t
+  val load : Pattern.t * Template.t
+  val mov : Ir.Opcode.t -> Pattern.t * Template.t
+  val def_pat : Def.t -> Pattern.t
+  val x : Var.t
+  val z : Var.t
 end
 
 val run :
-    isel_model_filepath:string ->
-    Blk.t list ->
-    info ->
-    Ir.t KB.t
+  isel_model_filepath:string ->
+  Blk.t list ->
+  info ->
+  Ir.t KB.t

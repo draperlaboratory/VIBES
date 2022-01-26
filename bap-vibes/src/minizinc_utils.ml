@@ -40,8 +40,8 @@ let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list
     ~f:(fun t -> Map.find_exn m t |> f)
 
 let run_minizinc
-  (params : Yojson.Safe.t)
-  ~model_filepath:(model_filepath : string) =
+    (params : Yojson.Safe.t)
+    ~model_filepath:(model_filepath : string) =
   let params_filepath =
     Stdlib.Filename.temp_file "vibes-mzn-params" ".json" in
   let solution_filepath =
@@ -49,12 +49,12 @@ let run_minizinc
   Events.(send @@ Info (sprintf "Paramfile: %s\n" params_filepath));
   Yojson.Safe.to_file params_filepath params;
   let minizinc_args = ["--output-mode"; "json";
-    "-o"; solution_filepath;
-    "--output-objective";
-    "-d"; params_filepath;
-    "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
-    "--search-complete-msg";"\"\"";
-    "--solver"; "chuffed";
-    model_filepath ] in
+                       "-o"; solution_filepath;
+                       "--output-objective";
+                       "-d"; params_filepath;
+                       "--soln-sep"; "\"\"";  (* Suppress some unwanted annotations *)
+                       "--search-complete-msg";"\"\"";
+                       "--solver"; "chuffed";
+                       model_filepath ] in
   Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
   KB.return (Yojson.Safe.from_file solution_filepath)
