@@ -1,5 +1,8 @@
-%%% Inputs
-% Function data.
+%% Based on https://github.com/unison-code/uni-instr-sel/blob/master/solvers/minizinc/base-model.mzn
+%% And thesis.
+%%%%%%%%%%%%%%%%%%%%
+%%% Input Parameters
+%%%%%%%%%%%%%%%%%%%%
 int: numMatches;
 
 enum allOperationsInFunction;
