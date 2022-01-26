@@ -263,6 +263,7 @@ test_arm_branch_bsi () {
 # Run all tests
 run_all () {
     test_arm_simple
+    test_arm_simple_sum
     test_arm_simple_inline
     test_arm_simple_cegis
     test_arm_simple_compiled

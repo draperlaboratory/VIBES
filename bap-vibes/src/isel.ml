@@ -362,7 +362,14 @@ module Pattern = struct
     open Minizinc_utils
     type operand = mzn_enum [@@deriving yojson] (* datum? *)
     type operation = mzn_enum [@@deriving yojson]
+    (* Individual matches are identified by their index in the matches list *)
     type match_id = int [@@deriving yojson]
+    (* [match_serial] is all the data that the minizinc model needs to run.
+       The names are chosen to be in correspondence with the Blindell model
+       https://github.com/unison-code/uni-instr-sel/blob/master/solvers/minizinc/base-model.mzn
+       - [numMatches] is the total number of matches
+       - [allOperationsInFunction]
+    *)
     type match_serial = {
       numMatches : int;
       allOperationsInFunction : mzn_enum_def;
@@ -378,11 +385,17 @@ module Pattern = struct
       operandsDefinedByMatch  = [];
     }
 
-    let covered_ops ({def_map; _} : match_) : Tid.t list =
+    (* [covered_ops] takes a [match_] and returns all the Def.t covered by that
+       match_
+    *)
+    let covered_ops ({def_map; jmp_map; _} : match_) : Tid.t list =
       let defs = Tid.Map.data def_map in
-      let mtids = List.map ~f:(fun {mdef; _} -> Term.tid mdef) defs in
-      Tid.Set.of_list mtids |> Tid.Set.to_list
-
+      let jmps = Tid.Map.data jmp_map in
+      let mdef_tids = List.map ~f:(fun {mdef; _} -> Term.tid mdef) defs in
+      let mjmp_tids = List.map ~f:(fun {mjmp; _} -> Term.tid mjmp) jmps in
+      let tids = Tid.Set.union (Tid.Set.of_list mdef_tids) (Tid.Set.of_list mjmp_tids) in
+      Tid.Set.to_list tids
+    (* [defines_vars] returns a list of all the variables defined by the match *)
     let defines_vars ({def_map; _} : match_) : Var.t list =
       (* TODO: Check phi nodes *)
       Tid.Map.fold def_map ~init:Var.Set.empty ~f:(fun ~key:_ ~data:{mdef; _} acc ->
@@ -395,8 +408,10 @@ module Pattern = struct
       {
         serial with
         numMatches = List.length matches + 1; (* The 1 accounts for the null def patterns *)
-        operationsCoveredByMatch = List.map matches ~f:(fun match_ -> {set = List.map ~f:operation_of_tid (covered_ops match_)});
-        operandsDefinedByMatch = List.map matches ~f:(fun match_ -> mzn_set_of_list @@ List.map ~f:operand_of_var (defines_vars match_)  )
+        operationsCoveredByMatch = List.map matches ~f:(fun match_ ->
+            mzn_set_of_list @@ List.map ~f:operation_of_tid (covered_ops match_));
+        operandsDefinedByMatch = List.map matches ~f:(fun match_ ->
+            mzn_set_of_list @@ List.map ~f:operand_of_var (defines_vars match_))
       }
     let all_vars (blk : Blk.t) : Var.Set.t =
       let vset = Var.Set.empty in
@@ -414,35 +429,26 @@ module Pattern = struct
       List.fold blks ~init:Var.Set.empty ~f:(fun acc blk ->
           Var.Set.union acc (all_vars blk )
         )
-    let serial_of_blks (matchee : Blk.t list) serial : match_serial =
+
+    let all_operations (blk : Blk.t) : Tid.t list =
+      let def_tids = Term.enum def_t blk |> Seq.map ~f:Term.tid in
+      let jmp_tids = Term.enum jmp_t blk |> Seq.map ~f:Term.tid in
+      Seq.append def_tids jmp_tids |> Seq.to_list
+
+    (** [enumerate_nodes] inserts into the serial_match object the identifiers of all
+        the operations and operands *)
+    let enumerate_nodes (matchee : Blk.t list) (serial : match_serial) : match_serial =
       let vars = Var.Set.to_list @@ all_vars_blks matchee in
-      let tids = List.concat_map matchee ~f:(fun blk -> Term.enum def_t blk |> Seq.to_list)  in
-      let tids = List.map ~f:Term.tid tids in
+      let tids = List.concat_map matchee ~f:all_operations in
       {serial with
        allOperationsInFunction = mzn_set_of_list @@ List.map ~f:operation_of_tid tids;
        allDataInFunction = mzn_set_of_list @@ List.map ~f:operand_of_var vars
       }
 
-  (*
-     The null definition pattern is a default pattern that covers externally defined variables.
-     This pattern will be selected to cover/define them.
-     We will arbitrarily use match number 0 as this pattern.
-     We must be careful to remove this when deserializing the solution.
-  *)
-    let null_def_pattern matchee (serial : match_serial) : match_serial =
-      let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
-      let free_operands = mzn_set_of_list @@ List.map ~f:operand_of_var @@ Var.Set.to_list free_vars in
-      {
-        serial with
-        operationsCoveredByMatch = mzn_set_of_list [] :: serial.operationsCoveredByMatch;
-        operandsDefinedByMatch = free_operands :: serial.operandsDefinedByMatch
-      }
-
     let build_serial (matchee : Blk.t list) (matches : match_ list) : Yojson.Safe.t =
       let serial = empty in
       let serial = serial_of_matches matches serial in
-      let serial = null_def_pattern matchee serial in
-      let serial = serial_of_blks matchee serial in
+      let serial = enumerate_nodes matchee serial in
       match_serial_to_yojson serial
 
     type sol_serial =
@@ -454,10 +460,8 @@ module Pattern = struct
       } [@@deriving yojson]
 
     let filter_templates (sol : sol_serial) (templates : 'a list) =
-      (* This [List.tl_exn] is to remove the null def pattern *)
-      List.map2_exn (List.tl_exn sol.sel) templates
+      List.map2_exn sol.sel templates
         ~f:(fun sel temp -> if sel then Some temp else None) |> List.filter_opt
-
 
   end (* Serial *)
 end (* Pattern *)
@@ -491,6 +495,7 @@ module Template = struct
     in
     template
 
+  let _empty : t = Ir.empty
 
 end
 
@@ -534,7 +539,7 @@ module Utils = struct
           mem' := store ~mem:(var mem) ~addr:(var addr) (var value) LittleEndian Size.r64;
         ]) () 
     in
-    let template : Ir.t = 
+    let template : Template.t = 
       let blkid = Term.tid pat in 
       let operand v = Ir.Var (Ir.simple_var v) in
       let operation = Ir.simple_op (Ir.Opcode.create "str") 
@@ -553,8 +558,8 @@ module Utils = struct
         [
           value := load ~mem:(var mem) ~addr:(var addr) LittleEndian Size.r64;
         ]) () in
-    let template : Ir.t = 
-      let blkid = Term.tid pat in 
+    let template : Template.t =
+      let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
       let operation = Ir.simple_op (Ir.Opcode.create "ld") 
           (operand value) [operand mem; operand addr] in
@@ -564,6 +569,18 @@ module Utils = struct
     ([pat], template)
 
 end
+
+(** [null_def_match] produces a null definition match and empty no-op instantiated template
+    The null definition pattern is a default pattern that covers externally defined variables
+    in the matchee. This pattern will be selected to cover/define them, but then the no-op
+    Ir chunk is used, which does nothing to the resulting Ir.t when merged
+*)
+let null_def_match (matchee : Blk.t list) : Pattern.match_ * Ir.t =
+  let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
+  {Pattern.empty_match_ with
+   vmap = Var.Set.to_map ~f:(fun x -> Bil.Var x) free_vars
+  },
+  Ir.empty
 
 (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
 let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
@@ -597,11 +614,12 @@ let run
   let open Knowledge.Syntax in
   let matches = String.Map.map pats ~f:(fun (pat,template) ->
       let matches = Pattern.match_bir ~matchee ~pat in
-      List.map matches ~f:(fun match_ -> 
+      List.map matches ~f:(fun match_ ->
           match_, Template.instantiate_ir_template match_ template)
     )
   in
   let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
+  let match_templates = (null_def_match matchee) :: match_templates in
   let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
   let* sol_json = Minizinc_utils.run_minizinc ~model_filepath:isel_model_filepath params in
