@@ -85,9 +85,9 @@ let test_failure_mov _ =
     end
   | _ -> assert_failure "Unexpected block shape!"
 
-let test_merge _ =
+let test_remove_fallthrough _ =
   let blks = [blk_dir; blk_uncond_dir; blk_redir] in
-  let opts = Bir_passes.Opt.merge_adjacent blks in
+  let opts = Bir_passes.Opt.remove_fallthrough_jmp blks in
   match opts with
   | [blk1; blk2] ->
     let tid1 = Term.tid blk1 in
@@ -136,5 +136,5 @@ let suite = [
   "Test success" >:: test_success;
   "Test failure branch" >:: test_failure_branch;
   "Test failure mov" >:: test_failure_mov;
-  "Test merge" >:: test_merge;
+  "Test remove fallthrough" >:: test_remove_fallthrough;
 ]

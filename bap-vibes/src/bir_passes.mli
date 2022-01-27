@@ -30,10 +30,10 @@ module Opt : sig
       to put the patch code in good shape before instruction selection. *)
   val apply : blk term list -> blk term list
 
-  (** [merge_adjacent ir] attempts to merge adjacent blocks in [ir] with an
+  (** [remove_fallthrough_jmp ir] attempts to merge adjacent blocks in [ir] with an
       edge in between them. Requires the blocks to be ordered according to a
       reverse post-order DFS traversal. *)
-  val merge_adjacent : blk term list -> blk term list
+  val remove_fallthrough_jmp : blk term list -> blk term list
   
 end
 

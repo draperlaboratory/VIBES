@@ -154,7 +154,7 @@ module Opt = struct
       short_circ;
     ]
 
-  (* Attempt to merge adjacent blocks which have an edge in between them.
+  (* Attempt to remove fallthrough jumps.
      For this transformation, the blks must be ordered according to a
      reverse postorder DFS traversal.
 
@@ -162,7 +162,7 @@ module Opt = struct
      caveats. Fallthrough edges will be made implicit by the ordering of
      the blocks, and thus they will not be present in the generated CFG.
  *)
-  let merge_adjacent (ir : blk term list) : blk term list =
+  let remove_fallthrough_jmp (ir : blk term list) : blk term list =
     (* `finished_blks` are blocks we will not try to optimize further.
        They are to be inserted in reverse order of `ir`. *)
     let rec aux ~finished_blks = function
@@ -179,21 +179,9 @@ module Opt = struct
             | Goto (Direct tid) when Tid.(tid = Term.tid blk2) -> begin
                 match jmps1 with
                 | [_] ->
-                  (* It's the only jmp in the blk, so merge the two
-                     adjacent blocks together. Then, try to optimize
-                     the merged block. *)
-                  let phis1 = Term.enum phi_t blk1 |> Seq.to_list in
-                  let phis2 = Term.enum phi_t blk2 |> Seq.to_list in
-                  let defs1 = Term.enum def_t blk1 |> Seq.to_list in
-                  let defs2 = Term.enum def_t blk2 |> Seq.to_list in
-                  let jmps2 = Term.enum jmp_t blk2 |> Seq.to_list in
-                  let new_blk =
-                    Blk.create
-                      ~phis:(phis1 @ phis2)
-                      ~defs:(defs1 @ defs2)
-                      ~jmps:jmps2
-                      ~tid:(Term.tid blk1) () in
-                  aux ~finished_blks (new_blk :: rest)
+                  (* It's the only jmp in the blk. *)
+                     let blk1 = Term.remove jmp_t blk1 @@ Term.tid jmp in
+                     aux ~finished_blks:(blk1 :: finished_blks) (blk2 :: rest)
                 | _ ->
                   (* It wasn't the only jmp in the blk, so just remove it,
                      and try optimizing it again. *)
@@ -638,6 +626,6 @@ let run (code : insn)
     then Arm_specific.split_large_const ir
     else KB.return ir in
   let* ir = Shape.reorder_blks ir in
-  let ir = Opt.merge_adjacent ir in
+  let ir = Opt.remove_fallthrough_jmp ir in
   let+ ir = to_linear_ssa ir in
   {ir; exclude_regs; argument_tids}
