@@ -407,7 +407,7 @@ module Pattern = struct
       (* TODO: replace to_string functions with Sexp functions? *)
       {
         serial with
-        numMatches = List.length matches + 1; (* The 1 accounts for the null def patterns *)
+        numMatches = List.length matches;
         operationsCoveredByMatch = List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operation_of_tid (covered_ops match_));
         operandsDefinedByMatch = List.map matches ~f:(fun match_ ->
