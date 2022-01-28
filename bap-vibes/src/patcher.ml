@@ -99,8 +99,8 @@ let check_for_literal_pool (l : Theory.language) (assembly : string list)
   let literal = size_of_literal_pool l with_elf_filename in
   Result.return (literal, with_elf_filename)
 
-(** [binary_of_asm] uses external programs to convert assembly code to binary *)
-let binary_of_asm (with_elf_filename : string) : (string, Kb_error.t) Result.t =
+(** [binary_of_elf] uses external programs to convert assembly code to binary *)
+let binary_of_elf (with_elf_filename : string) : (string, Kb_error.t) Result.t =
   let (let*) x f = Result.bind x ~f in
   (* strip elf data *)
   let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy" in
@@ -159,7 +159,7 @@ let build_patch
     patch_start ::
     (patch.assembly @ [patch_jmp]) in
   let* literal, objfile = check_for_literal_pool l asm in
-  let* bin = binary_of_asm objfile in
+  let* bin = binary_of_elf objfile in
   Result.return (literal, bin)
 
 let patch_size (l : Theory.language) (patch : patch)
@@ -351,7 +351,7 @@ let place_patches
     if has_literal then
       Events.send @@ Info "Found literal pool at end of patch.";
     let patch_size =
-      if not has_literal then patch_size else patch_size + jmp_instr_size in
+      if has_literal then patch_size + jmp_instr_size else patch_size in
     if patch_size <= patch.orig_size (* Patch fits inplace *)
     then
       (* If patch exactly fits *)
