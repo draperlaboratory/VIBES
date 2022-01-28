@@ -102,7 +102,7 @@ let given_var v ~reg:reg =
   }
 
 type operand =
-    Var of op_var
+  | Var of op_var
   | Const of Word.t
   | Label of Tid.t
   | Void of op_var

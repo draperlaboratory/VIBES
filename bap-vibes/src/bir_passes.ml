@@ -20,10 +20,6 @@ type t = {
 (* Helper functions *)
 module Helper = struct
 
-  (* Helper functions *)
-  let new_tmp (width : int) : var =
-    Var.create ~is_virtual:true ~fresh:true "tmp" (Type.Imm width)
-
   (* Create a dummy subroutine from the blocks. *)
   let create_sub (blks : blk term list) : sub term KB.t =
     let+ tid = Theory.Label.fresh in
@@ -277,155 +273,6 @@ module Shape = struct
 
 end
 
-(* ARM-specific transformations *)
-module Arm_specific = struct
-
-  (* Shift value for the upper 16-bit half. *)
-  let shift_val = Word.of_int ~width:32 16
-  
-  (* Split the word into the lower and upper 16-bit halves. *)
-  let split_word (w : word) : word * word =
-    let lower = Word.(w land of_int ~width:32 0xFFFF) in
-    let upper = Word.(w lsr shift_val) in
-    lower, upper
-
-  (* The particular pattern we're going to use as a signpost that a split
-     happened. *)
-  let split_idiom (v : var) (upper : word) : exp =
-    Bil.(var v lor (int upper lsl int shift_val))
-
-  (* Generic function that will split integers that are too large. *)
-  let split
-      (prev_tids : (tid * tid) option ref)
-      (saved : var Word.Table.t)
-      (rhs : exp)
-      ~(update : exp -> unit)
-      ~(add : def term list -> unit) : unit KB.t =
-    let+ tid1, tid2 = match !prev_tids with
-      | Some tids -> KB.return tids
-      | None ->
-        let* tid1 = Theory.Label.fresh in
-        let+ tid2 = Theory.Label.fresh in
-        tid1, tid2 in
-    prev_tids := Some (tid1, tid2);
-    let rhs' = (object
-      inherit Exp.mapper
-      method! map_int w = match Word.Table.find saved w with
-        | Some v -> Var v
-        | None ->
-          if Word.to_int_exn w > 0xFFFF then 
-            let lower, upper = split_word w in
-            let v = Helper.new_tmp 32 in
-            let def1 = Def.create ~tid:tid1 v @@ Int lower in
-            let def2 = Def.create ~tid:tid2 v @@ split_idiom v upper in
-            Word.Table.set saved ~key:w ~data:v;
-            prev_tids := None;
-            add [def2; def1];
-            Var v
-          else Int w
-    end)#map_exp rhs in
-    match !prev_tids with
-    | None -> update rhs'
-    | Some _ -> () 
-
-  (* Special case for when the RHS is just an integer. Here, we avoid using a
-     temporary variable to hold the results of the split. This seems to lead to
-     smaller generated code, which is important. *)
-  let split_no_temp
-      (saved : var Word.Table.t)
-      (rhs : exp Tid.Table.t)
-      (prepend_defs : def term list Tid.Table.t)
-      (tid : tid) (lhs : var) (w : word) : unit KB.t =
-    match Word.Table.find saved w with
-    | Some v -> KB.return @@
-      Tid.Table.set rhs ~key:tid ~data:(Bil.var v)
-    | None ->
-      let lower, upper = split_word w in
-      let+ () =
-        let* tid' = Theory.Label.fresh in
-        let def1 = Def.create ~tid:tid' lhs Bil.(int lower) in
-        try
-          KB.return @@ Tid.Table.change prepend_defs tid ~f:(function
-              | None -> Some [def1]
-              | Some _ -> assert false)
-        with Assert_failure _ -> Err.(fail @@ Other (
-            sprintf "Arm_specific.split_no_temp: def %s was already \
-                     split" @@ Tid.to_string tid)) in
-      Word.Table.set saved ~key:w ~data:lhs;
-      Tid.Table.set rhs ~key:tid
-        ~data:(split_idiom lhs upper)
-
-  (* On ARM, we can't use constants larger than 65535. The typical approach is
-     to load the lower 16 bits first, then load the upper 16 bits, using a
-     movw/movt idiom. *)
-  let split_large_const (blks : blk term list) : blk term list KB.t =
-    (* This is so we don't create an excessive amount of fresh tids that are
-       later discarded. *)
-    let prev_tids = ref None in
-    KB.List.map blks ~f:(fun blk ->
-        (* Mapping from constants to variables, local to each block. This
-           is so we can cut down on the number of defs we create. An
-           improvement would be to know which temps will be available across
-           which blocks, so that we can get more re-use. *)
-        let saved = Word.Table.create () in
-        let split = split prev_tids saved in
-        (* Save the results in these mutable structures. *)
-        let prepend_defs = Tid.Table.create () in
-        let rhs = Tid.Table.create () in
-        let cond = Tid.Table.create () in
-        let append_defs = ref [] in
-        (* Handle defs *)
-        let* () =
-          Term.enum def_t blk |> KB.Seq.iter ~f:(fun def ->
-              let tid = Term.tid def in
-              match Def.rhs def with
-              | Int w when Word.to_int_exn w > 0xFFFF ->
-                split_no_temp saved rhs prepend_defs tid (Def.lhs def) w
-              | exp ->
-                try
-                  split exp
-                    ~update:(fun exp -> Tid.Table.set rhs ~key:tid ~data:exp)
-                    ~add:(fun defs ->
-                        Tid.Table.change prepend_defs tid ~f:(function
-                            | None -> Some defs
-                            | Some _ -> assert false))
-                with Assert_failure _ -> Err.(fail @@ Other (
-                    sprintf "Arm_specific.split: def %s was already \
-                             split" @@ Tid.to_string tid))) in
-        (* Handle conditions in jmps. We could probably also handle
-           jmp destinations, but it would be tricky since they are
-           assembled with PC-relative offsets as operands. *)
-        let+ () =
-          Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
-              let tid = Term.tid jmp in
-              Jmp.cond jmp |> split
-                ~update:(fun exp -> Tid.Table.set cond ~key:tid ~data:exp)
-                ~add:(fun defs -> append_defs := !append_defs @ defs)) in
-        (* Prepend new defs (from previous defs) *)
-        let blk =
-          Tid.Table.fold prepend_defs ~init:blk
-            ~f:(fun ~key:tid ~data:defs blk ->
-                fst @@ List.fold defs ~init:(blk, tid)
-                  ~f:(fun (blk, before) def ->
-                      Term.prepend def_t blk def ~before, Term.tid def)) in
-        (* Set the new RHS. *)
-        let blk =
-          Term.map def_t blk ~f:(fun def ->
-              match Tid.Table.find rhs @@ Term.tid def with
-              | Some rhs -> Def.with_rhs def rhs
-              | None -> def) in
-        (* Set the new conds. *)
-        let blk =
-          Term.map jmp_t blk ~f:(fun jmp ->
-              match Tid.Table.find cond @@ Term.tid jmp with
-              | Some cond -> Jmp.with_cond jmp cond
-              | None -> jmp) in
-        (* Append new defs (at the end of the blk) *)
-        List.fold !append_defs ~init:blk ~f:(fun blk def ->
-            Term.append def_t blk def))
-
-end
-
 (* Handle storage classification in the presence of ABI information. *)
 module ABI = struct
 
@@ -613,7 +460,6 @@ let to_linear_ssa (blks : blk term list) : blk term list KB.t =
 
 let run (code : insn)
     ~(tgt : Theory.target)
-    ~(lang : Theory.language)
     ~(hvars : Hvar.t list)
     ~(sp_align : int) : t KB.t =
   let ir = Blk.from_insns [code] in
@@ -632,11 +478,6 @@ let run (code : insn)
   let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   let ir = Opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
-  let* arm = Arm.is_arm lang and* thumb = Arm.is_thumb lang in
-  let* ir =
-    if arm || thumb
-    then Arm_specific.split_large_const ir
-    else KB.return ir in
   let* ir = Shape.reorder_blks ir in
   let ir = Opt.merge_adjacent ir in
   let+ ir = to_linear_ssa ir in

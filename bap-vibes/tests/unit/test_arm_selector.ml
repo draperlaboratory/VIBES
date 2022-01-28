@@ -211,7 +211,7 @@ module Prog22 = struct
 
   let prog =
     (* equivalent to `v1 := 0x1FFFF` *)
-    let bil = Bil.[v1 := !!65535; v1 := var v1 lor (!!1 lsl !!16)] in
+    let bil = Bil.[v1 := !!0x1FFFF] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
@@ -397,7 +397,7 @@ let test_ir21 ctxt =
 
 let test_ir22 ctxt =
   test_ir ctxt Prog22.prog
-    [blk_pat ^ ":"; "movw R0, #65535"; "movt R0, #1"]
+    [blk_pat ^ ":"; "ldr R0, =131071"]
 
 let test_ir23 ctxt =
   test_ir ctxt Prog23.prog
