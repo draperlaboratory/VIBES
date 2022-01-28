@@ -164,6 +164,14 @@ let simple_op opcode arg args =
     operands = List.map ~f:freshen_operand args;
   }
 
+let empty_op () : operation =
+  { id = create_id ();
+    lhs = [];
+    opcodes = [];
+    optional = true;
+    operands = []
+  }
+
 let write_multiple_op opcode written args =
   { id = create_id ();
     lhs = written;

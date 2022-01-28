@@ -193,34 +193,12 @@ module Pattern = struct
      [check_jmp] checks the compatibility of a Jmp match.
   *)
   let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
+    let () = failwith "Isel:check_jmp : jumps unsupported in minizinc instruction selector" in
     let (let*) x f = Option.bind x ~f in
-    (* let mdst = Jmp.dst mjmp in
-       let pdst = Jmp.dst pjmp in
-       let malt = Jmp.alt mjmp in
-       let palt = Jmp.alt pjmp in
-       let mguard = Jmp.guard mjmp in
-       let pguard = Jmp.guard pjmp in
-       let* vmap = match mguard, pguard with
-       | Some mv, Some pv -> Some {vmap = [mv,pv]}
-                                 | None, None -> Some empty
-                                 | _ ,_ -> None
-                                 in
-                                 let obligations = match mdst, pdst with
-                                 | Some mdst, Some pdst -> {ob with blk_map = [mdst, pdst]}
-                                 | None, None -> obligations
-                                 | _, _ -> None 
-                                 let obligations = match malt, palt with
-                                 | Some mdst, Some pdst -> {ob with blk_map = [mdst, pdst] :: ob.blk_map}
-                                 | None, None -> obligations
-                                 | _, _ -> None *)
     let mkind = Jmp.kind mjmp in
     let pkind = Jmp.kind pjmp in
     let mcond = Jmp.cond mjmp in
     let pcond = Jmp.cond pjmp in 
-    (* maybe this is the same as operand above. Should I be concerened that Int don't appear in the match? 
-       I could consider them fused in some sense with the insturction maybe
-       I should transition to using match_ as obligation
-    *)
     let* obs = check_exp ~mexp:mcond ~pexp:pcond in
     match mkind, pkind with
     | Call _mc, Call _pc -> failwith "unsupported call" (* if Int.(compare_call mc pc = 0) then Some empty_obligations else None *)
@@ -228,7 +206,7 @@ module Pattern = struct
     | Ret (Direct mtid), Ret (Direct ptid) ->
       let mblk = Tid.Map.find_exn env.blk_map mtid in
       let pblk = Tid.Map.find_exn env.blk_map ptid in
-      Some ((Ob.Blk {mblk; pblk}) :: obs) (* Hmm, it will be hard here to *)
+      Some ((Ob.Blk {mblk; pblk}) :: obs)
     | Goto (Indirect mexp), Goto (Indirect pexp)
     | Ret (Indirect mexp), Ret (Indirect pexp) ->
       let* obs' = check_exp ~mexp ~pexp in
@@ -477,6 +455,7 @@ module Template = struct
         let {mblk; _} : Pattern.blk_match = Tid.Map.find_exn blk_map blk.id in
         {blk with id = Term.tid mblk}
       ) in
+    (* TODO: Change tids inside jumps *)
     (* Map variables to proper operands*)
     let template = Ir.map_operands template ~f:(fun operand ->
         match operand with
@@ -590,9 +569,9 @@ let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
     id = blk1.id;
     data = List.append blk1.data blk2.data;
     ctrl = List.append blk1.ctrl blk2.ctrl;
-    ins = {blk1.ins with lhs = List.append blk1.ins.lhs blk2.ins.lhs};
-    outs = {blk1.outs with operands = List.append blk1.outs.operands blk2.outs.operands};
-    frequency = blk1.frequency + blk2.frequency
+    ins = Ir.empty_op ();
+    outs = Ir.empty_op ();
+    frequency = 0
   }
 let merge_ir (vir1 : Ir.t) (vir2 : Ir.t) : Ir.t =
   let blkmap1 = Tid.Map.of_alist_exn (List.map vir1.blks ~f:(fun blk -> (blk.id, [blk]))) in

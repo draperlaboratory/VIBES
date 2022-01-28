@@ -101,6 +101,7 @@ type operation = {
 } [@@deriving compare, equal, sexp]
 
 val simple_op : opcode -> operand -> operand list -> operation
+val empty_op : unit -> operation
 val write_multiple_op : opcode -> operand list -> operand list -> operation
 
 val op_no_args : opcode -> operation
