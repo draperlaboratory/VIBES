@@ -395,12 +395,12 @@ module Eval(CT : Theory.Core) = struct
       Err.Core_c_error "Maximum number of arguments for function call \
                         was exceeded"
 
-  let call_dst_with_name (name : string) =
+  let call_dst_with_name (name : string) : T.label KB.t =
     let* dst = T.Label.fresh in
     let* () = KB.provide T.Label.name dst @@ Some name in
     !!dst
 
-  let call_dst_with_addr (addr : Bitvec.t) =
+  let call_dst_with_addr (addr : Bitvec.t) : T.label KB.t =
     let* dst = T.Label.fresh in
     let* () = KB.provide T.Label.addr dst @@ Some addr in
     !!dst
