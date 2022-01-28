@@ -394,6 +394,16 @@ module Eval(CT : Theory.Core) = struct
       Err.fail @@
       Err.Core_c_error "Maximum number of arguments for function call \
                         was exceeded"
+
+  let call_dst_with_name (name : string) : T.label KB.t =
+    let* dst = T.Label.fresh in
+    let* () = KB.provide T.Label.name dst @@ Some name in
+    !!dst
+
+  let call_dst_with_addr (addr : Bitvec.t) : T.label KB.t =
+    let* dst = T.Label.fresh in
+    let* () = KB.provide T.Label.addr dst @@ Some addr in
+    !!dst
   
   let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
     let empty_ctrl = T.Effect.empty T.Effect.Sort.fall in
@@ -412,7 +422,7 @@ module Eval(CT : Theory.Core) = struct
       | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, CALL (VARIABLE f, args))) ->
         let* arg_assignments, args = assign_args info var_map args in
         let* lval = find_var lval in
-        let* dst = T.Label.for_name ~package:"core-c" f in
+        let* dst = call_dst_with_name f in
         let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
@@ -424,7 +434,7 @@ module Eval(CT : Theory.Core) = struct
       | COMPUTATION (BINARY (ASSIGN, UNARY (MEMOF, VARIABLE lval), CALL (VARIABLE f, args))) ->
         let* arg_assignments, args = assign_args info var_map args in
         let* lval = find_var lval in
-        let* dst = T.Label.for_name ~package:"core-c" f in
+        let* dst = call_dst_with_name f in
         let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
@@ -449,7 +459,7 @@ module Eval(CT : Theory.Core) = struct
       *)
       | COMPUTATION (CALL (CONSTANT(CONST_INT s), args)) ->
         let* arg_assignments, args = assign_args info var_map args in
-        let* dst = T.Label.for_addr ~package:"core-c" @@ Bitvec.(!$s) in
+        let* dst = call_dst_with_addr Bitvec.(!$s) in
         let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
@@ -457,7 +467,7 @@ module Eval(CT : Theory.Core) = struct
         !!call_blk
       | COMPUTATION (CALL (VARIABLE f, args)) ->
         let* arg_assignments, args = assign_args info var_map args in
-        let* dst = T.Label.for_name ~package:"core-c" f in
+        let* dst = call_dst_with_name f in
         let* () = provide_args dst args in
         let* () = declare_call dst in
         let* call = CT.goto dst in
