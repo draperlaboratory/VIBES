@@ -1,0 +1,61 @@
+{
+  "functions": {
+    "0xcc4": {
+      "file_offset": 968,
+      "address_ranges": [
+        {
+          "start": 968,
+          "end": 1024
+        }
+      ],
+      "symbol_name": "sub_3c8",
+      "source_match": {
+        "confidence": 1,
+        "function": "foo",
+        "file": "main.c",
+        "line": 2,
+        "patch_effects": {},
+        "return_value": "int",
+        "parameters": {
+          "0": {
+            "name": "x",
+            "type": "int"
+          }
+        },
+        "local_variables": {}
+      },
+      "source_mapping": [
+        {
+          "source_expr": "x > 0",
+          "source_expr_line": "3",
+          "mlil_ssa": {},
+          "disassembly": {
+            "0x3c8": "push    {fp}",
+            "0x3cc": "add     fp, sp, #0",
+            "0x3d0": "sub     sp, sp, #12",
+            "0x3d4": "str     r0, [fp, #-8]",
+            "0x3d8": "ldr     r3, [fp, #-8]",
+            "0x3dc": "cmp     r3, #0",
+            "0x3e0": "ble     #0x3ec"
+          },
+          "variable_storage": {
+            "0": {
+              "type": "register",
+              "location": "r3"
+            }
+          }
+        }
+      ],
+      "disassembly": {},
+      "mlil_ssa": {},
+      "hlil": {},
+      "return_registers": [],
+      "clobbered_registers": [
+        "r0",
+        "r3"
+      ],
+      "calling_convention": "cdecl"
+    }
+  },
+  "patches": {}
+}

@@ -15,7 +15,8 @@
      "patch-code" : "int temp;
                      if (temp == 0)
                         { goto L_0x3ec; }",
-     "patch-point" : "0x103dc",
+     "patch-point" : "0x3dc",
      "patch-size" : 8}
-  ]
+  ],
+  "bsi-metadata": "bsi.json"
 }
