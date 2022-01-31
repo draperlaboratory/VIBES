@@ -4,7 +4,14 @@
 
 open Bap_core_theory
 
-(** [declare_call dst] tags [dst] as being a function call with bells and whistles. *)
+(** [provide_args dst args] marks [args] as the subroutine arguments that
+    are passed for the call to [dst]. *)
+val provide_args : Theory.label -> Bap.Std.var list -> unit KB.t
+
+(** [collect_args dst] returns the list of arguments needed by the call. *)
+val collect_args : Theory.label -> Bap.Std.var list KB.t
+
+(** [declare_call dst] marks [dst] as a subroutine. *)
 val declare_call : Theory.label -> unit KB.t
 
 (** [is_call dst] returns true if the label is indented to be the
@@ -40,5 +47,6 @@ module Eval(T : Theory.Core) : sig
       If a construct (as parsed by FrontC) is not supported,
       [failwith] is called and crashes the program.
   *)
-  val c_patch_to_eff : Theory.target -> Cabs.definition -> unit Theory.eff
+  val c_patch_to_eff :
+    Higher_var.t list -> Theory.target -> Cabs.definition -> unit Theory.eff
 end

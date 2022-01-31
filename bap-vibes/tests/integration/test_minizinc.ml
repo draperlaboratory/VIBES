@@ -11,8 +11,7 @@ open Ir
 (* Creates an operation built just from the specified variables,
    before they been assigned to operands. *)
 let in_op (ts : Var.t list) : operation =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = create_id ();
     lhs = List.map ~f:(fun t -> Var (simple_var t)) ts;
     opcodes = [];
     optional = false;
@@ -22,8 +21,7 @@ let in_op (ts : Var.t list) : operation =
 (* Creates an operation where the specified variables have been
    assigned to operands. *)
 let out_op (ts : Var.t list) : operation =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = create_id ();
     lhs = [];
     opcodes = [];
     optional = false;
@@ -33,8 +31,7 @@ let out_op (ts : Var.t list) : operation =
 (* Creates an operation with a specified instruction (opcode), a specified
    variable (before it's assigned to operands), and specified operands. *)
 let simple_op' opcode arg args =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = create_id ();
     lhs = [Var (simple_var arg)];
     opcodes = [opcode];
     optional = false;
@@ -81,7 +78,7 @@ let user_map1 = Var.Map.of_alist_exn [
     (t3, List.map ~f:op_var_exn blk1.outs.operands) ]
 
 (* Map the TIDs of the specified operations to their opcodes. *)
-let op_opcodes1 = Tid.Map.of_alist_exn [
+let op_opcodes1 = Int.Map.of_alist_exn [
     (op1.id, [mov]);
     (op2.id, [mov]);
     ( blk1.ins.id, []);
@@ -127,7 +124,7 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
       blk.data in
     assert_bool "Operations should be in order"
       (List.for_all2_exn
-         ~f:(fun o1 o2 -> Tid.equal o1.id o2.id)
+         ~f:(fun o1 o2 -> Int.equal o1.id o2.id)
          (get_ops vir)
          (get_ops ex1));
     KB.return obj

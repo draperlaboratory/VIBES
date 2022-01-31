@@ -22,13 +22,27 @@ type patch_site = {
 }
 
 (** A [placed_patch] is a patch that has a chosen location to place it in the
-    binary. It optionally may have a jump placed after it. *)
+    binary. It optionally may have a jump placed after it.
+
+    - [assembly] is the actual patch code that will be fed to the system assembler.
+    - [orig_loc] is the file offset at which the patch will be inserted.
+    - [orig_size] is the available space for the patch at the patch point.
+    - [patch_loc] is the actual location where the patch is placed. It may be equal
+      to [orig_loc] if the patch was able to fit in the specified location.
+    - [jmp] is the (optional) destination of a jump that was inserted at the end of
+      the patch code. This is for the case where the patch was not an exact fit, uses
+      a literal pool, or had to be placed elsewhere.
+    - [org_offset] is the (optional) offset from an origin of 0 that the patch will
+      be assembled at. This occurs when a literal pool is used by the patch code and
+      the patcher anticipates an alignment correction.
+ *)
 type placed_patch = {
   assembly : string list;
   orig_loc : int64;
   orig_size : int64;
   patch_loc : int64;
-  jmp : int64 option
+  jmp : int64 option;
+  org_offset : int option;
 }
 
 (** A [patch_region] represents the location of the (to be placed)
@@ -47,6 +61,7 @@ val patch :
   unit KB.t
 
 val place_patches :
+  Theory.target ->
   Theory.language ->
   patch list ->
   patch_site list ->

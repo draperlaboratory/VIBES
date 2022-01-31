@@ -24,7 +24,11 @@ type patch =
     patch_size : int;
 
     (* Higher variables *)
-    patch_vars : Hvar.t list
+    patch_vars : Hvar.t list;
+
+    (* The amount that the SP should be adjusted by to be aligned
+       at the beginning of the patch (for ABI reasons). *)
+    patch_sp_align : int;
   }
 
 (** A type to represent known regions that may be overwritten with patch code *)
@@ -51,6 +55,7 @@ let patch_code (p : patch) : patch_code = p.patch_code
 let patch_point (p : patch) : Bitvec.t = p.patch_point
 let patch_size (p : patch) : int = p.patch_size
 let patch_vars (p : patch) : Hvar.t list = p.patch_vars
+let patch_sp_align (p : patch) : int = p.patch_sp_align
 
 (* Config accessors. *)
 let exe t : string = t.exe
@@ -67,18 +72,31 @@ let string_of_hvar (v : Hvar.t) : string =
   let string_of_loc (v_loc : Hvar.stored_in) : string =
     match v_loc with
     | Hvar.Register reg -> reg
-    | Hvar.Memory (fp, offset) ->
+    | Hvar.(Memory (Frame (fp, offset))) ->
       Format.sprintf "[%s + %s]" fp (Bap.Std.Word.to_string offset)
-  in
-  let part_1 = Format.sprintf
-    "      {\n        name: %s,\n        at-entry: %s\n"
-    (Hvar.name v) (string_of_loc (Hvar.at_entry v))
-  in
-  let part_2 = Format.sprintf
-    "        at-exit: %s\n      }"
-    (string_of_loc (Hvar.at_exit v))
-  in
-  String.concat ~sep:"" [part_1; part_2]
+    | Hvar.(Memory (Global addr)) ->
+      Format.sprintf "[%s]" (Bap.Std.Word.to_string addr) in
+  let string_of_value (name : string) (v : Hvar.value) : string =
+    match v with
+    | Storage {at_entry; at_exit} -> begin
+      let part_1 =
+        Format.sprintf
+          "      {\n        name: %s,\n        at-entry: %s\n"
+          name (string_of_loc at_entry) in
+      match at_exit with
+      | None -> part_1 ^ "\n      }"
+      | Some v_loc_2 ->
+        let part_2 =
+          Format.sprintf
+            "        at-exit: %s\n      }"
+            (string_of_loc v_loc_2) in
+        String.concat ~sep:"" [part_1; part_2]
+    end
+    | Constant const ->
+      Format.sprintf 
+        "      {\n        name: %s,\n        constant: %s}"
+        name (Bap.Std.Word.to_string const) in
+  string_of_value (Hvar.name v) (Hvar.value v)
 
 (* For displaying a patch. *)
 let patch_to_string (p : patch) : string =
@@ -170,8 +188,10 @@ let create_patch
     ~patch_code:(patch_code : patch_code)
     ~patch_point:(patch_point : Bitvec.t)
     ~patch_size:(patch_size : int)
-    ~patch_vars:(patch_vars : Hvar.t list) : patch =
-  { patch_name; patch_code; patch_point; patch_size; patch_vars; }
+    ~patch_vars:(patch_vars : Hvar.t list)
+    ~patch_sp_align:(patch_sp_align : int)
+  : patch =
+  { patch_name; patch_code; patch_point; patch_size; patch_vars; patch_sp_align }
 
 (* Create a configuration record. *)
 let create

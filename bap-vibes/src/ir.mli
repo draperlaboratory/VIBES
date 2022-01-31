@@ -76,11 +76,15 @@ val simple_var : var -> op_var
 
 val given_var : var -> reg:var -> op_var
 
-type operand = Var of op_var
-             | Const of word
-             | Label of tid
-             | Void of op_var
-             | Offset of word [@@deriving compare, equal, sexp]
+type operand =
+  | Var of op_var
+  | Const of word
+  | Label of tid
+  | Void of op_var
+  | Offset of word
+[@@deriving compare, equal, sexp]
+
+val create_id : unit -> int
 
 (** An [operation] has
     a *unique* id
@@ -89,7 +93,7 @@ type operand = Var of op_var
     a flag of whether the operation is optional,
     a list of operands. *)
 type operation = {
-  id : tid;
+  id : int;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
@@ -97,6 +101,9 @@ type operation = {
 } [@@deriving compare, equal, sexp]
 
 val simple_op : opcode -> operand -> operand list -> operation
+val write_multiple_op : opcode -> operand list -> operand list -> operation
+
+val op_no_args : opcode -> operation
 
 (** A [vibes_blk] has an id,
     a set of operations,
@@ -140,11 +147,6 @@ val op_var_to_string : op_var -> string
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
 
-(** [preassign tgt ir] sets all the variables which are set to
-    registers in [tgt] as being the preassigned location for those
-    variables. *)
-val preassign : Theory.target -> t -> t
-
 (** [preassign_map] builds a total dictionary from op_var ids to
     pre assigned registers. *)
 val preassign_map : t -> (var option) Var.Map.t
@@ -177,7 +179,7 @@ val freshen_operand : operand -> operand
 val add_in_vars : t -> t
 
 (** Various getter functions *)
-val operation_opcodes : t -> opcode list Tid.Map.t
+val operation_opcodes : t -> opcode list Int.Map.t
 val all_opcodes : t -> opcode list
 val operand_operation : t -> operation Var.Map.t
 val op_var_exn : operand -> op_var

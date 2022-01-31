@@ -13,6 +13,7 @@ type patch = {
   raw_ir : Ir.t;
   patch_name : string;
   minizinc_solutions : Minizinc.sol_set;
+  exclude_regs : String.Set.t option;
 }
 
 (* A bundle of seed info that can be used to seed the KB
@@ -30,7 +31,8 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
     let* raw_ir = KB.Value.get Data.Patch.raw_ir value in
     let* patch_name = KB.Value.get Data.Patch.patch_name value in
     let minizinc_solutions = KB.Value.get Data.Patch.minizinc_solutions value in
-    Some { raw_ir; patch_name; minizinc_solutions }
+    let exclude_regs = KB.Value.get Data.Patch.exclude_regs value in
+    Some { raw_ir; patch_name; minizinc_solutions; exclude_regs }
 
 (* Given a bundle of [seed] info, find the seed info for the patch with
    the specified [name]. *)
@@ -76,12 +78,14 @@ let create_patches
     let* () = Data.Patch.set_lang obj lang in
     let* () = Data.Patch.set_target obj tgt in
     let* () = Data.Patch.set_patch_vars obj (Some (Config.patch_vars p)) in
+    let* () = Data.Patch.set_sp_align obj (Some (Config.patch_sp_align p)) in
     let* () = match get_patch_by_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed ->
         let* () = Data.Patch.union_minizinc_solution
           obj patch_seed.minizinc_solutions in
-        Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir)
+        let* () = Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir) in
+        Data.Patch.set_exclude_regs obj patch_seed.exclude_regs
     in
     KB.return obj
   in

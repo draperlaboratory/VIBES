@@ -102,7 +102,7 @@ let given_var v ~reg:reg =
   }
 
 type operand =
-    Var of op_var
+  | Var of op_var
   | Const of Word.t
   | Label of Tid.t
   | Void of op_var
@@ -140,8 +140,15 @@ let op_var_exn (x : operand) : op_var =
   | Var o -> o
   | _ -> failwith "Expected op_var"
 
+let create_id =
+  let next = ref 0 in
+  fun () ->
+    let id = !next in
+    incr next;
+    id
+
 type operation = {
-  id : Tid.t;
+  id : int;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
@@ -149,8 +156,7 @@ type operation = {
 } [@@deriving compare, equal, sexp]
 
 let simple_op opcode arg args =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = create_id ();
     lhs = [arg];
     opcodes = [opcode];
     optional = false;
@@ -158,9 +164,25 @@ let simple_op opcode arg args =
     operands = List.map ~f:freshen_operand args;
   }
 
+let write_multiple_op opcode written args =
+  { id = create_id ();
+    lhs = written;
+    opcodes = [opcode];
+    optional = false;
+    (* Operands need to have unique ids *)
+    operands = List.map ~f:freshen_operand args;
+  } 
+
+let op_no_args opcode =
+  { id = create_id ();
+    lhs = [];
+    opcodes = [opcode];
+    optional = false;
+    operands = [];
+  }
+
 let mk_empty_operation () =
-  let tid = Tid.create () in
-  { id = tid;
+  { id = create_id ();
     lhs = [];
     opcodes = [];
     optional = false;
@@ -196,20 +218,32 @@ type t = {
 
 let empty = {blks = []; congruent = []}
 
+(* Preserve the ordering when deduping. This is much slower than `dedup_and_sort`. *)
+let dedup_list_stable l ~compare =
+  let equal x x' = compare x x' = 0 in
+  let rec loop res = function
+    | [] -> res
+    | x :: xs ->
+      let dups = List.find_all_dups (x :: xs) ~compare in
+      let res = if List.mem dups x ~equal then res else x :: res in
+      loop res xs
+  in
+  loop [] (List.rev l)
+
 let union t1 t2 =
   let comp_pair = Tuple.T2.compare ~cmp1:compare_op_var ~cmp2:compare_op_var in
   {
     blks =
-      List.dedup_and_sort ~compare:compare_blk (t1.blks @ t2.blks);
+      dedup_list_stable ~compare:compare_blk (t1.blks @ t2.blks);
     congruent =
-      List.dedup_and_sort ~compare:comp_pair (t1.congruent @ t2.congruent)
+      dedup_list_stable ~compare:comp_pair (t1.congruent @ t2.congruent)
   }
 
 let add blk t =
   {t with blks = blk::t.blks}
 
 
-let operation_to_string (o : operation) = Tid.to_string o.id
+let operation_to_string (o : operation) = Int.to_string o.id
 let op_var_to_string (o : op_var) = Var.to_string o.id
 
 let var_operands (ops : operand list) : op_var list =
@@ -285,9 +319,9 @@ module Blk = struct
   let all_operations (blk : blk) : operation list =
     blk.ins :: ( blk.outs :: (blk.data @ blk.ctrl))
 
-  let operation_opcode (blk : blk) : (opcode list) Tid.Map.t =
-    List.fold ~init:Tid.Map.empty ~f:(fun acc o ->
-        Tid.Map.add_exn acc ~key:o.id ~data:o.opcodes
+  let operation_opcode (blk : blk) : (opcode list) Int.Map.t =
+    List.fold ~init:Int.Map.empty ~f:(fun acc o ->
+        Int.Map.add_exn acc ~key:o.id ~data:o.opcodes
       ) (all_operations blk)
 
   let operand_operation (blk : blk) : operation Var.Map.t =
@@ -316,8 +350,8 @@ let var_map_union_exn m1 m2 =
         | `Right b -> Some b
         | `Both(_ , _) -> failwith "Map has both keys")
 
-let tid_map_union_exn m1 m2 =
-  Tid.Map.merge m1 m2
+let int_map_union_exn m1 m2 =
+  Int.Map.merge m1 m2
     ~f:(fun ~key:_ ab ->
         match ab with
         | `Left a -> Some a
@@ -410,11 +444,11 @@ let temp_blk (sub : t) : Tid.t Var.Map.t =
           ~f:(fun t -> (t, blk.id))) |>
   Var.Map.of_alist_exn
 
-let operation_opcodes (sub : t) : (opcode list) Tid.Map.t =
+let operation_opcodes (sub : t) : (opcode list) Int.Map.t =
   List.fold sub.blks
-    ~init:Tid.Map.empty
+    ~init:Int.Map.empty
     ~f:(fun acc blk ->
-        tid_map_union_exn acc (Blk.operation_opcode blk))
+        int_map_union_exn acc (Blk.operation_opcode blk))
 
 let operand_operation (sub : t) : operation Var.Map.t =
   List.fold sub.blks
@@ -445,8 +479,10 @@ let pretty_operand o =
 let pretty_operand_list l =
   List.map ~f:pretty_operand l |> String.concat ~sep:","
 
-let pretty_operation o =
-  sprintf "\t\t[%s]  <- %s [%s]" (pretty_operand_list o.lhs)
+let pretty_operation (o : operation) =
+  sprintf "\t\t%s: [%s]  <- %s [%s]"
+    (Int.to_string o.id)
+    (pretty_operand_list o.lhs)
     (String.concat
        (List.map o.opcodes ~f:Opcode.name))
     (pretty_operand_list o.operands)
@@ -473,31 +509,6 @@ let dummy_reg_alloc t =
         | None ->
           let var = List.hd_exn v.temps in
           {v with pre_assign = Some (Var.create "R0" (Var.typ var))})
-
-let preassign_var tgt v =
-  let regs = Theory.Target.regs tgt |> Set.to_sequence in
-  let regs = Seq.map regs ~f:Var.reify in
-  if Seq.mem ~equal:Var.equal regs v
-  then Some v
-  else None
-
-(* We freshen temporaries so that they do not clash with register
-   names in the Minizinc model. *)
-let freshen_temps v =
-  let name = Var.name v in
-  let typ = Var.typ v in
-  Var.create ("__Vibes_tmp_" ^ name) typ
-
-(* Preassign variables with names equal to a register in the target to
-   the corresponding register, and freshen the temp name. *)
-let preassign (tgt : Theory.target) (ir : t) : t =
-  map_op_vars ir
-    ~f:(fun v ->
-        {v with
-         temps = List.map ~f:freshen_temps v.temps;
-         pre_assign = List.hd_exn v.temps |> preassign_var tgt
-        })
-
 
 module Operand =
 struct
@@ -527,9 +538,7 @@ let is_defined (defs : OpSet.t) (v : operand) : bool =
         | _ -> is_def)
 
 let add_in_vars_blk (b : blk) : blk =
-  (* We only grab data here, since control effects don't influence
-     dependencies. *)
-  let ops = b.data in
+  let ops = b.data @ b.ctrl in
   let collect_vars_op_list l =
     List.fold l ~init:OpSet.empty
       ~f:(fun set o ->
@@ -556,7 +565,7 @@ let add_in_vars_blk (b : blk) : blk =
   (* We add dummy operation with no instructions and as lhs all the
      [ins] variables *)
   let ins = {
-    id = Tid.create ();
+    id = create_id ();
     lhs = ins;
     opcodes = [];
     optional = false;

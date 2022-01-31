@@ -52,7 +52,7 @@ plugin.uninstall:
 # TEST
 #####################################################
 
-test.unit:
+test.unit: clean
 	$(MAKE) test.unit -C $(LIB_DIR)
 
 test.integration:
@@ -65,3 +65,15 @@ test:
 	$(MAKE) test.unit
 	$(MAKE) test.integration
 	$(MAKE) test.system
+
+#####################################################
+# CLEAN
+#####################################################
+
+clean.plugin:
+	$(MAKE) clean -C $(PLUGIN_DIR)
+
+clean.lib:
+	$(MAKE) clean -C $(LIB_DIR)
+
+clean: clean.plugin clean.lib

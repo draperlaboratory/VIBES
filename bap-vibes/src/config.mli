@@ -36,6 +36,11 @@ val patch_size : patch -> int
 (** [patch_vars p] returns the higher vars declared for the patch [p]. *)
 val patch_vars : patch -> Hvar.t list
 
+(** [patch_sp_align p] returns the amount needed to be added to the SP in
+    order to have the correct alignment at the beginning of the patch, as
+    prescribed by the ABI. *)
+val patch_sp_align : patch -> int
+
 (** [exe config] returns the filepath of the original exe to patch. *)
 val exe : t -> string
 
@@ -66,19 +71,23 @@ val patch_spaces : t -> patch_space list
 (** [pp ppf config] is a pretty printer for a configuration record. *)
 val pp : Format.formatter -> t -> unit
 
-(** [create_patch ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars]
+(** [create_patch ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars ~patch_sp_align]
     will create a patch record, where:
     - [~patch_name] is the name of the patch
     - [~patch_code] is the code of the patch
     - [~patch_point] is the addres in the original exe to start patching at
     - [~patch_size] is the number of bytes to replace in the original exe
-    - [~patch_vars] are higher variables declared for the patch *)
+    - [~patch_vars] are higher variables declared for the patch
+    - [~patch_sp_align] is the amount needed to adjust the SP at the beginning
+       of the patch in order to align it in accordance with the ABI spec.
+*)
 val create_patch :
   patch_name:string
   -> patch_code:patch_code
   -> patch_point:Bitvec.t
   -> patch_size:int
   -> patch_vars:Hvar.t list
+  -> patch_sp_align:int
   -> patch
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath
