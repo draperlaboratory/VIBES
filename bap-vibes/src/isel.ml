@@ -193,6 +193,7 @@ module Pattern = struct
      [check_jmp] checks the compatibility of a Jmp match.
   *)
   let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
+    (* TODO: This is incomplete jump checking functionality. *)
     let () = failwith "Isel:check_jmp : jumps unsupported in minizinc instruction selector" in
     let (let*) x f = Option.bind x ~f in
     let mkind = Jmp.kind mjmp in
@@ -302,7 +303,9 @@ module Pattern = struct
             (* The ordering of jumps _does_ matter, so we only allow complete matching on the
                entire ctrl section of the block. This can be considered a more typical match,
                whereas Def.t matching is taking into account a kind of commutativity.
-               The ctrl section is a kind of monolithic all or nothing matching *)
+               The ctrl section is a kind of monolithic all or nothing matching.
+               No. I should only allow contiguous matches?
+               *)
             let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
             let matches = if Int.(List.length pjmps = 0) then matches 
               else begin
