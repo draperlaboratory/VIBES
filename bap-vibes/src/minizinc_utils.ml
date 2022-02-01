@@ -20,12 +20,6 @@ let mzn_map_to_yojson = fun _ -> [%to_yojson: 'b list]
 
 type mzn_enum = {e : string} [@@deriving yojson]
 type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
-type operand = mzn_enum [@@deriving yojson]
-type operation = mzn_enum [@@deriving yojson]
-type block = mzn_enum [@@deriving yojson]
-type temp = mzn_enum [@@deriving yojson]
-type opcode = mzn_enum [@@deriving yojson]
-type reg = mzn_enum [@@deriving yojson]
 
 let mzn_enum (x : string) : mzn_enum = {e = x}
 let mzn_enum_def_of_list (tags : string list) : mzn_enum_def = {set = List.map ~f:mzn_enum tags}
@@ -33,11 +27,6 @@ let mzn_set_of_list l = {set = l}
 
 let mzn_enum_of_var (v : var) : mzn_enum = Var.sexp_of_t v |> Sexp.to_string |> mzn_enum
 
-
-(* Generic minizinc enumeration builder *)
-let key_map ~f:(f : 'a -> 'c) (keys : 'b list) (m : ('b, 'a, _) Map.t) : 'c list =
-  List.map keys
-    ~f:(fun t -> Map.find_exn m t |> f)
 
 let run_minizinc
     (params : Yojson.Safe.t)

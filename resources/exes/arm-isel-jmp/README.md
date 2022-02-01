@@ -1,4 +1,8 @@
-# ARM Simple
+# ARM Isel Jump
+
+
+NOT CURRENTLY ENABLED
+This is for testing future functionality of the minizinc based instruction selector on jump patterns
 
 To clean, build, and patch:
 

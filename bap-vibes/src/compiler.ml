@@ -144,8 +144,9 @@ let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
   KB.return ()
 
 (* Converts the patch (as IR) to assembly instructions. *)
-let compile_assembly ?solver:(solver = Minizinc.run_unison) (obj : Data.t)
-    : unit KB.t =
+let compile_assembly 
+  ?solver:(solver = Minizinc.run_allocation_and_scheduling)
+  (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
   Events.(send @@ Info ("Using minizinc model: " ^ mzn_model));

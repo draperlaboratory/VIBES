@@ -2,7 +2,7 @@ open Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
-
+open Minizinc_utils
 module KB = Knowledge
 
 
@@ -36,11 +36,6 @@ type sol = {
   issue : int Int.Map.t;
 } [@@deriving sexp, compare]
 
-val run_minizinc :
-  Yojson.Safe.t ->
-  model_filepath:string ->
-  Yojson.Safe.t KB.t
-
 (**
 
    [run_unison tgt lang minizinc_model_filepath ir] encodes the
@@ -51,7 +46,7 @@ val run_minizinc :
 
 *)
 
-val run_unison :
+val run_allocation_and_scheduling :
   ?exclude_regs:String.Set.t ->
   Theory.target ->
   Theory.language ->
@@ -83,12 +78,6 @@ type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 (**/**)
 (* Exposed for unit testing. *)
 
-type 'a mzn_set = {set : 'a list}  [@@deriving yojson]
-type ('a ,'b) mzn_map = 'b list
-
-
-type mzn_enum = {e : string} [@@deriving yojson]
-type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
 type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]

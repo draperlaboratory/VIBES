@@ -1,4 +1,6 @@
-# ARM Simple
+# ARM Simple Sum
+
+Testing the minizinc instruction selector on a simple summation program
 
 To clean, build, and patch:
 

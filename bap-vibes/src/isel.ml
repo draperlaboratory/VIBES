@@ -374,14 +374,23 @@ module Pattern = struct
       let jmps = Tid.Map.data jmp_map in
       let mdef_tids = List.map ~f:(fun {mdef; _} -> Term.tid mdef) defs in
       let mjmp_tids = List.map ~f:(fun {mjmp; _} -> Term.tid mjmp) jmps in
-      let tids = Tid.Set.union (Tid.Set.of_list mdef_tids) (Tid.Set.of_list mjmp_tids) in
-      Tid.Set.to_list tids
+      let tids = mdef_tids @ mjmp_tids in
+      (* No duplicates. If so, something has gone awry *)
+      if Int.(Tid.Set.length (Tid.Set.of_list tids) <> List.length tids) then
+        failwith "Isel.covered_ops: Duplicates in tids covered by pattern"
+      else ();
+      tids
     (* [defines_vars] returns a list of all the variables defined by the match *)
-    let defines_vars ({def_map; _} : match_) : Var.t list =
+    let defines_vars ({def_map; _} as match_ : match_) : Var.t list =
       (* TODO: Check phi nodes *)
-      Tid.Map.fold def_map ~init:Var.Set.empty ~f:(fun ~key:_ ~data:{mdef; _} acc ->
-          Var.Set.add acc (Def.lhs mdef)
-        ) |> Var.Set.to_list
+      let defs = Tid.Map.data def_map in
+      let def_vars = List.map defs ~f:(fun {mdef;_} -> Def.lhs mdef) in
+      (* Not certain this should be allowed. SSA might save us? *)
+      if Int.(Var.Set.length (Var.Set.of_list def_vars) <> List.length def_vars) then
+        failwith (sprintf "Isel.defines_vars: Duplicates in vars defined by match_: %s"
+          (Sexp.to_string_hum @@ sexp_of_match_ match_))
+      else ();
+      def_vars
     let operand_of_var (v : Var.t) : operand = mzn_enum (Var.to_string v)
     let operation_of_tid (t : Tid.t) : operation = mzn_enum (Tid.to_string t)
     let serial_of_matches (matches : match_ list) serial : match_serial =
@@ -571,6 +580,7 @@ let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   {
     id = blk1.id;
     data = List.append blk1.data blk2.data;
+    (* TODO: This may not be right. It is unclear how to maintain ctrl block ordering *)
     ctrl = List.append blk1.ctrl blk2.ctrl;
     ins = Ir.empty_op ();
     outs = Ir.empty_op ();

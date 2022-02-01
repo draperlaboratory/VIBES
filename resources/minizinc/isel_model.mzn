@@ -1,5 +1,5 @@
 %% Based on https://github.com/unison-code/uni-instr-sel/blob/master/solvers/minizinc/base-model.mzn
-%% And thesis.
+%% And thesis https://kth.diva-portal.org/smash/record.jsf?dswid=-5547
 %%%%%%%%%%%%%%%%%%%%
 %%% Input Parameters
 %%%%%%%%%%%%%%%%%%%%

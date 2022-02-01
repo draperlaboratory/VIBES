@@ -4,6 +4,8 @@ PLUGIN_DIR := plugin
 VIBES_XDG_APP_DIR := ~/.vibes
 MINIZINC_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/model.mzn
 MINIZINC_MODEL_SRC := ./resources/minizinc/model.mzn
+MINIZINC_ISEL_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/isel_model.mzn
+MINIZINC_ISEL_MODEL_SRC := ./resources/minizinc/isel_model.mzn
 
 
 #####################################################
@@ -15,6 +17,7 @@ MINIZINC_MODEL_SRC := ./resources/minizinc/model.mzn
 $(MINIZINC_MODEL_LOCAL): $(MINIZINC_MODEL_SRC)
 	mkdir -p $(VIBES_XDG_APP_DIR)
 	cp $(MINIZINC_MODEL_SRC) $(MINIZINC_MODEL_LOCAL)
+	cp $(MINIZINC_ISEL_MODEL_SRC) $(MINIZINC_ISEL_MODEL_LOCAL)
 
 install: $(MINIZINC_MODEL_LOCAL) 
 	$(MAKE) library.install
