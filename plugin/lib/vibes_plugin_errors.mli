@@ -28,12 +28,9 @@ type t =
   | Invalid_patch_spaces of string
   | Invalid_max_tries
   | Invalid_loader_data of string
-<<<<<<< HEAD
   | Invalid_bsi_data of string
   | Loader_data_conflict
-=======
   | Invalid_minizinc_isel_filepath
->>>>>>> 79663b8... reworked isel path to use option
   | No_such_file of string
   | Bad_image of string * Core_kernel.Error.t
 
