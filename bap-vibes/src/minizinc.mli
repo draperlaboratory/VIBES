@@ -38,7 +38,7 @@ type sol = {
 
 (**
 
-   [run_unison tgt lang minizinc_model_filepath ir] encodes the
+   [run_allocation_and_scheduling tgt lang minizinc_model_filepath ir] encodes the
    provided [ir] IR.t for target [tgt] in language [lang] to a json
    file, calls minizinc, and interpets the solution. It uses the
    provided [minizinc_model_filepath] to run minizinc.  It will
