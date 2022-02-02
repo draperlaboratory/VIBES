@@ -12,8 +12,8 @@ let minizinc_model_filepath = Conf.make_string
 
 (* Make [-minizinc-isel-model-filepath=FILEPATH] a command line parameter
    for running the tests. The value can be retrieved anytime in the tests
-   by invoking {!minizinc_model_filepath test_ctxt}. *)
+   by invoking {!minizinc_isel_model_filepath test_ctxt}. *)
 let minizinc_isel_model_filepath = Conf.make_string
-"minizinc_model_filepath"
-"~/.vibes/isel_model.mzn"
-"Path to a instructon selection minizinc model."
+   "minizinc_isel_model_filepath"
+   "~/.vibes/isel_model.mzn"
+   "Path to a instructon selection minizinc model."
