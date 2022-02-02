@@ -26,7 +26,7 @@ let test_compile (_ : test_ctxt) : unit =
       obj (Some H.minizinc_model_filepath) >>= fun () ->
     Patches.get_bir H.patch 32 >>= fun bil ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_bir patch bil >>= fun _ ->
+    Data.Patch.set_sem patch bil >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 

@@ -219,9 +219,26 @@ test_arm_linear_ssa () {
     run_make "make patch.reference -C ${TEST_DIR}" 0
     run_arm_exe "${TEST_PATCH_EXE}" 3
 }
+test_arm_primus () {
+    local TEST_DIR="${EXES_DIR}/arm-simple-primus"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
 
+    print_header "Checking ${TEST_DIR}"
+
+    # Check the precompiled executables.
+    run_arm_exe "${MAIN_EXE}" 5
+    run_arm_exe "${PATCH_EXE}" 3
+
+    # Check that vibes patches correctly.
+    run_make "make clean -C ${TEST_DIR}" 0
+    run_make "make patch.reference -C ${TEST_DIR}" 0
+    run_arm_exe "${TEST_PATCH_EXE}" 3
+}
 test_arm_simple_sum () {
     local TEST_DIR="${EXES_DIR}/arm-simple-sum"
+
     local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/test.patched.by.vibes"
@@ -231,6 +248,7 @@ test_arm_simple_sum () {
     # Check the precompiled executables.
     run_arm_exe "${MAIN_EXE}" 5
     run_arm_exe "${PATCH_EXE}" 9
+
 
     # Check that vibes patches correctly.
     run_make "make clean -C ${TEST_DIR}" 0
@@ -276,12 +294,14 @@ test_arm_branch_bsi () {
     run_make "make clean -C ${TEST_DIR}" 0
     run_make "make main.patched -C ${TEST_DIR}" 0
     run_arm_exe "${TEST_PATCH_EXE}" 2
+
 }
 
 # Run all tests
 run_all () {
     test_arm_simple
     test_arm_simple_sum
+    test_arm_primus
     test_arm_simple_inline
     test_arm_simple_cegis
     test_arm_simple_compiled

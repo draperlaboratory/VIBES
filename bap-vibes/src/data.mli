@@ -2,7 +2,6 @@
     properties that the VIBES toolchain defines and manipulates *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 
@@ -14,7 +13,7 @@ val int_domain       : int option KB.Domain.t
 val int64_domain     : int64 option KB.Domain.t
 val bitvec_domain    : Bitvec.t option KB.Domain.t
 val sexp_domain      : Sexp.t option KB.Domain.t
-val source_domain    : Cabs.definition option KB.Domain.t
+val source_domain    : Config.patch_code option KB.Domain.t
 val assembly_domain  : string list option KB.Domain.t
 val unit_domain      : unit KB.Domain.t
 val higher_vars_domain : Hvar.t list option KB.Domain.t
@@ -49,7 +48,7 @@ module Patch : sig
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
-  val patch_code : (patch_cls, Cabs.definition option) KB.slot
+  val patch_code : (patch_cls, Config.patch_code option) KB.slot
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val patch_label : (patch_cls, Theory.label option) KB.slot
@@ -70,9 +69,9 @@ module Patch : sig
   val get_patch_name : t -> string option KB.t
   val get_patch_name_exn : t -> string KB.t
 
-  val set_patch_code : t -> Cabs.definition option -> unit KB.t
-  val get_patch_code : t -> Cabs.definition option KB.t
-  val get_patch_code_exn : t -> Cabs.definition KB.t
+  val set_patch_code : t -> Config.patch_code option -> unit KB.t
+  val get_patch_code : t -> Config.patch_code option KB.t
+  val get_patch_code_exn : t -> Config.patch_code KB.t
 
   val set_patch_point : t -> Bitvec.t option -> unit KB.t
   val get_patch_point : t -> Bitvec.t option KB.t
@@ -86,8 +85,8 @@ module Patch : sig
      that will contain the semantics. This *must* be called before
      set_bir! *)
   val init_sem : t -> unit KB.t
-  val set_bir : t -> insn -> unit KB.t
-  val get_bir : t -> insn KB.t
+  val set_sem : t -> Theory.Semantics.t -> unit KB.t
+  val get_sem : t -> Theory.Semantics.t KB.t
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t
   val get_raw_ir : t -> Ir.t option KB.t

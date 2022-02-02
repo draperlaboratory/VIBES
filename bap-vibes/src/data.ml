@@ -2,7 +2,6 @@
    We expect much evolution here... *)
 
 open !Core_kernel
-open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 open Knowledge.Syntax
@@ -44,7 +43,7 @@ let sexp_domain : Sexp.t option KB.Domain.t = KB.Domain.optional
     "sexp-domain"
 
 (* Optional C definition domain for the patch code. *)
-let source_domain : Cabs.definition option KB.Domain.t = KB.Domain.optional
+let source_domain : Config.patch_code option KB.Domain.t = KB.Domain.optional
     ~equal:Poly.equal
     "source-domain"
 
@@ -101,7 +100,7 @@ module Patch = struct
   let patch_name : (patch_cls, string option) KB.slot =
     KB.Class.property ~package patch "patch-name" string_domain
 
-  let patch_code : (patch_cls, Cabs.definition option) KB.slot =
+  let patch_code : (patch_cls, Config.patch_code option) KB.slot =
     KB.Class.property ~package patch "patch-code" source_domain
 
   let patch_label : (patch_cls, Theory.label option) KB.slot =
@@ -150,13 +149,13 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_name
     | Some value -> KB.return value
 
-  let set_patch_code (obj : t) (data : Cabs.definition option) : unit KB.t =
+  let set_patch_code (obj : t) (data : Config.patch_code option) : unit KB.t =
     KB.provide patch_code obj data
 
-  let get_patch_code (obj : t) : Cabs.definition option KB.t =
+  let get_patch_code (obj : t) : Config.patch_code option KB.t =
     KB.collect patch_code obj
 
-  let get_patch_code_exn (obj : t) : Cabs.definition KB.t =
+  let get_patch_code_exn (obj : t) : Config.patch_code KB.t =
     get_patch_code obj >>= fun result ->
     match result with
     | None -> Kb_error.fail Kb_error.Missing_patch_code
@@ -190,13 +189,13 @@ module Patch = struct
     KB.Object.create Theory.Program.cls >>= fun lab ->
     KB.provide patch_label obj (Some lab)
 
-  let set_bir (obj : t) (sem : Insn.t) : unit KB.t =
+  let set_sem (obj : t) (sem : Theory.Semantics.t) : unit KB.t =
     KB.collect patch_label obj >>= fun olab ->
     (* FIXME: fail more gracefully *)
     let lab = Option.value_exn olab in
     KB.provide Theory.Semantics.slot lab sem
 
-  let get_bir (obj : t) : Insn.t KB.t =
+  let get_sem (obj : t) : Theory.Semantics.t KB.t =
     KB.collect patch_label obj >>= fun olab ->
     (* FIXME: fail more gracefully *)
     let lab = Option.value_exn olab in

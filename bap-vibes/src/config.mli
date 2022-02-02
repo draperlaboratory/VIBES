@@ -13,7 +13,7 @@ type patch
 type t
 
 (** A type to represent patch cody which may either be C or literal assembly *)
-type patch_code = CCode of Cabs.definition | ASMCode of string
+type patch_code = CCode of Cabs.definition | ASMCode of string  | PrimusCode of string
 
 (** A type to represent known regions that may be overwritten with patch code *)
 type patch_space = {
