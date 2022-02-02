@@ -1,4 +1,6 @@
-# ARM Simple Compiled
+# ARM Simple Primus
+
+Testing the primus code specification
 
 To clean, build, and patch:
 

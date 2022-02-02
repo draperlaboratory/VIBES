@@ -95,7 +95,7 @@ let compile_one_vibes_ir
       Events.(send @@ Info (Ir.pretty_ir ir));
       Events.(send @@ Rule);
       KB.return ()
-  end >>= fun () -> KB.return (n + 1)
+  end) >>= fun () -> KB.return (n + 1)
 
 (* Compile one patch from VIBES IR to assembly *)
 let compile_one_assembly
@@ -120,6 +120,7 @@ let compile_one_assembly
         Events.(send @@ Info info_str);
         Data.Patch.get_raw_ir_exn patch >>= fun ir ->
         Data.Patch.get_exclude_regs patch >>= fun exclude_regs ->
+        let exclude_regs = Option.value exclude_regs ~default:String.Set.empty in
         Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
         Data.Patch.get_target patch >>= fun target ->
         Data.Patch.get_lang patch >>= fun lang ->
