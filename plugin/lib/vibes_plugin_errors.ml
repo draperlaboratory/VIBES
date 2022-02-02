@@ -27,6 +27,7 @@ type t =
   | Invalid_loader_data of string
   | Invalid_bsi_data of string
   | Loader_data_conflict
+  | Invalid_minizinc_isel_filepath
   | No_such_file of string
   | Bad_image of string * Core_kernel.Error.t
 
@@ -84,6 +85,8 @@ let pp (ppf : Format.formatter) t : unit =
     | Loader_data_conflict ->
       "optional fields \"bsi-metadata\" and \"ogre\" were specified, \
        cannot use both"
+    | Invalid_minizinc_isel_filepath ->
+      "minizinc_isel_filepath does not point to valid file"
     | No_such_file desc -> desc
     | Bad_image (exe, e) ->
       Format.asprintf "couldn't create image for exe \"%s\": %a"

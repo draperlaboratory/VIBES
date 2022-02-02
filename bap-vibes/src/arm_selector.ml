@@ -1043,7 +1043,17 @@ struct
 
 end
 
+module Isel = struct
+  open Isel.Utils
+  let patterns : (Isel.Pattern.t * Isel.Template.t) String.Map.t =
+    String.Map.of_alist_exn [
+    "add", binop PLUS (ARM_ops.Ops.add false);
+    "mov", mov (ARM_ops.Ops.mov false);
+    "str", store;
+    "ld",  load
+  ]
 
+end
 
 module Pretty = struct
 

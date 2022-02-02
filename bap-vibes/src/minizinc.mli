@@ -2,7 +2,7 @@ open Core_kernel
 open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
-
+open Minizinc_utils
 module KB = Knowledge
 
 
@@ -38,7 +38,7 @@ type sol = {
 
 (**
 
-   [run_minzinc tgt lang minizinc_model_filepath ir] encodes the
+   [run_allocation_and_scheduling tgt lang minizinc_model_filepath ir] encodes the
    provided [ir] IR.t for target [tgt] in language [lang] to a json
    file, calls minizinc, and interpets the solution. It uses the
    provided [minizinc_model_filepath] to run minizinc.  It will
@@ -46,7 +46,7 @@ type sol = {
 
 *)
 
-val run_minizinc :
+val run_allocation_and_scheduling :
   ?exclude_regs:String.Set.t ->
   Theory.target ->
   Theory.language ->
@@ -78,11 +78,6 @@ type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 (**/**)
 (* Exposed for unit testing. *)
 
-type 'a mzn_set = {set : 'a list}  [@@deriving yojson]
-type ('a ,'b) mzn_map = 'b list
-
-type mzn_enum = {e : string} [@@deriving yojson]
-type mzn_enum_def = mzn_enum mzn_set [@@deriving yojson] (* https://github.com/MiniZinc/libminizinc/issues/441 *)
 type operand = mzn_enum [@@deriving yojson]
 type operation = mzn_enum [@@deriving yojson]
 type block = mzn_enum [@@deriving yojson]

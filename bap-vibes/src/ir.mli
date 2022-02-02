@@ -101,6 +101,7 @@ type operation = {
 } [@@deriving compare, equal, sexp]
 
 val simple_op : opcode -> operand -> operand list -> operation
+val empty_op : unit -> operation
 val write_multiple_op : opcode -> operand list -> operand list -> operation
 
 val op_no_args : opcode -> operation
@@ -140,6 +141,7 @@ val add : blk -> t -> t
 val map_blks : f:(blk -> blk) -> t -> t
 val map_op_vars : f:(op_var -> op_var) -> t -> t
 val map_operations : f:(operation -> operation) -> t -> t
+val map_operands : f:(operand -> operand) -> t -> t
 
 val operation_to_string : operation -> string
 val op_var_to_string : op_var -> string
@@ -171,6 +173,12 @@ val op_classes : t -> (Theory.role Opcode.Map.t) Var.Map.t
 (** [freshen_operand o] creates a new operand with the same body and a
     fresh id, if the operation is "var-like" (Var or Void) *)
 val freshen_operand : operand -> operand
+
+(** [freshen_operands] gives a new unique tid to every operand. *)
+val freshen_operands : t -> t
+
+(** [freshen_operation_ids] gives a unique tid to every operation *)
+val freshen_operation_ids : t -> t
 
 (** [add_in_vars t] initializes the [in] field of every block. It
     operates by collecting all the variables appearing on rhs that are

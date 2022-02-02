@@ -12,6 +12,7 @@
  *
  *
  *************************************************************)
+open Core_kernel
 open Bap_core_theory
 open Bap.Std
 
@@ -59,6 +60,10 @@ val gpr : Theory.target -> Theory.language -> Bap.Std.Var.Set.t KB.t
 (** Pre-assigns variables according to specific roles (PC, SP, etc) *)
 (* FIXME: make this happen at variable creation time *)
 val preassign : Theory.target -> Ir.t -> is_thumb:bool -> Ir.t
+
+module Isel : sig
+  val patterns : Isel.info
+end
 
 module Pretty :
 sig
