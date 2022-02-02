@@ -6,11 +6,13 @@
 int: numMatches;
 
 enum allOperationsInFunction;
-%enum allOperands;
+
 
 enum allDataInFunction;
 % datum and operands are distinct concepts but can be equated for now.
+% enum allOperands;
 set of allDataInFunction : allOperands = allDataInFunction;
+
 
 array[allMatches] of set of allOperationsInFunction: operationsCoveredByMatch;
 array[allMatches] of set of allOperands: operandsDefinedByMatch;
