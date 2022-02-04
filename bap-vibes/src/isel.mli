@@ -83,6 +83,8 @@ module Utils : sig
   val binop : binop -> Ir.Opcode.t -> Pattern.t * Template.t
   val store : Pattern.t * Template.t
   val load : Pattern.t * Template.t
+  val goto : Pattern.t * Template.t
+  val null_jump : Pattern.t * Template.t
   val mov : Ir.Opcode.t -> Pattern.t * Template.t
   val def_pat : Def.t -> Pattern.t
   val x : Var.t

@@ -108,6 +108,7 @@ module Pattern = struct
     | Var pv ->
       begin
         match mexp with
+        (* We should also check that the types make sense probably *)
         | Var _ | Int _ -> Some ([Var (pv, mexp)])
         | _ -> failwith (sprintf "Isel.check_exp: Matchee not in Flattened Form %a" Exp.pps mexp)
       end
@@ -205,8 +206,6 @@ module Pattern = struct
      [check_jmp] checks the compatibility of a Jmp match.
   *)
   let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
-    (* TODO: This is incomplete jump checking functionality. *)
-    let () = failwith "Isel:check_jmp : jumps unsupported in minizinc instruction selector" in
     let (let*) x f = Option.bind x ~f in
     let mkind = Jmp.kind mjmp in
     let pkind = Jmp.kind pjmp in
@@ -302,8 +301,12 @@ module Pattern = struct
       ~pat:(pat : Blk.t list) : match_ list =
     (* We use List based nondeterminism for search *)
     let (let*) x f = List.bind ~f x in
-    let blk_tid_map = List.map matchee ~f:(fun blk -> (Term.tid blk, blk)) in
-    let env = { blk_map = Tid.Map.of_alist_exn blk_tid_map  } in
+    let env =
+      let blk_tid_map blks = List.map blks ~f:(fun blk -> (Term.tid blk, blk)) in
+      let pat_blk_map = blk_tid_map pat in
+      let matchee_blk_map = blk_tid_map matchee in
+      { blk_map = Tid.Map.of_alist_exn (pat_blk_map @ matchee_blk_map) }
+    in
     let matches = List.fold pat ~init:[empty_match_]
         ~f:(fun matches pblk ->
             (* Guess block from matchee *)
@@ -319,18 +322,30 @@ module Pattern = struct
                No. I should only allow contiguous matches?
                *)
             let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
-            let matches = if Int.(List.length pjmps = 0) then matches 
+            let npjmps = List.length pjmps in
+            let matches = if Int.(npjmps = 0) then matches
               else begin
                 let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
-                let match_or_unequal = List.fold2 pjmps mjmps
+                let nmjmps = List.length mjmps in
+                 (* if the size of the pattern is too big to fit in matchee then fail*)
+                if Int.(nmjmps < npjmps) then []
+                else
+                (* generate all contiguous windows of mjmps that are of length npjmp *)
+                let rec windows nxs xs acc = if nxs >= npjmps then
+                      windows (nxs - 1) (List.tl_exn xs) ((List.take xs npjmps) :: acc)
+                    else acc
+                in
+                let mjmp_windows : Jmp.t list list = windows nmjmps mjmps [] in
+                (* let* mjmp_window = mjmp_windows in*)
+                let* mjmp_window = mjmp_windows in
+                (* fold2_exn should be ok because windows are of length npjmp *)
+                let matches = List.fold2_exn pjmps mjmp_window
                     ~init:matches ~f:(fun matches pjmp mjmp ->
                         List.filter_map matches ~f:(fun match_ ->
                             merge_obligations [Ob.Jmp {pjmp; mjmp}] match_ env)
                       )
                 in
-                match match_or_unequal with
-                | Ok matches -> matches
-                | Unequal_lengths -> [] (* failure *)
+                matches
               end
             in
             (* Enumerate all possible def correspondences within blk correspondence *)
@@ -405,14 +420,16 @@ module Pattern = struct
       def_vars
     let operand_of_var (v : Var.t) : operand = mzn_enum (Var.to_string v)
     let operation_of_tid (t : Tid.t) : operation = mzn_enum (Tid.to_string t)
-    let serial_of_matches (matches : match_ list) serial : match_serial =
+    let serial_of_matches matchee (matches : match_ list) serial : match_serial =
       (* TODO: replace to_string functions with Sexp functions? *)
+      let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
+      let covered_null_def = mzn_set_of_list @@ List.map ~f:operand_of_var @@ Var.Set.to_list free_vars in 
       {
         serial with
-        numMatches = List.length matches;
-        operationsCoveredByMatch = List.map matches ~f:(fun match_ ->
+        numMatches = 1 + List.length matches;
+        operationsCoveredByMatch = mzn_set_of_list [] :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operation_of_tid (covered_ops match_));
-        operandsDefinedByMatch = List.map matches ~f:(fun match_ ->
+        operandsDefinedByMatch = covered_null_def :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operand_of_var (defines_vars match_))
       }
     let all_vars (blk : Blk.t) : Var.Set.t =
@@ -449,7 +466,7 @@ module Pattern = struct
 
     let build_serial (matchee : Blk.t list) (matches : match_ list) : Yojson.Safe.t =
       let serial = empty in
-      let serial = serial_of_matches matches serial in
+      let serial = serial_of_matches matchee matches serial in
       let serial = enumerate_nodes matchee serial in
       match_serial_to_yojson serial
 
@@ -462,7 +479,8 @@ module Pattern = struct
       } [@@deriving yojson]
 
     let filter_templates (sol : sol_serial) (templates : 'a list) =
-      List.map2_exn sol.sel templates
+      (* List.tl_exn to remove null_def match*)
+      List.map2_exn (List.tl_exn sol.sel) templates
         ~f:(fun sel temp -> if sel then Some temp else None) |> List.filter_opt
 
   end (* Serial *)
@@ -493,7 +511,10 @@ module Template = struct
                                "Isel.instantiate_ir_template: Variable matched to non variable or literal %a"
                                Exp.pps mexp)
           end
-        | _ -> failwith "undealt with operand case"
+        | Label tid ->
+            let {mblk; _} : Pattern.blk_match = Tid.Map.find_exn blk_map tid in
+            Label (Term.tid mblk)
+        | _ -> failwith "[Isel.instantiate_isel_template]: undealt with operand case"
       )
     in
     template
@@ -571,6 +592,38 @@ module Utils = struct
     in
     ([pat], template)
 
+    (* Does the pattern require the second block or not? Yes it is required.
+       These blocks need to be looked up in env
+    *)
+    let goto : Pattern.pat * Template.t =
+      let jmp_target = Blk.create () in
+      let jmp_target_tid = Term.tid jmp_target in
+      let jmp_origin = Blk.create ~jmps:[Jmp.create_goto (Direct jmp_target_tid)] () in
+      let jmp_origin_tid = Term.tid jmp_origin in
+      let pat = [jmp_origin; jmp_target] in
+      let template : Template.t =
+        let operation = Ir.empty_op () in
+        let operation = { operation with
+            opcodes = [Ir.Opcode.create "b"];
+            operands = [Ir.Label jmp_target_tid]
+          }
+        in
+        { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation]];
+          congruent = []}
+      in
+      (pat, template)
+    
+    (* A not taken jump *)
+    let null_jump : Pattern.pat * Template.t =
+      let jmp_target = Blk.create () in
+      let jmp_target_tid = Term.tid jmp_target in
+      (* let cond = var64 "cond" in *)
+      let jmp_origin = Blk.create ~jmps:[Jmp.create_goto ~cond:(Bil.int (Word.zero 1)) (Direct jmp_target_tid)] () in
+      let pat = [jmp_origin; jmp_target] in
+      let template : Template.t = Ir.empty in
+      (pat, template)
+
+
 end
 
 (** [null_def_match] produces a null definition match and empty no-op instantiated template
@@ -580,8 +633,16 @@ end
 *)
 let null_def_match (matchee : Blk.t list) : Pattern.match_ * Ir.t =
   let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
+  Format.printf "Free vars %a" Sexp.pp_hum (Var.Set.sexp_of_t free_vars);
+  let def_map : Pattern.def_match Tid.Map.t = List.map (Var.Set.to_list free_vars) ~f:(fun x ->
+    let def = Def.create x (Unknown ("external", (Var.typ x))) in
+    let def_match : Pattern.def_match = {pdef=def; mdef=def} in
+    (Term.tid def,def_match))
+    |> Tid.Map.of_alist_exn in
   {Pattern.empty_match_ with
-   vmap = Var.Set.to_map ~f:(fun x -> Bil.Var x) free_vars
+   vmap = Var.Set.to_map ~f:(fun x -> Bil.Var x) free_vars;
+   (* A dummy def to show that this variable is defined *)
+   def_map
   },
   Ir.empty
 
@@ -622,8 +683,17 @@ let run
           match_, Template.instantiate_ir_template match_ template)
     )
   in
+  Events.(send @@ Info "Discovered matches:\n");
+  String.Map.iteri matches ~f:(fun ~key ~data ->
+    if not (List.is_empty data) then begin
+      Events.(send @@ Info (sprintf "Pattern %s:\n" key));
+      List.iter data ~f:(fun (_, template) ->
+        Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template)))
+        )
+    end
+    else ());
   let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
-  let match_templates = (null_def_match matchee) :: match_templates in
+  (* let match_templates = (null_def_match matchee) :: match_templates in *)
   let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
   let* sol_json = Minizinc_utils.run_minizinc ~model_filepath:isel_model_filepath params in

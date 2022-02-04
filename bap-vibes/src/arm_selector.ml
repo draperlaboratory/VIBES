@@ -1100,7 +1100,9 @@ module Isel = struct
     "add", binop PLUS (ARM_ops.Ops.add false);
     "mov", mov (ARM_ops.Ops.mov false);
     "str", store;
-    "ld",  load
+    "ld",  load;
+    "b",   goto;
+    "null_jump", null_jump
   ]
 
 end

@@ -472,7 +472,7 @@ let to_linear_ssa
   let* sub = Helper.create_sub blks in
   sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
-let run (patch : Data.Patch.t) : t KB.t =
+let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let* code = Data.Patch.get_bir patch in
   let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
   Events.(send @@ Info info_str);
@@ -496,6 +496,6 @@ let run (patch : Data.Patch.t) : t KB.t =
   let ir = Opt.apply ir in
   let* ir = Subst.substitute tgt hvars ir in
   let* ir = Shape.reorder_blks ir in
-  let ir = Opt.merge_adjacent ir in
+  let ir = if merge_adjacent then Opt.merge_adjacent ir else ir in
   let+ ir = to_linear_ssa patch ir in
   {ir; exclude_regs; argument_tids}

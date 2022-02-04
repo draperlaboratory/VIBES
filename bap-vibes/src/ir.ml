@@ -180,7 +180,7 @@ let empty_op () : operation =
   { id = create_id ();
     lhs = [];
     opcodes = [];
-    optional = true;
+    optional = false;
     operands = []
   }
 
