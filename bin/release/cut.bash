@@ -96,6 +96,12 @@ CURRENT_BRANCH="$(current_branch)"
 RELEASE_BRANCH="release-${NEW_VERSION}"
 TAG="v${NEW_VERSION}"
 
+# Update versions
+sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${LIB_OPAM_FILE}" > "${LIB_OPAM_FILE}.bak"
+sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${PLUGIN_OPAM_FILE}" > "${PLUGIN_OPAM_FILE}.bak"
+mv "${LIB_OPAM_FILE}.bak" "${LIB_OPAM_FILE}"
+mv "${PLUGIN_OPAM_FILE}.bak" "${PLUGIN_OPAM_FILE}"
+
 # Create a release branch and tag
 git checkout -b "${RELEASE_BRANCH}"
 git tag "${TAG}"
@@ -104,7 +110,9 @@ git tag "${TAG}"
 git push origin "${RELEASE_BRANCH}"
 git push "${TAG}"
 
-# Go back to the branch we were on before
+# Cleanup and go back to the branch we were on before
+git branch -D "${RELEASE_BRANCH}"
+git tag --delete "${TAG}"
 git checkout "${CURRENT_BRANCH}"
 
 echo "Release ${NEW_VERSION} was cut."
