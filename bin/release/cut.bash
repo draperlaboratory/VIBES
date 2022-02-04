@@ -91,10 +91,9 @@ while true; do
     esac
 done
 
-# Branch and tag names
+# Branch names
 CURRENT_BRANCH="$(current_branch)"
 RELEASE_BRANCH="release-${NEW_VERSION}"
-TAG="v${NEW_VERSION}"
 
 # Update versions
 sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${LIB_OPAM_FILE}" > "${LIB_OPAM_FILE}.bak"
@@ -102,17 +101,14 @@ sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${PLUGIN_OPAM_FILE}" > "$
 mv "${LIB_OPAM_FILE}.bak" "${LIB_OPAM_FILE}"
 mv "${PLUGIN_OPAM_FILE}.bak" "${PLUGIN_OPAM_FILE}"
 
-# Create a release branch and tag
+# Create a release branch
 git checkout -b "${RELEASE_BRANCH}"
-git tag "${TAG}"
 
 # Push to the remote 
 git push origin "${RELEASE_BRANCH}"
-git push "${TAG}"
 
 # Cleanup and go back to the branch we were on before
-git branch -D "${RELEASE_BRANCH}"
-git tag --delete "${TAG}"
 git checkout "${CURRENT_BRANCH}"
+git branch -D "${RELEASE_BRANCH}"
 
 echo "Release ${NEW_VERSION} was cut."
