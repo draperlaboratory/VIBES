@@ -103,15 +103,37 @@ mv "${PLUGIN_OPAM_FILE}.bak" "${PLUGIN_OPAM_FILE}"
 git add "${LIB_OPAM_FILE}"
 git add "${PLUGIN_OPAM_FILE}"
 git commit -m "Bump version to ${NEW_VERSION}"
+BUMP_STATUS="${?}"
+
+# Exit if we had problems.
+if [[ "${BUMP_STATUS}" != "0" ]]; then
+    echo "Failed to bump version. Exiting."
+    exit 1
+fi
 
 # Create a release branch
 git checkout -b "${RELEASE_BRANCH}"
 
 # Push to the remote 
 git push origin "${RELEASE_BRANCH}"
+PUSH_STATUS="${?}"
+
+# Exit if we had problems.
+if [[ "${PUSH_STATUS}" != "0" ]]; then
+    echo "Failed to push release branch. Exiting."
+    exit 1
+fi
 
 # Cleanup and go back to the branch we were on before
 git checkout "${CURRENT_BRANCH}"
 git branch -D "${RELEASE_BRANCH}"
+CLEANUP_STATUS="${?}"
 
+# Exit if we had problems.
+if [[ "${CLEANUP_STATUS}" != "0" ]]; then
+    echo "Failed to delete local copy of the release branch. Exiting."
+    exit 1
+fi
+
+# If we made it here, everything worked.
 echo "Release ${NEW_VERSION} was cut."
