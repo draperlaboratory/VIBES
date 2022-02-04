@@ -26,7 +26,7 @@ get_version () {
 
 # Get the current git branch
 current_branch () {
-    git branch | grep '\*' --color=never
+    git branch --show-current
 }
 
 # Usage message
@@ -100,6 +100,9 @@ sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${LIB_OPAM_FILE}" > "${LI
 sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${PLUGIN_OPAM_FILE}" > "${PLUGIN_OPAM_FILE}.bak"
 mv "${LIB_OPAM_FILE}.bak" "${LIB_OPAM_FILE}"
 mv "${PLUGIN_OPAM_FILE}.bak" "${PLUGIN_OPAM_FILE}"
+git add "${LIB_OPAM_FILE}"
+git add "${PLUGIN_OPAM_FILE}"
+git commit -m "Bump version to ${NEW_VERSION}"
 
 # Create a release branch
 git checkout -b "${RELEASE_BRANCH}"
