@@ -441,7 +441,7 @@ Here is a description of the above schema:
     A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier:
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
-      * `"constant": "HEX:BITWIDTH" - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
+      * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
     * For storage classification, the object has the following fields:
       * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`. 
       * `"at-entry": {STORAGE-CLASSIFICATION}` -
@@ -451,8 +451,8 @@ Here is a description of the above schema:
           * "register": "NAME" - Required. The name of a register (in uppercase, e.g., `R0`).
         * If it's stored in memory (on the stack), the object has the following fields:
           * `"stored-in": "memory"` - Required.
-          * `"frame-pointer": "NAME" - Required. The name of the register (in uppercase) that holds the framepointer (e.g., `R11`).
-          * `"offset": "HEX:BITWIDTH" - Required. The offset from the framepointer where the identifier's value lives. This should be number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
+          * `"frame-pointer": "NAME"` - Required. The name of the register (in uppercase) that holds the framepointer (e.g., `R11`).
+          * `"offset": "HEX:BITWIDTH"` - Required. The offset from the framepointer where the identifier's value lives. This should be number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
       * `"at-exit": {STORAGE-CLASSIFICATION}` -
         Required. Storage classification for the identifier at the exit of the patch site. This should be specified exactly as in `at-entry`.
 * `"wp-params": {WP-PARAMS}` -
