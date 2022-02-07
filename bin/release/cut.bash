@@ -29,6 +29,31 @@ current_branch () {
     git branch --show-current
 }
 
+# Confirm or exit. `${1}` is the confirmation message to display. 
+confirm () {
+    local MSG="${1}"
+    while true; do
+        echo -n "${1} " 
+    read CONFIRM
+    case "${CONFIRM}" in
+
+        yes|Yes|YES|y|Y)
+            break
+            ;;
+
+	no|No|NO|n|N)
+            echo "Exiting."	
+            exit 1
+            ;;
+
+	*)
+            echo "Please answer yes or no."
+            ;;
+
+    esac
+done
+}
+
 # Usage message
 usage () {
     echo "USAGE: bash $(get_me) [OPTIONS]"
@@ -58,6 +83,12 @@ while (( "${#}" )); do
     shift
 done
 
+# Make sure we're on main.
+CURRENT_BRANCH="$(current_branch)"
+if [[ "${CURRENT_BRANCH}" != "main" ]]; then
+    confirm "You are not on the 'main' branch. Proceed anyway? (yes/no)"
+fi
+
 # Report the current version of the lib and plugin.
 LIB_VERSION="$(get_version "${LIB_OPAM_FILE}")"
 echo "Library (bap-vibes) version: ${LIB_VERSION}"
@@ -70,32 +101,12 @@ echo -n "Enter new version to bump to: "
 read NEW_VERSION
 
 # Confirm
-while true; do
-    echo -n "About to bump to version ${NEW_VERSION}. Confirm? (yes/no) "
-    read CONFIRM
-    case "${CONFIRM}" in
+confirm "About to bump to version ${NEW_VERSION}. Confirm? (yes/no)"
 
-        yes|Yes|YES|y|Y)
-            break
-            ;;
-
-	no|No|NO|n|N)
-            echo "Exiting."	
-            exit 1
-            ;;
-
-	*)
-            echo "Please answer yes or no."
-            ;;
-
-    esac
-done
-
-# Branch names
-CURRENT_BRANCH="$(current_branch)"
+# The release branch name.
 RELEASE_BRANCH="release-${NEW_VERSION}"
 
-# Update versions
+# Update the version numbers in the *.opam files.
 sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${LIB_OPAM_FILE}" > "${LIB_OPAM_FILE}.bak"
 sed "s/^version: \".*\"/version: \"${NEW_VERSION}\"/" "${PLUGIN_OPAM_FILE}" > "${PLUGIN_OPAM_FILE}.bak"
 mv "${LIB_OPAM_FILE}.bak" "${LIB_OPAM_FILE}"
@@ -111,10 +122,10 @@ if [[ "${BUMP_STATUS}" != "0" ]]; then
     exit 1
 fi
 
-# Create a release branch
+# Create a release branch.
 git checkout -b "${RELEASE_BRANCH}"
 
-# Push to the remote 
+# Push to remote.
 git push origin "${RELEASE_BRANCH}"
 PUSH_STATUS="${?}"
 
@@ -124,7 +135,7 @@ if [[ "${PUSH_STATUS}" != "0" ]]; then
     exit 1
 fi
 
-# Cleanup and go back to the branch we were on before
+# Cleanup and go back to the branch we were on before.
 git checkout "${CURRENT_BRANCH}"
 git branch -D "${RELEASE_BRANCH}"
 CLEANUP_STATUS="${?}"
