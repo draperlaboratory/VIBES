@@ -114,6 +114,7 @@ mv "${PLUGIN_OPAM_FILE}.bak" "${PLUGIN_OPAM_FILE}"
 git add "${LIB_OPAM_FILE}"
 git add "${PLUGIN_OPAM_FILE}"
 git commit -m "Bump version to ${NEW_VERSION}"
+git push origin "${CURRENT_BRANCH}"
 BUMP_STATUS="${?}"
 
 # Exit if we had problems.
