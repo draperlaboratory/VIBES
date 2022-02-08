@@ -420,16 +420,21 @@ module Pattern = struct
       def_vars
     let operand_of_var (v : Var.t) : operand = mzn_enum (Var.to_string v)
     let operation_of_tid (t : Tid.t) : operation = mzn_enum (Tid.to_string t)
+
+    (* The first match is a null_def match. This match covers every free variable in
+       the matchee and no operations. It is necessary for the model to find a solution.
+       This extra match_ is stripped in [filter_templates] when interpretng the solution
+    *)
     let serial_of_matches matchee (matches : match_ list) serial : match_serial =
       (* TODO: replace to_string functions with Sexp functions? *)
       let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
-      let covered_null_def = mzn_set_of_list @@ List.map ~f:operand_of_var @@ Var.Set.to_list free_vars in 
+      let covered_by_null_def = mzn_set_of_list @@ List.map ~f:operand_of_var @@ Var.Set.to_list free_vars in 
       {
         serial with
         numMatches = 1 + List.length matches;
         operationsCoveredByMatch = mzn_set_of_list [] :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operation_of_tid (covered_ops match_));
-        operandsDefinedByMatch = covered_null_def :: List.map matches ~f:(fun match_ ->
+        operandsDefinedByMatch = covered_by_null_def :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operand_of_var (defines_vars match_))
       }
     let all_vars (blk : Blk.t) : Var.Set.t =
@@ -563,8 +568,8 @@ module Utils = struct
           mem' := store ~mem:(var mem) ~addr:(var addr) (var value) LittleEndian Size.r64;
         ]) () 
     in
-    let template : Template.t = 
-      let blkid = Term.tid pat in 
+    let template : Template.t =
+      let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
       let operation = Ir.simple_op (Ir.Opcode.create "str") 
           (operand mem') [operand mem; operand addr; operand value] in
@@ -626,26 +631,6 @@ module Utils = struct
 
 end
 
-(** [null_def_match] produces a null definition match and empty no-op instantiated template
-    The null definition pattern is a default pattern that covers externally defined variables
-    in the matchee. This pattern will be selected to cover/define them, but then the no-op
-    Ir chunk is used, which does nothing to the resulting Ir.t when merged
-*)
-let null_def_match (matchee : Blk.t list) : Pattern.match_ * Ir.t =
-  let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
-  Format.printf "Free vars %a" Sexp.pp_hum (Var.Set.sexp_of_t free_vars);
-  let def_map : Pattern.def_match Tid.Map.t = List.map (Var.Set.to_list free_vars) ~f:(fun x ->
-    let def = Def.create x (Unknown ("external", (Var.typ x))) in
-    let def_match : Pattern.def_match = {pdef=def; mdef=def} in
-    (Term.tid def,def_match))
-    |> Tid.Map.of_alist_exn in
-  {Pattern.empty_match_ with
-   vmap = Var.Set.to_map ~f:(fun x -> Bil.Var x) free_vars;
-   (* A dummy def to show that this variable is defined *)
-   def_map
-  },
-  Ir.empty
-
 (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
 let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   assert (Tid.equal blk1.id blk2.id);
@@ -653,7 +638,7 @@ let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   {
     id = blk1.id;
     data = List.append blk1.data blk2.data;
-    (* TODO: This may not be right. It is unclear how to maintain ctrl block ordering *)
+    (* TODO: This is not be right. It is unclear how to maintain ctrl block ordering *)
     ctrl = List.append blk1.ctrl blk2.ctrl;
     ins = Ir.empty_op ();
     outs = Ir.empty_op ();
@@ -686,14 +671,12 @@ let run
   Events.(send @@ Info "Discovered matches:\n");
   String.Map.iteri matches ~f:(fun ~key ~data ->
     if not (List.is_empty data) then begin
-      Events.(send @@ Info (sprintf "Pattern %s:\n" key));
+      Events.(send @@ Info (sprintf "From Pattern %s:\n" key));
       List.iter data ~f:(fun (_, template) ->
-        Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template)))
-        )
+        Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template))))
     end
     else ());
   let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
-  (* let match_templates = (null_def_match matchee) :: match_templates in *)
   let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
   let* sol_json = Minizinc_utils.run_minizinc ~model_filepath:isel_model_filepath params in

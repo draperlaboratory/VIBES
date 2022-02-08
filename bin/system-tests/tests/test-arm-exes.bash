@@ -278,9 +278,30 @@ test_arm_branch_bsi () {
     run_arm_exe "${TEST_PATCH_EXE}" 2
 }
 
+test_arm_isel_jmp () {
+    local TEST_DIR="${EXES_DIR}/arm-isel-jmp"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
+
+    print_header "Checking ${TEST_DIR}"
+
+    # Check the precompiled executables.
+    run_make "make main -C ${TEST_DIR}" 0
+    run_make "make main.patched.reference -C ${TEST_DIR}" 0
+    run_arm_exe "${MAIN_EXE}" 1
+    run_arm_exe "${PATCH_EXE}" 2
+
+    # Check that vibes patches correctly.
+    run_make "make clean -C ${TEST_DIR}" 0
+    run_make "make main.patched -C ${TEST_DIR}" 0
+    run_arm_exe "${TEST_PATCH_EXE}" 2
+}
+
 # Run all tests
 run_all () {
     test_arm_simple
+    test_arm_isel_jmp
     test_arm_simple_sum
     test_arm_simple_inline
     test_arm_simple_cegis
