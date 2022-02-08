@@ -2,7 +2,7 @@
   "max-tries": 1,
   "wp-params": {
     "func": "main",
-    "postcond": "(assert (= R0_mod #x00000009))"
+    "postcond": "(assert (= R0_mod #x00000002))"
   },
   "minizinc-isel-filepath":"../../minizinc/isel_model.mzn",
   "patches" : [
@@ -10,10 +10,10 @@
      "patch-code" : "int retvar, temp;
                       temp = 1;
                      if((int)0 == (int)1){
-                       retvar = 2 + temp;
+                       retvar = temp + 2; // note if I reverse to 2 + temp it fails because arm add instruction doesn't allow 2 in 2nd position
                        }
                      else{
-                       retvar = 1 + temp;
+                       retvar = temp + 1;
                      }
                      //retvar = temp + 1;",
      "patch-point" : "0x10400",

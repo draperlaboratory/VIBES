@@ -703,4 +703,5 @@ let run
   let good_templates = Pattern.Serial.filter_templates sol_serial templates in
   let vir = List.reduce ~f:merge_ir good_templates in
   let vir = Option.value ~default:Ir.empty vir in
+  let vir = Ir.add_in_vars vir in
   KB.return vir

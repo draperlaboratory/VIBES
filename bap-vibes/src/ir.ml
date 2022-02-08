@@ -559,14 +559,17 @@ let is_defined (defs : OpSet.t) (v : operand) : bool =
 
 let add_in_vars_blk (b : blk) : blk =
   let ops = b.data @ b.ctrl in
-  let collect_vars_op_list l =
+  (* let collect_vars_op_list l =
     List.fold l ~init:OpSet.empty
       ~f:(fun set o ->
           match o with
           | Var _ | Void _ -> OpSet.add set o
           | _ -> set)
-  in
-  (* Simultaneously collect defined and undefined vars *)
+  in *)
+  (* Simultaneously collect defined and undefined vars
+  This can't possibly be right, because the order of operations is not trustworthy in vibes ir
+  *)
+  (* 
   let _, undefined =
     List.fold ops ~init:(OpSet.empty, OpSet.empty)
       ~f:(fun (defined, undefined) o ->
@@ -579,8 +582,24 @@ let add_in_vars_blk (b : blk) : blk =
           in
           let def = collect_vars_op_list o.lhs in
           OpSet.union defined def, OpSet.union undefined undef)
+  in *)
+  let collect_temps (l : operand list) : Var.Set.t =
+      List.fold l ~init:Var.Set.empty
+        ~f:(fun set o ->
+            match o with
+            | Var op_var | Void op_var -> Var.Set.union set (Var.Set.of_list op_var.temps)
+            | _ -> set)
+    in
+  let lhs_temps, rhs_temps =
+  List.fold ops ~init:(Var.Set.empty, Var.Set.empty)
+    ~f:(fun (lhs_temps, rhs_temps) o ->
+        let rhs = collect_temps o.operands in
+        let lhs = collect_temps o.lhs in
+        Var.Set.union lhs lhs_temps, Var.Set.union rhs rhs_temps)
   in
-  let ins = OpSet.to_list undefined |> List.map ~f:freshen_operand
+  let undef_temps = Var.Set.diff rhs_temps lhs_temps |> Var.Set.to_list in
+  (* Ok. No dice. I need Voids to stay void and Vars to stay vars *)
+  let ins = List.map undef_temps ~f:(fun temp -> Var (simple_var temp))
   in
   (* We add dummy operation with no instructions and as lhs all the
      [ins] variables *)

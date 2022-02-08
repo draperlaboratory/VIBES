@@ -708,7 +708,7 @@ module ARM_ops = struct
 end
 
 (* We assume that a block is always created *)
-let ir (t : arm_eff) : Ir.t KB.t =
+let ir_of_arm_eff (t : arm_eff) : Ir.t KB.t =
   if not (List.is_empty t.current_data && List.is_empty t.current_ctrl)
   then Err.(fail @@ Other "Arm_selector.ir: expected empty data and ctrl")
   else KB.return @@ Ir.add_in_vars t.other_blks
@@ -1089,7 +1089,7 @@ struct
       ~(is_thumb : bool)
       ~(argument_tids : Tid.Set.t) : Ir.t KB.t =
     let* bs = select_blks bs ~patch ~is_thumb ~argument_tids in
-    ir bs
+    ir_of_arm_eff bs
 
 end
 
