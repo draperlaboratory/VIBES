@@ -237,7 +237,7 @@ As an example, here is a simple config file:
   ],
   "wp-params": {
     "func": "main",
-    "postcond": "(assert (= RO_orig RO_mod))"
+    "postcond": "(assert (= R0_orig R0_mod))"
   }
 }
 ```
@@ -247,7 +247,7 @@ That config file tells VIBES to do the following:
 1. Go to address `0x10400` in the binary.
 2. Replace 4 bytes with `int x; x = 3;` (compiled to machine code via CEGIS).
 3. Ensure that the specified postcondition holds (i.e., that `R0` in the
-original binary and `RO` in the modified binary cannot hold different
+original binary and `R0` in the modified binary cannot hold different
 values at the end of the function `main`, given the same inputs).
 
 
