@@ -1,6 +1,13 @@
 # --------------------------------------------------------------
 #
-# Cut a new release
+# Cuts a new release. 
+# 
+# This script will:
+# - Update the opam files with a new, user-provided version number.
+#   - Commit and push to remote.
+# - Create an orphan release branch.
+#   - Push that to remote.
+# - Delete your local copy of the release branch.
 #
 # --------------------------------------------------------------
 
