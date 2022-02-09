@@ -216,7 +216,7 @@ For `wp-params`, a minimal set looks like this:
   ...
   "wp-params": {
     "func": "<NAME OF FUNCTION IN THE BINARY TO VERIFY>",
-    "postcond": "<A POSTCONDITION TO VERIFY (AN SMTLIB2 EXPRESSION)",
+    "postcond": "<A POSTCONDITION TO VERIFY (AN SMTLIB2 EXPRESSION)>",
   }
 }
 ```
