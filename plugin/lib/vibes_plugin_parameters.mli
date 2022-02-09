@@ -1,3 +1,15 @@
+(***************************************************************************)
+(*                                                                         *)
+(*  Copyright (C) 2022/2023 The Charles Stark Draper Laboratory, Inc.      *)
+(*                                                                         *)
+(*  This file is provided under the license found in the LICENSE file in   *)
+(*  the top-level directory of this project.                               *)
+(*                                                                         *)
+(*  This research was developed with funding from the Defense Advanced     *)
+(*  Research Projects Agency (DARPA).                                      *)
+(*                                                                         *)
+(***************************************************************************)
+
 (** Handles parsing of plugin parameters (provided at the command line).
 
    The primary goal is to set up a [Bap_vibes.Config.t] configuration record,
