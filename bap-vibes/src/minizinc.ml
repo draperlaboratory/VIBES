@@ -164,7 +164,7 @@ let key_map_kb ~f:(f : 'a -> 'c KB.t)
     the same time to hopefully keep close linkage between them.
 
     TODO:
-       Implement congruence
+       Lift congruences to operands
        Implement latency
 
 *)
@@ -242,9 +242,11 @@ let serialize_mzn_params
              ~f:(fun r ->
                  let+ regs = regs_of_role r in
                  mzn_enum_def_of_list regs)) in
-  let+ width = KB.List.map temps ~f:width in
-  if (List.length regs = 0) then
-    (failwith @@ Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt);
+  let* width = KB.List.map temps ~f:width in
+  let+ () = match regs with
+    | _ :: _ -> KB.return ()
+    | [] -> Kb_error.fail @@ Other (
+        Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt) in
   {
     (* Add the dummy register for void/virtual variables *)
     reg_t = mzn_enum_def_of_list (regs @ dummy);
