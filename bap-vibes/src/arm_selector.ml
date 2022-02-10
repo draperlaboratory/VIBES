@@ -123,23 +123,6 @@ module Err = Kb_error
  *
  *---------------------------------------------------------*)
 
-module Congruent_temps = struct
-
-  type cls
-  type t = cls KB.obj
-  type computed = (cls, unit) KB.cls KB.value
-  let package = "vibes"
-  let name = "congruent-temps"
-  let cls : (cls, unit) KB.cls = KB.Class.declare ~package name ()
-
-  let slot : (cls, (Ir.op_var * Ir.op_var) option) KB.slot =
-    KB.Class.property cls ~package "congruent-vars" @@
-    KB.Domain.optional "congruent-vars-domain"
-      ~equal:(fun (a1, b1) (a2, b2) ->
-          Ir.equal_op_var a1 a2 && Ir.equal_op_var b1 b2)
-
-end
-
 type arm_eff = {
   (* These are the move/load/store operations in the current block *)
   current_data : Ir.operation list;
@@ -639,8 +622,9 @@ module ARM_ops = struct
       let tmp2 = create_temp word_ty in
       (* These temps need to be unique, but VIBES IR also needs to know
          that they are congruent (i.e. they must map to the same register). *)
-      let* cong = KB.Object.create Congruent_temps.cls in
-      let* () = KB.provide Congruent_temps.slot cong @@ Some (tmp1, tmp2) in
+      let* cong = KB.Object.create Congruence.cls in
+      let* () = KB.provide Congruence.slot cong @@
+        Some (List.hd_exn tmp1.temps, List.hd_exn tmp2.temps) in
       let then_ = Ops.movcc @@ Some cond in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
       let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in

@@ -220,15 +220,15 @@ let serialize_mzn_params
           Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
             Theory.Role.pp r))
   in
-  let* congruent_temps = KB.objects Arm_selector.Congruent_temps.cls in
+  let* congruent_temps = KB.objects Congruence.cls in
   let* congruent_temps =
     Seq.to_list congruent_temps |>
-    KB.List.filter_map ~f:(fun obj ->
-        let+ cong = KB.collect Arm_selector.Congruent_temps.slot obj in
-        match cong with
-        | None -> None
-        | Some (op1, op2) ->
-          Some (List.hd_exn op1.temps, List.hd_exn op2.temps)) in
+    KB.List.filter_map ~f:(KB.collect Congruence.slot) in
+  let congruent_temps =
+    List.fold congruent_temps ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
+        Map.update m t1 ~f:(function
+            | None -> Var.Set.singleton t2
+            | Some s -> Set.add s t2)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
@@ -295,16 +295,9 @@ let serialize_mzn_params
       List.map temps ~f:(fun t1 -> {
             set = match Var.typ t1 with
               | Type.Mem _ | Type.Unk -> []
-              | Type.Imm _ as typ ->
-                List.filter_map temps ~f:(fun t2 ->
-                    (* The trivial case of the vars being equal can be ignored. *)
-                    if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
-                    else
-                      if not @@ Linear_ssa.congruent t1 t2 then
-                        match List.Assoc.find congruent_temps t1 ~equal:Var.equal with
-                        | Some t2' when Var.(t2 = t2') -> Some (mzn_enum_of_var t2)
-                        | _ -> None
-                      else Some (mzn_enum_of_var t2))
+              | Type.Imm _ -> match Map.find congruent_temps t1 with
+                | Some s -> Set.to_list s |> List.map ~f:mzn_enum_of_var
+                | None -> []
           });
     operation_opcodes = key_map operations params.operation_opcodes
         ~f:(fun ids ->
