@@ -319,33 +319,20 @@ module Pattern = struct
                entire ctrl section of the block. This can be considered a more typical match,
                whereas Def.t matching is taking into account a kind of commutativity.
                The ctrl section is a kind of monolithic all or nothing matching.
-               No. I should only allow contiguous matches?
-               *)
+            *)
             let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
-            let npjmps = List.length pjmps in
-            let matches = if Int.(npjmps = 0) then matches
+            let matches = if Int.(List.length pjmps = 0) then matches
               else begin
                 let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
-                let nmjmps = List.length mjmps in
-                 (* if the size of the pattern is too big to fit in matchee then fail*)
-                if Int.(nmjmps < npjmps) then []
-                else
-                (* generate all contiguous windows of mjmps that are of length npjmp *)
-                let rec windows nxs xs acc = if nxs >= npjmps then
-                      windows (nxs - 1) (List.tl_exn xs) ((List.take xs npjmps) :: acc)
-                    else acc
-                in
-                let mjmp_windows : Jmp.t list list = windows nmjmps mjmps [] in
-                (* let* mjmp_window = mjmp_windows in*)
-                let* mjmp_window = mjmp_windows in
-                (* fold2_exn should be ok because windows are of length npjmp *)
-                let matches = List.fold2_exn pjmps mjmp_window
+                let match_or_unequal = List.fold2 pjmps mjmps
                     ~init:matches ~f:(fun matches pjmp mjmp ->
                         List.filter_map matches ~f:(fun match_ ->
                             merge_obligations [Ob.Jmp {pjmp; mjmp}] match_ env)
                       )
                 in
-                matches
+                match match_or_unequal with
+                | Ok matches -> matches
+                | Unequal_lengths -> [] (* failure *)
               end
             in
             (* Enumerate all possible def correspondences within blk correspondence *)
@@ -613,20 +600,36 @@ module Utils = struct
             operands = [Ir.Label jmp_target_tid]
           }
         in
-        { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation]];
+        { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation];
+                  Ir.simple_blk jmp_target_tid ~data:[] ~ctrl:[]];
           congruent = []}
       in
       (pat, template)
-    
-    (* A not taken jump *)
+
+      (* A not taken jump followed by a goto. *)
     let null_jump : Pattern.pat * Template.t =
-      let jmp_target = Blk.create () in
-      let jmp_target_tid = Term.tid jmp_target in
-      (* let cond = var64 "cond" in *)
-      let jmp_origin = Blk.create ~jmps:[Jmp.create_goto ~cond:(Bil.int (Word.zero 1)) (Direct jmp_target_tid)] () in
-      let pat = [jmp_origin; jmp_target] in
-      let template : Template.t = Ir.empty in
-      (pat, template)
+        let null_jmp_target = Blk.create () in
+        let null_jmp_target_tid = Term.tid null_jmp_target in
+        let jmp_target = Blk.create () in
+        let jmp_target_tid = Term.tid jmp_target in
+        let jmp_origin = Blk.create ~jmps:[
+          Jmp.create_goto ~cond:(Bil.int (Word.zero 1)) (Direct null_jmp_target_tid);
+          Jmp.create_goto (Direct jmp_target_tid)] () in
+        let jmp_origin_tid = Term.tid jmp_origin in
+        let pat = [jmp_origin; jmp_target; null_jmp_target] in
+        let template : Template.t =
+          let operation = Ir.empty_op () in
+          let operation = { operation with
+              opcodes = [Ir.Opcode.create "b"];
+              operands = [Ir.Label jmp_target_tid]
+            }
+          in
+          { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation];
+                    Ir.simple_blk jmp_target_tid ~data:[] ~ctrl:[];
+                    Ir.simple_blk null_jmp_target_tid ~data:[] ~ctrl:[]];
+            congruent = []}
+        in
+        (pat, template)
 
 
 end
@@ -634,11 +637,13 @@ end
 (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
 let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   assert (Tid.equal blk1.id blk2.id);
-  assert ((List.length blk1.ctrl) + (List.length blk2.ctrl) <= 1);
+  if (List.length blk1.ctrl > 0) && (List.length blk2.ctrl > 0) then
+    failwith (sprintf "[Isel.merge_blk] Two merging blocks have ctrl flow: blk1: %s blk2:%s"
+      (Ir.pretty_blk blk1) (Ir.pretty_blk blk2))
+  else ();
   {
     id = blk1.id;
     data = List.append blk1.data blk2.data;
-    (* TODO: This is not be right. It is unclear how to maintain ctrl block ordering *)
     ctrl = List.append blk1.ctrl blk2.ctrl;
     ins = Ir.empty_op ();
     outs = Ir.empty_op ();

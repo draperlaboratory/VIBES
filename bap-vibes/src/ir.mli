@@ -206,6 +206,7 @@ val op_var_exn : operand -> op_var
 
 (** various printer functions *)
 val pretty_operand : operand -> string
+val pretty_blk : blk -> string
 val pretty_ir : t -> string
 (* Alias of pretty_ir *)
 val to_string : t -> string

@@ -289,7 +289,7 @@ test_arm_isel_jmp () {
     # Check the precompiled executables.
     run_make "make main -C ${TEST_DIR}" 0
     run_make "make main.patched.reference -C ${TEST_DIR}" 0
-    run_arm_exe "${MAIN_EXE}" 1
+    run_arm_exe "${MAIN_EXE}" 5
     run_arm_exe "${PATCH_EXE}" 2
 
     # Check that vibes patches correctly.
