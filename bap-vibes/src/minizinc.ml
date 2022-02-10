@@ -226,9 +226,12 @@ let serialize_mzn_params
     KB.List.filter_map ~f:(KB.collect Congruence.slot) in
   let congruent_temps =
     List.fold congruent_temps ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
-        Map.update m t1 ~f:(function
+        let m = Map.update m t1 ~f:(function
             | None -> Var.Set.singleton t2
-            | Some s -> Set.add s t2)) in
+            | Some s -> Set.add s t2) in
+        Map.update m t2 ~f:(function
+            | None -> Var.Set.singleton t1
+            | Some s -> Set.add s t1)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
