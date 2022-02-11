@@ -63,6 +63,11 @@ and stmt =
 
 and body = tenv * stmt
 
+type t = body
+
+(* Translate back to FrontC representation so we can re-use their
+   pretty-printers. *)
+
 let cabs_of_unop : unop -> Cabs.unary_operator = function
   | MINUS -> Cabs.MINUS
   | NOT -> Cabs.NOT
@@ -138,6 +143,11 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
     Cabs.IF (cabs_of_exp cond, cabs_of_stmt st, cabs_of_stmt sf)
   | GOTO lbl -> Cabs.GOTO lbl
 
+let to_string ((_, s) : t) : string =
+  Utils.print_c Cprint.print_statement @@ cabs_of_stmt s
+
+(* Extract the embedded type of an expression. *)
+
 let typeof : exp -> typ = function
   | UNARY (_, _, t) -> t
   | BINARY (_, _, _, t) -> t
@@ -145,10 +155,7 @@ let typeof : exp -> typ = function
   | CONST_INT (_, size, sign) -> INT (size, sign)
   | VARIABLE (_, t) -> t
 
-type t = body
-
-let to_string ((_, s) : t) : string =
-  Utils.print_c Cprint.print_statement @@ cabs_of_stmt s
+(* State monad for elaboration and type-checking. *)
 
 module Transl = struct
 
@@ -191,13 +198,14 @@ let new_tmp (t : typ) : var transl =
     } in
   v, t
 
+(* A bit of a hack *)
 let is_temp (v : string) : bool =
   String.is_prefix v "$" &&
   match Int.of_string @@ String.subo v ~pos:1 with
   | exception _ -> false
   | _ -> true
 
-(* Tralsnate a base type. *)
+(* Translate a base type. *)
 let rec translate_type (t : Cabs.base_type) : typ transl = match t with
   | Cabs.BOOL -> Transl.return @@ INT (`r8, UNSIGNED)
   | Cabs.CHAR sign -> begin
@@ -552,6 +560,8 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_statement: unsupported:\n\n%s\n" s)
 
+(* The elaboration will leave a bunch of nops in the AST which makes
+   pretty-printing quite ugly. This pass removes them. *)
 let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
   | NOP -> NOP
   | BLOCK (tenv, s) -> BLOCK (tenv, cleanup_nop_sequences s)
