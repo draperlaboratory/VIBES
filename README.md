@@ -5,7 +5,7 @@ uses program synthesis and constraint programming techniques to compile a
 source-level patch and insert it into a preexisting binary program.  VIBES
 uses formal verification to prove that only the intended change is made.
 
-This is the main external VIBES repository.
+This is the main VIBES repository.
 
 The VIBES tool comprises two components:
 
@@ -36,7 +36,8 @@ below assume you are on one of these operating systems.
 If you are running in the latest `binaryanalysisplatform/bap:latest` docker
 container, you may skip this section. OCaml and BAP are already installed.
 
-Otherwise, if you don't have a `4.09.1` OCaml switch, create one.
+Otherwise, if you don't have a recent OCaml switch, create one (we recommend
+`4.12.1` or `4.11.2+flambda`).
 
 Install the latest (bleeding edge) version of BAP:
 
@@ -98,12 +99,11 @@ Next, install boolector, e.g.:
     export PATH=$(pwd):$PATH
 
 Clone [cbat_tools](https://github.com/draperlaboratory/cbat_tools), `cd`
-into the `wp` folder, checkout the branch `codyroux/user-fun-spec-compare`, and install with `make`:
+into the `wp` folder, and install with `make`:
 
     cd ~
     git clone https://github.com/draperlaboratory/cbat_tools
     cd cbat_tools/wp
-    git checkout codyroux/user-fun-spec-compare
     make
 
 Install the following opam packages:
@@ -141,10 +141,10 @@ the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
 
 The basic form of the command is this:
 
-    bap vibes /path/to/pre-patched/exe [PARAMS] [OPTIONS]
+    bap vibes /path/to/unpatched/exe [PARAMS] [OPTIONS]
 
 This tells the VIBES tool to patch the EXE located on your system at
-`/path/to/pre-patched/exe`.
+`/path/to/unpatched/exe`.
 
 There is one mandatory PARAM:
 
