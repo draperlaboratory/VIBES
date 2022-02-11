@@ -182,6 +182,9 @@ module Patch = struct
   let ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot =
     KB.Class.property ~package patch "ins_outs_map" ins_outs_map_domain
 
+  let extra_constraints : (patch_cls, string option) KB.slot =
+    KB.Class.property ~package patch "extra-constraints" string_domain
+
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
 
@@ -337,6 +340,11 @@ module Patch = struct
   let set_ins_outs_map (obj : t) (data : ins_outs Tid.Map.t) : unit KB.t =
     KB.provide ins_outs_map obj data
 
+  let set_extra_constraints (obj : t) (data : string option) : unit KB.t =
+      KB.provide extra_constraints obj data
+
+  let get_extra_constraints (obj : t) : string option KB.t =
+      KB.collect extra_constraints obj
 end
 
 (* Sets of patches *)

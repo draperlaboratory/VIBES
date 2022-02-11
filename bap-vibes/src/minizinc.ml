@@ -421,9 +421,17 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
+let build_extra_constraints_file ~extra_constraints ~model_filepath : string =
+  let wrapper_filepath = Stdlib.Filename.temp_file "vibes-mzn-model" ".mzn" in
+  let outc = Out_channel.create wrapper_filepath in
+  Out_channel.fprintf outc "include \"%s\";\n%s" model_filepath extra_constraints;
+  Out_channel.close outc;
+  wrapper_filepath
+
 let run_allocation_and_scheduling
     ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
+    ~extra_constraints:(extra_constraints : string option)
     (tgt : Theory.target)
     (prev_sols : sol list)
     (vir : Ir.t)
@@ -433,6 +441,11 @@ let run_allocation_and_scheduling
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
+  let model_filepath = match extra_constraints with
+  | None -> model_filepath
+  | Some extra_constraints -> build_extra_constraints_file ~extra_constraints ~model_filepath
+  in
+  Events.(send @@ Info (sprintf "Minizinc Model Filepath: %s\n" model_filepath));
   let* params, name_maps =
     serialize_mzn_params tgt vir_clean prev_sols
       ~gpr ~regs ~congruence ~exclude_regs in

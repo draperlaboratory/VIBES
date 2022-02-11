@@ -43,6 +43,7 @@ type t =
   | Invalid_bsi_data of string
   | Loader_data_conflict
   | Invalid_minizinc_isel_filepath
+  | Invalid_extra_constraints
   | No_such_file of string
   | Bad_image of string * Core_kernel.Error.t
 

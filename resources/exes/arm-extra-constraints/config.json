@@ -1,0 +1,26 @@
+{
+  "max-tries": 1,
+  "wp-params": {
+    "func": "main",
+    "postcond": "(assert (= (bvadd R0_mod #x00000002) R0_orig))"
+  },
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "int retvar; retvar = 3;",
+     "patch-point" : "0x10400",
+     "patch-size" : 4,
+     "patch-vars": [
+       {"name": "retvar",
+	"at-entry": {
+          "stored-in": "register",
+	  "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+	  "register": "R0"
+        }}
+       ],
+      "extra-constraints" : "constraint forall(t in temp_t)(reg[t] = 6); % 6 is R0 when you look at parameters. Not stable." 
+      }
+  ]
+}

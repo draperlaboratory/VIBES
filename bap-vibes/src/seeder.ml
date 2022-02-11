@@ -95,6 +95,7 @@ let create_patches
     let* () = Data.Patch.set_target obj tgt in
     let* () = Data.Patch.set_patch_vars obj (Some (Config.patch_vars p)) in
     let* () = Data.Patch.set_sp_align obj (Some (Config.patch_sp_align p)) in
+    let* () = Data.Patch.set_extra_constraints obj (Config.patch_extra_constraints p) in
     let* () = match get_patch_by_name seed patch_name with
       | None -> KB.return ()
       | Some patch_seed ->

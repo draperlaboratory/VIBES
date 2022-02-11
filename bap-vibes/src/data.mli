@@ -149,6 +149,9 @@ module Patch : sig
 
   val set_ins_outs_map : t -> ins_outs Tid.Map.t -> unit KB.t
   val get_ins_outs_map : t -> ins_outs Tid.Map.t KB.t
+  
+  val set_extra_constraints : t -> string option -> unit KB.t
+  val get_extra_constraints : t -> string option KB.t
 end
 
 (** Sets of patches *)

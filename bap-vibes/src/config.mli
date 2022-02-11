@@ -53,6 +53,10 @@ val patch_vars : patch -> Hvar.t list
     prescribed by the ABI. *)
 val patch_sp_align : patch -> int
 
+(** [patch_extra_constraints p] returns an optional minizinc constraint for 
+    injection into the solver. *)
+val patch_extra_constraints : patch -> string option
+
 (** [exe config] returns the filepath of the original exe to patch. *)
 val exe : t -> string
 
@@ -104,6 +108,7 @@ val create_patch :
   -> patch_size:int
   -> patch_vars:Hvar.t list
   -> patch_sp_align:int
+  -> patch_extra_constraints:string option
   -> patch
 
 (** [create ~exe ~config_filepath ~patched_exe_filepath

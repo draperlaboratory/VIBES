@@ -61,6 +61,7 @@ type sol = {
 val run_allocation_and_scheduling :
   ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
+  extra_constraints:string option ->
   Theory.target ->
   sol list ->
   Ir.t ->
