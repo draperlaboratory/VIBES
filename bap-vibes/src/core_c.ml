@@ -143,10 +143,10 @@ module Eval(CT : Theory.Core) = struct
       hvars;
     }
 
-  let char_ty = Theory.Bitv.define 8
-  let short_ty = Theory.Bitv.define 16
-  let long_ty = Theory.Bitv.define 32
-  let long_long_ty = Theory.Bitv.define 64
+  let char_ty = T.Bitv.define 8
+  let short_ty = T.Bitv.define 16
+  let long_ty = T.Bitv.define 32
+  let long_long_ty = T.Bitv.define 64
 
   let ty_of_base_type info (c_ty : base_type) : _ T.Bitv.t T.Value.sort =
     match c_ty with

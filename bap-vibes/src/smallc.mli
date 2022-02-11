@@ -1,0 +1,88 @@
+(** This module implements Smallc, which is a subset of the FrontC abstract
+    representation of C programs. AST nodes are elaborated and explicitly
+    typed, making this a more adequate intermediate language for lowering
+    to Core Theory. *)
+
+open Core_kernel
+open Bap.Std
+open Bap_core_theory
+
+(** Use BAP's definition of immediate sizes. *)
+type nonrec size = size
+
+(** Subset of `Cabs.sign`, where now signedness is explicit. *)
+type sign = SIGNED | UNSIGNED
+
+(** Subset of `Cabs.base_type` for types supported by VIBES. *)
+type typ =
+  | INT of size * sign
+  | PTR of typ
+
+(** Subset of `Cabs.binary_operator`, where only pure binary operations
+    are allowed. *)
+type binop =
+  | ADD
+  | SUB
+  | MUL
+  | DIV
+  | MOD
+  | LAND
+  | LOR
+  | XOR
+  | SHL
+  | SHR
+  | EQ
+  | NE
+  | LT
+  | GT
+  | LE
+  | GE
+
+(** Subset of `Cabs.unary_operator`, where only pure unary operations
+    are allowed. *)
+type unop =
+  | MINUS
+  | NOT
+  | LNOT
+  | MEMOF
+  | ADDROF
+
+(** The typing environment. *)
+type tenv = typ String.Map.t
+
+(** A typed var. *)
+type var = string * typ
+
+(** Subset of `Cabs.expression`, where all expressions are pure and
+    explicitly typed. *)
+type exp =
+  | UNARY of unop * exp * typ
+  | BINARY of binop * exp * exp * typ
+  | CAST of typ * exp
+  | CONST_INT of Bitvec.t * size * sign
+  | VARIABLE of var
+
+(** Subset of `Cabs.statement`. *)
+and stmt =
+  | NOP
+  | BLOCK of body
+  | ASSIGN of var * exp
+  | CALL of exp * exp list
+  | CALLASSIGN of var * exp * exp list
+  | STORE of exp * exp
+  | SEQUENCE of stmt * stmt
+  | IF of exp * stmt * stmt
+  | GOTO of string
+
+(** A scope where statements may occur under a typing environment. *)
+and body = tenv * stmt
+
+type t = body
+
+(** Returns [true] if the variable name is one generated during
+    elaboration. *)
+val is_temp : string -> bool
+
+val to_string : t -> string
+
+val translate : Cabs.definition -> target:Theory.target -> t KB.t
