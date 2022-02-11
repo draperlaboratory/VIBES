@@ -78,7 +78,7 @@ module Linear = struct
 
     let add_var v env = {env with vars = Set.add env.vars v}
     let with_prefix prefix env = {env with prefix}
-    
+
   end
 
   include Monad.State.T1(Env)(Knowledge)
@@ -137,9 +137,14 @@ let rec linearize_exp (exp : exp) : exp linear = match exp with
   | Bil.Unknown (_, _) -> Linear.return exp
 
 let linearize_phi (phi : phi term) : phi term linear =
-  ignore phi;
-  Linear.lift @@ Kb_error.fail @@
-  Not_implemented "Linear_ssa.linearize_phi: unimplemented"
+  let lhs = Phi.lhs phi in
+  let* new_lhs = linearize_var lhs in
+  let+ new_values =
+    Phi.values phi |> Seq.to_list |>
+    Linear.List.map ~f:(fun (tid, e) ->
+        let+ e = linearize_exp e in
+        tid, e) in
+  Phi.of_list ~tid:(Term.tid phi) new_lhs new_values
 
 let linearize_def (def : def term) : def term linear =
   let lhs = Def.lhs def in
