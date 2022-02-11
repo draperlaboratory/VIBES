@@ -90,6 +90,9 @@ open Linear.Let
 
 type 'a linear = 'a Linear.t
 
+let linearize_var (v : var) : var linear =
+  Linear.gets @@ fun {prefix; _} -> linearize v ~prefix
+
 let rec linearize_exp (exp : exp) : exp linear = match exp with
   | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
     let* new_sub_exp_1 = linearize_exp sub_exp_1 in
@@ -108,8 +111,8 @@ let rec linearize_exp (exp : exp) : exp linear = match exp with
     let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.BinOp (binop, new_sub_exp_1, new_sub_exp_2)
   | Bil.Var v ->
-    let* new_var = Linear.gets @@ fun {prefix; _} -> linearize v ~prefix in
-    let+ () = Linear.update @@ Linear.Env.add_var new_var in
+    let* new_var = linearize_var v in
+    let+ () = Linear.(update @@ Env.add_var new_var) in
     Bil.Var new_var
   | Bil.Int _ -> Linear.return exp
   | Bil.Cast (cast, i, sub_exp) ->
@@ -140,8 +143,8 @@ let linearize_phi (phi : phi term) : phi term linear =
 
 let linearize_def (def : def term) : def term linear =
   let lhs = Def.lhs def in
-  let* new_lhs = Linear.gets @@ fun {prefix; _} -> linearize lhs ~prefix in
-  let* () = Linear.update @@ Linear.Env.add_var new_lhs in
+  let* new_lhs = linearize_var lhs in
+  let* () = Linear.(update @@ Env.add_var new_lhs) in
   let new_def = Def.with_lhs def new_lhs in
   let rhs = Def.rhs new_def in
   let+ new_rhs = linearize_exp rhs in
@@ -180,7 +183,7 @@ let go (cls : ('a, 'b) cls) (t : 'a term)
 
 let linearize_blk (blk : blk term) : blk term linear =
   let prefix = prefix_from blk in
-  let* () = Linear.update @@ fun env -> {env with prefix} in
+  let* () = Linear.(update @@ Env.with_prefix prefix) in
   let* phis = go phi_t blk ~f:linearize_phi in
   let* defs = go def_t blk ~f:linearize_def in
   let+ jmps = go jmp_t blk ~f:linearize_jmp in
