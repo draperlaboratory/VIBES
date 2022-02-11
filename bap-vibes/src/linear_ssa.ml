@@ -76,6 +76,9 @@ module Linear = struct
       prefix : string;
     }
 
+    let add_var v env = {env with vars = Set.add env.vars v}
+    let with_prefix prefix env = {env with prefix}
+    
   end
 
   include Monad.State.T1(Env)(Knowledge)
@@ -105,9 +108,8 @@ let rec linearize_exp (exp : exp) : exp linear = match exp with
     let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.BinOp (binop, new_sub_exp_1, new_sub_exp_2)
   | Bil.Var v ->
-    let* env = Linear.get () in
-    let new_var = linearize v ~prefix:env.prefix in
-    let+ () = Linear.put {env with vars = Var.Set.add env.vars new_var} in
+    let* new_var = Linear.gets @@ fun {prefix; _} -> linearize v ~prefix in
+    let+ () = Linear.update @@ Linear.Env.add_var new_var in
     Bil.Var new_var
   | Bil.Int _ -> Linear.return exp
   | Bil.Cast (cast, i, sub_exp) ->
@@ -139,9 +141,7 @@ let linearize_phi (phi : phi term) : phi term linear =
 let linearize_def (def : def term) : def term linear =
   let lhs = Def.lhs def in
   let* new_lhs = Linear.gets @@ fun {prefix; _} -> linearize lhs ~prefix in
-  let* () = Linear.update @@ fun env -> {
-      env with vars = Var.Set.add env.vars new_lhs
-    } in
+  let* () = Linear.update @@ Linear.Env.add_var new_lhs in
   let new_def = Def.with_lhs def new_lhs in
   let rhs = Def.rhs new_def in
   let+ new_rhs = linearize_exp rhs in
@@ -188,8 +188,9 @@ let linearize_blk (blk : blk term) : blk term linear =
 
 let transform (sub : sub term) : blk term list KB.t =
   let open KB.Let in
-  let* blks, {vars; _} = Linear.run (go blk_t sub ~f:linearize_blk)
-      Linear.Env.{prefix = ""; vars = Var.Set.empty} in
+  let* blks, {vars; _} = 
+    Linear.Env.{prefix = ""; vars = Var.Set.empty} |>
+    Linear.run (go blk_t sub ~f:linearize_blk) in
   let+ () =
     let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
     Var.Set.to_list vars |>
