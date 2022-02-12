@@ -258,7 +258,7 @@ for identifiers that appear in the patch code. For instance, suppose you have
 a patch with the following patch code:
 
 ```
-int x; 
+int x;
 x = 3;
 ```
 
@@ -436,14 +436,14 @@ Here is a description of the above schema:
   * `"patch-point": "HEX"` - Required. The address at which to start replacing bytes.
   * `"patch-size": INT` - Required. The number of bytes to replace.
   * `"patch-code": "CODE"` - Required. Code to compile and insert at the patch point. The code should be written in a subset of C.
-  * "patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
-  * `"patch-vars": [PATCH-VARS]` - 
+  * `"patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
+  * `"patch-vars": [PATCH-VARS]` -
     A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier:
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
     * For storage classification, the object has the following fields:
-      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`. 
+      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`.
       * `"at-entry": {STORAGE-CLASSIFICATION}` -
         Required. Storage classification for the identifier at the entrance to the patch site. The value can live in a register, or in memory (on the stack).
         * If it's stored in a register, the object has the following fields:
