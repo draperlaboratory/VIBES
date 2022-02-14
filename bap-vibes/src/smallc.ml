@@ -328,7 +328,8 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
   Transl.fail @@ Core_c_error (
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
-(* Translate an expression which may be `None`. *)
+(* Translate an expression which may be `None`. Also returns any side effects
+   produced by the expression. *)
 and translate_expression ?(computation = false)
     (e : Cabs.expression) : (stmt * exp option) transl = match e with
   | Cabs.NOTHING -> Transl.return (NOP, None)
@@ -448,10 +449,11 @@ and translate_expression ?(computation = false)
       let tidx = typeof eidx in
       match tptr, tidx with
       | PTR t, INT _ ->
+        (* Translate to the pointer arithmetic of an array lookup. *)
         let+ {target; _} = Transl.get () in
         let bits = Theory.Target.bits target in
         let stride = size_of_typ target t lsr 3 in
-        let off = Word.of_int ~width:bits stride in
+        let scale = Word.of_int ~width:bits stride in
         let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
         let eidx = with_type eidx tidx in
         let e =
@@ -462,7 +464,7 @@ and translate_expression ?(computation = false)
               CAST (tidx, eptr),
               BINARY (
                 MUL,
-                CONST_INT (off, UNSIGNED),
+                CONST_INT (scale, UNSIGNED),
                 eidx,
                 tidx),
               tidx),
