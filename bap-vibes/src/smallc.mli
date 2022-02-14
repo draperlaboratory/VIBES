@@ -1,4 +1,4 @@
-(** This module implements Smallc, which is a subset of the FrontC abstract
+(** This module implements SmallC, which is a subset of the FrontC abstract
     representation of C programs. AST nodes are elaborated and explicitly
     typed, making this a more adequate intermediate language for lowering
     to Core Theory. *)
@@ -17,6 +17,9 @@ type sign = SIGNED | UNSIGNED
 type typ =
   | INT of size * sign
   | PTR of typ
+
+(** Compares two types for equality. *)
+val equal_typ : typ -> typ -> bool
 
 (** Subset of `Cabs.binary_operator`, where only pure binary operations
     are allowed. *)
@@ -51,7 +54,7 @@ type unop =
 type tenv = typ String.Map.t
 
 (** A typed var. *)
-type var = string * typ
+type var = Theory.Var.Top.t * typ
 
 (** Subset of `Cabs.expression`, where all expressions are pure and
     explicitly typed. *)
@@ -59,7 +62,7 @@ type exp =
   | UNARY of unop * exp * typ
   | BINARY of binop * exp * exp * typ
   | CAST of typ * exp
-  | CONST_INT of Bitvec.t * size * sign
+  | CONST_INT of word * sign
   | VARIABLE of var
 
 (** Subset of `Cabs.statement`. *)
@@ -77,12 +80,15 @@ and stmt =
 (** A scope where statements may occur under a typing environment. *)
 and body = tenv * stmt
 
+(** A SmallC definition is a scoped statement. *)
 type t = body
 
 (** Returns [true] if the variable name is one generated during
     elaboration. *)
 val is_temp : string -> bool
 
+(** Pretty prints the SmallC definition. *)
 val to_string : t -> string
 
+(** Translate a FrontC definition to a SmallC definition. *)
 val translate : Cabs.definition -> target:Theory.target -> t KB.t

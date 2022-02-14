@@ -8,11 +8,18 @@ module Hvar = Higher_var
 
 type nonrec size = size
 
-type sign = SIGNED | UNSIGNED
+let equal_size = Size.equal
+
+type sign = SIGNED | UNSIGNED [@@deriving equal]
 
 type typ =
   | INT of size * sign
   | PTR of typ
+[@@deriving equal]
+
+let size_of_typ (target : Theory.target) : typ -> int = function
+  | INT (size, _) -> Size.in_bits size
+  | PTR _ -> Theory.Target.bits target
 
 type binop =
   | ADD
@@ -41,13 +48,13 @@ type unop =
 
 type tenv = typ String.Map.t
 
-type var = string * typ
+type var = Theory.Var.Top.t * typ
 
 type exp =
   | UNARY of unop * exp * typ
   | BINARY of binop * exp * exp * typ
   | CAST of typ * exp
-  | CONST_INT of Bitvec.t * size * sign
+  | CONST_INT of word * sign
   | VARIABLE of var
 
 and stmt =
@@ -94,30 +101,36 @@ let cabs_of_binop : binop -> Cabs.binary_operator = function
   | GE -> Cabs.GE
 
 let rec cabs_of_typ : typ -> Cabs.base_type = function
-  | INT (`r8, SIGNED) -> Cabs.(CHAR SIGNED)
-  | INT (`r8, UNSIGNED) -> Cabs.(CHAR UNSIGNED)
-  | INT (`r16, SIGNED) -> Cabs.(INT (SHORT, SIGNED))
+  | INT (`r8, SIGNED)    -> Cabs.(CHAR SIGNED)
+  | INT (`r8, UNSIGNED)  -> Cabs.(CHAR UNSIGNED)
+  | INT (`r16, SIGNED)   -> Cabs.(INT (SHORT, SIGNED))
   | INT (`r16, UNSIGNED) -> Cabs.(INT (SHORT, UNSIGNED))
-  | INT (`r32, SIGNED) -> Cabs.(INT (LONG, SIGNED))
+  | INT (`r32, SIGNED)   -> Cabs.(INT (LONG, SIGNED))
   | INT (`r32, UNSIGNED) -> Cabs.(INT (LONG, UNSIGNED))
-  | INT (`r64, SIGNED) -> Cabs.(INT (LONG_LONG, SIGNED))
+  | INT (`r64, SIGNED)   -> Cabs.(INT (LONG_LONG, SIGNED))
   | INT (`r64, UNSIGNED) -> Cabs.(INT (LONG_LONG, UNSIGNED))
-  | INT _ -> assert false
-  | PTR t -> Cabs.PTR (cabs_of_typ t)
+  | INT _                -> assert false
+  | PTR t                -> Cabs.PTR (cabs_of_typ t)
 
 let rec cabs_of_exp : exp -> Cabs.expression = function
   | UNARY (u, e, _) -> Cabs.(UNARY (cabs_of_unop u, cabs_of_exp e))
   | BINARY (b, e1, e2, _) ->
     Cabs.(BINARY (cabs_of_binop b, cabs_of_exp e1, cabs_of_exp e2))
   | CAST (t, e) -> Cabs.(CAST (cabs_of_typ t, cabs_of_exp e))
-  | CONST_INT (i, _, _) -> Cabs.(CONSTANT (CONST_INT (Bitvec.to_string i)))
-  | VARIABLE (v, _) -> Cabs.VARIABLE v
+  | CONST_INT (i, sign) ->
+    Cabs.(CONSTANT (CONST_INT (Bitvec.to_string @@ Word.to_bitvec i)))
+  | VARIABLE (v, _) -> Cabs.VARIABLE (Theory.Var.name v)
 
 and cabs_of_stmt : stmt -> Cabs.statement = function
   | NOP -> Cabs.NOP
   | BLOCK (_, s) -> Cabs.BLOCK ([], cabs_of_stmt s)
   | ASSIGN ((v, _), e) ->
-    Cabs.(COMPUTATION (BINARY (ASSIGN, VARIABLE v, cabs_of_exp e)))
+    Cabs.(
+      COMPUTATION (
+        BINARY (
+          ASSIGN,
+          VARIABLE (Theory.Var.name v),
+          cabs_of_exp e)))
   | CALL (f, args) ->
     Cabs.(
       COMPUTATION (
@@ -127,17 +140,17 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
       COMPUTATION (
         BINARY (
           ASSIGN,
-          VARIABLE v,
+          VARIABLE (Theory.Var.name v),
           CALL (
             cabs_of_exp f,
             List.map args ~f:cabs_of_exp))))
-  | STORE (e1, e2) ->
+  | STORE (addr, value) ->
     Cabs.(
       COMPUTATION (
         BINARY (
           ASSIGN,
-          UNARY (MEMOF, cabs_of_exp e1),
-          cabs_of_exp e2)))
+          UNARY (MEMOF, cabs_of_exp addr),
+          cabs_of_exp addr)))
   | SEQUENCE (s1, s2) -> Cabs.SEQUENCE (cabs_of_stmt s1, cabs_of_stmt s2)
   | IF (cond, st, sf) ->
     Cabs.IF (cabs_of_exp cond, cabs_of_stmt st, cabs_of_stmt sf)
@@ -152,8 +165,27 @@ let typeof : exp -> typ = function
   | UNARY (_, _, t) -> t
   | BINARY (_, _, _, t) -> t
   | CAST (t, _) -> t
-  | CONST_INT (_, size, sign) -> INT (size, sign)
+  | CONST_INT (i, sign) ->
+    let w = Word.bitwidth i in
+    INT (Size.of_int_exn w, sign)
   | VARIABLE (_, t) -> t
+
+let with_type (e : exp) (t : typ) : exp = match e with
+  | UNARY (u, e, _) -> UNARY (u, e, t)
+  | BINARY (b, l, r, _) -> BINARY (b, l, r, t)
+  | CAST _ -> e
+  | CONST_INT (i, _) -> begin 
+      match t with
+      | INT (size', sign') ->
+        let i = match sign' with
+          | SIGNED -> Word.signed i
+          | UNSIGNED -> Word.unsigned i in
+        let w = Size.in_bits size' in
+        let i = Word.extract_exn ~hi:(w - 1) i in
+        CONST_INT (i, sign')
+      | _ -> e
+    end
+  | VARIABLE (v, _) -> VARIABLE (v, t)
 
 (* State monad for elaboration and type-checking. *)
 
@@ -163,12 +195,11 @@ module Transl = struct
 
     type t = {
       target : Theory.target;
-      next_temp : int;
       tenv : tenv;
     }
 
     let create ~(target : Theory.target) () =
-      {target; next_temp = 0; tenv = String.Map.empty}
+      {target; tenv = String.Map.empty}
 
     let typeof (var : string) (env : t) : typ option =
       Map.find env.tenv var
@@ -186,15 +217,13 @@ open Transl.Let
 
 type 'a transl = 'a Transl.t
 
+let var_sort = Theory.Value.Sort.(forget @@ int 42)
+
 (* Create a fresh temporary variable. *)
 let new_tmp (t : typ) : var transl =
-  let* env = Transl.get () in
-  let n = env.next_temp in
-  let v = sprintf "$%d" n in
-  let+ () = Transl.put {
-      env with
-      next_temp = n + 1;
-      tenv = Map.set env.tenv ~key:v ~data:t;
+  let* v = Transl.lift @@ Theory.Var.fresh var_sort in
+  let+ () = Transl.update @@ fun env -> {
+      env with tenv = Map.set env.tenv ~key:(Theory.Var.name v) ~data:t;
     } in
   v, t
 
@@ -230,6 +259,30 @@ let rec translate_type (t : Cabs.base_type) : typ transl = match t with
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_type: unexpected type:\n\n%s" s)
 
+(* Perform type conversions for pure expressions. *)
+let typ_unify (t1 : typ) (t2 : typ) : typ option =
+  match t1, t2 with
+  | INT _, PTR _ | PTR _, INT _ -> None
+  | PTR t1', PTR t2' -> if equal_typ t1' t2' then Some t1 else None
+  | INT (size1, sign1), INT (size2, sign2) ->
+    match Size.compare size1 size2 with
+    | n when n < 0 -> Some t2
+    | n when n > 0 -> Some t1
+    | _ -> match sign1, sign2 with
+      | SIGNED, UNSIGNED | UNSIGNED, SIGNED ->
+        Some (INT (size1, UNSIGNED))
+      | _ -> Some t1
+
+(* Perform type conversions for an assignment. Returns the unified type
+   and the expression with an explicit cast. *)
+let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
+  match tl, tr with
+  | INT _, PTR _ | PTR _, INT _ -> None
+  | PTR t1', PTR t2' -> if equal_typ t1' t2' then Some (tl, r) else None
+  | INT (sizel, signl), INT (sizer, signr) ->
+    if equal_size sizel sizer && equal_sign signl signr
+    then Some (tl, r) else Some (tl, CAST (tl, r))
+
 (* Translate a scoped statement. *)
 let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
   let* {tenv; _} = Transl.get () in
@@ -241,6 +294,7 @@ let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
               ~f:(fun (tenv, inits) (v, t, _, e) ->
                   let+ t = translate_type t in
                   let tenv = Map.set tenv ~key:v ~data:t in
+                  let v = Theory.Var.define var_sort v in
                   tenv, ((v, t), e) :: inits)
           | def ->
             let s = Utils.print_c Cprint.print_def def in
@@ -261,12 +315,22 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
       | None -> SEQUENCE (acc, s)
       | Some e' -> SEQUENCE (acc, ASSIGN (v, e')))
 
+and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
+  let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+  let s1 = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t1 in
+  let s2 = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t2 in
+  Transl.fail @@ Core_c_error (
+    sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
+
+and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
+  let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+  let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t in
+  Transl.fail @@ Core_c_error (
+    sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
+
 (* Translate an expression which may be `None`. *)
 and translate_expression ?(computation = false)
-    (e : Cabs.expression) : (stmt * exp option) transl =
-  let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-  let module B = (val Bitvec.modular bits) in
-  match e with
+    (e : Cabs.expression) : (stmt * exp option) transl = match e with
   | Cabs.NOTHING -> Transl.return (NOP, None)
   | Cabs.UNARY (u, e) ->
     let+ s, e = translate_unary_operator u e in
@@ -274,6 +338,32 @@ and translate_expression ?(computation = false)
   | Cabs.BINARY (b, lhs, rhs) ->
     let+ s, e = translate_binary_operator b lhs rhs in
     if computation then s, None else s, e
+  | Cabs.QUESTION (cond, then_, else_) -> begin
+      let exp = translate_expression_strict "translate_expression (QUESTION)" in
+      let* scond, cond = exp cond in
+      let* sthen, then_ = exp then_ in
+      let* selse, else_ = exp else_ in
+      let t1 = typeof then_ in
+      let t2 = typeof else_ in
+      match typ_unify t1 t2 with
+      | None -> typ_unify_error e t1 t2
+      | Some t ->
+        let then_ = with_type then_ t in
+        let else_ = with_type else_ t in
+        let+ v = new_tmp t in
+        let s =
+          SEQUENCE (
+            scond,
+            SEQUENCE (
+              sthen,
+              SEQUENCE (
+                selse,
+                IF (
+                  cond,
+                  ASSIGN (v, then_),
+                  ASSIGN (v, else_))))) in
+        s, Some (VARIABLE v)
+    end
   | Cabs.CAST (t, e) ->
     let* t = translate_type t in
     let+ s, e' =
@@ -294,6 +384,9 @@ and translate_expression ?(computation = false)
           SEQUENCE (s, acc)) in
       Transl.return (s, None)
     else
+      (* We don't actually know the return type of the function, so assume
+         it's an integer that will fit inside of a machine register. *)
+      let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
       let+ tmp = new_tmp @@ INT (Size.of_int_exn bits, UNSIGNED) in
       let init = CALLASSIGN (tmp, f', args') in
       let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
@@ -303,30 +396,42 @@ and translate_expression ?(computation = false)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in
     let sign = if Int64.is_negative i then SIGNED else UNSIGNED in
-    let size = Size.of_int_exn bits in
-    Transl.return (NOP, Some (CONST_INT (B.int64 i, size, sign)))
+    let width =
+      if Int64.(i <= 0xFFL) then 8
+      else if Int64.(i <= 0xFFFFL) then 16
+      else if Int64.(i <= 0xFFFFFFFFL) then 32
+      else 64 in
+    let i = Word.of_int64 ~width i in
+    (* `word` is unsigned by default. *)
+    let i = if equal_sign sign SIGNED then Word.signed i else i in
+    Transl.return (NOP, Some (CONST_INT (i, sign)))
   | Cabs.(CONSTANT (CONST_CHAR s)) ->
-    let i = Char.(to_int @@ of_string s) in
-    Transl.return (NOP, Some (CONST_INT (B.int i, `r8, SIGNED)))
+    let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
+    let i = Word.signed i in
+    Transl.return (NOP, Some (CONST_INT (i, SIGNED)))
   | Cabs.VARIABLE _ when computation -> Transl.return (NOP, None)
   | Cabs.VARIABLE s -> begin
       let* t = Transl.(gets @@ Env.typeof s) in
       match t with
-      | Some t -> Transl.return (NOP, Some (VARIABLE (s, t)))
+      | Some t ->
+        let s = Theory.Var.define var_sort s in
+        Transl.return (NOP, Some (VARIABLE (s, t)))
       | None ->
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_expression: undeclared variable %s\n" s)
     end
   | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None)
   | Cabs.EXPR_SIZEOF e -> begin
-      let+ _, e =
+      let* _, e =
         translate_expression_strict "translate_expression (EXPR_SIZEOF)" e in
-      let size = Size.of_int_exn bits in
+      let+ bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
       match typeof e with
       | INT (size', _) ->
-        NOP, Some (CONST_INT (B.int @@ Size.in_bytes size', size, UNSIGNED))
+        let i = Word.of_int ~width:bits @@ Size.in_bytes size' in
+        NOP, Some (CONST_INT (i, UNSIGNED))
       | PTR _ ->
-        NOP, Some (CONST_INT (B.int (bits lsr 3), size, UNSIGNED))
+        let i = Word.of_int ~width:bits @@ bits lsr 3 in
+        NOP, Some (CONST_INT (i, UNSIGNED))
     end
   | _ ->
     let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
@@ -377,9 +482,9 @@ and translate_unary_operator
   | Cabs.ADDROF ->
     let+ s, e = exp e in
     s, Some (UNARY (ADDROF, e, PTR (typeof e)))
-  | Cabs.PREINCR -> translate_increment e ~pre:true ~neg:false 
+  | Cabs.PREINCR -> translate_increment e ~pre:true  ~neg:false 
   | Cabs.POSINCR -> translate_increment e ~pre:false ~neg:false 
-  | Cabs.PREDECR -> translate_increment e ~pre:true ~neg:true
+  | Cabs.PREDECR -> translate_increment e ~pre:true  ~neg:true
   | Cabs.POSDECR -> translate_increment e ~pre:false ~neg:true 
 
 (* Translate the unary increment operators, which are effectful. *)
@@ -390,19 +495,22 @@ and translate_increment
   let exp = translate_expression_strict "translate_increment" in
   let* s, e' = exp e in
   let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-  let module B = (val Bitvec.modular bits) in
   let t = typeof e' in
   (* Based on the type, get the increment value. *)
   let inc = match t with
     | PTR (INT (size, _)) ->
       (* Pointer to some element type, use the element size. *)
-      CONST_INT (B.int @@ Size.in_bytes size, Size.of_int_exn bits, UNSIGNED)
+      let i = Word.of_int ~width:bits @@ Size.in_bytes size in
+      CONST_INT (i, UNSIGNED)
     | PTR (PTR _) ->
       (* Pointer to a pointer: use the word size. *)
-      CONST_INT (B.int (bits lsr 3), Size.of_int_exn bits, UNSIGNED)
+      let i = Word.of_int ~width:bits @@ bits lsr 3 in
+      CONST_INT (i, UNSIGNED)
     | INT (size, sign) ->
       (* Regular integer type, use an increment of one. *)
-      CONST_INT (B.one, size, sign) in
+      let i = Word.one bits in
+      let i = if equal_sign sign SIGNED then Word.signed i else i in
+      CONST_INT (i, sign) in
   (* Add or subtract based on the increment type. *)
   let op = if neg then SUB else ADD in
   (* If it's a pre-increment, then we return the value after incrementing,
@@ -429,10 +537,10 @@ and translate_increment
       (* Must be a valid l-value. *)
       let inc_s = if pre then "pre" else "post" in
       let u = match pre, neg with
-        | true, false -> Cabs.PREINCR
+        | true,  false -> Cabs.PREINCR
         | false, false -> Cabs.POSINCR
-        | true, true -> Cabs.PREDECR
-        | false, true -> Cabs.POSDECR in
+        | true,  true  -> Cabs.PREDECR
+        | false, true  -> Cabs.POSDECR in
       let s =
         Utils.print_c (fun e -> Cprint.print_expression e 0)
           Cabs.(UNARY (u, e)) in
@@ -447,55 +555,75 @@ and translate_binary_operator
     (lhs : Cabs.expression)
     (rhs : Cabs.expression) : (stmt * exp option) transl =
   let exp = translate_expression_strict "translate_binary_operator" in
-  let default b =
+  let default op =
     (* TODO: type check or do implicit conversions here *)
     let* s1, e1 = exp lhs in
     let t1 = typeof e1 in
     let* s2, e2 = exp rhs in
     let t2 = typeof e2 in
-    let* tmp1 = new_tmp t1 in
-    let+ tmp2 = new_tmp t2 in
-    SEQUENCE (
-      s1,
+    match typ_unify t1 t2 with
+    | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+    | Some t ->
+      let e1 = with_type e1 t in
+      let e2 = with_type e2 t in
+      let* tmp1 = new_tmp t in
+      let+ tmp2 = new_tmp t in
       SEQUENCE (
-        ASSIGN (tmp1, e1),
+        s1,
         SEQUENCE (
-          s2, ASSIGN (tmp2, e2)))),
-    Some (BINARY (b, VARIABLE tmp1, VARIABLE tmp2, t1)) in
+          ASSIGN (tmp1, e1),
+          SEQUENCE (s2, ASSIGN (tmp2, e2)))),
+      Some (BINARY (op, VARIABLE tmp1, VARIABLE tmp2, t)) in
   match b with
   | Cabs.ADD -> default ADD
   | Cabs.SUB -> default SUB
   | Cabs.MUL -> default MUL
   | Cabs.DIV -> default DIV
   | Cabs.MOD -> default MOD
-  | Cabs.AND ->
-    (* Short-circuiting boolean AND *)
-    let* s1, e1 = exp lhs in
-    let t1 = typeof e1 in
-    let* s2, e2 = exp rhs in
-    let _t2 = typeof e2 in
-    let* tmp = new_tmp t1 in
-    let+ bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-    let module B = (val Bitvec.modular bits) in
-    let size = Size.of_int_exn bits in
-    SEQUENCE (
-      s1, IF (e1, SEQUENCE (
-          s2, ASSIGN (tmp, e2)),
-              ASSIGN (tmp, CONST_INT (B.zero, size, UNSIGNED)))),
-    Some (VARIABLE tmp)
-  | Cabs.OR ->
-    (* Short-circuiting boolean OR *)
-    let* s1, e1 = exp lhs in
-    let t1 = typeof e1 in
-    let* s2, e2 = exp rhs in
-    let _t2 = typeof e2 in
-    let+ tmp = new_tmp t1 in
-    SEQUENCE (
-      s1, SEQUENCE (
-        ASSIGN (tmp, e1),
-        IF (VARIABLE tmp, NOP, SEQUENCE (
-            s2, ASSIGN (tmp, e2))))),
-    Some (VARIABLE tmp)
+  | Cabs.AND -> begin
+      (* Short-circuiting boolean AND *)
+      let* s1, e1 = exp lhs in
+      let t1 = typeof e1 in
+      let* s2, e2 = exp rhs in
+      let t2 = typeof e2 in
+      match typ_unify t1 t2 with
+      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+      | Some (INT (size, sign) as t) ->
+        let e1 = with_type e1 t in
+        let e2 = with_type e2 t in
+        let+ tmp = new_tmp t in
+        let i = Word.zero @@ Size.in_bits size in
+        SEQUENCE (
+          s1, IF (e1, SEQUENCE (
+              s2, ASSIGN (tmp, e2)),
+                  ASSIGN (tmp, CONST_INT (i, sign)))),
+        Some (VARIABLE tmp)
+      | Some t ->
+        typ_error Cabs.(BINARY (b, lhs, rhs)) t
+          "Expected an integer type."
+    end
+  | Cabs.OR -> begin
+      (* Short-circuiting boolean OR *)
+      let* s1, e1 = exp lhs in
+      let t1 = typeof e1 in
+      let* s2, e2 = exp rhs in
+      let t2 = typeof e2 in
+      match typ_unify t1 t2 with
+      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+      | Some (INT (size, sign) as t) ->
+        let e1 = with_type e1 t in
+        let e2 = with_type e2 t in
+        let+ tmp = new_tmp t in
+        SEQUENCE (
+          s1, SEQUENCE (
+            ASSIGN (tmp, e1),
+            IF (VARIABLE tmp, NOP, SEQUENCE (
+                s2, ASSIGN (tmp, e2))))),
+        Some (VARIABLE tmp)
+      | Some t ->
+        typ_error Cabs.(BINARY (b, lhs, rhs)) t
+          "Expected an integer type."
+    end
   | Cabs.BAND -> default LAND
   | Cabs.BOR -> default LOR
   | Cabs.XOR -> default XOR
@@ -506,21 +634,25 @@ and translate_binary_operator
   | Cabs.GT -> default GT
   | Cabs.LE -> default LE
   | Cabs.GE -> default GE
-  | Cabs.ASSIGN ->
-    let* s1, e1 = exp lhs in
-    let _t1 = typeof e1 in
-    let* s2, e2 = exp rhs in
-    let _t2 = typeof e2 in
-    let+ s = match e1 with
-      | VARIABLE var -> Transl.return @@ ASSIGN (var, e2)
-      | UNARY (MEMOF, addr, _) -> Transl.return @@ STORE (addr, e2)
-      | _ ->
-        let s = Utils.print_c (fun e -> Cprint.print_expression e 0) lhs in
-        Transl.fail @@ Core_c_error (
-          sprintf "Csmall.translate_binary_operator: expected an l-value \
-                   for LHS of assignment, got:\n\n%s\n" s) in
-    (* Order of evaluation is right-to-left. *)
-    SEQUENCE (s2, SEQUENCE (s1, s)), Some e1
+  | Cabs.ASSIGN -> begin
+      let* s1, e1 = exp lhs in
+      let t1 = typeof e1 in
+      let* s2, e2 = exp rhs in
+      let t2 = typeof e2 in
+      match typ_unify_assign t1 t2 e2 with
+      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+      | Some (t, e2) ->
+        let+ s = match e1 with
+          | VARIABLE var -> Transl.return @@ ASSIGN (var, e2)
+          | UNARY (MEMOF, addr, _) -> Transl.return @@ STORE (addr, e2)
+          | _ ->
+            let s = Utils.print_c (fun e -> Cprint.print_expression e 0) lhs in
+            Transl.fail @@ Core_c_error (
+              sprintf "Csmall.translate_binary_operator: expected an l-value \
+                       for LHS of assignment, got:\n\n%s\n" s) in
+        (* Order of evaluation is right-to-left. *)
+        SEQUENCE (s2, SEQUENCE (s1, s)), Some e1
+    end
   | _ -> Transl.fail @@ Other "unimpl"
 
 (* Translate a statement. *)
