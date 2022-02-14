@@ -76,29 +76,29 @@ type t = body
    pretty-printers. *)
 
 let cabs_of_unop : unop -> Cabs.unary_operator = function
-  | MINUS -> Cabs.MINUS
-  | NOT -> Cabs.NOT
-  | LNOT -> Cabs.BNOT
-  | MEMOF -> Cabs.MEMOF
+  | MINUS  -> Cabs.MINUS
+  | NOT    -> Cabs.NOT
+  | LNOT   -> Cabs.BNOT
+  | MEMOF  -> Cabs.MEMOF
   | ADDROF -> Cabs.ADDROF
 
 let cabs_of_binop : binop -> Cabs.binary_operator = function
-  | ADD -> Cabs.ADD
-  | SUB -> Cabs.SUB
-  | MUL -> Cabs.MUL
-  | DIV -> Cabs.DIV
-  | MOD -> Cabs.MOD
+  | ADD  -> Cabs.ADD
+  | SUB  -> Cabs.SUB
+  | MUL  -> Cabs.MUL
+  | DIV  -> Cabs.DIV
+  | MOD  -> Cabs.MOD
   | LAND -> Cabs.BAND
-  | LOR -> Cabs.BOR
-  | XOR -> Cabs.XOR
-  | SHL -> Cabs.SHL
-  | SHR -> Cabs.SHR
-  | EQ -> Cabs.EQ
-  | NE -> Cabs.NE
-  | LT -> Cabs.LT
-  | GT -> Cabs.GT
-  | LE -> Cabs.LE
-  | GE -> Cabs.GE
+  | LOR  -> Cabs.BOR
+  | XOR  -> Cabs.XOR
+  | SHL  -> Cabs.SHL
+  | SHR  -> Cabs.SHR
+  | EQ   -> Cabs.EQ
+  | NE   -> Cabs.NE
+  | LT   -> Cabs.LT
+  | GT   -> Cabs.GT
+  | LE   -> Cabs.LE
+  | GE   -> Cabs.GE
 
 let rec cabs_of_typ : typ -> Cabs.base_type = function
   | INT (`r8, SIGNED)    -> Cabs.(CHAR SIGNED)
@@ -156,8 +156,14 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
     Cabs.IF (cabs_of_exp cond, cabs_of_stmt st, cabs_of_stmt sf)
   | GOTO lbl -> Cabs.GOTO lbl
 
-let to_string ((_, s) : t) : string =
-  Utils.print_c Cprint.print_statement @@ cabs_of_stmt s
+let to_string ((tenv, s) : t) : string =
+  let vars =
+    Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
+        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t in
+        sprintf "%s %s;" t v) |>
+    String.concat ~sep:"\n" in
+  let stmt = Utils.print_c Cprint.print_statement @@ cabs_of_stmt s in
+  sprintf "%s\n%s" vars stmt
 
 (* Extract the embedded type of an expression. *)
 
