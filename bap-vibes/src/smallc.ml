@@ -235,7 +235,7 @@ let is_temp (v : string) : bool =
   | _ -> true
 
 (* Translate a base type. *)
-let rec translate_type (t : Cabs.base_type) : typ transl = match t with
+let rec translate_type ?(msg : string = "") (t : Cabs.base_type) : typ transl = match t with
   | Cabs.BOOL -> Transl.return @@ INT (`r8, UNSIGNED)
   | Cabs.CHAR sign -> begin
       match sign with
@@ -257,7 +257,7 @@ let rec translate_type (t : Cabs.base_type) : typ transl = match t with
   | _ ->
     let s = Utils.print_c (Cprint.print_type ident) t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_type: unexpected type:\n\n%s" s)
+      sprintf "Smallc.translate_type: %sunexpected type:\n\n%s" msg s)
 
 (* Perform type conversions for pure expressions. *)
 let typ_unify (t1 : typ) (t2 : typ) : typ option =
@@ -432,6 +432,54 @@ and translate_expression ?(computation = false)
       | PTR _ ->
         let i = Word.of_int ~width:bits @@ bits lsr 3 in
         NOP, Some (CONST_INT (i, UNSIGNED))
+    end
+  | Cabs.TYPE_SIZEOF t ->
+    let s = Utils.print_c Cprint.print_base_type t in
+    let* t = translate_type t ~msg:(sprintf "In expression %s: " s) in
+    let+ {target; _} = Transl.get () in
+    let bits = Theory.Target.bits target in
+    let i = Word.of_int ~width:bits @@ size_of_typ target t in
+    NOP, Some (CONST_INT (i, UNSIGNED))
+  | Cabs.INDEX (ptr, idx) -> begin
+      let exp = translate_expression_strict "translate_expression (INDEX)" in
+      let* sptr, eptr = exp ptr in
+      let* sidx, eidx = exp idx in
+      let tptr = typeof eptr in
+      let tidx = typeof eidx in
+      match tptr, tidx with
+      | PTR t, INT _ ->
+        let+ {target; _} = Transl.get () in
+        let bits = Theory.Target.bits target in
+        let stride = size_of_typ target t lsr 3 in
+        let off = Word.of_int ~width:bits stride in
+        let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
+        let eidx = with_type eidx tidx in
+        let e =
+          UNARY (
+            MEMOF,
+            BINARY (
+              ADD,
+              CAST (tidx, eptr),
+              BINARY (
+                MUL,
+                CONST_INT (off, UNSIGNED),
+                eidx,
+                tidx),
+              tidx),
+            t) in
+        SEQUENCE (sptr, sidx), Some e
+      | PTR _, _ ->
+        let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ tidx in
+        Transl.fail @@ Core_c_error (
+          sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
+                   Expected integer.\n" s t)
+      | _, _ ->
+        let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ tptr in
+        Transl.fail @@ Core_c_error (
+          sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
+                   Expected pointer.\n" s t)
     end
   | _ ->
     let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in

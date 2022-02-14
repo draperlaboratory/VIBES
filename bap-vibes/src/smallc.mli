@@ -18,6 +18,9 @@ type typ =
   | INT of size * sign
   | PTR of typ
 
+(** Returns the size of the type in bits. *)
+val size_of_typ : Theory.target -> typ -> int
+
 (** Compares two types for equality. *)
 val equal_typ : typ -> typ -> bool
 
