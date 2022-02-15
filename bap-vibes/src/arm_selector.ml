@@ -912,8 +912,14 @@ struct
             Format.asprintf "select_exp: encountered variable %a of \
                              unknown type" Var.pp v))
       end
+    | Cast (UNSIGNED, _, e) -> select_exp e ~is_thumb ~branch ~lhs
+    | Cast (SIGNED, _, _) ->
+      Err.(fail @@ Other "select_exp: SIGNED Cast is unsupported!")
+    | Cast (LOW, _, _) ->
+      Err.(fail @@ Other "select_exp: LOW Cast is unsupported!")
+    | Cast (HIGH, _, _) ->
+      Err.(fail @@ Other "select_exp: HIGH Cast is unsupported!")
     | Int w -> KB.return @@ const w
-    | Cast (_, _, _) -> Err.(fail @@ Other "select_exp: Cast is unsupported!")
     | Let (_, _, _) -> Err.(fail @@ Other "select_exp: Let is unsupported!")
     | Unknown (_, _) -> Err.(fail @@ Other "select_exp: Unknown is unsupported!")
     | Ite (_, _, _) -> Err.(fail @@ Other "select_exp: Ite is unsupported!")
@@ -1158,8 +1164,6 @@ module Pretty = struct
     let open Result.Monad_infix in
     (* bl may have pseudo-arguments, so ignore them. *)
     let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
-    (* movt has a pseudo-argument at the beginning. *)
-    let rhs = if String.(op = "movt") then List.tl_exn rhs else rhs in
     (* conditional move may have pseudo-arguments at the end *)
     let rhs =
       if String.is_prefix op ~prefix:"mov" &&

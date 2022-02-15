@@ -322,9 +322,24 @@ module Eval(CT : Theory.Core) = struct
     | CONST_INT (w, _) ->
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
       T.Value.forget i
-    | CAST (_t, e) ->
-      (* TODO: acutally perform casts when necessary *)
-      aux e
+    | CAST (t, e) ->
+      let t' = Smallc.typeof e in
+      let sz = Smallc.size_of_typ info.tgt t in
+      let sz' = Smallc.size_of_typ info.tgt t' in
+      let* e = aux e in
+      if sz = sz' then !!e
+      else
+        let s = ty_of_base_type info t in
+        let s' = ty_of_base_type info t' in
+        let e = resort s' e in
+        let+ c =
+          (* XXX: Is this correct? Integral promotion rules are pretty
+             wacky. *)
+          if sz < sz' then CT.low s e
+          else match is_signed t, is_signed t' with
+            | SIGNED, SIGNED -> CT.signed s e
+            | UNSIGNED, _ | _, UNSIGNED -> CT.unsigned s e in
+        T.Value.forget c
 
   type 'a eff = 'a T.eff
 

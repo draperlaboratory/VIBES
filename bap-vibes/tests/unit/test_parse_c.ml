@@ -199,7 +199,13 @@ let test_load_short _ =
   assert_parse_eq
     "int x, y;
      x = * (short *) y;"
-    "{ x := mem[y, el]:u16 }"
+    "{ x := extend:32[mem[y, el]:u16] }"
+
+let test_load_ushort _ =
+  assert_parse_eq
+    "int x, y;
+     x = * (unsigned short *) y;"
+    "{ x := pad:32[mem[y, el]:u16] }"
 
 let suite = [
   "Test vardecls" >:: test_var_decl;
@@ -216,4 +222,5 @@ let suite = [
   "Test call args ret store" >:: test_call_args_ret_store;
   "Test call args addrof" >:: test_call_args_addrof;
   "Test load short" >:: test_load_short;
+  "Test load unsigned short" >:: test_load_ushort;
 ]
