@@ -692,22 +692,27 @@ and translate_binary_operator
   | Cabs.GE -> default GE
   | Cabs.ASSIGN -> begin
       let* s1, e1 = exp lhs in
-      let t1 = typeof e1 in
       let* s2, e2 = exp rhs in
       let t2 = typeof e2 in
+      let* t1, is_store = match e1 with
+        | VARIABLE (_, t) -> Transl.return (t, false)
+        | UNARY (MEMOF, _, t) -> Transl.return (t, true)
+        | _ ->
+          let s = Utils.print_c (fun e -> Cprint.print_expression e 0) lhs in
+          Transl.fail @@ Core_c_error (
+            sprintf "Csmall.translate_binary_operator: expected an l-value \
+                     for LHS of assignment, got:\n\n%s\n" s) in
       match typ_unify_assign t1 t2 e2 with
-      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some (t, e2) ->
-        let+ s = match e1 with
-          | VARIABLE var -> Transl.return @@ ASSIGN (var, e2)
-          | UNARY (MEMOF, addr, _) -> Transl.return @@ STORE (addr, e2)
-          | _ ->
-            let s = Utils.print_c (fun e -> Cprint.print_expression e 0) lhs in
-            Transl.fail @@ Core_c_error (
-              sprintf "Csmall.translate_binary_operator: expected an l-value \
-                       for LHS of assignment, got:\n\n%s\n" s) in
+      | None ->
+        let t1 = if is_store then PTR t1 else t1 in
+        typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+      | Some (_, e2) ->
+        let s = match e1 with
+          | VARIABLE var -> ASSIGN (var, e2)
+          | UNARY (MEMOF, addr, _) -> STORE (addr, e2)
+          | _ -> assert false in
         (* Order of evaluation is right-to-left. *)
-        SEQUENCE (s2, SEQUENCE (s1, s)), Some e1
+        Transl.return (SEQUENCE (s2, SEQUENCE (s1, s)), Some e1)
     end
   | _ -> Transl.fail @@ Other "unimpl"
 
