@@ -333,12 +333,14 @@ module Eval(CT : Theory.Core) = struct
         let s' = ty_of_base_type info t' in
         let e = resort s' e in
         let+ c =
-          (* XXX: Is this correct? Integral promotion rules are pretty
-             wacky. *)
+          (* No extension, just grab the lower bits. *)
           if sz < sz' then CT.low s e
-          else match is_signed t, is_signed t' with
-            | SIGNED, SIGNED -> CT.signed s e
-            | UNSIGNED, _ | _, UNSIGNED -> CT.unsigned s e in
+          else (* Apply the integral promotion rules. *)
+            match is_signed t, is_signed t' with
+            | SIGNED,   SIGNED   -> CT.signed   s e
+            | SIGNED,   UNSIGNED -> CT.unsigned s e
+            | UNSIGNED, SIGNED   -> CT.signed   s e
+            | UNSIGNED, UNSIGNED -> CT.unsigned s e in
         T.Value.forget c
 
   type 'a eff = 'a T.eff
