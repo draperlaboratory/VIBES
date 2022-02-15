@@ -943,10 +943,11 @@ and prop_stmt : stmt -> stmt prop = function
     let* sf = prop_stmt sf in
     let* {prop = pf; _} = Prop.get () in
     (* However, we can merge them if we know that the results will be the
-       same. *)
-    let prop = Map.merge pt pf ~f:(fun ~key:_ -> function
+       same (and the variable is within scope). *)
+    let prop = Map.merge pt pf ~f:(fun ~key -> function
         | `Left _ | `Right _ -> None
-        | `Both (e1, e2) -> Option.some_if (equal_exp e1 e2) e1) in
+        | `Both (e1, e2) when Map.mem prop key && equal_exp e1 e2 -> Some e1
+        | `Both _ -> None) in
     let+ () = Prop.update @@ fun env -> {env with prop} in
     IF (cond, st, sf)
   | GOTO _ as s -> Prop.return s
