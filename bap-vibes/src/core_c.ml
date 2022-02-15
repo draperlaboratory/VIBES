@@ -322,26 +322,9 @@ module Eval(CT : Theory.Core) = struct
     | CONST_INT (w, _) ->
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
       T.Value.forget i
-    (* FIXME: for now, casts are simply for tagging subterms *)
-    | CAST (t, e) ->
-      let s = ty_of_base_type info t in
-      let size = Smallc.size_of_typ info.tgt t in
-      let sign = Smallc.sign_of_typ t in
-      let t' = Smallc.typeof e in
-      let s' = ty_of_base_type info t' in
-      let size' = Smallc.size_of_typ info.tgt t' in
-      let* e = aux e in
-      if size = size' then !!e
-      else
-        let e = T.Value.resort (fun _ -> Some s') e |> Option.value_exn in
-        let* e =
-          if size < size' then CT.low s !!e
-          else
-            let signed = match sign with
-              | Smallc.SIGNED -> CT.b1
-              | _ -> CT.b0 in
-            CT.cast s signed !!e in
-        KB.return @@ T.Value.forget e
+    | CAST (_t, e) ->
+      (* TODO: acutally perform casts when necessary *)
+      aux e
 
   type 'a eff = 'a T.eff
 

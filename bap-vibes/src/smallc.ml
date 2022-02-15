@@ -511,20 +511,20 @@ and translate_expression
             t) in
         SEQUENCE (sptr, sidx), Some e
       | PTR _, _ ->
-        let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
         let t = string_of_typ tidx in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
                    Expected integer.\n" s t)
       | _, _ ->
-        let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
         let t = string_of_typ tptr in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
                    Expected pointer.\n" s t)
     end
   | _ ->
-    let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_expression: unsupported:\n\n%s\n" s)
 
@@ -568,8 +568,8 @@ and translate_unary_operator
       | PTR t -> Transl.return (s, Some (UNARY (MEMOF, e', t)))
       | _ ->
         let s =
-          Utils.print_c (fun e -> Cprint.print_expression e 0)
-            Cabs.(UNARY (u, e)) in
+          Utils.print_c Cprint.print_statement
+            Cabs.(COMPUTATION (UNARY (u, e))) in
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_unary_operator: expected pointer type \
                    for operand of expression:\n\n%s\n" s)
@@ -581,8 +581,8 @@ and translate_unary_operator
         Transl.return (s, Some (UNARY (ADDROF, e', PTR t)))
       | _ ->
         let s =
-          Utils.print_c (fun e -> Cprint.print_expression e 0)
-            Cabs.(UNARY (u, e)) in
+          Utils.print_c Cprint.print_statement
+            Cabs.(COMPUTATION (UNARY (u, e))) in
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_unary_operator: ADDROF requires lvalue \
                    for operand, got:\n\n%s\n" s)
@@ -906,15 +906,14 @@ and prop_stmt : stmt -> stmt prop = function
   | BLOCK (tenv, s) ->
     let+ s = prop_stmt s in
     BLOCK (tenv, s)
-  | ASSIGN ((v, t), e) as s -> begin
-      let* {target; _} = Prop.get () in
+  | ASSIGN ((v, t), e) -> begin
+      let* e = prop_exp e in
       match e with
-      (* We say an assignment is "simple" enough to be propagated if
-         it is a constant or another variable. *)
-      | VARIABLE _ | CONST_INT _ ->
+      | VARIABLE v' when equal_var (v, t) v' -> Prop.return NOP
+      | _ when Theory.Var.is_virtual v ->
         let+ () = Prop.(update @@ Env.insert e @@ Theory.Var.name v) in
         NOP
-      | _ -> Prop.return s
+      | _ -> Prop.return @@ ASSIGN ((v, t), e)
     end
   | CALL (f, args) ->
     let* f = prop_exp f in

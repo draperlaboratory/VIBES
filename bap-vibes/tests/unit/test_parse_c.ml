@@ -33,8 +33,12 @@ let eff_to_str sem =
   Format.asprintf "%a" Bil.pp sem |>
   String.filter ~f:(fun c -> not Char.(c = '\"'))
 
+let virtual_regex = Str.regexp "\(#\)\([0-9]+\)"
+
 let compare_sem sem str =
-  let strip s = String.filter s ~f:(Fn.non Char.is_whitespace) in
+  let strip s =
+    String.filter s ~f:(Fn.non Char.is_whitespace) |>
+    Str.global_replace virtual_regex "\1" in
   String.equal (strip sem) (strip str)
 
 let assert_parse_eq ?(hvars = []) s1 s2 =
@@ -90,16 +94,16 @@ let test_fallthrough _ =
 
 let test_array _ =
   assert_parse_eq
-    "int a, y; y = a[7];"
-    "{ y := mem[a + 7, el]:u32 }"
+    "int* a, y; y = a[7];"
+    "{ y := mem[a + 0x1C, el]:u32 }"
 
 let test_compound _ =
   assert_parse_eq
-    "int x, y, z;
+    "int x, *y, z;
      char q;
      x = 0x7;
      x = *y;
-     if((signed int)x > (signed int)0){
+     if(x > 0){
        goto fred;
      } else {
        goto larry;
@@ -167,7 +171,8 @@ let test_call_args_ret_store _ =
        R1 := b
        R2 := c
        call(f)
-       mem := mem with [d, el]:u32 <- R0
+       # := R0
+       mem := mem with [d, el]:u32 <- #
      }"
 
 let test_call_args_addrof _ =
@@ -179,7 +184,7 @@ let test_call_args_addrof _ =
                       Bap.Std.Word.of_int ~width:32 8));
     ] in
   assert_parse_eq ~hvars
-    "int a, b, c, d, f;
+    "int a, b, *c, d, f;
      f(a, b, &c);
      d = *c;"
     "{
