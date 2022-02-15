@@ -903,6 +903,8 @@ and prop_stmt : stmt -> stmt prop = function
   | ASSIGN ((v, t), e) as s -> begin
       let* {target; _} = Prop.get () in
       match e with
+      (* We say an assignment is "simple" enough to be propagated if
+         it is a constant or another variable. *)
       | VARIABLE _ | CONST_INT _ ->
         let+ () = Prop.(update @@ Env.insert e @@ Theory.Var.name v) in
         NOP
