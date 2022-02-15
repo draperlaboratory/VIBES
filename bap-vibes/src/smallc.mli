@@ -21,6 +21,9 @@ type typ =
 (** Returns the size of the type in bits. *)
 val size_of_typ : Theory.target -> typ -> int
 
+(** Returns the signedness of the type. *)
+val sign_of_typ : typ -> sign
+
 (** Compares two types for equality. *)
 val equal_typ : typ -> typ -> bool
 
@@ -48,7 +51,6 @@ type binop =
     are allowed. *)
 type unop =
   | MINUS
-  | NOT
   | LNOT
   | MEMOF
   | ADDROF
@@ -85,6 +87,9 @@ and body = tenv * stmt
 
 (** A SmallC definition is a scoped statement. *)
 type t = body
+
+(** Returns the type embedded in an expression. *)
+val typeof : exp -> typ
 
 (** Returns [true] if the variable name is one generated during
     elaboration. *)

@@ -21,6 +21,22 @@ let size_of_typ (target : Theory.target) : typ -> int = function
   | INT (size, _) -> Size.in_bits size
   | PTR _ -> Theory.Target.bits target
 
+let sign_of_typ : typ -> sign = function
+  | INT (_, s) -> s
+  | PTR _ -> UNSIGNED
+
+let rec string_of_typ : typ -> string = function
+  | INT (`r8, SIGNED)    -> "char"
+  | INT (`r8, UNSIGNED)  -> "unsigned char"
+  | INT (`r16, SIGNED)   -> "short"
+  | INT (`r16, UNSIGNED) -> "unsigned short"
+  | INT (`r32, SIGNED)   -> "int"
+  | INT (`r32, UNSIGNED) -> "unsigned int"
+  | INT (`r64, SIGNED)   -> "long long"
+  | INT (`r64, UNSIGNED) -> "unsigned long long"
+  | INT _                -> assert false
+  | PTR t                -> sprintf "%s*" @@ string_of_typ t
+
 type binop =
   | ADD
   | SUB
@@ -41,7 +57,6 @@ type binop =
 
 type unop =
   | MINUS
-  | NOT
   | LNOT
   | MEMOF
   | ADDROF
@@ -77,7 +92,6 @@ type t = body
 
 let cabs_of_unop : unop -> Cabs.unary_operator = function
   | MINUS  -> Cabs.MINUS
-  | NOT    -> Cabs.NOT
   | LNOT   -> Cabs.BNOT
   | MEMOF  -> Cabs.MEMOF
   | ADDROF -> Cabs.ADDROF
@@ -159,8 +173,7 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
 let to_string ((tenv, s) : t) : string =
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
-        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t in
-        sprintf "%s %s;" t v) |>
+        sprintf "%s %s;" (string_of_typ t) v) |>
     String.concat ~sep:"\n" in
   let stmt = Utils.print_c Cprint.print_statement @@ cabs_of_stmt s in
   sprintf "%s\n%s" vars stmt
@@ -222,12 +235,12 @@ open Transl.Let
 
 type 'a transl = 'a Transl.t
 
-(* We can't construct the Top sort directly, so this is a workaround. *)
-let var_sort = Theory.Value.Sort.(forget @@ int 42)
-
 (* Create a fresh temporary variable. *)
 let new_tmp (t : typ) : var transl =
-  let* v = Transl.lift @@ Theory.Var.fresh var_sort in
+  let* {target; _} = Transl.get () in
+  let s = Theory.Bitv.define @@ size_of_typ target t in
+  let* v = Transl.lift @@ Theory.Var.fresh s in
+  let v = Theory.Var.forget v in
   let+ () = Transl.update @@ fun env -> {
       env with tenv = Map.set env.tenv ~key:(Theory.Var.name v) ~data:t;
     } in
@@ -291,7 +304,7 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
 
 (* Translate a scoped statement. *)
 let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
-  let* {tenv; _} = Transl.get () in
+  let* {target; tenv} = Transl.get () in
   let* new_tenv, inits =
     Transl.List.fold defs ~init:(tenv, [])
       ~f:(fun (tenv, inits) -> function
@@ -299,8 +312,9 @@ let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
             Transl.List.fold names ~init:(tenv, inits)
               ~f:(fun (tenv, inits) (v, t, _, e) ->
                   let+ t = translate_type t in
+                  let s = Theory.Bitv.define @@ size_of_typ target t in
                   let tenv = Map.set tenv ~key:v ~data:t in
-                  let v = Theory.Var.define var_sort v in
+                  let v = Theory.Var.define s v |> Theory.Var.forget in
                   tenv, ((v, t), e) :: inits)
           | def ->
             let s = Utils.print_c Cprint.print_def def in
@@ -323,14 +337,14 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
 
 and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
   let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
-  let s1 = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t1 in
-  let s2 = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t2 in
+  let s1 = string_of_typ t1 in
+  let s2 = string_of_typ t2 in
   Transl.fail @@ Core_c_error (
     sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
 and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
   let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
-  let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ t in
+  let t = string_of_typ t in
   Transl.fail @@ Core_c_error (
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
@@ -417,15 +431,17 @@ and translate_expression ?(computation = false)
     let i = Word.signed i in
     Transl.return (NOP, Some (CONST_INT (i, SIGNED)))
   | Cabs.VARIABLE _ when computation -> Transl.return (NOP, None)
-  | Cabs.VARIABLE s -> begin
-      let* t = Transl.(gets @@ Env.typeof s) in
+  | Cabs.VARIABLE v -> begin
+      let* t = Transl.(gets @@ Env.typeof v) in
       match t with
       | Some t ->
-        let s = Theory.Var.define var_sort s in
-        Transl.return (NOP, Some (VARIABLE (s, t)))
+        let+ {target; _} = Transl.get () in
+        let s = Theory.Bitv.define @@ size_of_typ target t in
+        let v = Theory.Var.define s v |> Theory.Var.forget in
+        NOP, Some (VARIABLE (v, t))
       | None ->
         Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_expression: undeclared variable %s\n" s)
+          sprintf "Smallc.translate_expression: undeclared variable %s\n" v)
     end
   | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None)
   | Cabs.EXPR_SIZEOF e -> begin
@@ -478,13 +494,13 @@ and translate_expression ?(computation = false)
         SEQUENCE (sptr, sidx), Some e
       | PTR _, _ ->
         let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
-        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ tidx in
+        let t = string_of_typ tidx in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
                    Expected integer.\n" s t)
       | _, _ ->
         let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
-        let t = Utils.print_c Cprint.print_base_type @@ cabs_of_typ tptr in
+        let t = string_of_typ tptr in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
                    Expected pointer.\n" s t)
@@ -518,8 +534,11 @@ and translate_unary_operator
     let+ s, e = exp e in
     s, Some e
   | Cabs.NOT ->
-    let+ s, e = exp e in
-    s, Some (UNARY (NOT, e, typeof e))
+    let* s, e = exp e in
+    let+ {target; _} = Transl.get () in
+    let width = size_of_typ target @@ typeof e in
+    let i = Word.zero width in
+    s, Some (BINARY (NE, e, CONST_INT (i, UNSIGNED),typeof e))
   | Cabs.BNOT ->
     let+ s, e = exp e in
     s, Some (UNARY (LNOT, e, typeof e))

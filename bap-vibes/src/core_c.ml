@@ -68,7 +68,6 @@
 open Core_kernel
 open Bap_core_theory
 open Bap.Std
-open Cabs
 open KB.Let
 
 module Hvar = Higher_var
@@ -118,8 +117,9 @@ module Eval(CT : Theory.Core) = struct
     let sort = T.Var.sort v in
     let v = Substituter.mark_reg @@ Var.reify v in
     T.Var.create sort @@ Var.ident v
-  
-  let mk_interp_info (hvars : Hvar.t list)
+
+  let mk_interp_info
+      (hvars : Hvar.t list)
       (tgt : T.target) : ('a, 'b) interp_info KB.t =
     let bits = T.Target.bits tgt in
     let word_sort = T.Bitv.define bits in
@@ -148,32 +148,30 @@ module Eval(CT : Theory.Core) = struct
   let long_ty = T.Bitv.define 32
   let long_long_ty = T.Bitv.define 64
 
-  let ty_of_base_type info (c_ty : base_type) : _ T.Bitv.t T.Value.sort =
+  let ty_of_base_type
+      (info : _ interp_info)
+      (c_ty : Smallc.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
-    | CHAR _ -> char_ty
-    | INT (SHORT, _) -> short_ty
-    | INT (LONG, _) -> long_ty
-    | INT (LONG_LONG, _) -> long_long_ty
-    | _ -> info.word_sort
+    | INT (`r8, _) -> char_ty
+    | INT (`r16, _) -> short_ty
+    | INT (`r32, _) -> long_ty
+    | INT (`r64, _) -> long_long_ty
+    | INT _ -> assert false
+    | PTR _ -> info.word_sort
 
-  let ty_op_pointer_type info (c_ty : base_type) : _ T.Bitv.t T.Value.sort =
+  let ty_op_pointer_type
+      (info : _ interp_info)
+      (c_ty : Smallc.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
     | PTR ty -> ty_of_base_type info ty
     | _ -> info.word_sort
 
-  (* TODO: we'll need to pass around some additional info here. *)
-  let infer (exp : expression) : base_type =
-    match exp with
-    | CAST (ty, _) -> ty
-    | _ -> NO_TYPE
-
-  let is_signed (ty : base_type) : sign =
+  let is_signed (ty : Smallc.typ) : Smallc.sign =
     match ty with
-    | CHAR s -> s
     | INT (_, s) -> s
-    | _ -> NO_SIGN
+    | PTR _ -> UNSIGNED
 
-  let resort sort v =
+  let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
     T.Value.resort (fun _ -> Some sort) v
     |> Option.value_exn ~message:error
@@ -181,224 +179,183 @@ module Eval(CT : Theory.Core) = struct
 
   type 'a pure = 'a T.pure
 
-  let binop_to_pure info (op : Cabs.binary_operator)
-      (ty_a : base_type)
-      (ty_b : base_type)
-    : unit pure -> unit pure -> unit pure =
-    let lift_binop op sort_a sort_b (a : unit pure) (b : unit pure) : unit pure =
-      let* a = a in
-      let* b = b in
-      let* res = op (resort sort_a a) (resort sort_b b) in
-      KB.return @@ T.Value.forget res
-    in
-    let lift_bitv op = lift_binop op info.word_sort info.word_sort in
+  let lift_binop
+      (op : 'a T.value KB.t -> 'b T.value KB.t -> 'c T.value KB.t)
+      (sort_a : 'a T.Value.sort)
+      (sort_b : 'b T.Value.sort)
+      (a : unit pure)
+      (b : unit pure) : unit pure =
+    let* a = a in
+    let* b = b in
+    let* res = op (resort sort_a a) (resort sort_b b) in
+    KB.return @@ T.Value.forget res
+
+  let binop_to_pure
+      (info : _ interp_info)
+      (op : Smallc.binop)
+      (ty_a : Smallc.typ)
+      (ty_b : Smallc.typ) : unit pure -> unit pure -> unit pure =
+    let lift_bitv op =
+      lift_binop op
+        (ty_of_base_type info ty_a)
+        (ty_of_base_type info ty_b) in
     match op with
     | ADD -> lift_bitv CT.add
     | SUB -> lift_bitv CT.sub
     | MUL -> lift_bitv CT.mul
-    | DIV -> lift_bitv CT.div
+    | DIV -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.sdiv
+        | UNSIGNED -> lift_bitv CT.div
+      end
+    | MOD -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.smodulo
+        | UNSIGNED -> lift_bitv CT.modulo
+      end
+    | LAND -> lift_bitv CT.logand
+    | LOR -> lift_bitv CT.logor
+    | XOR -> lift_bitv CT.logxor
     | SHL -> lift_bitv CT.lshift
     (* Use arithmetic shift by default *)
-    | SHR  ->
-      begin
+    | SHR  -> begin
         match is_signed ty_a with
         | SIGNED -> lift_bitv CT.arshift
         | UNSIGNED -> lift_bitv CT.rshift
-        | NO_SIGN -> fun _ _ ->
-          Err.fail @@ Err.Core_c_error
-            "binop_to_pure: argument must be explicitely cast \
-             to a signed or unsigned type!"
       end
     | EQ  -> lift_bitv CT.eq
     | NE  -> lift_bitv CT.neq
     (* FIXME: use unsigned by default? *)
-    | LT  ->
-      begin
-        match is_signed ty_a, is_signed ty_b with
-        | SIGNED, SIGNED -> lift_bitv CT.slt
-        | UNSIGNED, UNSIGNED -> lift_bitv CT.ult
-        | _ -> fun _ _ ->
-          Err.fail @@ Err.Core_c_error
-            "binop_to_pure: arguments must be explicitely cast \
-             to equal signed or unsigned types!"
+    | LT -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.slt
+        | UNSIGNED -> lift_bitv CT.ult
       end
-    | GT  ->
-      begin
-        match is_signed ty_a, is_signed ty_b with
-        | SIGNED, SIGNED -> lift_bitv CT.sgt
-        | UNSIGNED, UNSIGNED -> lift_bitv CT.ugt
-        | _ -> fun _ _ ->
-          Err.fail @@ Err.Core_c_error
-            "binop_to_pure: arguments must be explicitely cast \
-             to equal signed or unsigned types!"
+    | GT -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.sgt
+        | UNSIGNED -> lift_bitv CT.ugt
       end
-    | LE  ->
-      begin
-        match is_signed ty_a, is_signed ty_b with
-        | SIGNED, SIGNED -> lift_bitv CT.sle
-        | UNSIGNED, UNSIGNED -> lift_bitv CT.ule
-        | _ -> fun _ _ ->
-          Err.fail @@ Err.Core_c_error
-            "binop_to_pure: arguments must be explicitely cast \
-             to equal signed or unsigned types!"
+    | LE -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.sle
+        | UNSIGNED -> lift_bitv CT.ule
       end
-    | GE  ->
-      begin
-        match is_signed ty_a, is_signed ty_b with
-        | SIGNED, SIGNED -> lift_bitv CT.sge
-        | UNSIGNED, UNSIGNED -> lift_bitv CT.uge
-        | _ -> fun _ _ ->
-          Err.fail @@ Err.Core_c_error
-            "binop_to_pure: arguments must be explicitely cast \
-             to equal signed or unsigned types!"
+    | GE -> begin
+        match is_signed ty_a with
+        | SIGNED -> lift_bitv CT.sge
+        | UNSIGNED -> lift_bitv CT.uge
       end
-    | AND
-    | OR
-    | MOD
-    | BAND
-    | BOR
-    | XOR
-    | ADD_ASSIGN
-    | SUB_ASSIGN
-    | MUL_ASSIGN
-    | DIV_ASSIGN
-    | MOD_ASSIGN
-    | BAND_ASSIGN
-    | BOR_ASSIGN
-    | XOR_ASSIGN
-    | SHL_ASSIGN
-    | SHR_ASSIGN
-    | ASSIGN
-      -> fun _ _ ->
-        Err.fail @@
-        Err.Core_c_error "binop_to_pure: binary operator unsupported by VIBES"
 
   type 'a bitv = 'a T.bitv
 
-  let unop_to_pure info (op : Cabs.unary_operator)
-      (ty : base_type)
-    : unit pure -> unit pure =
-    let lift_uop op sort_a (a : unit pure) : unit pure =
-      let* a = a in
-      let* res = op (resort sort_a a) in
-      KB.return @@ T.Value.forget res
-    in
+  let lift_uop
+      (op : 'a T.value KB.t -> 'b T.value KB.t)
+      (sort_a : 'a T.Value.sort)
+      (a : unit pure) : unit pure =
+    let* a = a in
+    let* res = op (resort sort_a a) in
+    KB.return @@ T.Value.forget res
+
+  let unop_to_pure info
+      (op : Smallc.unop)
+      (ty : Smallc.typ) : unit pure -> unit pure =
     let lift_bitv op = lift_uop op info.word_sort in
     match op with
+    | MINUS -> lift_bitv CT.neg
+    | LNOT -> lift_bitv CT.not
     | MEMOF ->
-      (* FIXME: use endianness here *)
       let ty = ty_op_pointer_type info ty in
       let load : _ bitv -> _ bitv =
         CT.(loadw ty !!(info.endian) (var info.mem_var)) in
       lift_bitv load
-    | ADDROF
-    | MINUS
-    | PLUS
-    | NOT
-    | BNOT
-    | PREINCR
-    | PREDECR
-    | POSINCR
-    | POSDECR
-      -> fun _ ->
-        Err.fail @@
-        Err.Core_c_error "unop_to_pure: unary operator unsupported by VIBES"
+    | ADDROF -> fun _ -> 
+      Err.fail @@ Core_c_error "unop_to_pure: ADDROF unsupported by VIBES"
 
-  let constant_to_pure info (c :Cabs.constant) : unit pure =
-    match c with
-    | CONST_INT s ->
-      let* res = CT.int info.word_sort Bitvec.(!$ s) in
-      KB.return @@ T.Value.forget res
-    | CONST_FLOAT _
-    | CONST_CHAR _
-    | CONST_STRING _
-    | CONST_COMPOUND _ ->
-      Err.fail @@
-      Err.Core_c_error "constant_to_pure: constant unsupported by VIBES"
-
-  let addr_of_var info (v : string)  : unit pure =
+  let addr_of_var info (v : string) : unit pure =
     match Hvar.find v info.hvars with
     | None -> Err.fail @@ Err.Core_c_error
         (sprintf "addr_of_var: missing higher var %s for ADDROF expression, \
                   storage classification is required" v)
     | Some hvar -> match Hvar.value hvar with
       | Hvar.Storage {at_entry; _} -> begin
-        match at_entry with
-        | Hvar.(Memory (Frame (reg, off))) ->
-          let* reg = try KB.return @@ Substituter.mark_reg_exn info.tgt reg with
-            | Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
-                (sprintf "addr_of_var: substitution failed: %s" msg) in
-          let reg =
-            T.Var.create info.word_sort @@
-            T.Var.Ident.of_string @@
-            Var.name reg in
-          let+ a =
-            CT.add (CT.var reg)
-              (CT.int info.word_sort (Word.to_bitvec off)) in
-          T.Value.forget a
-        | Hvar.(Memory (Global addr)) ->
-          let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
-          T.Value.forget a
-        | _ -> Err.fail @@ Err.Core_c_error
-            (sprintf "addr_of_var: higher var %s for ADDROF expression is \
-                      not stored in a memory location." v)
-      end
+          match at_entry with
+          | Hvar.(Memory (Frame (reg, off))) ->
+            let* reg = try KB.return @@ Substituter.mark_reg_exn info.tgt reg with
+              | Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
+                  (sprintf "addr_of_var: substitution failed: %s" msg) in
+            let reg =
+              T.Var.create info.word_sort @@
+              T.Var.Ident.of_string @@
+              Var.name reg in
+            let+ a =
+              CT.add (CT.var reg)
+                (CT.int info.word_sort (Word.to_bitvec off)) in
+            T.Value.forget a
+          | Hvar.(Memory (Global addr)) ->
+            let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
+            T.Value.forget a
+          | _ -> Err.fail @@ Err.Core_c_error
+              (sprintf "addr_of_var: higher var %s for ADDROF expression is \
+                        not stored in a memory location." v)
+        end
       | _ -> Err.fail @@ Err.Core_c_error
           (sprintf "addr_of_var: higher var %s for ADDROF expression has no \
                     storage classifier." v)
 
-
-  let expr_to_pure info (e : Cabs.expression) (var_map : var_map) : unit pure =
-    let rec aux e =
-      match e with
-      | UNARY (ADDROF, VARIABLE v) -> addr_of_var info v
-      | UNARY (ADDROF, UNARY (MEMOF, a)) -> aux a
-      | UNARY (op, a) ->
-        let ty_a = infer a in
-        let* a = aux a in
-        unop_to_pure info op ty_a !!a
-      | BINARY (op, a, b) ->
-        let ty_a = infer a in
-        let ty_b = infer b in
-        let* a = aux a in
-        let* b = aux b in
-        binop_to_pure info op ty_a ty_b !!a !!b
-      | INDEX (a, i) ->
-        (* Some minor hackery here: turn a[i] into *(a + i) *)
-        let index_exp = UNARY (MEMOF, BINARY (ADD, a, i)) in
-        aux index_exp
-      | VARIABLE x ->
-        let* v = match String.Map.find var_map x with
-          | Some v -> !!v
-          | None -> Err.(fail @@ Other (
-              sprintf "Core_c.expr_to_pure: var %s was not declared" x)) in
-        let* vv = CT.var v in
-        !!vv
-      | CONSTANT c ->
-        constant_to_pure info c
-      (* FIXME: for now, casts are simply for tagging subterms *)
-      | CAST (_, e) -> aux e
-      | _ ->
-        let e_str = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
-        let msg =
-          Format.sprintf "FrontC produced expression unsuppored by VIBES: %s"
-            e_str in
-        Err.fail @@ Err.Core_c_error msg
-    in
-    aux e
+  let rec expr_to_pure
+      (info : _ interp_info)
+      (e : Smallc.exp) : unit pure =
+    let aux = expr_to_pure info in
+    match e with
+    | UNARY (ADDROF, VARIABLE (v, _), _) -> addr_of_var info @@ T.Var.name v
+    | UNARY (ADDROF, UNARY (MEMOF, a, _), _) -> aux a
+    | UNARY (op, a, _) ->
+      let ty_a = Smallc.typeof a in
+      let* a = aux a in
+      unop_to_pure info op ty_a !!a
+    | BINARY (op, a, b, _) ->
+      let ty_a = Smallc.typeof a in
+      let ty_b = Smallc.typeof b in
+      let* a = aux a in
+      let* b = aux b in
+      binop_to_pure info op ty_a ty_b !!a !!b
+    | VARIABLE (v, _) -> CT.var v
+    | CONST_INT (w, _) ->
+      let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
+      T.Value.forget i
+    (* FIXME: for now, casts are simply for tagging subterms *)
+    | CAST (t, e) ->
+      let s = ty_of_base_type info t in
+      let size = Smallc.size_of_typ info.tgt t in
+      let sign = Smallc.sign_of_typ t in
+      let t' = Smallc.typeof e in
+      let s' = ty_of_base_type info t' in
+      let size' = Smallc.size_of_typ info.tgt t' in
+      let* e = aux e in
+      if size = size' then !!e
+      else
+        let e = T.Value.resort (fun _ -> Some s') e |> Option.value_exn in
+        let* e =
+          if size < size' then CT.low s !!e
+          else
+            let signed = match sign with
+              | Smallc.SIGNED -> CT.b1
+              | _ -> CT.b0 in
+            CT.cast s signed !!e in
+        KB.return @@ T.Value.forget e
 
   type 'a eff = 'a T.eff
 
   let empty_data = T.Effect.empty (T.Effect.Sort.data "C_NOP")
 
-  let assign_args info (var_map : var_map)
-      (args : Cabs.expression list) : (T.data eff * var list) KB.t =
-    let* args =
-      KB.List.map args ~f:(fun e -> KB.return @@ expr_to_pure info e var_map) in
+  let assign_args
+      (info : _ interp_info)
+      (args : unit T.value list) : (T.data eff * var list) KB.t =
     try
       List.mapi args ~f:(fun i a ->
           let r = List.nth_exn info.arg_vars i in
-          CT.set r a, Var.reify r)
+          CT.set r !!a, Var.reify r)
       |> KB.List.fold_right ~init:(!!empty_data, [])
         ~f:(fun (assn, r) (acc_eff, acc_args) ->
             KB.return (CT.seq assn acc_eff, r :: acc_args))
@@ -416,145 +373,101 @@ module Eval(CT : Theory.Core) = struct
     let* dst = T.Label.fresh in
     let* () = KB.provide T.Label.addr dst @@ Some addr in
     !!dst
-  
-  let stmt_to_eff info (s : Cabs.statement) var_map : unit eff =
-    let empty_ctrl = T.Effect.empty T.Effect.Sort.fall in
-    let* empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl in
-    let data d = CT.blk T.Label.null !!d !!empty_ctrl in
-    let ctrl c = CT.blk T.Label.null !!empty_data !!c in
-    let find_var v = match String.Map.find var_map v with
-      | Some v -> !!v
-      | None -> Err.(fail @@ Other (
-          sprintf "Core_c.stmt_to_eff: var %s was not declared" v)) in
-    let rec aux s : unit eff =
-      match s with
-      | NOP ->
-        KB.return empty_blk
-      (* FIXME: handle all "assignment-like" operations in a seperate function *)
-      | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, CALL (VARIABLE f, args))) ->
-        let* arg_assignments, args = assign_args info var_map args in
-        let* lval = find_var lval in
-        let* dst = call_dst_with_name f in
-        let* () = provide_args dst args in
-        let* () = declare_call dst in
-        let* call = CT.goto dst in
-        let* call_blk =
-          CT.blk T.Label.null arg_assignments !!call in
-        let* retval = CT.set lval @@ CT.var info.ret_var in
-        let* post_blk = data retval in
-        CT.seq !!call_blk !!post_blk
-      | COMPUTATION (BINARY (ASSIGN, UNARY (MEMOF, VARIABLE lval), CALL (VARIABLE f, args))) ->
-        let* arg_assignments, args = assign_args info var_map args in
-        let* lval = find_var lval in
-        let* dst = call_dst_with_name f in
-        let* () = provide_args dst args in
-        let* () = declare_call dst in
-        let* call = CT.goto dst in
-        let* call_blk =
-          CT.blk T.Label.null arg_assignments !!call in
-        (* XXX: maybe look at the type instead of defaulting to the word_sort *)
-        let* retval =
-          CT.(set info.mem_var
-                (storew !!(info.endian) (var info.mem_var)
-                   (var (T.Var.resort lval info.word_sort))
-                   (var (T.Var.resort info.ret_var info.word_sort)))) in
-        let* post_blk = data retval in
-        CT.seq !!call_blk !!post_blk
-      | COMPUTATION (BINARY (ASSIGN, VARIABLE lval, rval)) ->
-        let* lval = find_var lval in
-        let* rval = expr_to_pure info rval var_map in
-        let* assign = CT.set lval !!rval in
-        data assign
-      (* FIXME: handle general calls with arguments *)
-      (* FIXME: should we allow calls to concrete addresses?
-         In that case, we need a new concrete syntax for jumps.
-      *)
-      | COMPUTATION (CALL (CONSTANT(CONST_INT s), args)) ->
-        let* arg_assignments, args = assign_args info var_map args in
-        let* dst = call_dst_with_addr Bitvec.(!$s) in
-        let* () = provide_args dst args in
-        let* () = declare_call dst in
-        let* call = CT.goto dst in
-        let* call_blk = CT.blk T.Label.null arg_assignments !!call in
-        !!call_blk
-      | COMPUTATION (CALL (VARIABLE f, args)) ->
-        let* arg_assignments, args = assign_args info var_map args in
-        let* dst = call_dst_with_name f in
-        let* () = provide_args dst args in
-        let* () = declare_call dst in
-        let* call = CT.goto dst in
-        let* call_blk = CT.blk T.Label.null arg_assignments !!call in
-        !!call_blk
-      | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
-        let label = String.(chop_prefix_exn ~prefix:"L_" label) in
-        let dst = CT.int info.word_sort Bitvec.(!$ label) in
-        let* jmp = CT.jmp dst in
-        ctrl jmp
-      | GOTO label ->
-        let label = T.Label.for_name label in
-        let* goto = KB.(label >>= CT.goto) in
-        ctrl goto
-      | IF (c, true_br, false_br) ->
-        let c = expr_to_pure info c var_map in
-        (* Downcast [c] to Bool.t *)
-        let c = KB.map c
-            ~f:(fun c ->
-                T.Value.resort (fun _ -> Some T.Bool.t) c
-                |> Option.value_exn)
-        in
-        let* true_eff = aux true_br in
-        let* false_eff = aux false_br in
-        let* branch = CT.branch c !!true_eff !!false_eff in
-        KB.return branch
-      | SEQUENCE (s1,s2) ->
-        let* eff1 = aux s1 in
-        let* eff2 = aux s2 in
-        let* eff = CT.seq !!eff1 !!eff2 in
-        KB.return eff
-      (* FIXME: allow additional var defs? *)
-      | BLOCK ([],s) ->
-        let* eff = aux s in
-        KB.return eff
-      | _ ->
-        let s_str = Utils.print_c Cprint.print_statement s in
-        let err =
-          Format.asprintf "stmt_to_eff: statement %s unsupported by VIBES" s_str
-        in
-        Err.fail @@ Err.Core_c_error err
-    in
-    let* eff = aux s in
-    KB.return eff
 
+  let determine_call_dst
+      (info : _ interp_info)
+      (f : Smallc.exp) : (T.label * T.Effect.Sort.data T.effect) KB.t =
+    match f with
+    | VARIABLE (v, _) ->
+      let+ dst = call_dst_with_name @@ T.Var.name v in
+      dst, empty_data
+    | CONST_INT (w, _) ->
+      let+ dst = call_dst_with_addr @@ Word.to_bitvec w in
+      dst, empty_data
+    | _ ->
+      let* fn = T.Var.fresh info.word_sort in
+      let* f = expr_to_pure info f in
+      let f = resort info.word_sort f in
+      let* setf = CT.set fn f in
+      let+ dst = call_dst_with_name @@ T.Var.name fn in
+      dst, setf
 
+  let empty_ctrl = T.Effect.empty T.Effect.Sort.fall
+  let empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl
+  let data d = CT.blk T.Label.null !!d !!empty_ctrl
+  let ctrl c = CT.blk T.Label.null !!empty_data !!c
 
-  let add_def info (def : Cabs.definition) (var_map : var_map) : var_map KB.t =
-    match def with
-    (* FIXME: handle bitwidth here? *)
-    | DECDEF (_typ, _storage, names) ->
-      let decl s =
-        let ty = info.word_sort in
-        T.Var.define ty s |> T.Var.forget
-      in
-      KB.return @@ List.fold names ~init:var_map
-        ~f:(fun map name ->
-            let (name, _, _, _) = name in
-            String.Map.set map ~key:name ~data:(decl name))
-    | _ -> Err.(fail @@ Other "Core_c.add_def: expected DECDEF")
+  let rec stmt_to_eff
+      (info : _ interp_info)
+      (s : Smallc.stmt) : unit eff =
+    let aux = stmt_to_eff info in
+    match s with
+    | NOP -> empty_blk
+    | BLOCK (_, s) -> aux s
+    | ASSIGN ((v, t), e) ->
+      let s = ty_of_base_type info t in
+      let v = T.Var.resort v s in
+      let* e = expr_to_pure info e in
+      let e = resort s e in
+      let* assn = CT.set v e in
+      data assn
+    | CALL (f, args) ->
+      let* args = KB.List.map args ~f:(expr_to_pure info) in
+      let* setargs, args = assign_args info args in
+      let* dst, setf = determine_call_dst info f in
+      let* () = provide_args dst args in
+      let* () = declare_call dst in
+      let* call = CT.goto dst in
+      CT.blk T.Label.null CT.(seq setargs !!setf) !!call
+    | CALLASSIGN ((v, _), f, args) ->
+      let* args = KB.List.map args ~f:(expr_to_pure info) in
+      let* setargs, args = assign_args info args in
+      let* dst, setf = determine_call_dst info f in
+      let* () = provide_args dst args in
+      let* () = declare_call dst in
+      let* call = CT.goto dst in
+      let* call_blk = CT.blk T.Label.null CT.(seq setargs !!setf) !!call in
+      let* retval = CT.set v @@ CT.var info.ret_var in
+      let* post_blk = data retval in
+      CT.seq !!call_blk !!post_blk
+    | STORE (l, r) ->
+      let* l = expr_to_pure info l in
+      let l = resort info.word_sort l in
+      let sr = ty_of_base_type info @@ Smallc.typeof r in
+      let* r = expr_to_pure info r in
+      let r = resort sr r in
+      let* st =
+        CT.(set info.mem_var
+              (storew !!(info.endian)
+                 (var info.mem_var) l r)) in
+      data st
+    | SEQUENCE (s1, s2) ->
+      let* s1 = aux s1 in
+      let* s2 = aux s2 in
+      CT.seq !!s1 !!s2
+    | IF (cond, st, sf) ->
+      let* cond = expr_to_pure info cond in
+      let cond = resort T.Bool.t cond in
+      let* st = aux st in
+      let* sf = aux sf in
+      CT.branch cond !!st !!sf
+    | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
+      let label = String.(chop_prefix_exn ~prefix:"L_" label) in
+      let dst = CT.int info.word_sort Bitvec.(!$ label) in
+      let* jmp = CT.jmp dst in
+      ctrl jmp
+    | GOTO label ->
+      let label = T.Label.for_name label in
+      let* goto = KB.(label >>= CT.goto) in
+      ctrl goto
 
-  let defs_to_map info (defs : Cabs.definition list) : var_map KB.t =
-    KB.List.fold defs ~init:String.Map.empty
-      ~f:(fun map def -> add_def info def map)
-
-  let body_to_eff info ((defs, stmt) : Cabs.body) : unit eff =
-    let* var_map = defs_to_map info defs in
-    stmt_to_eff info stmt var_map
+  and body_to_eff info ((_, stmt) : Smallc.t) : unit eff =
+    stmt_to_eff info stmt
 
   let c_patch_to_eff (hvars : Hvar.t list) (tgt : T.target)
       (patch : Cabs.definition) : unit eff =
+    let* body = Smallc.translate patch ~target:tgt in
     let* info = mk_interp_info hvars tgt in
-    match patch with
-    | FUNDEF (_, b) -> body_to_eff info b
-    | _ -> Err.fail @@
-      Err.Core_c_error "c_patch_to_eff: unexpected patch shape; expected a single fundef!"
+    body_to_eff info body
 
 end
