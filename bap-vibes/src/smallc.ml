@@ -967,9 +967,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     Transl.Env.create ~target () |> Transl.run (translate_body body) in
   (* Perform some simplification passes. *)
   let s = simpl_casts_stmt s in
-  let s = Monad.State.eval (prop_stmt s) {
-      target; prop = String.Map.empty;
-    } in
+  let s = Monad.State.eval (prop_stmt s) {target; prop = String.Map.empty} in
   let s = cleanup_nop_sequences s in
   let prog = tenv, s in
   Events.send @@ Rule;
