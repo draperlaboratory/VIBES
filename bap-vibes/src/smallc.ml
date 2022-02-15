@@ -54,16 +54,20 @@ type binop =
   | GT
   | LE
   | GE
+[@@deriving equal]
 
 type unop =
   | MINUS
   | LNOT
   | MEMOF
   | ADDROF
+[@@deriving equal]
 
-type tenv = typ String.Map.t
+type tenv = typ String.Map.t [@@deriving equal]
 
-type var = Theory.Var.Top.t * typ
+type var = Theory.Var.Top.t * typ [@@deriving equal]
+
+let equal_word = Word.equal
 
 type exp =
   | UNARY of unop * exp * typ
@@ -71,6 +75,7 @@ type exp =
   | CAST of typ * exp
   | CONST_INT of word * sign
   | VARIABLE of var
+[@@deriving equal]
 
 and stmt =
   | NOP
@@ -82,8 +87,9 @@ and stmt =
   | SEQUENCE of stmt * stmt
   | IF of exp * stmt * stmt
   | GOTO of string
+[@@deriving equal]
 
-and body = tenv * stmt
+and body = tenv * stmt [@@deriving equal]
 
 type t = body
 
@@ -927,9 +933,21 @@ and prop_stmt : stmt -> stmt prop = function
     let+ s2 = prop_stmt s2 in
     SEQUENCE (s1, s2)
   | IF (cond, st, sf) ->
+    (* We need to be careful to restore the old environment since each
+       branch may have introduced new scopes or clobbered old assignments. *)
+    let* {prop; _} = Prop.get () in
     let* cond = prop_exp cond in
     let* st = prop_stmt st in
-    let+ sf = prop_stmt sf in
+    let* {prop = pt; _} = Prop.get () in
+    let* () = Prop.update @@ fun env -> {env with prop} in
+    let* sf = prop_stmt sf in
+    let* {prop = pf; _} = Prop.get () in
+    (* However, we can merge them if we know that the results will be the
+       same. *)
+    let prop = Map.merge pt pf ~f:(fun ~key:_ -> function
+        | `Left _ | `Right _ -> None
+        | `Both (e1, e2) -> Option.some_if (equal_exp e1 e2) e1) in
+    let+ () = Prop.update @@ fun env -> {env with prop} in
     IF (cond, st, sf)
   | GOTO _ as s -> Prop.return s
 
