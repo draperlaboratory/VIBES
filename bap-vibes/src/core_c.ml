@@ -217,7 +217,6 @@ module Eval(CT : Theory.Core) = struct
     | LOR -> lift_bitv CT.logor
     | XOR -> lift_bitv CT.logxor
     | SHL -> lift_bitv CT.lshift
-    (* Use arithmetic shift by default *)
     | SHR  -> begin
         match is_signed ty_a with
         | SIGNED -> lift_bitv CT.arshift
@@ -225,7 +224,6 @@ module Eval(CT : Theory.Core) = struct
       end
     | EQ  -> lift_bitv CT.eq
     | NE  -> lift_bitv CT.neq
-    (* FIXME: use unsigned by default? *)
     | LT -> begin
         match is_signed ty_a with
         | SIGNED -> lift_bitv CT.slt
