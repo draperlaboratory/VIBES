@@ -533,11 +533,21 @@ and translate_unary_operator
             Cabs.(UNARY (u, e)) in
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_unary_operator: expected pointer type \
-                   for expression:\n\n%s\n" s)
+                   for operand of expression:\n\n%s\n" s)
     end
-  | Cabs.ADDROF ->
-    let+ s, e = exp e in
-    s, Some (UNARY (ADDROF, e, PTR (typeof e)))
+  | Cabs.ADDROF -> begin
+      let* s, e' = exp e in
+      match e' with
+      | VARIABLE (_, t) | UNARY (MEMOF, _, t) ->
+        Transl.return (s, Some (UNARY (ADDROF, e', PTR t)))
+      | _ ->
+        let s =
+          Utils.print_c (fun e -> Cprint.print_expression e 0)
+            Cabs.(UNARY (u, e)) in
+        Transl.fail @@ Core_c_error (
+          sprintf "Smallc.translate_unary_operator: ADDROF requires lvalue \
+                   for operand, got:\n\n%s\n" s)
+    end
   | Cabs.PREINCR -> translate_increment e ~pre:true  ~neg:false 
   | Cabs.POSINCR -> translate_increment e ~pre:false ~neg:false 
   | Cabs.PREDECR -> translate_increment e ~pre:true  ~neg:true
