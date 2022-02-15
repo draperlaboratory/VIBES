@@ -349,9 +349,21 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
 (* Translate an expression which may be `None`. Also returns any side effects
-   produced by the expression. *)
-and translate_expression ?(computation = false)
-    (e : Cabs.expression) : (stmt * exp option) transl = match e with
+   produced by the expression. 
+
+   `assign` denoted whether we want the result of evaluating this expression
+   to be assigned to a particular variable. Otherwise, a fresh temporary is
+   created to hold the result
+   
+   `computation` denotes whether this expression was derived from a FrontC
+   COMPUTATION statement. This means that the expression is being evaluated
+   for its side effects only, and the result may then be discarded.
+*)
+and translate_expression
+    ?(assign : var option = None)
+    ?(computation = false)
+    (e : Cabs.expression) : (stmt * exp option) transl =
+  match e with
   | Cabs.NOTHING -> Transl.return (NOP, None)
   | Cabs.UNARY (u, e) ->
     let+ s, e = translate_unary_operator u e in
@@ -371,24 +383,22 @@ and translate_expression ?(computation = false)
       | Some t ->
         let then_ = with_type then_ t in
         let else_ = with_type else_ t in
-        let+ v = new_tmp t in
+        let+ v = match assign with
+          | Some v -> Transl.return v
+          | None -> new_tmp t in
         let s =
           SEQUENCE (
             scond,
-            SEQUENCE (
-              sthen,
-              SEQUENCE (
-                selse,
-                IF (
-                  cond,
-                  ASSIGN (v, then_),
-                  ASSIGN (v, else_))))) in
+            IF (
+              cond,
+              SEQUENCE (sthen, ASSIGN (v, then_)),
+              SEQUENCE (selse, ASSIGN (v, else_)))) in
         s, Some (VARIABLE v)
     end
   | Cabs.CAST (t, e) ->
     let* t = translate_type t in
     let+ s, e' =
-      translate_expression_strict "translate_expression (CAST)" e in
+      translate_expression_strict "translate_expression (CAST)" e ~assign in
     if computation then s, None else s, Some (CAST (t, e'))
   | Cabs.CALL (f, args) ->
     let* sf, f' =
@@ -408,11 +418,13 @@ and translate_expression ?(computation = false)
       (* We don't actually know the return type of the function, so assume
          it's an integer that will fit inside of a machine register. *)
       let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-      let+ tmp = new_tmp @@ INT (Size.of_int_exn bits, UNSIGNED) in
-      let init = CALLASSIGN (tmp, f', args') in
+      let+ v = match assign with
+        | Some v -> Transl.return v
+        | None -> new_tmp @@ INT (Size.of_int_exn bits, UNSIGNED) in
+      let init = CALLASSIGN (v, f', args') in
       let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
           SEQUENCE (s, acc)) in
-      s, Some (VARIABLE tmp)
+      s, Some (VARIABLE v)
   | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in
@@ -512,8 +524,10 @@ and translate_expression ?(computation = false)
 
 (* Translate an expression and expect that the value is not `None`. *)
 and translate_expression_strict
-    (stage : string) (e : Cabs.expression) : (stmt * exp) transl =
-  let* s, e' = translate_expression e in
+    ?(assign : var option = None)
+    (stage : string)
+    (e : Cabs.expression) : (stmt * exp) transl =
+  let* s, e' = translate_expression e ~assign in
   match e' with
   | Some e' -> Transl.return (s, e')
   | None ->
@@ -639,7 +653,8 @@ and translate_binary_operator
     (b : Cabs.binary_operator)
     (lhs : Cabs.expression)
     (rhs : Cabs.expression) : (stmt * exp option) transl =
-  let exp = translate_expression_strict "translate_binary_operator" in
+  let exp ?(assign = None) =
+    translate_expression_strict "translate_binary_operator" ~assign in
   let default op =
     (* TODO: type check or do implicit conversions here *)
     let* s1, e1 = exp lhs in
@@ -725,7 +740,9 @@ and translate_binary_operator
   | Cabs.GE -> default GE
   | Cabs.ASSIGN -> begin
       let* s1, e1 = exp lhs in
-      let* s2, e2 = exp rhs in
+      let* s2, e2 = match e1 with
+        | VARIABLE v -> exp rhs ~assign:(Some v)
+        | _ -> exp rhs in
       let t2 = typeof e2 in
       let* t1, is_store = match e1 with
         | VARIABLE (_, t) -> Transl.return (t, false)
@@ -838,6 +855,82 @@ and simpl_casts (t : typ) (e : exp) : exp = match simpl_casts_exp e with
   | CAST (t', e) when equal_typ t t' -> e
   | e -> e
 
+(* Propagation of simple expressions *)
+
+module Prop = struct
+  module Env = struct
+    type t = {
+      target : Theory.target;
+      prop : exp String.Map.t;
+    }
+
+    let insert (e : exp) (v : string) (env : t) : t =
+      {env with prop = Map.set env.prop ~key:v ~data:e}
+
+    let lookup (v : string) (env : t) : exp option =
+      Map.find env.prop v
+  end
+
+  include Monad.State.T1(Env)(Monad.Ident)
+  include Monad.State.Make(Env)(Monad.Ident)
+end
+
+open Prop.Let
+
+type 'a prop = 'a Prop.t
+
+let rec prop_exp : exp -> exp prop = function
+  | UNARY (u, e, t) ->
+    let+ e = prop_exp e in
+    UNARY (u, e, t)
+  | BINARY (b, l, r, t) ->
+    let* l = prop_exp l in
+    let+ r = prop_exp r in
+    BINARY (b, l, r, t)
+  | CAST (t, e) ->
+    let+ e = prop_exp e in
+    CAST (t, e)
+  | CONST_INT _ as e -> Prop.return e
+  | VARIABLE (v, _) as e ->
+    let+ e' = Prop.(gets @@ Env.lookup @@ Theory.Var.name v) in
+    Option.value e' ~default:e
+
+and prop_stmt : stmt -> stmt prop = function
+  | NOP -> Prop.return NOP
+  | BLOCK (tenv, s) ->
+    let+ s = prop_stmt s in
+    BLOCK (tenv, s)
+  | ASSIGN ((v, t), e) as s -> begin
+      let* {target; _} = Prop.get () in
+      match e with
+      | VARIABLE _ | CONST_INT _ ->
+        let+ () = Prop.(update @@ Env.insert e @@ Theory.Var.name v) in
+        NOP
+      | _ -> Prop.return s
+    end
+  | CALL (f, args) ->
+    let* f = prop_exp f in
+    let+ args = Prop.List.map args ~f:prop_exp in
+    CALL (f, args)
+  | CALLASSIGN (v, f, args) ->
+    let* f = prop_exp f in
+    let+ args = Prop.List.map args ~f:prop_exp in
+    CALLASSIGN (v, f, args)
+  | STORE (l, r) ->
+    let* l = prop_exp l in
+    let+ r = prop_exp r in
+    STORE (l, r)
+  | SEQUENCE (s1, s2) ->
+    let* s1 = prop_stmt s1 in
+    let+ s2 = prop_stmt s2 in
+    SEQUENCE (s1, s2)
+  | IF (cond, st, sf) ->
+    let* cond = prop_exp cond in
+    let* st = prop_stmt st in
+    let+ sf = prop_stmt sf in
+    IF (cond, st, sf)
+  | GOTO _ as s -> Prop.return s
+
 (* Translate a definition. *)
 let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let open KB.Let in
@@ -849,8 +942,18 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
         sprintf "Smallc.translate: unexpected patch shape:\n\n%s\n\n\
                  expected a single function definition" s) in
   (* Perform type-checking and elaboration. *)
-  let+ (tenv, s), _ =
+  let* (tenv, s), _ =
     Transl.Env.create ~target () |> Transl.run (translate_body body) in
   (* Perform some simplification passes. *)
-  let s = s |> cleanup_nop_sequences |> simpl_casts_stmt in
-  tenv, s
+  let s = simpl_casts_stmt s in
+  let s = Monad.State.eval (prop_stmt s) {
+      target; prop = String.Map.empty;
+    } in
+  let s = cleanup_nop_sequences s in
+  let prog = tenv, s in
+  Events.send @@ Rule;
+  Events.send @@ Info "Translated to the following SmallC program:";
+  Events.send @@ Info "";
+  Events.send @@ Info (to_string prog);
+  Events.send @@ Rule;
+  KB.return prog
