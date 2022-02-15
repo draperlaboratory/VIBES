@@ -176,10 +176,10 @@ let typeof : exp -> typ = function
     INT (Size.of_int_exn w, sign)
   | VARIABLE (_, t) -> t
 
+(* Convert to a particular type. *)
 let with_type (e : exp) (t : typ) : exp = match e with
-  | UNARY (u, e, _) -> UNARY (u, e, t)
-  | BINARY (b, l, r, _) -> BINARY (b, l, r, t)
-  | CAST _ -> e
+  | UNARY _ | BINARY _ | VARIABLE _ -> CAST (t, e)
+  | CAST (_, e) -> CAST (t, e)
   | CONST_INT (i, _) -> begin 
       match t with
       | INT (size', sign') ->
@@ -191,7 +191,6 @@ let with_type (e : exp) (t : typ) : exp = match e with
         CONST_INT (i, sign')
       | _ -> e
     end
-  | VARIABLE (v, _) -> VARIABLE (v, t)
 
 (* State monad for elaboration and type-checking. *)
 
@@ -223,6 +222,7 @@ open Transl.Let
 
 type 'a transl = 'a Transl.t
 
+(* We can't construct the Top sort directly, so this is a workaround. *)
 let var_sort = Theory.Value.Sort.(forget @@ int 42)
 
 (* Create a fresh temporary variable. *)
@@ -790,6 +790,35 @@ let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
     IF (cond, cleanup_nop_sequences st, cleanup_nop_sequences sf)
   | GOTO _ -> s
 
+(* Remove unnecessary casts from expressions. *)
+let rec simpl_casts_exp : exp -> exp = function
+  | UNARY (u, e, t) -> UNARY (u, simpl_casts t e, t)
+  | BINARY (b, l, r, t) ->
+    BINARY (b, simpl_casts t l, simpl_casts t r, t)
+  | CAST (t, e) ->
+    let e = simpl_casts_exp e in
+    let t' = typeof e in
+    if equal_typ t t' then e else CAST (t, e)
+  | (CONST_INT _ | VARIABLE _) as e -> e
+
+and simpl_casts_stmt : stmt -> stmt = function
+  | NOP -> NOP
+  | BLOCK (tenv, s) -> BLOCK (tenv, simpl_casts_stmt s)
+  | ASSIGN (v, e) -> ASSIGN (v, simpl_casts_exp e)
+  | CALL (f, args) ->
+    CALL (simpl_casts_exp f, List.map args ~f:simpl_casts_exp)
+  | CALLASSIGN (v, f, args) ->
+    CALLASSIGN (v, simpl_casts_exp f, List.map args ~f:simpl_casts_exp)
+  | STORE (l, r) -> STORE (simpl_casts_exp l, simpl_casts_exp r)
+  | SEQUENCE (s1, s2) -> SEQUENCE (simpl_casts_stmt s1, simpl_casts_stmt s2)
+  | IF (cond, st, sf) ->
+    IF (simpl_casts_exp cond, simpl_casts_stmt st, simpl_casts_stmt sf)
+  | GOTO _ as s -> s
+
+and simpl_casts (t : typ) (e : exp) : exp = match simpl_casts_exp e with
+  | CAST (t', e) when equal_typ t t' -> e
+  | e -> e
+
 (* Translate a definition. *)
 let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let open KB.Let in
@@ -800,6 +829,9 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
       Err.fail @@ Core_c_error (
         sprintf "Smallc.translate: unexpected patch shape:\n\n%s\n\n\
                  expected a single function definition" s) in
+  (* Perform type-checking and elaboration. *)
   let+ (tenv, s), _ =
     Transl.Env.create ~target () |> Transl.run (translate_body body) in
-  tenv, cleanup_nop_sequences s
+  (* Perform some simplification passes. *)
+  let s = s |> cleanup_nop_sequences |> simpl_casts_stmt in
+  tenv, s
