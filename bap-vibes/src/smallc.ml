@@ -658,11 +658,15 @@ and translate_binary_operator
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
         let+ tmp = new_tmp t in
-        let i = Word.zero @@ Size.in_bits size in
         SEQUENCE (
-          s1, IF (e1, SEQUENCE (
-              s2, ASSIGN (tmp, e2)),
-                  ASSIGN (tmp, CONST_INT (i, sign)))),
+          s1,
+          SEQUENCE (
+            ASSIGN (tmp, e1),
+            IF (VARIABLE tmp,
+                SEQUENCE (
+                  s2,
+                  ASSIGN (tmp, e2)),
+                NOP))),
         Some (VARIABLE tmp)
       | Some t ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
