@@ -25,20 +25,6 @@ let sign_of_typ : typ -> sign = function
   | INT (_, s) -> s
   | PTR _ -> UNSIGNED
 
-(* The standalone FrontC printer for types seems to give back nothing,
-   so we print them manually. *)
-let rec string_of_typ : typ -> string = function
-  | INT (`r8, SIGNED)    -> "char"
-  | INT (`r8, UNSIGNED)  -> "unsigned char"
-  | INT (`r16, SIGNED)   -> "short"
-  | INT (`r16, UNSIGNED) -> "unsigned short"
-  | INT (`r32, SIGNED)   -> "int"
-  | INT (`r32, UNSIGNED) -> "unsigned int"
-  | INT (`r64, SIGNED)   -> "long long"
-  | INT (`r64, UNSIGNED) -> "unsigned long long"
-  | INT _                -> assert false
-  | PTR t                -> sprintf "%s*" @@ string_of_typ t
-
 type binop =
   | ADD
   | SUB
@@ -181,7 +167,8 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
 let to_string ((tenv, s) : t) : string =
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
-        sprintf "%s %s;" (string_of_typ t) v) |>
+        let s = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t) in
+        sprintf "%s %s;" s v) |>
     String.concat ~sep:"\n" in
   let stmt = Utils.print_c Cprint.print_statement @@ cabs_of_stmt s in
   sprintf "%s\n%s" vars stmt
@@ -347,14 +334,14 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
 
 and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
   let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let s1 = string_of_typ t1 in
-  let s2 = string_of_typ t2 in
+  let s1 = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t1) in
+  let s2 = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t2) in
   Transl.fail @@ Core_c_error (
     sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
 and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
   let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let t = string_of_typ t in
+  let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t) in
   Transl.fail @@ Core_c_error (
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
@@ -364,7 +351,7 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
    `assign` denoted whether we want the result of evaluating this expression
    to be assigned to a particular variable. Otherwise, a fresh temporary is
    created to hold the result
-   
+
    `computation` denotes whether this expression was derived from a FrontC
    COMPUTATION statement. This means that the expression is being evaluated
    for its side effects only, and the result may then be discarded.
@@ -516,13 +503,13 @@ and translate_expression
         SEQUENCE (sptr, sidx), Some e
       | PTR _, _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = string_of_typ tidx in
+        let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ tidx) in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
                    Expected integer.\n" s t)
       | _, _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = string_of_typ tptr in
+        let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ tptr) in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
                    Expected pointer.\n" s t)
