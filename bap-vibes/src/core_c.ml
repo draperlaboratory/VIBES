@@ -225,24 +225,24 @@ module Eval(CT : Theory.Core) = struct
     | EQ  -> lift_bitv CT.eq
     | NE  -> lift_bitv CT.neq
     | LT -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.slt
-        | UNSIGNED -> lift_bitv CT.ult
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ult
+        | SIGNED, SIGNED -> lift_bitv CT.slt
       end
     | GT -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.sgt
-        | UNSIGNED -> lift_bitv CT.ugt
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ugt
+        | SIGNED, SIGNED -> lift_bitv CT.sgt
       end
     | LE -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.sle
-        | UNSIGNED -> lift_bitv CT.ule
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ule
+        | SIGNED, SIGNED -> lift_bitv CT.sle
       end
     | GE -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.sge
-        | UNSIGNED -> lift_bitv CT.uge
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.uge
+        | SIGNED, SIGNED -> lift_bitv CT.sge
       end
 
   type 'a bitv = 'a T.bitv
