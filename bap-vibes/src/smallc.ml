@@ -907,12 +907,12 @@ let rec prop_exp : exp -> exp prop = function
 and prop_stmt : stmt -> stmt prop = function
   | NOP -> Prop.return NOP
   | BLOCK (tenv, s) ->
+    let* {prop; _} = Prop.get () in
     let* s = prop_stmt s in
     let+ () = Prop.update @@ fun env ->
-      (* Variables that were introduced in this scope are within `tenv`.
-         They must be removed from the environment since we are now
-         leaving this scope. *)
-      let prop = Map.filter_keys env.prop ~f:(Fn.non (Map.mem tenv)) in
+      (* Variables that were introduced in this scope must be removed
+         from the environment since we are now leaving this scope. *)
+      let prop = Map.filter_keys env.prop ~f:(Map.mem prop) in
       {env with prop} in
     BLOCK (tenv, s)
   | ASSIGN ((v, t), e) -> begin
