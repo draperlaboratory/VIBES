@@ -342,14 +342,14 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
       | Some e' -> SEQUENCE (acc, ASSIGN (v, e')))
 
 and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
-  let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
   let s1 = string_of_typ t1 in
   let s2 = string_of_typ t2 in
   Transl.fail @@ Core_c_error (
     sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
 and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
-  let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
   let t = string_of_typ t in
   Transl.fail @@ Core_c_error (
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
@@ -537,7 +537,7 @@ and translate_expression_strict
   match e' with
   | Some e' -> Transl.return (s, e')
   | None ->
-    let s = Utils.print_c (fun e -> Cprint.print_expression e 0) e in
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.%s: invalid expression:\n\n%s\n" stage s)
 
@@ -647,8 +647,7 @@ and translate_increment
         | true,  true  -> Cabs.PREDECR
         | false, true  -> Cabs.POSDECR in
       let s =
-        Utils.print_c (fun e -> Cprint.print_expression e 0)
-          Cabs.(UNARY (u, e)) in
+        Utils.print_c Cprint.print_statement Cabs.(COMPUTATION (UNARY (u, e))) in
       Transl.fail @@ Core_c_error (
         sprintf "Smallc.translate_increment: %s-increment on \
                  non-lvalue:\n\n%s\n" inc_s s) in
@@ -754,7 +753,7 @@ and translate_binary_operator
         | VARIABLE (_, t) -> Transl.return (t, false)
         | UNARY (MEMOF, _, t) -> Transl.return (t, true)
         | _ ->
-          let s = Utils.print_c (fun e -> Cprint.print_expression e 0) lhs in
+          let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
           Transl.fail @@ Core_c_error (
             sprintf "Csmall.translate_binary_operator: expected an l-value \
                      for LHS of assignment, got:\n\n%s\n" s) in
