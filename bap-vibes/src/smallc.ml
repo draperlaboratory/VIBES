@@ -324,7 +324,7 @@ let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
                   let+ t = translate_type t in
                   let s = Theory.Bitv.define @@ size_of_typ target t in
                   let tenv = Map.set tenv ~key:v ~data:t in
-                  let v = Theory.Var.define s v |> Theory.Var.forget in
+                  let v = Theory.Var.(forget @@ define s v) in
                   tenv, ((v, t), e) :: inits)
           | def ->
             let s = Utils.print_c Cprint.print_def def in
@@ -907,7 +907,13 @@ let rec prop_exp : exp -> exp prop = function
 and prop_stmt : stmt -> stmt prop = function
   | NOP -> Prop.return NOP
   | BLOCK (tenv, s) ->
-    let+ s = prop_stmt s in
+    let* s = prop_stmt s in
+    let+ () = Prop.update @@ fun env ->
+      (* Variables that were introduced in this scope are within `tenv`.
+         They must be removed from the environment since we are now
+         leaving this scope. *)
+      let prop = Map.filter_keys env.prop ~f:(Fn.non (Map.mem tenv)) in
+      {env with prop} in
     BLOCK (tenv, s)
   | ASSIGN ((v, t), e) -> begin
       let* e = prop_exp e in
