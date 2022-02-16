@@ -148,12 +148,13 @@ module Eval(CT : Theory.Core) = struct
       (info : _ interp_info)
       (c_ty : Smallc.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
+    | VOID -> T.Bitv.define 0
     | INT (`r8, _) -> char_ty
     | INT (`r16, _) -> short_ty
     | INT (`r32, _) -> long_ty
     | INT (`r64, _) -> long_long_ty
     | INT _ -> assert false
-    | PTR _ -> info.word_sort
+    | PTR _ | FUN _ -> info.word_sort
 
   let ty_op_pointer_type
       (info : _ interp_info)
@@ -165,7 +166,7 @@ module Eval(CT : Theory.Core) = struct
   let is_signed (ty : Smallc.typ) : Smallc.sign =
     match ty with
     | INT (_, s) -> s
-    | PTR _ -> UNSIGNED
+    | VOID | PTR _ | FUN _ -> UNSIGNED
 
   let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
@@ -375,7 +376,7 @@ module Eval(CT : Theory.Core) = struct
     | VARIABLE (v, _) ->
       let+ dst = call_dst_with_name @@ T.Var.name v in
       dst, empty_data
-    | CONST_INT (w, _) ->
+    | CAST (_, CONST_INT (w, _)) ->
       let+ dst = call_dst_with_addr @@ Word.to_bitvec w in
       dst, empty_data
     | _ ->

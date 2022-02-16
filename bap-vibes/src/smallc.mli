@@ -17,8 +17,10 @@ type sign = SIGNED | UNSIGNED
 
 (** Subset of `Cabs.base_type` for types supported by VIBES. *)
 type typ =
+  | VOID
   | INT of size * sign
   | PTR of typ
+  | FUN of typ * typ list
 
 (** Returns the size of the type in bits. *)
 val size_of_typ : Theory.target -> typ -> int

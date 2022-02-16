@@ -17,12 +17,16 @@ open Bap_vibes
 open Bap.Std
 open OUnit2
 
+let fake_var = Var.create "virt" Unk
+
 let fix_bil_names sem =
   let mapper = object(self)
     inherit Stmt.mapper
     method! map_var (v : var) : exp =
+      let v = if Var.is_virtual v then fake_var else v in
       Var (Substituter.unmark_reg v |> Option.value ~default:v)
     method! map_move (v : var) (e : exp) : stmt list =
+      let v = if Var.is_virtual v then fake_var else v in
       let v = Substituter.unmark_reg v |> Option.value ~default:v in
       let e = self#map_exp e in
       Bil.[v := e]
@@ -33,12 +37,10 @@ let eff_to_str sem =
   Format.asprintf "%a" Bil.pp sem |>
   String.filter ~f:(fun c -> not Char.(c = '\"'))
 
-let virtual_regex = Str.regexp "\(#\)\([0-9]+\)"
+let virtual_regex = Str.regexp "#[0-9]+"
 
 let compare_sem sem str =
-  let strip s =
-    String.filter s ~f:(Fn.non Char.is_whitespace) |>
-    Str.global_replace virtual_regex "\1" in
+  let strip s = String.filter s ~f:(Fn.non Char.is_whitespace) in
   String.equal (strip sem) (strip str)
 
 let assert_parse_eq ?(hvars = []) s1 s2 =
@@ -121,7 +123,7 @@ let test_compound _ =
 let test_call_hex _ =
   assert_parse_eq
     "int temp;
-     if (temp == 0) { (0x3ec)(); }"
+     if (temp == 0) { ((void (*)())0x3ec)(); }"
     "{
        if (temp = 0) {
          jmp 0x3EC
@@ -130,7 +132,9 @@ let test_call_hex _ =
 
 let test_call_args_1 _ =
   assert_parse_eq
-    "int a, b, c, f; f(a, b, c);"
+    "int a, b, c;
+     void (*f)(int, int, int);
+     f(a, b, c);"
     "{
        R0 := a
        R1 := b
@@ -140,7 +144,9 @@ let test_call_args_1 _ =
 
 let test_call_args_2 _ =
   assert_parse_eq
-    "int a, c, f; f(a, 0x1234, c);"
+    "int a, c;
+     void (*f)(int, int, int);
+     f(a, 0x1234, c);"
     "{
        R0 := a
        R1 := 0x1234
@@ -150,7 +156,9 @@ let test_call_args_2 _ =
 
 let test_call_args_ret _ =
   assert_parse_eq
-    "int a, b, c, d, f; d = f(a, b, c);"
+    "int a, b, c, d;
+     int (*f)(int, int, int);
+     d = f(a, b, c);"
     "{
        R0 := a
        R1 := b
@@ -161,8 +169,9 @@ let test_call_args_ret _ =
 
 let test_call_args_ret_store _ =
   assert_parse_eq
-    "int a, b, c, f;
+    "int a, b, c;
      int *d;
+     int (*f)(int, int, int);
      d = (int*)(a + 0x1337);
      *d = f(a, b, c);"
     "{
@@ -171,8 +180,8 @@ let test_call_args_ret_store _ =
        R1 := b
        R2 := c
        call(f)
-       # := R0
-       mem := mem with [d, el]:u32 <- #
+       virt := R0
+       mem := mem with [d, el]:u32 <- virt
      }"
 
 let test_call_args_addrof _ =
@@ -184,7 +193,8 @@ let test_call_args_addrof _ =
                       Bap.Std.Word.of_int ~width:32 8));
     ] in
   assert_parse_eq ~hvars
-    "int a, b, *c, d, f;
+    "int a, b, *c, d;
+     void (*f)(int, int, int**);
      f(a, b, &c);
      d = *c;"
     "{

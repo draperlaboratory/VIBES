@@ -13,17 +13,38 @@ let equal_size = Size.equal
 type sign = SIGNED | UNSIGNED [@@deriving equal]
 
 type typ =
+  | VOID
   | INT of size * sign
   | PTR of typ
+  | FUN of typ * typ list
 [@@deriving equal]
 
+let rec string_of_typ : typ -> string = function
+  | VOID -> "void"
+  | INT (`r8, SIGNED) -> "char"
+  | INT (`r8, UNSIGNED) -> "unsigned char"
+  | INT (`r16, SIGNED) -> "short"
+  | INT (`r16, UNSIGNED) -> "unsigned short"
+  | INT (`r32, SIGNED) -> "int"
+  | INT (`r32, UNSIGNED) -> "unsigned int"
+  | INT (`r64, SIGNED) -> "long long"
+  | INT (`r64, UNSIGNED) -> "unsigned long long"
+  | INT _ -> assert false
+  | PTR t -> sprintf "%s*" @@ string_of_typ t
+  | FUN (ret, args) ->
+    sprintf "%s (*)(%s)"
+      (string_of_typ ret)
+      (String.concat ~sep:", " @@ List.map args ~f:string_of_typ)
+
 let size_of_typ (target : Theory.target) : typ -> int = function
+  | VOID -> 0
   | INT (size, _) -> Size.in_bits size
-  | PTR _ -> Theory.Target.bits target
+  | PTR _ | FUN _ -> Theory.Target.bits target
 
 let sign_of_typ : typ -> sign = function
+  | VOID -> UNSIGNED
   | INT (_, s) -> s
-  | PTR _ -> UNSIGNED
+  | PTR _ | FUN _ -> UNSIGNED
 
 type binop =
   | ADD
@@ -109,6 +130,7 @@ let cabs_of_binop : binop -> Cabs.binary_operator = function
   | GE   -> Cabs.GE
 
 let rec cabs_of_typ : typ -> Cabs.base_type = function
+  | VOID                 -> Cabs.VOID
   | INT (`r8, SIGNED)    -> Cabs.(CHAR SIGNED)
   | INT (`r8, UNSIGNED)  -> Cabs.(CHAR UNSIGNED)
   | INT (`r16, SIGNED)   -> Cabs.(INT (SHORT, SIGNED))
@@ -119,6 +141,12 @@ let rec cabs_of_typ : typ -> Cabs.base_type = function
   | INT (`r64, UNSIGNED) -> Cabs.(INT (LONG_LONG, UNSIGNED))
   | INT _                -> assert false
   | PTR t                -> Cabs.PTR (cabs_of_typ t)
+  | FUN (ret, args) ->
+    let names = List.map args ~f:(fun t ->
+        let t = cabs_of_typ t in
+        t, Cabs.NO_STORAGE, ("", t, Cabs.[GNU_NONE], Cabs.NOTHING)) in
+    let ret = cabs_of_typ ret in
+    Cabs.PROTO (ret, names, false)
 
 let rec cabs_of_exp : exp -> Cabs.expression = function
   | UNARY (u, e, _) -> Cabs.(UNARY (cabs_of_unop u, cabs_of_exp e))
@@ -167,8 +195,7 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
 let to_string ((tenv, s) : t) : string =
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
-        let s = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t) in
-        sprintf "%s %s;" s v) |>
+        sprintf "%s %s;" (string_of_typ t) v) |>
     String.concat ~sep:"\n" in
   let stmt = Utils.print_c Cprint.print_statement @@ cabs_of_stmt s in
   sprintf "%s\n%s" vars stmt
@@ -245,6 +272,7 @@ let new_tmp (t : typ) : var transl =
 let rec translate_type
     ?(msg : string = "")
     (t : Cabs.base_type) : typ transl = match t with
+  | Cabs.VOID -> Transl.return VOID
   | Cabs.BOOL -> Transl.return @@ INT (`r8, UNSIGNED)
   | Cabs.CHAR sign -> begin
       match sign with
@@ -261,18 +289,40 @@ let rec translate_type
       | Cabs.UNSIGNED -> UNSIGNED in
     Transl.return @@ INT (size, sign)
   | Cabs.PTR t ->
-    let+ t = translate_type t in
+    let+ t = translate_type t ~msg in
     PTR t
+  | Cabs.PROTO (_, _, true) ->
+    let s = Utils.print_c (Cprint.print_type ident) t in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.translate_type: %sVariadic functions are \
+               unsupported:\n\n%s\n" msg s)
+  | Cabs.PROTO (ret, names, false) ->
+    let* ret = translate_type ret ~msg in
+    let+ args =
+      Transl.List.map names ~f:(fun (_, _, (_, t, _, _)) ->
+          translate_type t ~msg) in
+    FUN (ret, args)
   | _ ->
     let s = Utils.print_c (Cprint.print_type ident) t in
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_type: %sunsupported type:\n\n%s" msg s)
 
-(* Perform type conversions for pure expressions. *)
-let typ_unify (t1 : typ) (t2 : typ) : typ option =
+let rec typ_unify_ptr (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
+  | PTR t1, PTR t2 -> typ_unify_ptr t1 t2
+  | VOID, _ -> Some t2
+  | _, VOID -> Some t1
+  | _ -> typ_unify t1 t2
+
+(* Perform type conversions for pure expressions. *)
+and typ_unify (t1 : typ) (t2 : typ) : typ option =
+  match t1, t2 with
+  | VOID, VOID -> Some VOID
+  | VOID, _ | _, VOID -> None
   | INT _, PTR _ | PTR _, INT _ -> None
-  | PTR t1', PTR t2' -> if equal_typ t1' t2' then Some t1 else None
+  | _, FUN _ | FUN _, _ -> None
+  | PTR t1', PTR t2' ->
+    typ_unify_ptr t1' t2' |> Option.map ~f:(fun t -> PTR t)
   | INT (size1, sign1), INT (size2, sign2) ->
     match Size.compare size1 size2 with
     | n when n < 0 -> Some t2
@@ -286,7 +336,20 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
    and the expression with an explicit cast. *)
 let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
   match tl, tr with
+  | VOID, _ | _, VOID -> None
   | INT _, PTR _ | PTR _, INT _ -> None
+  | FUN (rl, al), FUN (rr, ar) -> begin
+      match typ_unify rl rr with
+      | None -> None
+      | Some ret ->
+        try
+          let a = List.zip_exn al ar |> List.map ~f:(fun (l, r) ->
+              let t = typ_unify l r in
+              Option.value_exn t) in
+          Some (FUN (ret, a), r)
+        with _ -> None
+    end
+  | FUN _, _ | _, FUN _ -> None
   | PTR t1', PTR t2' -> if equal_typ t1' t2' then Some (tl, r) else None
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
@@ -327,14 +390,14 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
 
 and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
   let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let s1 = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t1) in
-  let s2 = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t2) in
+  let s1 = string_of_typ t1 in
+  let s2 = string_of_typ t2 in
   Transl.fail @@ Core_c_error (
     sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
 and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
   let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ t) in
+  let t = string_of_typ t in
   Transl.fail @@ Core_c_error (
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
@@ -390,31 +453,7 @@ and translate_expression
     let+ s, e' =
       translate_expression_strict "translate_expression (CAST)" e ~assign in
     if computation then s, None else s, Some (CAST (t, e'))
-  | Cabs.CALL (f, args) ->
-    let* sf, f' =
-      translate_expression_strict "translate_expression (CALL)" f in
-    let* sargs, args' =
-      (* Evaluated left to right. *)
-      Transl.List.fold_right args ~init:([], []) ~f:(fun arg (sargs, args') ->
-          let+ s, e =
-            translate_expression_strict "translate_expression (CALL)" arg in
-          s :: sargs, e :: args') in
-    if computation then
-      let init = CALL (f', args') in
-      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
-          SEQUENCE (s, acc)) in
-      Transl.return (s, None)
-    else
-      (* We don't actually know the return type of the function, so assume
-         it's an integer that will fit inside of a machine register. *)
-      let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-      let+ v = match assign with
-        | Some v -> Transl.return v
-        | None -> new_tmp @@ INT (Size.of_int_exn bits, UNSIGNED) in
-      let init = CALLASSIGN (v, f', args') in
-      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
-          SEQUENCE (s, acc)) in
-      s, Some (VARIABLE v)
+  | Cabs.CALL (f, args) -> translate_call f args ~assign ~computation
   | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in
@@ -446,25 +485,20 @@ and translate_expression
           sprintf "Smallc.translate_expression: undeclared variable %s\n" v)
     end
   | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None)
-  | Cabs.EXPR_SIZEOF e -> begin
-      let* _, e =
-        translate_expression_strict "translate_expression (EXPR_SIZEOF)" e in
-      let+ bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-      match typeof e with
-      | INT (size', _) ->
-        let i = Word.of_int ~width:bits @@ Size.in_bytes size' in
-        NOP, Some (CONST_INT (i, UNSIGNED))
-      | PTR _ ->
-        let i = Word.of_int ~width:bits @@ bits lsr 3 in
-        NOP, Some (CONST_INT (i, UNSIGNED))
-    end
+  | Cabs.EXPR_SIZEOF e ->
+    let* _, e =
+      translate_expression_strict "translate_expression (EXPR_SIZEOF)" e in
+    let+ {target; _} = Transl.get () in
+    let width = Theory.Target.bits target in
+    let size = size_of_typ target @@ typeof e in
+    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
   | Cabs.TYPE_SIZEOF t ->
     let s = Utils.print_c Cprint.print_base_type t in
     let* t = translate_type t ~msg:(sprintf "In expression %s: " s) in
     let+ {target; _} = Transl.get () in
-    let bits = Theory.Target.bits target in
-    let i = Word.of_int ~width:bits @@ size_of_typ target t in
-    NOP, Some (CONST_INT (i, UNSIGNED))
+    let width = Theory.Target.bits target in
+    let size = size_of_typ target t in
+    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
   | Cabs.INDEX (ptr, idx) -> begin
       let exp = translate_expression_strict "translate_expression (INDEX)" in
       let* sptr, eptr = exp ptr in
@@ -496,13 +530,13 @@ and translate_expression
         SEQUENCE (sptr, sidx), Some e
       | PTR _, _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ tidx) in
+        let t = string_of_typ tidx in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
                    Expected integer.\n" s t)
       | _, _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = Utils.print_c (Cprint.print_type ident) (cabs_of_typ tptr) in
+        let t = string_of_typ tptr in
         Transl.fail @@ Core_c_error (
           sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
                    Expected pointer.\n" s t)
@@ -586,20 +620,25 @@ and translate_increment
   let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
   let t = typeof e' in
   (* Based on the type, get the increment value. *)
-  let inc = match t with
+  let* inc = match t with
     | PTR (INT (size, _)) ->
       (* Pointer to some element type, use the element size. *)
       let i = Word.of_int ~width:bits @@ Size.in_bytes size in
-      CONST_INT (i, UNSIGNED)
-    | PTR (PTR _) ->
+      Transl.return @@ CONST_INT (i, UNSIGNED)
+    | PTR (PTR _ | FUN _ | VOID) ->
       (* Pointer to a pointer: use the word size. *)
       let i = Word.of_int ~width:bits @@ bits lsr 3 in
-      CONST_INT (i, UNSIGNED)
+      Transl.return @@ CONST_INT (i, UNSIGNED)
+    | FUN _ | VOID ->
+      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+      Transl.fail @@ Core_c_error (
+        sprintf "Smallc.translate_increment: expression:\n\n%s\n\n\
+                 is not an l-value" s)
     | INT (size, sign) ->
       (* Regular integer type, use an increment of one. *)
       let i = Word.one bits in
       let i = if equal_sign sign SIGNED then Word.signed i else i in
-      CONST_INT (i, sign) in
+      Transl.return @@ CONST_INT (i, sign) in
   (* Add or subtract based on the increment type. *)
   let op = if neg then SUB else ADD in
   (* If it's a pre-increment, then we return the value after incrementing,
@@ -755,6 +794,83 @@ and translate_binary_operator
         Transl.return (SEQUENCE (s2, SEQUENCE (s1, s)), Some e1)
     end
   | _ -> Transl.fail @@ Other "unimpl"
+
+and translate_call
+    ?(assign : var option = None)
+    ?(computation : bool = false)
+    (f : Cabs.expression)
+    (args : Cabs.expression list) : (stmt * exp option) transl =
+  let e = Cabs.CALL (f, args) in
+  let* sf, f' =
+    translate_expression_strict "translate_call" f in
+  match typeof f' with
+  | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
+    let* sargs, args' =
+      (* Evaluated left to right. *)
+      try 
+        List.zip_exn args targs |>
+        Transl.List.fold_right ~init:([], [])
+          ~f:(fun (arg, t) (sargs, args') ->
+              let* s, a =
+                translate_expression_strict "translate_call" arg in
+              let ta = typeof a in
+              match typ_unify t ta with
+              | None ->
+                let s =
+                  Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+                let a =
+                  Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
+                let t = string_of_typ t in
+                let ta = string_of_typ ta in
+                Transl.fail @@ Core_c_error (
+                  sprintf "Smallc.translate_call:\n\n%s\
+                           \n\nargument %s has type %s but type %s was \
+                           expected" s a ta t)
+              | Some t ->
+                let a = with_type a t in
+                Transl.return (s :: sargs, a :: args'))
+      with _ ->
+        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+        let l1 = List.length targs in
+        let l2 = List.length args in
+        Transl.fail @@ Core_c_error (
+          sprintf "Smallc.translate_call:\n\n%s\n\n\
+                   expected %d arguments, got %d" s l1 l2) in
+    if computation then
+      let init = CALL (f', args') in
+      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
+          SEQUENCE (s, acc)) in
+      Transl.return (s, None)
+    else
+      (* We don't actually know the return type of the function, so assume
+         it's an integer that will fit inside of a machine register. *)
+      let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
+      let+ v = match assign with
+        | Some (v, t) -> begin
+            match typ_unify t tret with
+            | None ->
+              let s =
+                Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+              let t = string_of_typ t in
+              let tret = string_of_typ tret in
+              Transl.fail @@ Core_c_error (
+                sprintf "Smallc.translate_call:\n\n%s\n\n\
+                         has return type %s, cannot unify with var %s of \
+                         type %s"
+                  s tret (Theory.Var.name v) t)
+            | Some t -> Transl.return (v, t)
+          end
+        | None -> new_tmp tret in
+      let init = CALLASSIGN (v, f', args') in
+      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
+          SEQUENCE (s, acc)) in
+      s, Some (VARIABLE v)
+  | t ->
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    let t = string_of_typ t in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.translate_call:\n\n%s\n\n\
+               has type %s, expected function type" s t)
 
 (* Translate a statement. *)
 and translate_statement (s : Cabs.statement) : stmt transl = match s with
