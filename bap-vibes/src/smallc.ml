@@ -307,15 +307,16 @@ let rec translate_type
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_type: %sunsupported type:\n\n%s" msg s)
 
+(* See whether the elements of the pointer type can unify. *)
 let rec typ_unify_ptr (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
   | PTR t1, PTR t2 -> typ_unify_ptr t1 t2
   | VOID, _ -> Some t2
   | _, VOID -> Some t1
-  | _ -> typ_unify t1 t2
+  | _ -> if equal_typ t1 t2 then Some t1 else None
 
 (* Perform type conversions for pure expressions. *)
-and typ_unify (t1 : typ) (t2 : typ) : typ option =
+let typ_unify (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
   | VOID, VOID -> Some VOID
   | VOID, _ | _, VOID -> None
@@ -331,6 +332,13 @@ and typ_unify (t1 : typ) (t2 : typ) : typ option =
       | SIGNED, UNSIGNED | UNSIGNED, SIGNED ->
         Some (INT (size1, UNSIGNED))
       | _ -> Some t1
+
+(* Same as `typ_unify_ptr` but favor the lhs. *)
+let rec typ_unify_ptr_assign (t1 : typ) (t2 : typ) : typ option =
+  match t1, t2 with
+  | PTR t1, PTR t2 -> typ_unify_ptr_assign t1 t2
+  | VOID, _ | _, VOID -> Some t1
+  | _ -> if equal_typ t1 t2 then Some t1 else None
 
 (* Perform type conversions for an assignment. Returns the unified type
    and the expression with an explicit cast. *)
@@ -350,7 +358,9 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
         with _ -> None
     end
   | FUN _, _ | _, FUN _ -> None
-  | PTR t1', PTR t2' -> if equal_typ t1' t2' then Some (tl, r) else None
+  | PTR t1', PTR t2' ->
+    typ_unify_ptr_assign t1' t2' |>
+    Option.map ~f:(fun t -> tl, CAST (tl, r))
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
     then Some (tl, r) else Some (tl, CAST (tl, r))
