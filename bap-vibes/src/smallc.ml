@@ -972,7 +972,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
                  expected a single function definition" s) in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
-    Transl.Env.create ~target () |> Transl.run (translate_body body) in
+    Transl.(Env.create ~target () |> run (translate_body body)) in
   (* Perform some simplification passes. *)
   let s = simpl_casts_stmt s in
   let s = Monad.State.eval (prop_stmt s) {target; prop = String.Map.empty} in
