@@ -1,7 +1,9 @@
 (** This module implements SmallC, which is a subset of the FrontC abstract
     representation of C programs. AST nodes are elaborated and explicitly
-    typed, making this a more adequate intermediate language for lowering
-    to Core Theory. *)
+    typed. Through elaboration, we simplify the AST and separate expressions
+    from statements in that only statements may produce side effects. This
+    combination of design choices makes SmallC a more adequate intermediate
+    language for lowering to Core Theory. *)
 
 open Core_kernel
 open Bap.Std
