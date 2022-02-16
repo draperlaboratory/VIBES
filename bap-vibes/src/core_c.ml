@@ -345,7 +345,7 @@ module Eval(CT : Theory.Core) = struct
 
   type 'a eff = 'a T.eff
 
-  let empty_data = T.Effect.empty (T.Effect.Sort.data "C_NOP")
+  let empty_data = T.Effect.(empty @@ Sort.data "C_NOP")
 
   let assign_args
       (info : _ interp_info)
@@ -390,7 +390,7 @@ module Eval(CT : Theory.Core) = struct
       let+ dst = call_dst_with_name @@ T.Var.name fn in
       dst, setf
 
-  let empty_ctrl = T.Effect.empty T.Effect.Sort.fall
+  let empty_ctrl = T.Effect.(empty Sort.fall)
   let empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl
   let data d = CT.blk T.Label.null !!d !!empty_ctrl
   let ctrl c = CT.blk T.Label.null !!empty_data !!c
