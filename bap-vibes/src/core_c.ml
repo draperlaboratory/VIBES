@@ -204,14 +204,14 @@ module Eval(CT : Theory.Core) = struct
     | SUB -> lift_bitv CT.sub
     | MUL -> lift_bitv CT.mul
     | DIV -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.sdiv
-        | UNSIGNED -> lift_bitv CT.div
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.div
+        | SIGNED, SIGNED -> lift_bitv CT.sdiv
       end
     | MOD -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.smodulo
-        | UNSIGNED -> lift_bitv CT.modulo
+        match is_signed ty_a, is_signed ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.modulo
+        | SIGNED, SIGNED -> lift_bitv CT.smodulo
       end
     | LAND -> lift_bitv CT.logand
     | LOR -> lift_bitv CT.logor
