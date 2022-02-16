@@ -241,13 +241,6 @@ let new_tmp (t : typ) : var transl =
     } in
   v, t
 
-(* A bit of a hack *)
-let is_temp (v : string) : bool =
-  String.is_prefix v "$" &&
-  match Int.of_string @@ String.subo v ~pos:1 with
-  | exception _ -> false
-  | _ -> true
-
 (* Translate a base type. *)
 let rec translate_type
     ?(msg : string = "")

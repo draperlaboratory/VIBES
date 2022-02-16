@@ -93,10 +93,6 @@ type t = body
 (** Returns the type embedded in an expression. *)
 val typeof : exp -> typ
 
-(** Returns [true] if the variable name is one generated during
-    elaboration. *)
-val is_temp : string -> bool
-
 (** Pretty prints the SmallC definition. *)
 val to_string : t -> string
 
