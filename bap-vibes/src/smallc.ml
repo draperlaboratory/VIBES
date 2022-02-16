@@ -262,7 +262,9 @@ let is_temp (v : string) : bool =
   | _ -> true
 
 (* Translate a base type. *)
-let rec translate_type ?(msg : string = "") (t : Cabs.base_type) : typ transl = match t with
+let rec translate_type
+    ?(msg : string = "")
+    (t : Cabs.base_type) : typ transl = match t with
   | Cabs.BOOL -> Transl.return @@ INT (`r8, UNSIGNED)
   | Cabs.CHAR sign -> begin
       match sign with
@@ -284,7 +286,7 @@ let rec translate_type ?(msg : string = "") (t : Cabs.base_type) : typ transl = 
   | _ ->
     let s = Utils.print_c (Cprint.print_type ident) t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_type: %sunexpected type:\n\n%s" msg s)
+      sprintf "Smallc.translate_type: %sunsupported type:\n\n%s" msg s)
 
 (* Perform type conversions for pure expressions. *)
 let typ_unify (t1 : typ) (t2 : typ) : typ option =
