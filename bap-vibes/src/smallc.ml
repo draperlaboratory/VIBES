@@ -517,7 +517,11 @@ and translate_expression
       let tidx = typeof eidx in
       match tptr, tidx with
       | PTR t, INT _ ->
-        (* Translate to the pointer arithmetic of an array lookup. *)
+        (* Translate to the pointer arithmetic of an array lookup. 
+
+           XXX: This would probably fail on multidimensional array lookups,
+           since their layout is flat and this code doesn't account for that.
+        *)
         let+ {target; _} = Transl.get () in
         let bits = Theory.Target.bits target in
         let stride = size_of_typ target t lsr 3 in
