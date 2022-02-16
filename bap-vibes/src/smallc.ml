@@ -651,7 +651,8 @@ and translate_increment
         | true,  true  -> Cabs.PREDECR
         | false, true  -> Cabs.POSDECR in
       let s =
-        Utils.print_c Cprint.print_statement Cabs.(COMPUTATION (UNARY (u, e))) in
+        Utils.print_c Cprint.print_statement
+          Cabs.(COMPUTATION (UNARY (u, e))) in
       Transl.fail @@ Core_c_error (
         sprintf "Smallc.translate_increment: %s-increment on \
                  non-lvalue:\n\n%s\n" inc_s s) in
@@ -867,7 +868,9 @@ and simpl_casts (t : typ) (e : exp) : exp = match simpl_casts_exp e with
 (* Propagation of simple expressions *)
 
 module Prop = struct
+
   module Env = struct
+
     type t = {
       target : Theory.target;
       prop : exp String.Map.t;
@@ -878,10 +881,12 @@ module Prop = struct
 
     let lookup (v : string) (env : t) : exp option =
       Map.find env.prop v
+
   end
 
   include Monad.State.T1(Env)(Monad.Ident)
   include Monad.State.Make(Env)(Monad.Ident)
+
 end
 
 open Prop.Let
