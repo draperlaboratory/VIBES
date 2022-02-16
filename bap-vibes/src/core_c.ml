@@ -173,9 +173,9 @@ module Eval(CT : Theory.Core) = struct
 
   let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
-    T.Value.resort (fun _ -> Some sort) v
-    |> Option.value_exn ~message:error
-    |> KB.return
+    T.Value.resort (fun _ -> Some sort) v |>
+    Option.value_exn ~message:error |>
+    KB.return
 
   type 'a pure = 'a T.pure
 
