@@ -583,6 +583,13 @@ and translate_unary_operator
   | Cabs.MEMOF -> begin
       let* s, e' = exp e in
       match typeof e' with
+      | PTR VOID ->
+        let s =
+          Utils.print_c Cprint.print_statement
+            Cabs.(COMPUTATION (UNARY (u, e))) in
+        Transl.fail @@ Core_c_error (
+          sprintf "Smallc.translate_unary_operator: in expression\
+                   \n\n%s\n\ncannot dereference a value of type void*" s)
       | PTR t -> Transl.return (s, Some (UNARY (MEMOF, e', t)))
       | _ ->
         let s =
