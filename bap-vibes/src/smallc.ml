@@ -414,7 +414,7 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
 (* Translate an expression which may be `None`. Also returns any side effects
    produced by the expression. 
 
-   `assign` denoted whether we want the result of evaluating this expression
+   `assign` denotes whether we want the result of evaluating this expression
    to be assigned to a particular variable. Otherwise, a fresh temporary is
    created to hold the result
 
@@ -520,7 +520,7 @@ and translate_expression
         (* Translate to the pointer arithmetic of an array lookup. 
 
            XXX: This would probably fail on multidimensional array lookups,
-           since their layout is flat and this code doesn't account for that.
+           since their layout is flat and this code assumes otherwise.
         *)
         let+ {target; _} = Transl.get () in
         let bits = Theory.Target.bits target in
