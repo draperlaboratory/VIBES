@@ -25,6 +25,8 @@ let sign_of_typ : typ -> sign = function
   | INT (_, s) -> s
   | PTR _ -> UNSIGNED
 
+(* The standalone FrontC printer for types seems to give back nothing,
+   so we print them manually. *)
 let rec string_of_typ : typ -> string = function
   | INT (`r8, SIGNED)    -> "char"
   | INT (`r8, UNSIGNED)  -> "unsigned char"
