@@ -32,7 +32,7 @@ let fix_bil_names sem =
       Bil.[v := e]
   end in
   Stmt.map mapper sem
-  
+
 let eff_to_str sem =
   Format.asprintf "%a" Bil.pp sem |>
   String.filter ~f:(fun c -> not Char.(c = '\"'))
@@ -222,6 +222,37 @@ let test_load_ushort _ =
      x = * (unsigned short *) y;"
     "{ x := pad:32[mem[y, el]:u16] }"
 
+let test_ternary_assign _ =
+  assert_parse_eq
+    "int (*f)();
+     int x, c;
+     x = c ? f() : 5;"
+    "{
+      if (c) {
+        call(f)
+        x := R0
+      }
+      else {
+        x := 5
+      }
+     }"
+
+let test_ternary_eff _ =
+  assert_parse_eq
+    "void (*f)();
+     int c, x, y;
+     (c ? f() : (void)(x = 5));
+     y = x;"
+    "{
+       if (c) {
+         call(f)
+       }
+       else {
+         x := 5
+       }
+       y := x
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -239,4 +270,6 @@ let suite = [
   "Test call args addrof" >:: test_call_args_addrof;
   "Test load short" >:: test_load_short;
   "Test load unsigned short" >:: test_load_ushort;
+  "Test ternary assign" >:: test_ternary_assign;
+  "Test ternary effect" >:: test_ternary_eff;
 ]

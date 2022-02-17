@@ -761,17 +761,21 @@ and translate_question
     (then_ : Cabs.expression)
     (else_ : Cabs.expression) : (stmt * exp option) transl =
   let e = Cabs.(QUESTION (cond, then_, else_)) in
-  let exp = translate_expression_strict "translate_expression (QUESTION)" in
+  let exp =
+    translate_expression_strict ~assign "translate_expression (QUESTION)" in
   let* scond, cond = exp cond in
-  let* sthen, then_ = exp then_ in
-  let* selse, else_ = exp else_ in
-  let t1 = typeof then_ in
-  let t2 = typeof else_ in
+  let* sthen, ethen = exp then_ in
+  let* selse, eelse = exp else_ in
+  let t1 = typeof ethen in
+  let t2 = typeof eelse in
   match typ_unify t1 t2 with
   | None -> typ_unify_error e t1 t2
+  | Some VOID ->
+    let s = SEQUENCE (scond, IF (cond, sthen, selse)) in
+    Transl.return (s, None)
   | Some t ->
-    let then_ = with_type then_ t in
-    let else_ = with_type else_ t in
+    let ethen = with_type ethen t in
+    let eelse = with_type eelse t in
     let+ v = match assign with
       | Some v -> Transl.return v
       | None -> new_tmp t in
@@ -780,8 +784,8 @@ and translate_question
         scond,
         IF (
           cond,
-          SEQUENCE (sthen, ASSIGN (v, then_)),
-          SEQUENCE (selse, ASSIGN (v, else_)))) in
+          SEQUENCE (sthen, ASSIGN (v, ethen)),
+          SEQUENCE (selse, ASSIGN (v, eelse)))) in
     s, Some (VARIABLE v)
 
 and translate_call
@@ -823,11 +827,21 @@ and translate_call
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_call:\n\n%s\n\n\
                    expected %d arguments, got %d" s l1 l2) in
+    let is_void = match typ_unify tret VOID with
+      | Some VOID -> true
+      | Some _ -> false
+      | None -> false in
     if computation then
       let init = CALL (f', args') in
       let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
           SEQUENCE (s, acc)) in
       Transl.return (s, None)
+    else if is_void then
+      let+ dummy = new_tmp VOID in
+      let init = CALL (f', args') in
+      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
+          SEQUENCE (s, acc)) in
+      s, Some (VARIABLE dummy)
     else
       (* Do we already know who we're assigning to? *)
       let+ v = match assign with
