@@ -155,7 +155,10 @@ let subst_def
     | Hvar.Constant const ->
       Def.create ~tid:(Term.tid ir) lhs (Bil.int const)
 
-let subst_label (tgt : Theory.target) (h_vars : Hvar.t list) (label : label) : label KB.t =
+let subst_label
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (label : label) : label KB.t =
   match label with
   | Direct tid ->
     KB.collect Theory.Label.name tid >>| begin function
@@ -168,7 +171,10 @@ let subst_label (tgt : Theory.target) (h_vars : Hvar.t list) (label : label) : l
     end
   | Indirect _ -> KB.return label
 
-let subst_dsts (tgt : Theory.target) (h_vars : Hvar.t list) (jmp : jmp term) : jmp term KB.t =
+let subst_dsts
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (jmp : jmp term) : jmp term KB.t =
   let tid = Term.tid jmp and cond = Jmp.cond jmp in
   match Jmp.kind jmp with
   | Goto label -> subst_label tgt h_vars label >>| Jmp.create_goto ~cond ~tid
@@ -182,17 +188,23 @@ let subst_dsts (tgt : Theory.target) (h_vars : Hvar.t list) (jmp : jmp term) : j
   | Ret label -> subst_label tgt h_vars label >>| Jmp.create_ret ~cond ~tid
   | Int _ -> KB.return jmp
 
-let subst_jmp (tgt : Theory.target) (h_vars : Hvar.t list) (ir : jmp term) : jmp term KB.t =
+let subst_jmp
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (ir : jmp term) : jmp term KB.t =
   Jmp.map_exp ir ~f:(subst_exp tgt h_vars) |> subst_dsts tgt h_vars
 
-let subst_blk (tgt : Theory.target) (h_vars : Hvar.t list) (ir : blk term) : blk term KB.t =
+let subst_blk
+    (tgt : Theory.target)
+    (h_vars : Hvar.t list)
+    (ir : blk term) : blk term KB.t =
   let+ jmps =
     Term.enum jmp_t ir |>
     Seq.to_list |>
     KB.List.map ~f:(subst_jmp tgt h_vars) in
-  let phis = match Term.enum phi_t ir |> Seq.to_list with
-    | [] -> []
-    | _ -> failwith "subst_blk: Unexpected Phi node!" in
+  (* This pass should be run before we convert to SSA form, so
+     just do nothing with the phi nodes. *)
+  let phis = Term.enum phi_t ir |> Seq.to_list in
   let defs =
     Term.enum def_t ir |>
     Seq.to_list |>
@@ -202,9 +214,6 @@ let subst_blk (tgt : Theory.target) (h_vars : Hvar.t list) (ir : blk term) : blk
 let substitute
     (tgt : Theory.target)
     (h_vars : Hvar.t list)
-    (ir : blk term list)
-  : blk term list KB.t =
-  try
-    KB.List.map ~f:(subst_blk tgt h_vars) ir
-  with
-  | Subst_err msg -> err msg
+    (ir : blk term list) : blk term list KB.t =
+  try KB.List.map ~f:(subst_blk tgt h_vars) ir
+  with Subst_err msg -> err msg

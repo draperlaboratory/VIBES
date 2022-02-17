@@ -20,7 +20,11 @@ module KB = Knowledge
 module H = Helpers
 
 
-let dummy_solver ?(exclude_regs = String.Set.empty) _ _ ~filepath:_ _ vir =
+let dummy_solver
+    ?(congruence = [])
+    ?(exclude_regs = String.Set.empty)
+    _ _ vir ~filepath:_ ~gpr:_ ~regs:_ =
+  ignore congruence;
   ignore exclude_regs;
   KB.return (vir, Test_minizinc.dummy_sol)
 

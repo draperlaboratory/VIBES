@@ -466,14 +466,19 @@ module ABI = struct
 end
 
 (* VIBES IR requires linear SSA form. *)
-let to_linear_ssa (blks : blk term list) : blk term list KB.t =
+let to_linear_ssa
+    (patch : Data.Patch.t)
+    (blks : blk term list) : blk term list KB.t =
   let* sub = Helper.create_sub blks in
-  sub |> Sub.ssa |> Linear_ssa.transform
+  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
-let run (code : insn)
-    ~(tgt : Theory.target)
-    ~(hvars : Hvar.t list)
-    ~(sp_align : int) : t KB.t =
+let run (patch : Data.Patch.t) : t KB.t =
+  let* code = Data.Patch.get_bir patch in
+  let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
+  Events.(send @@ Info info_str);
+  let* tgt = Data.Patch.get_target patch in
+  let* sp_align = Data.Patch.get_sp_align_exn patch in
+  let* hvars = Data.Patch.get_patch_vars_exn patch in
   let ir = Blk.from_insns [code] in
   (* BAP will give us the blks in such an order that the first one is the
      entry blk. *)
@@ -492,5 +497,5 @@ let run (code : insn)
   let* ir = Subst.substitute tgt hvars ir in
   let* ir = Shape.reorder_blks ir in
   let ir = Opt.merge_adjacent ir in
-  let+ ir = to_linear_ssa ir in
+  let+ ir = to_linear_ssa patch ir in
   {ir; exclude_regs; argument_tids}

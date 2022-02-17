@@ -21,6 +21,22 @@ open Knowledge.Syntax
 
 module Hvar = Higher_var
 
+module Var_pair = struct
+  module T = struct
+    type t = var * var [@@deriving compare, sexp]
+  end
+
+  include T
+  include Comparator.Make(T)
+end
+
+type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t 
+
+let var_pair_set_domain : var_pair_set KB.Domain.t =
+  KB.Domain.powerset (module Var_pair)
+    ~inspect:Var_pair.sexp_of_t
+    "var-pair-set-domain"
+
 let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~empty:()
     ~equal:Unit.equal
@@ -89,6 +105,7 @@ let sp_align_domain : int option KB.Domain.t = KB.Domain.optional
   ~equal:Int.equal
   "sp-align-domain"
 
+
 (* General knowledge info for the package *)
 type cls
 type t = cls KB.obj
@@ -149,6 +166,9 @@ module Patch = struct
 
   let sp_align : (patch_cls, int option) KB.slot =
     KB.Class.property ~package patch "sp-align" sp_align_domain
+
+  let congruence : (patch_cls, var_pair_set) KB.slot =
+    KB.Class.property ~package patch "congruence" var_pair_set_domain
   
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -288,6 +308,16 @@ module Patch = struct
     get_sp_align obj >>= function
     | None -> Kb_error.fail Kb_error.Missing_sp_align
     | Some value -> KB.return value
+
+  let set_congruence (obj : t) (data : var_pair_set) : unit KB.t =
+    KB.provide congruence obj data
+  
+  let get_congruence (obj : t) : var_pair_set KB.t =
+    KB.collect congruence obj
+  
+  let add_congruence (obj : t) (data : var * var) : unit KB.t =
+    get_congruence obj >>= fun cong ->
+    KB.provide congruence obj @@ Set.add cong data
   
 end
 
