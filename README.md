@@ -5,7 +5,7 @@ uses program synthesis and constraint programming techniques to compile a
 source-level patch and insert it into a preexisting binary program.  VIBES
 uses formal verification to prove that only the intended change is made.
 
-This is the main external VIBES repository.
+This is the main VIBES repository.
 
 The VIBES tool comprises two components:
 
@@ -36,7 +36,8 @@ below assume you are on one of these operating systems.
 If you are running in the latest `binaryanalysisplatform/bap:latest` docker
 container, you may skip this section. OCaml and BAP are already installed.
 
-Otherwise, if you don't have a `4.09.1` OCaml switch, create one.
+Otherwise, if you don't have a recent OCaml switch, create one (we recommend
+`4.12.1` or `4.11.2+flambda`).
 
 Install the latest (bleeding edge) version of BAP:
 
@@ -98,12 +99,11 @@ Next, install boolector, e.g.:
     export PATH=$(pwd):$PATH
 
 Clone [cbat_tools](https://github.com/draperlaboratory/cbat_tools), `cd`
-into the `wp` folder, checkout the branch `codyroux/user-fun-spec-compare`, and install with `make`:
+into the `wp` folder, and install with `make`:
 
     cd ~
     git clone https://github.com/draperlaboratory/cbat_tools
     cd cbat_tools/wp
-    git checkout codyroux/user-fun-spec-compare
     make
 
 Install the following opam packages:
@@ -141,10 +141,10 @@ the instructions in [bap-vibes/README.md](./bap-vibes/README.md).
 
 The basic form of the command is this:
 
-    bap vibes /path/to/pre-patched/exe [PARAMS] [OPTIONS]
+    bap vibes /path/to/unpatched/exe [PARAMS] [OPTIONS]
 
 This tells the VIBES tool to patch the EXE located on your system at
-`/path/to/pre-patched/exe`.
+`/path/to/unpatched/exe`.
 
 There is one mandatory PARAM:
 
@@ -258,7 +258,7 @@ for identifiers that appear in the patch code. For instance, suppose you have
 a patch with the following patch code:
 
 ```
-int x; 
+int x;
 x = 3;
 ```
 
@@ -436,14 +436,14 @@ Here is a description of the above schema:
   * `"patch-point": "HEX"` - Required. The address at which to start replacing bytes.
   * `"patch-size": INT` - Required. The number of bytes to replace.
   * `"patch-code": "CODE"` - Required. Code to compile and insert at the patch point. The code should be written in a subset of C.
-  * "patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
-  * `"patch-vars": [PATCH-VARS]` - 
+  * `"patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
+  * `"patch-vars": [PATCH-VARS]` -
     A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier:
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
     * For storage classification, the object has the following fields:
-      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`. 
+      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`.
       * `"at-entry": {STORAGE-CLASSIFICATION}` -
         Required. Storage classification for the identifier at the entrance to the patch site. The value can live in a register, or in memory (on the stack).
         * If it's stored in a register, the object has the following fields:
