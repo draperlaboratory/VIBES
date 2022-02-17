@@ -15,8 +15,7 @@
 open Core_kernel
 open Bap.Std
 open Bap_core_theory
-
-open KB.Let
+open Monads.Std
 
 (* Use the tid of the blk as the prefix, dropping the '%' at
    the beginning. *)
@@ -67,77 +66,139 @@ let congruent (a : var) (b : var) : bool =
   if String.is_empty name_1 && String.is_empty name_2 then false
   else String.equal name_1 name_2
 
-let rec linearize_exp ~(prefix : string) (exp : Bil.exp) : Bil.exp =
-  match exp with
+module Linear = struct
+
+  module Env = struct
+
+    type t = {
+      vars : Var.Set.t;
+      prefix : string;
+    }
+
+    let add_var v env = {env with vars = Set.add env.vars v}
+    let with_prefix prefix env = {env with prefix}
+
+  end
+
+  include Monad.State.T1(Env)(Monad.Ident)
+  include Monad.State.Make(Env)(Monad.Ident)
+
+end
+
+open Linear.Let
+
+type 'a linear = 'a Linear.t
+
+let linearize_var (v : var) : var linear =
+  Linear.gets @@ fun {prefix; _} -> linearize v ~prefix
+
+let rec linearize_exp (exp : exp) : exp linear = match exp with
   | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.Load (new_sub_exp_1, new_sub_exp_2, endian, size) 
   | Bil.Store (sub_exp_1, sub_exp_2, sub_exp_3, endian, size) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
-    let new_sub_exp_3 = linearize_exp sub_exp_3 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let* new_sub_exp_2 = linearize_exp sub_exp_2 in
+    let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
     Bil.Store (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3, endian, size)
   | Bil.UnOp (unop, sub_exp) -> 
-    let new_sub_exp = linearize_exp sub_exp ~prefix in
+    let+ new_sub_exp = linearize_exp sub_exp in
     Bil.UnOp (unop, new_sub_exp) 
   | Bil.BinOp (binop, sub_exp_1, sub_exp_2) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.BinOp (binop, new_sub_exp_1, new_sub_exp_2)
   | Bil.Var v ->
-    let new_var = linearize v ~prefix in
+    let* new_var = linearize_var v in
+    let+ () = Linear.(update @@ Env.add_var new_var) in
     Bil.Var new_var
-  | Bil.Int _ -> exp
+  | Bil.Int _ -> Linear.return exp
   | Bil.Cast (cast, i, sub_exp) ->
-    let new_sub_exp = linearize_exp sub_exp ~prefix in
+    let+ new_sub_exp = linearize_exp sub_exp in
     Bil.Cast (cast, i, new_sub_exp)
   | Bil.Let (var, sub_exp_1, sub_exp_2) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.Let (var, new_sub_exp_1, new_sub_exp_2)
   | Bil.Ite (sub_exp_1, sub_exp_2, sub_exp_3) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
-    let new_sub_exp_3 = linearize_exp sub_exp_3 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let* new_sub_exp_2 = linearize_exp sub_exp_2 in
+    let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
     Bil.Ite (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3)
   | Bil.Extract (i, j, sub_exp) ->
-    let new_sub_exp = linearize_exp sub_exp ~prefix in
+    let+ new_sub_exp = linearize_exp sub_exp in
     Bil.Extract (i, j, new_sub_exp) 
   | Bil.Concat (sub_exp_1, sub_exp_2) ->
-    let new_sub_exp_1 = linearize_exp sub_exp_1 ~prefix in
-    let new_sub_exp_2 = linearize_exp sub_exp_2 ~prefix in
+    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
     Bil.Concat (new_sub_exp_1, new_sub_exp_2)
-  | Bil.Unknown (_, _) -> exp
+  | Bil.Unknown (_, _) -> Linear.return exp
 
-let linearize_phi ~(prefix : string) (phi : Phi.t) : Phi.t KB.t =
-  ignore prefix;
-  ignore phi;
-  Kb_error.(fail @@ Not_implemented "Linear_ssa.linearize_phi: unimplemented")
-
-let linearize_def ~(prefix : string) (def : Def.t) : Def.t KB.t =
+let linearize_def (def : def term) : def term linear =
   let lhs = Def.lhs def in
-  let new_lhs = linearize lhs ~prefix in
+  let* new_lhs = linearize_var lhs in
+  let* () = Linear.(update @@ Env.add_var new_lhs) in
   let new_def = Def.with_lhs def new_lhs in
   let rhs = Def.rhs new_def in
-  let new_rhs = linearize_exp rhs ~prefix in
-  KB.return @@ Def.with_rhs new_def new_rhs
+  let+ new_rhs = linearize_exp rhs in
+  Def.with_rhs new_def new_rhs
 
-let linearize_jmp ~(prefix : string) (jmp : Jmp.t) : Jmp.t KB.t =
-  KB.return @@ Jmp.map_exp jmp ~f:(linearize_exp ~prefix)
+let linearize_jmp (jmp : jmp term) : jmp term linear =
+  let* cond = linearize_exp @@ Jmp.cond jmp in
+  let of_label = function
+    | Indirect e ->
+      let+ e = linearize_exp e in
+      Indirect e
+    | lbl -> Linear.return lbl in
+  let of_kind = function
+    | Call call ->
+      let* call = match Call.return call with
+        | None -> Linear.return call
+        | Some lbl ->
+          let+ lbl = of_label lbl in
+          Call.with_return call lbl in
+      let+ tgt = of_label @@ Call.target call in
+      Call (Call.with_target call tgt)
+    | Goto lbl ->
+      let+ lbl = of_label lbl in
+      Goto lbl
+    | Ret lbl ->
+      let+ lbl = of_label lbl in
+      Ret lbl
+    | Int _ as k -> Linear.return k in
+  let+ kind = of_kind @@ Jmp.kind jmp in
+  let tid = Term.tid jmp in
+  Jmp.create ~tid ~cond kind
 
-let linearize_blk (blk : Blk.t) : Blk.t KB.t =
+let go (cls : ('a, 'b) cls) (t : 'a term)
+    ~(f : 'b term -> 'b term linear) : 'b term list linear =
+  Term.enum cls t |> Seq.to_list |> Linear.List.map ~f
+
+let linearize_blk (blk : blk term) : blk term linear =
   let prefix = prefix_from blk in
-  let* phis =
-    Term.enum phi_t blk |> Seq.to_list |>
-    KB.List.map ~f:(linearize_phi ~prefix) in
-  let* defs =
-    Term.enum def_t blk |> Seq.to_list |>
-    KB.List.map ~f:(linearize_def ~prefix) in
-  let+ jmps =
-    Term.enum jmp_t blk |> Seq.to_list |>
-    KB.List.map ~f:(linearize_jmp ~prefix) in
-  Blk.create ~phis ~defs ~jmps ~tid:(Term.tid blk) ()
+  let* () = Linear.(update @@ Env.with_prefix prefix) in
+  let* defs = go def_t blk ~f:linearize_def in
+  let+ jmps = go jmp_t blk ~f:linearize_jmp in
+  (* We will deliberately remove phi nodes since they are subsumed by
+     congruence between linear SSA vars. *)
+  Blk.create ~phis:[] ~defs ~jmps ~tid:(Term.tid blk) ()
+
+let transform
+    ?(patch : Data.Patch.t option = None)
+    (sub : sub term) : blk term list KB.t =
+  let open KB.Let in
+  let blks, Linear.Env.{vars; _} = 
+    Linear.Env.{prefix = ""; vars = Var.Set.empty} |>
+    Linear.run (go blk_t sub ~f:linearize_blk) in
+  let+ () = match patch with
+    | None -> KB.return ()
+    | Some patch ->
+      let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
+      Var.Set.to_list vars |>
+      KB.List.iter ~f:(fun v1 ->
+          let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
+          KB.List.iter vars ~f:(fun v2 ->
+              Data.Patch.add_congruence patch (v1, v2))) in
   
-let transform (sub : Sub.t) : Blk.t list KB.t =
-  Term.enum blk_t sub |> Seq.to_list |> KB.List.map ~f:linearize_blk
+  blks

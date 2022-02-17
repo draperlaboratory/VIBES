@@ -28,18 +28,6 @@ open Core_kernel
 open Bap_core_theory
 open Bap.Std
 
-module Congruent_temps : sig
-
-  type cls
-  type t = cls KB.obj
-  type computed = (cls, unit) KB.cls KB.value
-
-  val name : string
-  val cls : (cls, unit) KB.cls
-  val slot : (cls, (Ir.op_var * Ir.op_var) option) KB.slot
-  
-end
-
 (** The abstract representation of [Theory.eff] terms in [ARM_Core]. *)
 type arm_eff
 
@@ -91,6 +79,7 @@ sig
       the Thumb encoding is being targeted. [argument_tids] indicates the
       tids where function arguments are set before a call. *)
   val select :
+    ?patch:Data.Patch.t option ->
     blk term list ->
     is_thumb:bool ->
     argument_tids:Tid.Set.t ->

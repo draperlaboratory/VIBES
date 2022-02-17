@@ -125,13 +125,17 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     Data.Patch.set_bir patch bil >>= fun () ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
+    Arm_selector.gpr arm_tgt arm_lang >>= fun gpr ->
+    let regs = Arm_selector.regs arm_tgt arm_lang in
     (* Now run the compiler. *)
     Minizinc.run_allocation_and_scheduling
       arm_tgt
-      arm_lang
-      ~filepath:model
       []
-      ex1 >>= fun (vir, _) ->
+      ex1
+      ~filepath:model
+      ~gpr
+      ~regs
+    >>= fun (vir, _) ->
     let get_ops ir = let blk = List.hd_exn ir.blks in
       blk.data in
     assert_bool "Operations should be in order"

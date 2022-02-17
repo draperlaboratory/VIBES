@@ -48,7 +48,9 @@ let (mzn_params1, serial_info1) =
   let open KB.Syntax in
   let computation =
     KB.Object.create Dummy_kb.cls >>= fun obj ->
-    Minizinc.serialize_mzn_params arm_tgt arm_lang ex1 [] >>= fun serial ->
+    Arm_selector.gpr arm_tgt arm_lang >>= fun gpr ->
+    let regs = Arm_selector.regs arm_tgt arm_lang in
+    Minizinc.serialize_mzn_params arm_tgt ex1 [] ~gpr ~regs >>= fun serial ->
     KB.provide Dummy_kb.mzn_serial obj (Some serial) >>= fun () ->
     KB.return obj in
   match KB.run Dummy_kb.cls computation KB.empty with

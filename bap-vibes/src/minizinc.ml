@@ -164,17 +164,18 @@ let key_map_kb ~f:(f : 'a -> 'c KB.t)
     the same time to hopefully keep close linkage between them.
 
     TODO:
-       Implement congruence
+       Lift congruences to operands
        Implement latency
 
 *)
 let serialize_mzn_params
+    ?(congruence : (var * var) list = [])
     ?(exclude_regs : String.Set.t = String.Set.empty)
     (tgt : Theory.target)
-    (lang : Theory.language)
     (vir : Ir.t)
     (prev_sols : sol list)
-  : (mzn_params_serial * serialization_info) KB.t =
+    ~(gpr : Var.Set.t)
+    ~(regs : Var.Set.t) : (mzn_params_serial * serialization_info) KB.t =
   let params = mzn_params_of_vibes_ir vir in
   let opcodes = Ir.all_opcodes vir in
   let opcodes_str = List.map opcodes
@@ -192,7 +193,6 @@ let serialize_mzn_params
       Kb_error.(fail @@ Other "Minizinc.serialize_mzn_params: \
                                width unimplemented for Unk")
   in
-  let* gpr = Arm_selector.gpr tgt lang in
   let gpr =
     Set.to_list gpr |>
     List.filter ~f:(fun v ->
@@ -203,8 +203,7 @@ let serialize_mzn_params
   let dummy_reg = Var.create ~is_virtual:false ~fresh:false "dummy_reg" Unk in
   let dummy = dummy_reg |> Var.sexp_of_t |> Sexp.to_string |> List.return in
   let regs =
-    Arm_selector.regs tgt lang |>
-    Set.to_list |>
+    Set.to_list regs |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
@@ -220,15 +219,14 @@ let serialize_mzn_params
           Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
             Theory.Role.pp r))
   in
-  let* congruent_temps = KB.objects Arm_selector.Congruent_temps.cls in
-  let* congruent_temps =
-    Seq.to_list congruent_temps |>
-    KB.List.filter_map ~f:(fun obj ->
-        let+ cong = KB.collect Arm_selector.Congruent_temps.slot obj in
-        match cong with
-        | None -> None
-        | Some (op1, op2) ->
-          Some (List.hd_exn op1.temps, List.hd_exn op2.temps)) in
+  let congruent_temps =
+    List.fold congruence ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
+        let m = Map.update m t1 ~f:(function
+            | None -> Var.Set.singleton t2
+            | Some s -> Set.add s t2) in
+        Map.update m t2 ~f:(function
+            | None -> Var.Set.singleton t1
+            | Some s -> Set.add s t1)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
@@ -239,9 +237,11 @@ let serialize_mzn_params
              ~f:(fun r ->
                  let+ regs = regs_of_role r in
                  mzn_enum_def_of_list regs)) in
-  let+ width = KB.List.map temps ~f:width in
-  if (List.length regs = 0) then
-    (failwith @@ Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt);
+  let* width = KB.List.map temps ~f:width in
+  let+ () = match regs with
+    | _ :: _ -> KB.return ()
+    | [] -> Kb_error.fail @@ Other (
+        Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt) in
   {
     (* Add the dummy register for void/virtual variables *)
     reg_t = mzn_enum_def_of_list (regs @ dummy);
@@ -295,16 +295,9 @@ let serialize_mzn_params
       List.map temps ~f:(fun t1 -> {
             set = match Var.typ t1 with
               | Type.Mem _ | Type.Unk -> []
-              | Type.Imm _ as typ ->
-                List.filter_map temps ~f:(fun t2 ->
-                    (* The trivial case of the vars being equal can be ignored. *)
-                    if Var.(t1 = t2) || Type.(Var.typ t2 <> typ) then None
-                    else
-                      if not @@ Linear_ssa.congruent t1 t2 then
-                        match List.Assoc.find congruent_temps t1 ~equal:Var.equal with
-                        | Some t2' when Var.(t2 = t2') -> Some (mzn_enum_of_var t2)
-                        | _ -> None
-                      else Some (mzn_enum_of_var t2))
+              | Type.Imm _ -> match Map.find congruent_temps t1 with
+                | Some s -> Set.to_list s |> List.map ~f:mzn_enum_of_var
+                | None -> []
           });
     operation_opcodes = key_map operations params.operation_opcodes
         ~f:(fun ids ->
@@ -414,17 +407,20 @@ let delete_empty_blocks vir =
   {vir with blks = blks}
 
 let run_allocation_and_scheduling
+    ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
     (tgt : Theory.target)
-    (lang : Theory.language)
-    ~filepath:(model_filepath : string)
     (prev_sols : sol list)
     (vir : Ir.t)
-  : (Ir.t * sol) KB.t =
+    ~filepath:(model_filepath : string)
+    ~(gpr : Var.Set.t)
+    ~(regs : Var.Set.t) : (Ir.t * sol) KB.t =
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let* params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
+  let* params, name_maps =
+    serialize_mzn_params tgt vir_clean prev_sols
+      ~gpr ~regs ~congruence ~exclude_regs in
   (run_minizinc ~model_filepath (mzn_params_serial_to_yojson params)) >>= fun sol_json ->
   let sol_serial = sol_serial_of_yojson sol_json in
   let sol = match sol_serial with
