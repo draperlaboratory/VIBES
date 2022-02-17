@@ -99,6 +99,11 @@ let test_array _ =
     "int* a, y; y = a[7];"
     "{ y := mem[a + 0x1C, el]:u32 }"
 
+let test_array_multi_ptr _ =
+  assert_parse_eq
+    "int** a, y; y = a[1][2];"
+    "{ y := mem[mem[a + 4, el]:u32 + 8, el]:u32 }"
+
 let test_compound _ =
   assert_parse_eq
     "int x, *y, z;
@@ -223,6 +228,7 @@ let suite = [
   "Test seq" >:: test_seq;
   "Test ite" >:: test_ite;
   "Test array" >:: test_array;
+  "Test array multi ptr" >:: test_array_multi_ptr;
   "Test fallthrough" >:: test_fallthrough;
   "Test compound" >:: test_compound;
   "Test call hex" >:: test_call_hex;

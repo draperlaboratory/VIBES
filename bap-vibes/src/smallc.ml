@@ -509,52 +509,9 @@ and translate_expression
     let width = Theory.Target.bits target in
     let size = size_of_typ target t in
     NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
-  | Cabs.INDEX (ptr, idx) -> begin
-      let exp = translate_expression_strict "translate_expression (INDEX)" in
-      let* sptr, eptr = exp ptr in
-      let* sidx, eidx = exp idx in
-      let tptr = typeof eptr in
-      let tidx = typeof eidx in
-      match tptr, tidx with
-      | PTR t, INT _ ->
-        (* Translate to the pointer arithmetic of an array lookup. 
-
-           XXX: This would probably fail on multidimensional array lookups,
-           since their layout is flat and this code assumes otherwise.
-        *)
-        let+ {target; _} = Transl.get () in
-        let bits = Theory.Target.bits target in
-        let stride = size_of_typ target t lsr 3 in
-        let scale = Word.of_int ~width:bits stride in
-        let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
-        let eidx = with_type eidx tidx in
-        let e =
-          UNARY (
-            MEMOF,
-            BINARY (
-              ADD,
-              CAST (tidx, eptr),
-              BINARY (
-                MUL,
-                CONST_INT (scale, UNSIGNED),
-                eidx,
-                tidx),
-              tidx),
-            t) in
-        SEQUENCE (sptr, sidx), Some e
-      | PTR _, _ ->
-        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = string_of_typ tidx in
-        Transl.fail @@ Core_c_error (
-          sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
-                   Expected integer.\n" s t)
-      | _, _ ->
-        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = string_of_typ tptr in
-        Transl.fail @@ Core_c_error (
-          sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
-                   Expected pointer.\n" s t)
-    end
+  | Cabs.INDEX (ptr, idx) ->
+    let+ s, e, t = translate_index ptr idx in
+    s, Some (UNARY (MEMOF, e, t))
   | _ ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
@@ -891,6 +848,87 @@ and translate_call
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_call:\n\n%s\n\n\
                has type %s, expected function type" s t)
+
+and translate_index
+    (ptr : Cabs.expression)
+    (idx : Cabs.expression) : (stmt * exp * typ) transl =
+  let exp = translate_expression_strict "translate_index" in
+  let* sptr, eptr = exp ptr in
+  let* sidx, eidx = exp idx in
+  let tptr = typeof eptr in
+  let tidx = typeof eidx in
+  match tptr, tidx with
+  | PTR t, INT _ ->
+    (* Translate to the pointer arithmetic of an array lookup.
+
+       NOTE: we're not supporting array types currently. A multidimensional
+       lookup, if the type is an array, must assume that the memory layout
+       is flat. The semantics of a multidimensional lookup of a pointer type
+       is captured here.
+
+       Example:
+
+       int f(int **x) {
+         return x[1][2];
+       }
+
+       This function is compiled to the following ARM code by GCC:
+
+       ldr     r3, [r0, #4]
+       ldr     r0, [r3, #8]
+       bx      lr
+
+       Whereas the following function:
+
+       int f(int x[8][8]) {
+         return x[1][2];
+       }
+
+       is compiled to:
+
+       ldr     r0, [r0, #40]
+       bx      lr
+
+       The math behind it is:
+
+       i = x + y * w 
+       x = 2 * 4
+       y = 1 * 4
+       w = 8
+       i = (2 * 4) + (1 * 4 * 8) = 8 + 32 = 40
+
+       We multiply by 4 since that is the size of an `int`.
+    *)
+    let+ {target; _} = Transl.get () in
+    let bits = Theory.Target.bits target in
+    let scale = Word.of_int ~width:bits (size_of_typ target t lsr 3) in
+    let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
+    let eidx = with_type eidx tidx in
+    let e =
+      BINARY (
+        ADD,
+        CAST (tidx, eptr),
+        BINARY (
+          MUL,
+          CONST_INT (scale, UNSIGNED),
+          eidx,
+          tidx),
+        tidx) in
+    SEQUENCE (sptr, sidx), e, t
+  | PTR _, _ ->
+    let e = Cabs.(INDEX (ptr, idx)) in
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    let t = string_of_typ tidx in
+    Transl.fail @@ Core_c_error (
+      sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
+               Expected integer.\n" s t)
+  | _, _ ->
+    let e = Cabs.(INDEX (ptr, idx)) in
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    let t = string_of_typ tptr in
+    Transl.fail @@ Core_c_error (
+      sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
+               Expected pointer.\n" s t)
 
 (* Translate a statement. *)
 and translate_statement (s : Cabs.statement) : stmt transl = match s with
