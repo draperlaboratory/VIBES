@@ -511,7 +511,7 @@ and translate_expression
     NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
   | Cabs.INDEX (ptr, idx) ->
     let+ s, e, t = translate_index ptr idx in
-    s, Some (UNARY (MEMOF, e, t))
+    s, Some (UNARY (MEMOF, CAST (PTR t, e), t))
   | _ ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
@@ -849,6 +849,8 @@ and translate_call
       sprintf "Smallc.translate_call:\n\n%s\n\n\
                has type %s, expected function type" s t)
 
+(* This function returns the side effects, the pointer to the element in the
+   array (as an integer), and the element type. *)
 and translate_index
     (ptr : Cabs.expression)
     (idx : Cabs.expression) : (stmt * exp * typ) transl =
