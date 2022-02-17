@@ -630,7 +630,7 @@ module ARM_ops = struct
       let* () = match patch with
         | None -> KB.return ()
         | Some patch ->
-          Data.Patch.set_congruence patch
+          Data.Patch.add_congruence patch
             (List.hd_exn tmp1.temps, List.hd_exn tmp2.temps) in
       let then_ = Ops.movcc @@ Some cond in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in

@@ -199,5 +199,6 @@ let transform
       KB.List.iter ~f:(fun v1 ->
           let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
           KB.List.iter vars ~f:(fun v2 ->
-              Data.Patch.set_congruence patch (v1, v2))) in
+              Data.Patch.add_congruence patch (v1, v2))) in
+  
   blks

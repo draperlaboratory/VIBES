@@ -309,10 +309,13 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_sp_align
     | Some value -> KB.return value
 
+  let set_congruence (obj : t) (data : var_pair_set) : unit KB.t =
+    KB.provide congruence obj data
+  
   let get_congruence (obj : t) : var_pair_set KB.t =
     KB.collect congruence obj
   
-  let set_congruence (obj : t) (data : var * var) : unit KB.t =
+  let add_congruence (obj : t) (data : var * var) : unit KB.t =
     get_congruence obj >>= fun cong ->
     KB.provide congruence obj @@ Set.add cong data
   

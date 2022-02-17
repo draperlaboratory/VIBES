@@ -125,11 +125,13 @@ let compile_one_assembly
       Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
       Data.Patch.get_target patch >>= fun target ->
       Data.Patch.get_lang patch >>= fun lang ->
-      let* gpr = Arm_selector.gpr target lang in
+      Arm_selector.gpr target lang >>= fun gpr ->
+      Data.Patch.get_congruence patch >>= fun congruence ->
+      let congruence = Set.to_list congruence in
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       create_assembly
-        (solver target prev_sols ~gpr ~regs ~exclude_regs)
+        (solver target prev_sols ~gpr ~regs ~exclude_regs ~congruence)
         ir >>= fun (assembly, new_sol) ->
       Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
       Events.(send @@ Info "The patch has the following assembly:\n");

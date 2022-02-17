@@ -75,6 +75,7 @@ module Patch : sig
   val patch_label : (patch_cls, Theory.label option) KB.slot
   val raw_ir : (patch_cls, Ir.t option) KB.slot
   val exclude_regs : (patch_cls, String.Set.t option) KB.slot
+  val congruence : (patch_cls, var_pair_set) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   val sp_align : (patch_cls, int option) KB.slot
   (* The language/encoding of the assembly, typically used to
@@ -138,7 +139,8 @@ module Patch : sig
   val get_sp_align : t -> int option KB.t
   val get_sp_align_exn : t -> int KB.t
 
-  val set_congruence : t -> var * var -> unit KB.t
+  val set_congruence : t -> var_pair_set -> unit KB.t
+  val add_congruence : t -> var * var -> unit KB.t
   val get_congruence : t -> var_pair_set KB.t
 
 end
