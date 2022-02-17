@@ -892,6 +892,9 @@ and translate_index
        The math behind it is:
 
        i = x + y * w 
+
+       So for this example:
+
        x = 2 * 4
        y = 1 * 4
        w = 8
@@ -920,15 +923,15 @@ and translate_index
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ tidx in
     Transl.fail @@ Core_c_error (
-      sprintf "Expression:\n\n%s\n\nIndex operand has type %s. \
-               Expected integer.\n" s t)
+      sprintf "Smallc.translate_index: in expression:\n\n%s\n\nIndex operand \
+               has type %s. Expected integer.\n" s t)
   | _, _ ->
     let e = Cabs.(INDEX (ptr, idx)) in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ tptr in
     Transl.fail @@ Core_c_error (
-      sprintf "Expression:\n\n%s\n\nArray operand has type %s. \
-               Expected pointer.\n" s t)
+      sprintf "Smallc.translate_index: in expression:\n\n%s\n\nArray operand \
+               has type %s. Expected pointer.\n" s t)
 
 (* Translate a statement. *)
 and translate_statement (s : Cabs.statement) : stmt transl = match s with
