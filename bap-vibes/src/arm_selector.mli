@@ -79,6 +79,7 @@ sig
       the Thumb encoding is being targeted. [argument_tids] indicates the
       tids where function arguments are set before a call. *)
   val select :
+    ?patch:Data.Patch.t option ->
     blk term list ->
     is_thumb:bool ->
     argument_tids:Tid.Set.t ->

@@ -169,12 +169,13 @@ let key_map_kb ~f:(f : 'a -> 'c KB.t)
 
 *)
 let serialize_mzn_params
+    ?(congruence : (var * var) list = [])
     ?(exclude_regs : String.Set.t = String.Set.empty)
     (tgt : Theory.target)
-    (lang : Theory.language)
     (vir : Ir.t)
     (prev_sols : sol list)
-  : (mzn_params_serial * serialization_info) KB.t =
+    ~(gpr : Var.Set.t)
+    ~(regs : Var.Set.t) : (mzn_params_serial * serialization_info) KB.t =
   let params = mzn_params_of_vibes_ir vir in
   let opcodes = Ir.all_opcodes vir in
   let opcodes_str = List.map opcodes
@@ -192,7 +193,6 @@ let serialize_mzn_params
       Kb_error.(fail @@ Other "Minizinc.serialize_mzn_params: \
                                width unimplemented for Unk")
   in
-  let* gpr = Arm_selector.gpr tgt lang in
   let gpr =
     Set.to_list gpr |>
     List.filter ~f:(fun v ->
@@ -203,8 +203,7 @@ let serialize_mzn_params
   let dummy_reg = Var.create ~is_virtual:false ~fresh:false "dummy_reg" Unk in
   let dummy = dummy_reg |> Var.sexp_of_t |> Sexp.to_string |> List.return in
   let regs =
-    Arm_selector.regs tgt lang |>
-    Set.to_list |>
+    Set.to_list regs |>
     List.map ~f:Var.sexp_of_t |>
     List.map ~f:Sexp.to_string
   in
@@ -220,12 +219,8 @@ let serialize_mzn_params
           Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
             Theory.Role.pp r))
   in
-  let* congruent_temps = KB.objects Congruence.cls in
-  let* congruent_temps =
-    Seq.to_list congruent_temps |>
-    KB.List.filter_map ~f:(KB.collect Congruence.slot) in
   let congruent_temps =
-    List.fold congruent_temps ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
+    List.fold congruence ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
         let m = Map.update m t1 ~f:(function
             | None -> Var.Set.singleton t2
             | Some s -> Set.add s t2) in
@@ -412,17 +407,20 @@ let delete_empty_blocks vir =
   {vir with blks = blks}
 
 let run_allocation_and_scheduling
+    ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
     (tgt : Theory.target)
-    (lang : Theory.language)
-    ~filepath:(model_filepath : string)
     (prev_sols : sol list)
     (vir : Ir.t)
-  : (Ir.t * sol) KB.t =
+    ~filepath:(model_filepath : string)
+    ~(gpr : Var.Set.t)
+    ~(regs : Var.Set.t) : (Ir.t * sol) KB.t =
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
-  let* params, name_maps = serialize_mzn_params tgt lang vir_clean prev_sols ~exclude_regs in
+  let* params, name_maps =
+    serialize_mzn_params tgt vir_clean prev_sols
+      ~gpr ~regs ~congruence ~exclude_regs in
   (run_minizinc ~model_filepath (mzn_params_serial_to_yojson params)) >>= fun sol_json ->
   let sol_serial = sol_serial_of_yojson sol_json in
   let sol = match sol_serial with

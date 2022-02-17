@@ -59,13 +59,14 @@ type sol = {
 *)
 
 val run_allocation_and_scheduling :
+  ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
   Theory.target ->
-  Theory.language ->
-  filepath:string ->
   sol list ->
   Ir.t ->
-  (Ir.t * sol) KB.t
+  filepath:string ->
+  gpr:Var.Set.t ->
+  regs:Var.Set.t -> (Ir.t * sol) KB.t
 
 (** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
@@ -84,10 +85,6 @@ end
 
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
-
-
-
-(**/**)
 (* Exposed for unit testing. *)
 
 type operand = mzn_enum [@@deriving yojson]
@@ -127,11 +124,12 @@ type serialization_info = {
 } [@@deriving equal]
 
 val serialize_mzn_params :
+  ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
   Theory.target ->
-  Theory.language ->
   Ir.t ->
   sol list ->
-  (mzn_params_serial * serialization_info) KB.t
+  gpr:Var.Set.t ->
+  regs:Var.Set.t -> (mzn_params_serial * serialization_info) KB.t
 
 val apply_sol : Ir.t -> sol -> Ir.t

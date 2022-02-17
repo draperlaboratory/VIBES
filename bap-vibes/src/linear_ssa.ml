@@ -14,7 +14,6 @@
 
 open Core_kernel
 open Bap.Std
-open Bap_knowledge
 open Bap_core_theory
 open Monads.Std
 
@@ -81,8 +80,8 @@ module Linear = struct
 
   end
 
-  include Monad.State.T1(Env)(Knowledge)
-  include Monad.State.Make(Env)(Knowledge)
+  include Monad.State.T1(Env)(Monad.Ident)
+  include Monad.State.Make(Env)(Monad.Ident)
 
 end
 
@@ -136,16 +135,6 @@ let rec linearize_exp (exp : exp) : exp linear = match exp with
     Bil.Concat (new_sub_exp_1, new_sub_exp_2)
   | Bil.Unknown (_, _) -> Linear.return exp
 
-let linearize_phi (phi : phi term) : phi term linear =
-  let lhs = Phi.lhs phi in
-  let* new_lhs = linearize_var lhs in
-  let+ new_values =
-    Phi.values phi |> Seq.to_list |>
-    Linear.List.map ~f:(fun (tid, e) ->
-        let+ e = linearize_exp e in
-        tid, e) in
-  Phi.of_list ~tid:(Term.tid phi) new_lhs new_values
-
 let linearize_def (def : def term) : def term linear =
   let lhs = Def.lhs def in
   let* new_lhs = linearize_var lhs in
@@ -189,22 +178,26 @@ let go (cls : ('a, 'b) cls) (t : 'a term)
 let linearize_blk (blk : blk term) : blk term linear =
   let prefix = prefix_from blk in
   let* () = Linear.(update @@ Env.with_prefix prefix) in
-  let* phis = go phi_t blk ~f:linearize_phi in
   let* defs = go def_t blk ~f:linearize_def in
   let+ jmps = go jmp_t blk ~f:linearize_jmp in
-  Blk.create ~phis ~defs ~jmps ~tid:(Term.tid blk) ()
+  (* We will deliberately remove phi nodes since they are subsumed by
+     congruence between linear SSA vars. *)
+  Blk.create ~phis:[] ~defs ~jmps ~tid:(Term.tid blk) ()
 
-let transform (sub : sub term) : blk term list KB.t =
+let transform
+    ?(patch : Data.Patch.t option = None)
+    (sub : sub term) : blk term list KB.t =
   let open KB.Let in
-  let* blks, {vars; _} = 
+  let blks, Linear.Env.{vars; _} = 
     Linear.Env.{prefix = ""; vars = Var.Set.empty} |>
     Linear.run (go blk_t sub ~f:linearize_blk) in
-  let+ () =
-    let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
-    Var.Set.to_list vars |>
-    KB.List.iter ~f:(fun v1 ->
-        let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
-        KB.List.iter vars ~f:(fun v2 ->
-            let* cong = KB.Object.create Congruence.cls in
-            KB.provide Congruence.slot cong @@ Some (v1, v2))) in
+  let+ () = match patch with
+    | None -> KB.return ()
+    | Some patch ->
+      let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
+      Var.Set.to_list vars |>
+      KB.List.iter ~f:(fun v1 ->
+          let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
+          KB.List.iter vars ~f:(fun v2 ->
+              Data.Patch.set_congruence patch (v1, v2))) in
   blks

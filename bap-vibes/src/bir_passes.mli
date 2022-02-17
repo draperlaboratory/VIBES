@@ -58,13 +58,7 @@ module Shape : sig
   
 end
 
-(** [run code ~tgt ~lang ~hvars ~sp_align] creates the BIR from the patch
-    code [code], then applies a series of transformations to it. The resulting
-    code is then ready to be handed off to the instruction selector. *)
-val run :
-  insn ->
-  tgt:Theory.target ->
-  hvars:Higher_var.t list ->
-  sp_align:int ->
-  t KB.t
-  
+(** [run patch] creates the BIR from [patch], then applies a series of
+    transformations to it. The resulting code is then ready to be handed
+    off to the instruction selector. *)
+val run : Data.Patch.t -> t KB.t  

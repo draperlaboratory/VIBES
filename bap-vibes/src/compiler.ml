@@ -38,25 +38,24 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
-    (isel_model_filepath : string option)
-    (tgt: Theory.target)
-    (lang : Theory.language)
-    (hvars : Higher_var.t list)
-    (sp_align : int)
-    (code : insn) : (Ir.t * String.Set.t) KB.t =
-  let* {ir; exclude_regs; argument_tids} =
-    Bir_passes.run code ~tgt ~hvars ~sp_align in
+    (patch : Data.Patch.t)
+    (isel_model_filepath : string option) : (Ir.t * String.Set.t) KB.t =
+  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
+  let* lang = Data.Patch.get_lang patch in
+  let* tgt = Data.Patch.get_target patch in
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
   let+ ir =
     if is_arm || is_thumb then
       let+ ir = 
         match isel_model_filepath with
-        | None -> Arm.ARM_Gen.select ir ~argument_tids ~is_thumb
+        | None ->
+          Arm.ARM_Gen.select ir
+            ~patch:(Some patch) ~argument_tids ~is_thumb
         | Some isel_model_filepath ->
           begin
             Events.(send @@ Info "Running Minizinc instruction selector.");
@@ -82,20 +81,9 @@ let compile_one_vibes_ir
       Events.(send @@ Info "The patch has no IR to translate.\n");
       KB.return () (* Assembly already set. Presumably by the user. *)
     | None ->
-      let info_str =
-        Format.sprintf "Translating patch %d BIR to VIBES IR..." n
-      in
+      let info_str = Format.sprintf "Translating patch %d BIR to VIBES IR..." n in
       Events.(send @@ Info info_str);
-      Data.Patch.get_bir patch >>= fun bir ->
-
-      let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp bir in
-      Events.(send @@ Info info_str);
-
-      Data.Patch.get_lang patch >>= fun lang ->
-      Data.Patch.get_target patch >>= fun tgt ->
-      Data.Patch.get_patch_vars_exn patch >>= fun hvars ->
-      Data.Patch.get_sp_align_exn patch >>= fun sp_align ->
-      create_vibes_ir isel_model_filepath tgt lang hvars sp_align bir >>= fun (ir, exclude_regs) ->
+      create_vibes_ir patch isel_model_filepath >>= fun (ir, exclude_regs) ->
       Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
       Data.Patch.set_exclude_regs patch (Some exclude_regs) >>= fun () ->
       Events.(send @@ Info "The patch has the following VIBES IR:\n");
@@ -105,16 +93,21 @@ let compile_one_vibes_ir
       KB.return ()
   end >>= fun () -> KB.return (n + 1)
 
+type solver_with_filepath =
+  ?congruence:(var * var) list ->
+  ?exclude_regs:String.Set.t ->
+  Theory.target ->
+  Minizinc.sol list ->
+  Ir.t ->
+  gpr:Var.Set.t ->
+  regs:Var.Set.t ->
+  (Ir.t * Minizinc.sol) KB.t
+
 (* Compile one patch from VIBES IR to assembly *)
 let compile_one_assembly
-    (solver :
-       ?exclude_regs:String.Set.t ->
-     Theory.target ->
-     Theory.language ->
-     Minizinc.sol list ->
-     Ir.t ->
-     (Ir.t * Minizinc.sol) KB.t)
-    (count : int KB.t) (patch : Data.Patch.t) : int KB.t =
+    (solver : solver_with_filepath)
+    (count : int KB.t)
+    (patch : Data.Patch.t) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
       Events.(send @@ Info "The patch already has assembly\n");
@@ -132,9 +125,11 @@ let compile_one_assembly
       Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
       Data.Patch.get_target patch >>= fun target ->
       Data.Patch.get_lang patch >>= fun lang ->
+      let* gpr = Arm_selector.gpr target lang in
+      let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       create_assembly
-        (solver target lang prev_sols ~exclude_regs)
+        (solver target prev_sols ~gpr ~regs ~exclude_regs)
         ir >>= fun (assembly, new_sol) ->
       Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
       Events.(send @@ Info "The patch has the following assembly:\n");
@@ -155,9 +150,20 @@ let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Done.");
   KB.return ()
 
+type solver =
+  ?congruence:(var * var) list ->
+  ?exclude_regs:String.Set.t ->
+  Theory.target ->
+  Minizinc.sol list ->
+  Ir.t ->
+  filepath:string ->
+  gpr:Var.Set.t ->
+  regs:Var.Set.t ->
+  (Ir.t * Minizinc.sol) KB.t
+
 (* Converts the patch (as IR) to assembly instructions. *)
 let compile_assembly 
-  ?solver:(solver = Minizinc.run_allocation_and_scheduling)
+  ?(solver : solver = Minizinc.run_allocation_and_scheduling)
   (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->

@@ -20,16 +20,24 @@ open Bap_core_theory
 
 module Hvar = Higher_var
 
+module Var_pair : sig
+  type t = var * var [@@deriving compare, sexp]
+  include Comparator.S with type t := t
+end
+
+type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t 
+
 (** We define "domains" for the types used in our properties. *)
-val string_domain    : string option KB.Domain.t
-val int_domain       : int option KB.Domain.t
-val int64_domain     : int64 option KB.Domain.t
-val bitvec_domain    : Bitvec.t option KB.Domain.t
-val sexp_domain      : Sexp.t option KB.Domain.t
-val source_domain    : Cabs.definition option KB.Domain.t
-val assembly_domain  : string list option KB.Domain.t
-val unit_domain      : unit KB.Domain.t
-val higher_vars_domain : Hvar.t list option KB.Domain.t
+val string_domain       : string option KB.Domain.t
+val int_domain          : int option KB.Domain.t
+val int64_domain        : int64 option KB.Domain.t
+val bitvec_domain       : Bitvec.t option KB.Domain.t
+val sexp_domain         : Sexp.t option KB.Domain.t
+val source_domain       : Cabs.definition option KB.Domain.t
+val assembly_domain     : string list option KB.Domain.t
+val unit_domain         : unit KB.Domain.t
+val higher_vars_domain  : Hvar.t list option KB.Domain.t
+val var_pair_set_domain : var_pair_set KB.Domain.t
 
 (** These are the top-level class definitions.
 
@@ -129,7 +137,10 @@ module Patch : sig
   val set_sp_align : t -> int option -> unit KB.t
   val get_sp_align : t -> int option KB.t
   val get_sp_align_exn : t -> int KB.t
-  
+
+  val set_congruence : t -> var * var -> unit KB.t
+  val get_congruence : t -> var_pair_set KB.t
+
 end
 
 (** Sets of patches *)
