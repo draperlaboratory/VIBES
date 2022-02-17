@@ -253,6 +253,73 @@ let test_ternary_eff _ =
        y := x
      }"
 
+let test_posincr _ =
+  assert_parse_eq
+    "int x; x++;"
+    "{ x := x + 1 }"
+
+let test_posincr_assign _ =
+  assert_parse_eq
+    "int x, y; y = x++;"
+    "{
+       _$1 := x
+       x := x + 1
+       y := _$1
+     }"
+
+let test_preincr _ =
+  assert_parse_eq
+    "int x; ++x;"
+    "{ x := x + 1 }"
+
+let test_preincr_assign _ =
+  assert_parse_eq
+    "int x, y; y = ++x;"
+    "{
+       x := x + 1
+       y := x
+     }"
+
+let test_and_short_circ _ =
+  assert_parse_eq
+    "int x, y;
+     int (*f)();
+     if (x && f()) {
+       y = 5;
+     }"
+    "{
+       _$1 := x
+       if (_$1) {
+         call(f)
+         virt := R0
+         _$1 := virt
+       }
+       if (_$1) {
+         y := 5
+       }
+     }"
+
+let test_or_short_circ _ =
+  assert_parse_eq
+    "int x, y;
+     int (*f)();
+     if (x || f()) {
+       y = 5;
+     }"
+    "{
+       _$1 := x
+       if (_$1) {
+       }
+       else {
+         call(f)
+         virt := R0
+         _$1 := virt
+       }
+       if (_$1) {
+         y := 5
+       }
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -272,4 +339,10 @@ let suite = [
   "Test load unsigned short" >:: test_load_ushort;
   "Test ternary assign" >:: test_ternary_assign;
   "Test ternary effect" >:: test_ternary_eff;
+  "Test post increment" >:: test_posincr;
+  "Test post increment assign" >:: test_posincr_assign;
+  "Test pre increment" >:: test_preincr;
+  "Test pre increment assign" >:: test_preincr_assign;
+  "Test AND short-circuit" >:: test_and_short_circ;
+  "Test OR short-circuit" >:: test_or_short_circ;
 ]

@@ -236,10 +236,11 @@ module Transl = struct
     type t = {
       target : Theory.target;
       tenv : tenv;
+      no_virtual : int;
     }
 
     let create ~(target : Theory.target) () =
-      {target; tenv = String.Map.empty}
+      {target; tenv = String.Map.empty; no_virtual = 0}
 
     let typeof (var : string) (env : t) : typ option =
       Map.find env.tenv var
@@ -267,6 +268,20 @@ let new_tmp (t : typ) : var transl =
       env with tenv = Map.set env.tenv ~key:(Theory.Var.name v) ~data:t;
     } in
   v, t
+
+(* Create a fresh temporary variable that is not virtual. *)
+let new_tmp_no_virtual (t : typ) : var transl =
+  let* {target; tenv; no_virtual} = Transl.get () in
+  let no_virtual = no_virtual + 1 in
+  let s = Theory.Bitv.define @@ size_of_typ target t in
+  let v = Theory.Var.(forget @@ define s @@ sprintf "_$%d" no_virtual) in
+  let tenv = Map.set tenv ~key:(Theory.Var.name v) ~data:t in
+  let+ () = Transl.update @@ fun env -> {env with tenv; no_virtual} in
+  v, t
+
+let is_temp_physical (v : Theory.Var.Top.t) : bool =
+  not (Theory.Var.is_virtual v) &&
+  String.is_prefix (Theory.Var.name v) ~prefix:"_$"
 
 (* Translate a base type. *)
 let rec translate_type
@@ -606,7 +621,7 @@ and translate_increment
      temporary var. *)
   let+ s', e' = match e' with
     | VARIABLE var when not pre ->
-      let+ tmp = new_tmp t in
+      let+ tmp = new_tmp_no_virtual t in
       SEQUENCE (
         ASSIGN (tmp, e'),
         ASSIGN (var, BINARY (op, e', inc, t))),
@@ -614,7 +629,7 @@ and translate_increment
     | VARIABLE var ->
       Transl.return (ASSIGN (var, BINARY (op, e', inc, t)), e')
     | UNARY (MEMOF, addr, _) when not pre ->
-      let+ tmp = new_tmp t in
+      let+ tmp = new_tmp_no_virtual t in
       SEQUENCE (
         ASSIGN (tmp, e'),
         STORE (addr, BINARY (op, e', inc, t))),
@@ -680,7 +695,7 @@ and translate_binary_operator
       | Some (INT (size, sign) as t) ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
-        let+ tmp = new_tmp t in
+        let+ tmp = new_tmp_no_virtual t in
         SEQUENCE (
           s1,
           SEQUENCE (
@@ -706,7 +721,7 @@ and translate_binary_operator
       | Some (INT (size, sign) as t) ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
-        let+ tmp = new_tmp t in
+        let+ tmp = new_tmp_no_virtual t in
         SEQUENCE (
           s1, SEQUENCE (
             ASSIGN (tmp, e1),
@@ -1049,6 +1064,55 @@ and simpl_casts (t : typ) (e : exp) : exp = match simpl_casts_exp e with
   | CAST (t', e) when equal_typ t t' -> e
   | e -> e
 
+(* Find which vars are used *)
+
+module Used = struct
+
+  module Env = struct
+
+    type t = String.Set.t
+
+    let use (v : string) (env : t) : t = Set.add env v
+
+  end
+
+  include Monad.State.T1(Env)(Monad.Ident)
+  include Monad.State.Make(Env)(Monad.Ident)
+
+end
+
+type 'a used = 'a Used.t
+
+open Used.Let
+
+let rec used_exp : exp -> unit used = function
+  | UNARY (_, e, _) -> used_exp e
+  | BINARY (_, l, r, _) ->
+    let* () = used_exp l in
+    used_exp r
+  | CAST (_, e) -> used_exp e
+  | CONST_INT _ -> Used.return ()
+  | VARIABLE (v, _) -> Used.(update @@ Env.use @@ Theory.Var.name v)
+
+and used_stmt : stmt -> unit used = function
+  | NOP -> Used.return ()
+  | BLOCK (_, s) -> used_stmt s
+  | ASSIGN (_, e) -> used_exp e
+  | CALL (f, args) | CALLASSIGN (_, f, args) ->
+    let* () = used_exp f in
+    Used.List.iter args ~f:used_exp
+  | STORE (l, r) ->
+    let* () = used_exp l in
+    used_exp r
+  | SEQUENCE (s1, s2) ->
+    let* () = used_stmt s1 in
+    used_stmt s2
+  | IF (cond, st, sf) ->
+    let* () = used_exp cond in
+    let* () = used_stmt st in
+    used_stmt sf
+  | GOTO _ -> Used.return ()
+
 (* Propagation of simple expressions *)
 
 module Prop = struct
@@ -1058,6 +1122,7 @@ module Prop = struct
     type t = {
       target : Theory.target;
       prop : exp String.Map.t;
+      used : String.Set.t;
     }
 
     let insert (e : exp) (v : string) (env : t) : t =
@@ -1108,6 +1173,13 @@ and prop_stmt : stmt -> stmt prop = function
       let* e = prop_exp e in
       match e with
       | VARIABLE v' when equal_var (v, t) v' -> Prop.return NOP
+      | _ when is_temp_physical v ->
+        (* Physical temps are not allowed to be propagated since they may
+           cross side effects. However, if they never end up being used
+           in an expression, then we can just remove them. *)
+        let+ {used; _} = Prop.get () in
+        if Set.mem used @@ Theory.Var.name v
+        then ASSIGN ((v, t), e) else NOP
       | _ when Theory.Var.is_virtual v ->
         let+ () = Prop.(update @@ Env.insert e @@ Theory.Var.name v) in
         NOP
@@ -1164,7 +1236,12 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     Transl.(Env.create ~target () |> run (translate_body body)) in
   (* Perform some simplification passes. *)
   let s = simpl_casts_stmt s in
-  let s = Monad.State.eval (prop_stmt s) {target; prop = String.Map.empty} in
+  let used = Monad.State.exec (used_stmt s) String.Set.empty in
+  let s = Monad.State.eval (prop_stmt s) {
+      target;
+      prop = String.Map.empty;
+      used
+    } in
   let s = cleanup_nop_sequences s in
   let prog = tenv, s in
   Events.send @@ Rule;
