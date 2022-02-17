@@ -469,9 +469,13 @@ and translate_expression
     let i = Int64.of_string s in
     let sign = if Int64.is_negative i then SIGNED else UNSIGNED in
     let width =
-      if Int64.(i <= 0xFFL) then 8
-      else if Int64.(i <= 0xFFFFL) then 16
-      else if Int64.(i <= 0xFFFFFFFFL) then 32
+      (* Fits inside a byte. *)
+      if Int64.(i >= -128L && i <= 127L) then 8
+      (* Fits inside a halfword. *)
+      else if Int64.(i >= -32_768L && i <= 32_767L) then 16
+      (* Fits inside a word. *)
+      else if Int64.(i >= -2_147_483_648L && i <= 2_147_483_647L) then 32
+      (* Fits inside a long. *)
       else 64 in
     let i = Word.of_int64 ~width i in
     (* `word` is unsigned by default. *)
@@ -779,8 +783,8 @@ and translate_call
     (f : Cabs.expression)
     (args : Cabs.expression list) : (stmt * exp option) transl =
   let e = Cabs.CALL (f, args) in
-  let* sf, f' =
-    translate_expression_strict "translate_call" f in
+  let exp = translate_expression_strict "translate_call" in
+  let* sf, f' = exp f in
   match typeof f' with
   | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
     let* sargs, args' = match List.zip args targs with
@@ -788,8 +792,7 @@ and translate_call
         (* Evaluated left to right. *)
         Transl.List.fold_right l ~init:([], [])
           ~f:(fun (arg, t) (sargs, args') ->
-              let* s, a =
-                translate_expression_strict "translate_call" arg in
+              let* s, a = exp arg in
               let ta = typeof a in
               match typ_unify t ta with
               | None ->
