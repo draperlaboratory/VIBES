@@ -434,30 +434,8 @@ and translate_expression
   | Cabs.BINARY (b, lhs, rhs) ->
     let+ s, e = translate_binary_operator b lhs rhs in
     if computation then s, None else s, e
-  | Cabs.QUESTION (cond, then_, else_) -> begin
-      let exp = translate_expression_strict "translate_expression (QUESTION)" in
-      let* scond, cond = exp cond in
-      let* sthen, then_ = exp then_ in
-      let* selse, else_ = exp else_ in
-      let t1 = typeof then_ in
-      let t2 = typeof else_ in
-      match typ_unify t1 t2 with
-      | None -> typ_unify_error e t1 t2
-      | Some t ->
-        let then_ = with_type then_ t in
-        let else_ = with_type else_ t in
-        let+ v = match assign with
-          | Some v -> Transl.return v
-          | None -> new_tmp t in
-        let s =
-          SEQUENCE (
-            scond,
-            IF (
-              cond,
-              SEQUENCE (sthen, ASSIGN (v, then_)),
-              SEQUENCE (selse, ASSIGN (v, else_)))) in
-        s, Some (VARIABLE v)
-    end
+  | Cabs.QUESTION (cond, then_, else_) ->
+    translate_question cond then_ else_ ~assign
   | Cabs.CAST (t, e) ->
     let* t = translate_type t in
     let+ s, e' =
@@ -776,6 +754,35 @@ and translate_binary_operator
         Transl.return (SEQUENCE (s2, SEQUENCE (s1, s)), Some e1)
     end
   | _ -> Transl.fail @@ Other "unimpl"
+
+and translate_question
+    ?(assign : var option = None)
+    (cond : Cabs.expression)
+    (then_ : Cabs.expression)
+    (else_ : Cabs.expression) : (stmt * exp option) transl =
+  let e = Cabs.(QUESTION (cond, then_, else_)) in
+  let exp = translate_expression_strict "translate_expression (QUESTION)" in
+  let* scond, cond = exp cond in
+  let* sthen, then_ = exp then_ in
+  let* selse, else_ = exp else_ in
+  let t1 = typeof then_ in
+  let t2 = typeof else_ in
+  match typ_unify t1 t2 with
+  | None -> typ_unify_error e t1 t2
+  | Some t ->
+    let then_ = with_type then_ t in
+    let else_ = with_type else_ t in
+    let+ v = match assign with
+      | Some v -> Transl.return v
+      | None -> new_tmp t in
+    let s =
+      SEQUENCE (
+        scond,
+        IF (
+          cond,
+          SEQUENCE (sthen, ASSIGN (v, then_)),
+          SEQUENCE (selse, ASSIGN (v, else_)))) in
+    s, Some (VARIABLE v)
 
 and translate_call
     ?(assign : var option = None)
