@@ -771,8 +771,9 @@ and translate_question
   match typ_unify t1 t2 with
   | None -> typ_unify_error e t1 t2
   | Some VOID ->
+    let+ dummy = new_tmp VOID in
     let s = SEQUENCE (scond, IF (cond, sthen, selse)) in
-    Transl.return (s, None)
+    s, Some (VARIABLE dummy)
   | Some t ->
     let ethen = with_type ethen t in
     let eelse = with_type eelse t in
