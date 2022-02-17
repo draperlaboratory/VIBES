@@ -932,7 +932,7 @@ struct
             Format.asprintf "select_exp: encountered variable %a of \
                              unknown type" Var.pp v))
       end
-    | Cast (UNSIGNED, _, e) -> select_exp e ~is_thumb ~branch ~lhs
+    | Cast (UNSIGNED, _, e) -> select_exp e ~patch ~is_thumb ~branch ~lhs
     | Cast (SIGNED, _, _) ->
       Err.(fail @@ Other "select_exp: SIGNED Cast is unsupported!")
     | Cast (LOW, _, _) ->
