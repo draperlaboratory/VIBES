@@ -826,11 +826,10 @@ and translate_call
     translate_expression_strict "translate_call" f in
   match typeof f' with
   | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
-    let* sargs, args' =
-      (* Evaluated left to right. *)
-      try 
-        List.zip_exn args targs |>
-        Transl.List.fold_right ~init:([], [])
+    let* sargs, args' = match List.zip args targs with
+      | Ok l ->
+        (* Evaluated left to right. *)
+        Transl.List.fold_right l ~init:([], [])
           ~f:(fun (arg, t) (sargs, args') ->
               let* s, a =
                 translate_expression_strict "translate_call" arg in
@@ -850,7 +849,7 @@ and translate_call
               | Some t ->
                 let a = with_type a t in
                 Transl.return (s :: sargs, a :: args'))
-      with _ ->
+      | Unequal_lengths ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
         let l1 = List.length targs in
         let l2 = List.length args in
@@ -863,12 +862,13 @@ and translate_call
           SEQUENCE (s, acc)) in
       Transl.return (s, None)
     else
-      (* We don't actually know the return type of the function, so assume
-         it's an integer that will fit inside of a machine register. *)
-      let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
+      (* Do we already know who we're assigning to? *)
       let+ v = match assign with
         | Some (v, t) -> begin
-            match typ_unify t tret with
+            (* Type checking. Use a dummy RHS since calls are not expressions.  *)
+            let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
+            match typ_unify_assign t tret dummy with
+            | Some _ -> Transl.return (v, t)
             | None ->
               let s =
                 Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -879,7 +879,6 @@ and translate_call
                          has return type %s, cannot unify with var %s of \
                          type %s"
                   s tret (Theory.Var.name v) t)
-            | Some t -> Transl.return (v, t)
           end
         | None -> new_tmp tret in
       let init = CALLASSIGN (v, f', args') in
