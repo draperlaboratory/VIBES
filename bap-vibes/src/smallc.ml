@@ -325,7 +325,7 @@ let rec translate_type
 (* See whether the elements of the pointer type can unify. *)
 let rec typ_unify_ptr (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
-  | PTR t1, PTR t2 -> typ_unify_ptr t1 t2
+  | PTR t1, PTR t2 -> typ_unify_ptr t1 t2 |> Option.map ~f:(fun t -> PTR t)
   | VOID, _ -> Some t2
   | _, VOID -> Some t1
   | _ -> if equal_typ t1 t2 then Some t1 else None
@@ -375,10 +375,10 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
   | FUN _, _ | _, FUN _ -> None
   | PTR t1', PTR t2' ->
     typ_unify_ptr_assign t1' t2' |>
-    Option.map ~f:(fun t -> tl, CAST (tl, r))
+    Option.map ~f:(fun t -> tl, with_type r tl)
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
-    then Some (tl, r) else Some (tl, CAST (tl, r))
+    then Some (tl, r) else Some (tl, with_type r tl)
 
 (* Translate a scoped statement. *)
 let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
@@ -1037,13 +1037,11 @@ let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
 
 (* Remove unnecessary casts from expressions. *)
 let rec simpl_casts_exp : exp -> exp = function
-  | UNARY (u, e, t) -> UNARY (u, simpl_casts t e, t)
-  | BINARY (b, l, r, t) ->
-    BINARY (b, simpl_casts t l, simpl_casts t r, t)
+  | UNARY (u, e, t) -> UNARY (u, simpl_casts_exp e, t)
+  | BINARY (b, l, r, t) -> BINARY (b, simpl_casts_exp l, simpl_casts_exp r, t)
   | CAST (t, e) ->
     let e = simpl_casts_exp e in
-    let t' = typeof e in
-    if equal_typ t t' then e else CAST (t, e)
+    if equal_typ t @@ typeof e then e else CAST (t, e)
   | (CONST_INT _ | VARIABLE _) as e -> e
 
 and simpl_casts_stmt : stmt -> stmt = function
@@ -1059,10 +1057,6 @@ and simpl_casts_stmt : stmt -> stmt = function
   | IF (cond, st, sf) ->
     IF (simpl_casts_exp cond, simpl_casts_stmt st, simpl_casts_stmt sf)
   | GOTO _ as s -> s
-
-and simpl_casts (t : typ) (e : exp) : exp = match simpl_casts_exp e with
-  | CAST (t', e) when equal_typ t t' -> e
-  | e -> e
 
 (* Find which vars are used *)
 
@@ -1243,6 +1237,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
       used
     } in
   let s = cleanup_nop_sequences s in
+  (* Success! *)
   let prog = tenv, s in
   Events.send @@ Rule;
   Events.send @@ Info "Translated to the following SmallC program:";
