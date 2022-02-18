@@ -237,6 +237,22 @@ let test_ternary_assign _ =
       }
      }"
 
+let test_ternary_posincr _ =
+  assert_parse_eq
+    "int x, y, z, c;
+     z = (c ? x : y)++;"
+    "{
+      if (c) {
+        _$1 := x
+        x := x + 1
+      }
+      else {
+        _$1 := y
+        y := y + 1
+      }
+      z := _$1
+     }"
+
 let test_ternary_eff _ =
   assert_parse_eq
     "void (*f)();
@@ -262,9 +278,8 @@ let test_posincr_assign _ =
   assert_parse_eq
     "int x, y; y = x++;"
     "{
-       _$1 := x
+       y := x
        x := x + 1
-       y := _$1
      }"
 
 let test_preincr _ =
@@ -338,6 +353,7 @@ let suite = [
   "Test load short" >:: test_load_short;
   "Test load unsigned short" >:: test_load_ushort;
   "Test ternary assign" >:: test_ternary_assign;
+  "Test ternary post increment" >:: test_ternary_posincr;
   "Test ternary effect" >:: test_ternary_eff;
   "Test post increment" >:: test_posincr;
   "Test post increment assign" >:: test_posincr_assign;

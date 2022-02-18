@@ -102,6 +102,10 @@ and body = tenv * stmt [@@deriving equal]
 
 type t = body
 
+(* Helper for generating a sequence from a list of statements. *)
+let sequence : stmt list -> stmt =
+  List.fold_right ~init:NOP ~f:(fun s acc -> SEQUENCE (s, acc))
+
 (* Translate back to FrontC representation so we can re-use their
    pretty-printers. *)
 
@@ -192,6 +196,12 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
     Cabs.IF (cabs_of_exp cond, cabs_of_stmt st, cabs_of_stmt sf)
   | GOTO lbl -> Cabs.GOTO lbl
 
+let string_of_exp (e : exp) : string =
+  Utils.print_c Cprint.print_statement @@ COMPUTATION (cabs_of_exp e)
+
+let string_of_stmt (s : stmt) : string =
+  Utils.print_c Cprint.print_statement @@ cabs_of_stmt s
+
 let to_string ((tenv, s) : t) : string =
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
@@ -200,8 +210,25 @@ let to_string ((tenv, s) : t) : string =
   let stmt = Utils.print_c Cprint.print_statement @@ cabs_of_stmt s in
   sprintf "%s\n%s" vars stmt
 
-(* Extract the embedded type of an expression. *)
+(* Returns true if an expression is an l-value (i.e. can be mutated). *)
+let rec is_lvalue : Cabs.expression -> bool = function
+  | Cabs.(UNARY (MEMOF, e)) -> is_lvalue e
+  | Cabs.(BINARY (ASSIGN, e, _)) -> is_lvalue e
+  | Cabs.(BINARY (ADD_ASSIGN, e, _))
+  | Cabs.(BINARY (SUB_ASSIGN, e, _))
+  | Cabs.(BINARY (MUL_ASSIGN, e, _))
+  | Cabs.(BINARY (DIV_ASSIGN, e, _))
+  | Cabs.(BINARY (MOD_ASSIGN, e, _))
+  | Cabs.(BINARY (BAND_ASSIGN, e, _))
+  | Cabs.(BINARY (BOR_ASSIGN, e, _))
+  | Cabs.(BINARY (SHL_ASSIGN, e, _))
+  | Cabs.(BINARY (SHR_ASSIGN, e, _))
+  | Cabs.(INDEX (e, _)) -> is_lvalue e
+  | Cabs.(VARIABLE _) -> true
+  | Cabs.(QUESTION (_, l, r)) -> is_lvalue l && is_lvalue r
+  | _ -> false
 
+(* Extract the embedded type of an expression. *)
 let typeof : exp -> typ = function
   | UNARY (_, _, t) -> t
   | BINARY (_, _, _, t) -> t
@@ -408,12 +435,13 @@ let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
 (* Initialize the declared variables. *)
 and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
   Transl.List.fold inits ~init:NOP ~f:(fun acc (v, e) ->
-      let+ s, e' = translate_expression e in
+      let+ spre, e', spost = translate_expression e in
       match e' with
-      | None -> SEQUENCE (acc, s)
-      | Some e' -> SEQUENCE (acc, ASSIGN (v, e')))
+      | None -> sequence [acc; spre; spost]
+      | Some e' -> sequence [acc; spre; ASSIGN (v, e'); spost])
 
-and typ_unify_error (e : Cabs.expression) (t1 : typ) (t2 : typ) : 'a transl =
+and typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
+  fun e t1 t2 ->
   let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
   let s1 = string_of_typ t1 in
   let s2 = string_of_typ t2 in
@@ -427,7 +455,10 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
     sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
 (* Translate an expression which may be `None`. Also returns any side effects
-   produced by the expression. 
+   produced by the expression. We separate effects that happen before the
+   expression is evaluated, and effects that happen after. This is to handle
+   compound expressions on lvalues, as well as pre and post increment
+   operators.
 
    `assign` denotes whether we want the result of evaluating this expression
    to be assigned to a particular variable. Otherwise, a fresh temporary is
@@ -440,24 +471,28 @@ and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
 and translate_expression
     ?(assign : var option = None)
     ?(computation = false)
-    (e : Cabs.expression) : (stmt * exp option) transl =
+    (e : Cabs.expression) : (stmt * exp option * stmt) transl =
   match e with
-  | Cabs.NOTHING -> Transl.return (NOP, None)
+  | Cabs.NOTHING -> Transl.return (NOP, None, NOP)
   | Cabs.UNARY (u, e) ->
-    let+ s, e = translate_unary_operator u e in
-    if computation then s, None else s, e
+    let+ spre, e, spost = translate_unary_operator u e in
+    if computation then spre, None, spost else spre, e, spost
   | Cabs.BINARY (b, lhs, rhs) ->
-    let+ s, e = translate_binary_operator b lhs rhs in
-    if computation then s, None else s, e
+    let+ spre, e, spost = translate_binary_operator b lhs rhs in
+    if computation then spre, None, spost else spre, e, spost
   | Cabs.QUESTION (cond, then_, else_) ->
-    translate_question cond then_ else_ ~assign
+    let+ spre, e, spost = translate_question cond then_ else_ ~assign in
+    spre, e, spost
   | Cabs.CAST (t, e) ->
     let* t = translate_type t in
-    let+ s, e' =
+    let+ spre, e', spost =
       translate_expression_strict "translate_expression (CAST)" e ~assign in
-    if computation then s, None else s, Some (CAST (t, e'))
-  | Cabs.CALL (f, args) -> translate_call f args ~assign ~computation
-  | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None)
+    if computation then spre, None, spost
+    else spre, Some (CAST (t, e')), spost
+  | Cabs.CALL (f, args) ->
+    let+ s, e = translate_call f args ~assign ~computation in
+    s, e, NOP
+  | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in
     let sign = if Int64.is_negative i then SIGNED else UNSIGNED in
@@ -473,12 +508,12 @@ and translate_expression
     let i = Word.of_int64 ~width i in
     (* `word` is unsigned by default. *)
     let i = if equal_sign sign SIGNED then Word.signed i else i in
-    Transl.return (NOP, Some (CONST_INT (i, sign)))
+    Transl.return (NOP, Some (CONST_INT (i, sign)), NOP)
   | Cabs.(CONSTANT (CONST_CHAR s)) ->
     let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
     let i = Word.signed i in
-    Transl.return (NOP, Some (CONST_INT (i, SIGNED)))
-  | Cabs.VARIABLE _ when computation -> Transl.return (NOP, None)
+    Transl.return (NOP, Some (CONST_INT (i, SIGNED)), NOP)
+  | Cabs.VARIABLE _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.VARIABLE v -> begin
       let* t = Transl.(gets @@ Env.typeof v) in
       match t with
@@ -486,29 +521,29 @@ and translate_expression
         let+ {target; _} = Transl.get () in
         let s = Theory.Bitv.define @@ size_of_typ target t in
         let v = Theory.Var.define s v |> Theory.Var.forget in
-        NOP, Some (VARIABLE (v, t))
+        NOP, Some (VARIABLE (v, t)), NOP
       | None ->
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_expression: undeclared variable %s\n" v)
     end
-  | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None)
+  | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.EXPR_SIZEOF e ->
-    let* _, e =
+    let* _, e, _ =
       translate_expression_strict "translate_expression (EXPR_SIZEOF)" e in
     let+ {target; _} = Transl.get () in
     let width = Theory.Target.bits target in
     let size = size_of_typ target @@ typeof e in
-    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
+    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
   | Cabs.TYPE_SIZEOF t ->
     let s = Utils.print_c Cprint.print_base_type t in
     let* t = translate_type t ~msg:(sprintf "In expression %s: " s) in
     let+ {target; _} = Transl.get () in
     let width = Theory.Target.bits target in
     let size = size_of_typ target t in
-    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED))
+    NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
   | Cabs.INDEX (ptr, idx) ->
-    let+ s, e, t = translate_index ptr idx in
-    s, Some (UNARY (MEMOF, CAST (PTR t, e), t))
+    let+ spre, e, t, spost = translate_index ptr idx in
+    spre, Some (UNARY (MEMOF, CAST (PTR t, e), t)), spost
   | _ ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
@@ -518,38 +553,51 @@ and translate_expression
 and translate_expression_strict
     ?(assign : var option = None)
     (stage : string)
-    (e : Cabs.expression) : (stmt * exp) transl =
-  let* s, e' = translate_expression e ~assign in
+    (e : Cabs.expression) : (stmt * exp * stmt) transl =
+  let* spre, e', spost = translate_expression e ~assign in
   match e' with
-  | Some e' -> Transl.return (s, e')
+  | Some e' -> Transl.return (spre, e', spost)
   | None ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.%s: invalid expression:\n\n%s\n" stage s)
 
+(* Translate an expression that must be an l-value. *)
+and translate_expression_lvalue
+    ?(assign : var option = None)
+    (stage : string)
+    (e : Cabs.expression) : (stmt * exp * stmt) transl =
+  if is_lvalue e
+  then translate_expression_strict stage e ~assign
+  else
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.%s: expression:\n\n%s\n\nis not an l-value" stage s)
+
 (* Translate unary operators. *)
 and translate_unary_operator
     (u : Cabs.unary_operator)
-    (e : Cabs.expression) : (stmt * exp option) transl =
+    (e : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let lval = translate_expression_lvalue "translate_unary_operator" in
   let exp = translate_expression_strict "translate_unary_operator" in
   match u with
   | Cabs.MINUS ->
-    let+ s, e = exp e in
-    s, Some (UNARY (MINUS, e, typeof e))
+    let+ spre, e, spost = exp e in
+    spre, Some (UNARY (MINUS, e, typeof e)), spost
   | Cabs.PLUS ->
-    let+ s, e = exp e in
-    s, Some e
+    let+ spre, e, spost = exp e in
+    spre, Some e, spost
   | Cabs.NOT ->
-    let* s, e = exp e in
+    let* spre, e, spost = exp e in
     let+ {target; _} = Transl.get () in
     let width = size_of_typ target @@ typeof e in
     let i = Word.zero width in
-    s, Some (BINARY (NE, e, CONST_INT (i, UNSIGNED),typeof e))
+    spre, Some (BINARY (NE, e, CONST_INT (i, UNSIGNED),typeof e)), spost
   | Cabs.BNOT ->
-    let+ s, e = exp e in
-    s, Some (UNARY (LNOT, e, typeof e))
+    let+ spre, e, spost = exp e in
+    spre, Some (UNARY (LNOT, e, typeof e)), spost
   | Cabs.MEMOF -> begin
-      let* s, e' = exp e in
+      let* spre, e', spost = exp e in
       match typeof e' with
       | PTR VOID ->
         let s =
@@ -558,7 +606,7 @@ and translate_unary_operator
         Transl.fail @@ Core_c_error (
           sprintf "Smallc.translate_unary_operator: in expression\
                    \n\n%s\n\ncannot dereference a value of type void*" s)
-      | PTR t -> Transl.return (s, Some (UNARY (MEMOF, e', t)))
+      | PTR t -> Transl.return (spre, Some (UNARY (MEMOF, e', t)), spost)
       | _ ->
         let s =
           Utils.print_c Cprint.print_statement
@@ -567,128 +615,130 @@ and translate_unary_operator
           sprintf "Smallc.translate_unary_operator: expected pointer type \
                    for operand of expression:\n\n%s\n" s)
     end
-  | Cabs.ADDROF -> begin
-      let* s, e' = exp e in
-      match e' with
-      | VARIABLE (_, t) | UNARY (MEMOF, _, t) ->
-        Transl.return (s, Some (UNARY (ADDROF, e', PTR t)))
-      | _ ->
-        let s =
-          Utils.print_c Cprint.print_statement
-            Cabs.(COMPUTATION (UNARY (u, e))) in
-        Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_unary_operator: ADDROF requires lvalue \
-                   for operand, got:\n\n%s\n" s)
-    end
-  | Cabs.PREINCR -> translate_increment e ~pre:true  ~neg:false 
-  | Cabs.POSINCR -> translate_increment e ~pre:false ~neg:false 
-  | Cabs.PREDECR -> translate_increment e ~pre:true  ~neg:true
-  | Cabs.POSDECR -> translate_increment e ~pre:false ~neg:true 
+  | Cabs.ADDROF ->
+    let+ spre, e', spost = lval e in
+    spre, Some (UNARY (ADDROF, e', PTR (typeof e'))), spost
+  | Cabs.PREINCR ->
+    let* spre, e', spost, expanded = translate_increment_operand u e in
+    if expanded then Transl.return (spre, Some e', spost)
+    else
+      let* spre, e', spost = lval e in
+      let n = CONST_INT (Word.one 8, UNSIGNED) in
+      let* rhs = make_arith ADD e' n in
+      let+ eff = make_assign e' rhs in
+      sequence [spre; eff], Some e', spost
+  | Cabs.POSINCR ->
+    let* spre, e', spost, expanded = translate_increment_operand u e in
+    if expanded then Transl.return (spre, Some e', spost)
+    else
+      let* spre, e', spost = lval e in
+      let n = CONST_INT (Word.one 8, UNSIGNED) in
+      let* rhs = make_arith ADD e' n in
+      let+ eff = make_assign e' rhs in
+      spre, Some e', sequence [spost; eff]
+  | Cabs.PREDECR ->
+    let* spre, e', spost, expanded = translate_increment_operand u e in
+    if expanded then Transl.return (spre, Some e', spost)
+    else
+      let n = CONST_INT (Word.one 8, UNSIGNED) in
+      let* rhs = make_arith SUB e' n in
+      let+ eff = make_assign e' rhs in
+      sequence [spre; eff], Some e', spost
+  | Cabs.POSDECR ->
+    let* spre, e', spost, expanded = translate_increment_operand u e in
+    if expanded then Transl.return (spre, Some e', spost)
+    else
+      let n = CONST_INT (Word.one 8, UNSIGNED) in
+      let* rhs = make_arith SUB e' n in
+      let+ eff = make_assign e' rhs in
+      spre, Some e', sequence [spost; eff]
 
-(* Translate the unary increment operators, which are effectful. *)
-and translate_increment
-    (e : Cabs.expression)
-    ~(pre : bool)
-    ~(neg : bool) : (stmt * exp option) transl =
-  let exp = translate_expression_strict "translate_increment" in
-  let* s, e' = exp e in
-  let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-  let t = typeof e' in
-  (* Based on the type, get the increment value. *)
-  let* inc = match t with
-    | PTR (INT (size, _)) ->
-      (* Pointer to some element type, use the element size. *)
-      let i = Word.of_int ~width:bits @@ Size.in_bytes size in
-      Transl.return @@ CONST_INT (i, UNSIGNED)
-    | PTR (PTR _ | FUN _ | VOID) ->
-      (* Pointer to a pointer: use the word size. *)
-      let i = Word.of_int ~width:bits @@ bits lsr 3 in
-      Transl.return @@ CONST_INT (i, UNSIGNED)
-    | FUN _ | VOID ->
-      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      Transl.fail @@ Core_c_error (
-        sprintf "Smallc.translate_increment: expression:\n\n%s\n\n\
-                 is not an l-value" s)
-    | INT (size, sign) ->
-      (* Regular integer type, use an increment of one. *)
-      let i = Word.one bits in
-      let i = if equal_sign sign SIGNED then Word.signed i else i in
-      Transl.return @@ CONST_INT (i, sign) in
-  (* Add or subtract based on the increment type. *)
-  let op = if neg then SUB else ADD in
-  (* If it's a pre-increment, then we return the value after incrementing,
-     otherwise we increment the value and return the previous value in a
-     temporary var. *)
-  let+ s', e' = match e' with
-    | VARIABLE var when not pre ->
-      let+ tmp = new_tmp_no_virtual t in
-      SEQUENCE (
-        ASSIGN (tmp, e'),
-        ASSIGN (var, BINARY (op, e', inc, t))),
-      VARIABLE tmp
-    | VARIABLE var ->
-      Transl.return (ASSIGN (var, BINARY (op, e', inc, t)), e')
-    | UNARY (MEMOF, addr, _) when not pre ->
-      let+ tmp = new_tmp_no_virtual t in
-      SEQUENCE (
-        ASSIGN (tmp, e'),
-        STORE (addr, BINARY (op, e', inc, t))),
-      VARIABLE tmp
-    | UNARY (MEMOF, addr, _) ->
-      Transl.return (STORE (addr, BINARY (op, e', inc, t)), e')
+(* Expand the increment into the operand if necessary. *)
+and translate_increment_operand
+    (u : Cabs.unary_operator)
+    (e : Cabs.expression) : (stmt * exp * stmt * bool) transl =
+  let lval = translate_expression_lvalue "translate_increment_operand" in
+  if is_lvalue e then match e with
+    | Cabs.QUESTION (c, l, r) ->
+      let+ pre, e, post =
+        translate_question c
+          Cabs.(UNARY (u, l)) Cabs.(UNARY (u, r)) in
+      let e = Option.value_exn e in
+      pre, e, post, true
     | _ ->
-      (* Must be a valid l-value. *)
-      let inc_s = if pre then "pre" else "post" in
-      let u = match pre, neg with
-        | true,  false -> Cabs.PREINCR
-        | false, false -> Cabs.POSINCR
-        | true,  true  -> Cabs.PREDECR
-        | false, true  -> Cabs.POSDECR in
-      let s =
-        Utils.print_c Cprint.print_statement
-          Cabs.(COMPUTATION (UNARY (u, e))) in
-      Transl.fail @@ Core_c_error (
-        sprintf "Smallc.translate_increment: %s-increment on \
-                 non-lvalue:\n\n%s\n" inc_s s) in
-  SEQUENCE (s, s'), Some e'
+      let+ pre, e, post = lval e in
+      pre, e, post, false
+  else
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.translate_increment_operand: \
+               expression:\n\n%s\n\nis not an l-value" s)
+
+(* Increment value based on the type. *)
+and increment (e : Cabs.expression) (t : typ) : exp transl =
+  let* bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
+  match t with
+  | PTR (INT (size, _)) ->
+    (* Pointer to some element type, use the element size. *)
+    let i = Word.of_int ~width:bits @@ Size.in_bytes size in
+    Transl.return @@ CONST_INT (i, UNSIGNED)
+  | PTR (PTR _ | FUN _ | VOID) ->
+    (* Pointer to a pointer: use the word size. *)
+    let i = Word.of_int ~width:bits (bits lsr 3) in
+    Transl.return @@ CONST_INT (i, UNSIGNED)
+  | FUN _ | VOID ->
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    let t = string_of_typ t in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.increment: expression:\n\n%s\n\n\
+               has type %s. Cannot be an l-value." s t)
+  | INT (size, sign) ->
+    let i = Word.one bits in
+    let i = if equal_sign sign SIGNED then Word.signed i else i in
+    Transl.return @@ CONST_INT (i, sign)
 
 (* Translate binary operators. *)
 and translate_binary_operator
     (b : Cabs.binary_operator)
     (lhs : Cabs.expression)
-    (rhs : Cabs.expression) : (stmt * exp option) transl =
-  let exp ?(assign = None) =
-    translate_expression_strict "translate_binary_operator" ~assign in
-  let default op =
-    (* TODO: type check or do implicit conversions here *)
-    let* s1, e1 = exp lhs in
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let exp = translate_expression_strict "translate_binary_operator" in
+  let default ?(no_ptr = false) op =
+    let* spre1, e1, spost1 = exp lhs in
     let t1 = typeof e1 in
-    let* s2, e2 = exp rhs in
+    let* spre2, e2, spost2 = exp rhs in
     let t2 = typeof e2 in
     match typ_unify t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+    | Some (PTR _) when no_ptr ->
+      typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
     | Some t ->
       let e1 = with_type e1 t in
       let e2 = with_type e2 t in
       let* tmp1 = new_tmp t in
       let+ tmp2 = new_tmp t in
-      SEQUENCE (
-        s1,
-        SEQUENCE (
-          ASSIGN (tmp1, e1),
-          SEQUENCE (s2, ASSIGN (tmp2, e2)))),
-      Some (BINARY (op, VARIABLE tmp1, VARIABLE tmp2, t)) in
+      let eff = sequence [
+          spre1;
+          ASSIGN (tmp1, e1);
+          spost1;
+          spre2;
+          ASSIGN (tmp2, e2);
+          spost2;
+        ] in
+      eff,
+      Some (BINARY (op, VARIABLE tmp1, VARIABLE tmp2, t)),
+      NOP in
   match b with
-  | Cabs.ADD -> default ADD
-  | Cabs.SUB -> default SUB
-  | Cabs.MUL -> default MUL
-  | Cabs.DIV -> default DIV
-  | Cabs.MOD -> default MOD
+  | Cabs.ADD -> translate_arith ADD b lhs rhs
+  | Cabs.SUB -> translate_arith SUB b lhs rhs
+  | Cabs.MUL -> translate_arith MUL b lhs rhs ~no_ptr:true
+  | Cabs.DIV -> translate_arith DIV b lhs rhs ~no_ptr:true
+  | Cabs.MOD -> translate_arith MOD b lhs rhs ~no_ptr:true
   | Cabs.AND -> begin
       (* Short-circuiting boolean AND *)
-      let* s1, e1 = exp lhs in
+      let* spre1, e1, spost1 = exp lhs in
       let t1 = typeof e1 in
-      let* s2, e2 = exp rhs in
+      let* spre2, e2, spost2 = exp rhs in
       let t2 = typeof e2 in
       match typ_unify t1 t2 with
       | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
@@ -696,25 +746,29 @@ and translate_binary_operator
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
         let+ tmp = new_tmp_no_virtual t in
-        SEQUENCE (
-          s1,
-          SEQUENCE (
-            ASSIGN (tmp, e1),
-            IF (VARIABLE tmp,
-                SEQUENCE (
-                  s2,
-                  ASSIGN (tmp, e2)),
-                NOP))),
-        Some (VARIABLE tmp)
+        let eff = sequence [
+            spre1;
+            ASSIGN (tmp, e1);
+            spost1;
+            IF (
+              VARIABLE tmp,
+              sequence [
+                spre2;
+                ASSIGN (tmp, e2);
+                spost2
+              ],
+              NOP);
+          ] in
+        eff, Some (VARIABLE tmp), NOP
       | Some t ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
           "Expected an integer type."
     end
   | Cabs.OR -> begin
       (* Short-circuiting boolean OR *)
-      let* s1, e1 = exp lhs in
+      let* spre1, e1, spost1 = exp lhs in
       let t1 = typeof e1 in
-      let* s2, e2 = exp rhs in
+      let* spre2, e2, spost2 = exp rhs in
       let t2 = typeof e2 in
       match typ_unify t1 t2 with
       | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
@@ -722,87 +776,182 @@ and translate_binary_operator
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
         let+ tmp = new_tmp_no_virtual t in
-        SEQUENCE (
-          s1, SEQUENCE (
-            ASSIGN (tmp, e1),
-            IF (VARIABLE tmp, NOP, SEQUENCE (
-                s2, ASSIGN (tmp, e2))))),
-        Some (VARIABLE tmp)
+        let eff = sequence [
+            spre1;
+            ASSIGN (tmp, e1);
+            spost1;
+            IF (
+              VARIABLE tmp,
+              NOP,
+              sequence [
+                spre2;
+                ASSIGN (tmp, e2);
+                spost2;
+              ]);
+          ] in
+        eff, Some (VARIABLE tmp), NOP
       | Some t ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
           "Expected an integer type."
     end
-  | Cabs.BAND -> default LAND
-  | Cabs.BOR -> default LOR
-  | Cabs.XOR -> default XOR
-  | Cabs.SHL -> default SHL
-  | Cabs.SHR -> default SHR
+  | Cabs.BAND -> default LAND ~no_ptr:true
+  | Cabs.BOR -> default LOR ~no_ptr:true
+  | Cabs.XOR -> default XOR ~no_ptr:true
+  | Cabs.SHL -> default SHL ~no_ptr:true
+  | Cabs.SHR -> default SHR ~no_ptr:true
   | Cabs.EQ -> default EQ
   | Cabs.NE -> default NE
   | Cabs.GT -> default GT
   | Cabs.LE -> default LE
   | Cabs.GE -> default GE
-  | Cabs.ASSIGN -> begin
-      let* s1, e1 = exp lhs in
-      let* s2, e2 = match e1 with
-        | VARIABLE v -> exp rhs ~assign:(Some v)
-        | _ -> exp rhs in
-      let t2 = typeof e2 in
-      let* t1, is_store = match e1 with
-        | VARIABLE (_, t) -> Transl.return (t, false)
-        | UNARY (MEMOF, _, t) -> Transl.return (t, true)
-        | _ ->
-          let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
-          Transl.fail @@ Core_c_error (
-            sprintf "Csmall.translate_binary_operator: expected an l-value \
-                     for LHS of assignment, got:\n\n%s\n" s) in
-      match typ_unify_assign t1 t2 e2 with
-      | None ->
-        let t1 = if is_store then PTR t1 else t1 in
-        typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some (_, e2) ->
-        let s = match e1 with
-          | VARIABLE var -> ASSIGN (var, e2)
-          | UNARY (MEMOF, addr, _) -> STORE (addr, e2)
-          | _ -> assert false in
-        (* Order of evaluation is right-to-left. *)
-        Transl.return (SEQUENCE (s2, SEQUENCE (s1, s)), Some e1)
-    end
+  | Cabs.ASSIGN -> translate_assign lhs rhs
   | _ -> Transl.fail @@ Other "unimpl"
 
+and translate_arith
+    ?(no_ptr = false)
+    (b : binop)
+    (b' : Cabs.binary_operator)
+    (lhs : Cabs.expression)
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let exp = translate_expression_strict "translate_arithmetic" in
+  let e = Cabs.(BINARY (b', lhs, rhs)) in
+  let* spre1, e1, spost1 = exp lhs in
+  let* spre2, e2, spost2 = exp rhs in
+  let+ e = make_arith b e1 e2 ~e in
+  sequence [spre1; spre2], Some e, sequence [spost1; spost2]
+
+and make_arith
+    ?(no_ptr : bool = false)
+    ?(e : Cabs.expression = Cabs.NOTHING)
+    (b : binop)
+    (e1 : exp)
+    (e2 : exp) : exp transl =
+  let t1 = typeof e1 in
+  let t2 = typeof e2 in
+  match t1, t2 with
+  | PTR VOID, _ | _, PTR VOID -> typ_unify_error e t1 t2
+  | (PTR _, _ | _, PTR _) when no_ptr -> typ_unify_error e t1 t2
+  | PTR _, PTR _ -> typ_unify_error e t1 t2
+  | _ ->
+    let+ t, e1, e2 = match t1, t2 with
+      | PTR _, INT _ ->
+        let+ inc = increment NOTHING t1 in
+        t1, e1, BINARY (MUL, e2, inc, t2)
+      | INT _, PTR _ ->
+        let+ inc = increment NOTHING t2 in
+        t2, BINARY (MUL, e1, inc, t1), e2
+      | INT _, INT _ ->
+        let t = typ_unify t1 t2 in
+        let t = Option.value_exn t in
+        Transl.return (t, e1, e2)
+      | _ -> typ_unify_error e t1 t2 in
+    BINARY (b, e1, e2, t)
+
+and translate_assign
+    ?(lhs_pre : exp option = None)
+    (lhs : Cabs.expression)
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let exp ?(assign = None) =
+    translate_expression_strict "translate_assign" ~assign in
+  let lval = translate_expression_lvalue "translate_assign" in
+  let* spre1, e1, spost1 = match lhs_pre with
+    | Some e -> Transl.return (NOP, e, NOP)
+    | None -> lval lhs in
+  let* spre2, e2, spost2 = match e1 with
+    | VARIABLE v -> exp rhs ~assign:(Some v)
+    | _ -> exp rhs in
+  let* is_store = match e1 with
+    | VARIABLE (_, t) -> Transl.return false
+    | UNARY (MEMOF, _, t) -> Transl.return true
+    | _ ->
+      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
+      Transl.fail @@ Core_c_error (
+        sprintf "Csmall.translate_assign: expected an l-value \
+                 for LHS of assignment, got:\n\n%s\n" s) in
+  let+ s = make_assign e1 e2 ~is_store ~e:Cabs.(BINARY (ASSIGN, lhs, rhs)) in
+  (* Order of evaluation is right-to-left. *)
+  sequence [spre2; spre1; s],
+  Some e1,
+  sequence [spost2; spost1]
+
+and make_assign
+    ?(is_store : bool = false)
+    ?(e : Cabs.expression = NOTHING)
+    (e1 : exp)
+    (e2 : exp) : stmt transl =
+  let t1 = typeof e1 in
+  let t2 = typeof e2 in
+  match typ_unify_assign t1 t2 e2 with
+  | None ->
+    let t1 = if is_store then PTR t1 else t1 in
+    typ_unify_error e t1 t2
+  | Some (_, e2) -> match e1 with
+    | VARIABLE var -> Transl.return @@ ASSIGN (var, e2)
+    | UNARY (MEMOF, addr, _) -> Transl.return @@ STORE (addr, e2)
+    | _ -> Transl.fail @@
+      Core_c_error "Csmall.make_assign: unexpected shape"
+
 and translate_question
+    ?(lval = false)
     ?(assign : var option = None)
     (cond : Cabs.expression)
     (then_ : Cabs.expression)
-    (else_ : Cabs.expression) : (stmt * exp option) transl =
+    (else_ : Cabs.expression) : (stmt * exp option * stmt) transl =
   let e = Cabs.(QUESTION (cond, then_, else_)) in
   let exp =
-    translate_expression_strict ~assign "translate_expression (QUESTION)" in
-  let* scond, cond = exp cond in
-  let* sthen, ethen = exp then_ in
-  let* selse, eelse = exp else_ in
+    (if lval
+     then translate_expression_lvalue
+     else translate_expression_strict)
+      ~assign "translate_question" in
+  let* scondpre, cond, scondpost = exp cond in
+  let* sthenpre, ethen, sthenpost = exp then_ in
+  let* selsepre, eelse, selsepost = exp else_ in
   let t1 = typeof ethen in
   let t2 = typeof eelse in
   match typ_unify t1 t2 with
   | None -> typ_unify_error e t1 t2
   | Some VOID ->
     let+ dummy = new_tmp VOID in
-    let s = SEQUENCE (scond, IF (cond, sthen, selse)) in
-    s, Some (VARIABLE dummy)
+    let pre = sequence [
+        scondpre;
+        IF (
+          cond,
+          sequence [
+            scondpost;
+            sthenpre;
+            sthenpost;
+          ],
+          sequence [
+            scondpost;
+            selsepre;
+            selsepost;
+          ]);
+      ] in
+    pre, Some (VARIABLE dummy), NOP
   | Some t ->
     let ethen = with_type ethen t in
     let eelse = with_type eelse t in
     let+ v = match assign with
       | Some v -> Transl.return v
-      | None -> new_tmp t in
-    let s =
-      SEQUENCE (
-        scond,
+      | None -> new_tmp_no_virtual t in
+    let pre = sequence [
+        scondpre;
         IF (
           cond,
-          SEQUENCE (sthen, ASSIGN (v, ethen)),
-          SEQUENCE (selse, ASSIGN (v, eelse)))) in
-    s, Some (VARIABLE v)
+          sequence [
+            scondpost;
+            sthenpre;
+            ASSIGN (v, ethen);
+            sthenpost;
+          ],
+          sequence [
+            scondpost;
+            selsepre;
+            ASSIGN (v, eelse);
+            selsepost;
+          ]);
+      ] in
+    pre, Some (VARIABLE v), NOP
 
 and translate_call
     ?(assign : var option = None)
@@ -811,15 +960,15 @@ and translate_call
     (args : Cabs.expression list) : (stmt * exp option) transl =
   let e = Cabs.CALL (f, args) in
   let exp = translate_expression_strict "translate_call" in
-  let* sf, f' = exp f in
+  let* sfpre, f', sfpost = exp f in
   match typeof f' with
   | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
-    let* sargs, args' = match List.zip args targs with
+    let* sargspre, args', sargspost = match List.zip args targs with
       | Ok l ->
         (* Evaluated left to right. *)
-        Transl.List.fold_right l ~init:([], [])
-          ~f:(fun (arg, t) (sargs, args') ->
-              let* s, a = exp arg in
+        Transl.List.fold_right l ~init:([], [], [])
+          ~f:(fun (arg, t) (sargspre, args', sargspost) ->
+              let* spre, a, spost = exp arg in
               let ta = typeof a in
               match typ_unify t ta with
               | None ->
@@ -835,7 +984,7 @@ and translate_call
                            expected" s a ta t)
               | Some t ->
                 let a = with_type a t in
-                Transl.return (s :: sargs, a :: args'))
+                Transl.return (spre :: sargspre, a :: args', spost :: sargspost))
       | Unequal_lengths ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
         let l1 = List.length targs in
@@ -849,14 +998,19 @@ and translate_call
       | None -> false in
     if computation then
       let init = CALL (f', args') in
-      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
-          SEQUENCE (s, acc)) in
+      let s = List.fold_right
+          (* XXX: THIS IS WRONG *)
+          (sfpre :: sfpost :: (sargspre @ sargspost))
+          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
       Transl.return (s, None)
     else if is_void then
       let+ dummy = new_tmp VOID in
       let init = CALL (f', args') in
-      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
-          SEQUENCE (s, acc)) in
+      let s =
+        List.fold_right
+          (* XXX: THIS IS WRONG *)
+          (sfpre :: sfpost :: (sargspre @ sargspost))
+          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
       s, Some (VARIABLE dummy)
     else
       (* Do we already know who we're assigning to? *)
@@ -879,8 +1033,11 @@ and translate_call
           end
         | None -> new_tmp tret in
       let init = CALLASSIGN (v, f', args') in
-      let s = List.fold_right (sf :: sargs) ~init ~f:(fun s acc ->
-          SEQUENCE (s, acc)) in
+      let s =
+        List.fold_right
+          (* XXX: THIS IS WRONG *)
+          (sfpre :: sfpost :: (sargspre @ sargspost))
+          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
       s, Some (VARIABLE v)
   | t ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -893,10 +1050,10 @@ and translate_call
    array (as an integer), and the element type. *)
 and translate_index
     (ptr : Cabs.expression)
-    (idx : Cabs.expression) : (stmt * exp * typ) transl =
+    (idx : Cabs.expression) : (stmt * exp * typ * stmt) transl =
   let exp = translate_expression_strict "translate_index" in
-  let* sptr, eptr = exp ptr in
-  let* sidx, eidx = exp idx in
+  let* sptrpre, eptr, sptrpost = exp ptr in
+  let* sidxpre, eidx, sidxpost = exp idx in
   let tptr = typeof eptr in
   let tidx = typeof eidx in
   match tptr, tidx with
@@ -959,7 +1116,7 @@ and translate_index
           eidx,
           tidx),
         tidx) in
-    SEQUENCE (sptr, sidx), e, t
+    sequence [sptrpre; sidxpre], e, t, sequence [sptrpost; sidxpost]
   | PTR _, _ ->
     let e = Cabs.(INDEX (ptr, idx)) in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -979,12 +1136,12 @@ and translate_index
 and translate_statement (s : Cabs.statement) : stmt transl = match s with
   | Cabs.NOP -> Transl.return NOP
   | Cabs.COMPUTATION e -> begin
-      let* s, e = translate_expression e ~computation:true in
+      let* spre, e, spost = translate_expression e ~computation:true in
       match e with
-      | None -> Transl.return s
+      | None -> Transl.return @@ sequence [spre; spost]
       | Some e ->
         let+ v = new_tmp @@ typeof e in
-        SEQUENCE (s, ASSIGN (v, e))
+        sequence [spre; ASSIGN (v, e); spost]
     end
   | Cabs.BLOCK body ->
     let+ body = translate_body body in
@@ -993,19 +1150,18 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
     let* s1 = translate_statement s1 in
     let+ s2 = translate_statement s2 in
     SEQUENCE (s1, s2)
-  | Cabs.IF (cond, then_, else_) -> begin
-      let* s', cond = translate_expression cond in
-      match cond with
-      | Some cond ->
-        let* then_ = translate_statement then_ in
-        let+ else_ = translate_statement else_ in
-        SEQUENCE (s', IF (cond, then_, else_))
-      | None ->
-        let s = Utils.print_c Cprint.print_statement s in
-        Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_statement: invalid condition in if \
-                   statement:\n\n%s\n" s)
-    end
+  | Cabs.IF (cond, then_, else_) ->
+    let* scondpre, cond, scondpost =
+      translate_expression_strict "translate_statement (IF)" cond in
+    let* then_ = translate_statement then_ in
+    let+ else_ = translate_statement else_ in
+    sequence [
+      scondpre;
+      IF (
+        cond,
+        sequence [scondpost; then_],
+        sequence [scondpost; else_]);
+    ]
   | Cabs.GOTO lbl -> Transl.return @@ GOTO lbl
   | _ ->
     let s = Utils.print_c Cprint.print_statement s in
@@ -1016,7 +1172,11 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
    pretty-printing quite ugly. This pass removes them. *)
 let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
   | NOP -> NOP
-  | BLOCK (tenv, s) -> BLOCK (tenv, cleanup_nop_sequences s)
+  | BLOCK (tenv, s) -> begin
+      match cleanup_nop_sequences s with
+      | NOP -> NOP
+      | s -> BLOCK (tenv, s)
+    end
   | ASSIGN _ -> s
   | CALL _ -> s
   | CALLASSIGN _ -> s
@@ -1031,8 +1191,13 @@ let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
       | _, NOP -> s1
       | _ -> SEQUENCE (s1, s2)
     end
-  | IF (cond, st, sf) ->
-    IF (cond, cleanup_nop_sequences st, cleanup_nop_sequences sf)
+  | IF (cond, st, sf) -> begin
+      let st = cleanup_nop_sequences st in
+      let sf = cleanup_nop_sequences sf in
+      match st, sf with
+      | NOP, NOP -> NOP
+      | _ -> IF (cond, st, sf)
+    end
   | GOTO _ -> s
 
 (* Remove unnecessary casts from expressions. *)
@@ -1107,7 +1272,7 @@ and used_stmt : stmt -> unit used = function
     used_stmt sf
   | GOTO _ -> Used.return ()
 
-(* Propagation of simple expressions *)
+(* Propagation of assignments to virtual temporary vars. *)
 
 module Prop = struct
 
@@ -1230,6 +1395,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     Transl.(Env.create ~target () |> run (translate_body body)) in
   (* Perform some simplification passes. *)
   let s = simpl_casts_stmt s in
+  let s = cleanup_nop_sequences s in
   let used = Monad.State.exec (used_stmt s) String.Set.empty in
   let s = Monad.State.eval (prop_stmt s) {
       target;
