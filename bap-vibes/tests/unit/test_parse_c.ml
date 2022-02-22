@@ -243,14 +243,14 @@ let test_ternary_posincr _ =
      z = (c ? x : y)++;"
     "{
       if (c) {
-        _$1 := x
+        virt := x
         x := x + 1
       }
       else {
-        _$1 := y
+        virt := y
         y := y + 1
       }
-      z := _$1
+      z := virt
      }"
 
 let test_ternary_eff _ =
@@ -278,8 +278,9 @@ let test_posincr_assign _ =
   assert_parse_eq
     "int x, y; y = x++;"
     "{
-       y := x
+       virt := x
        x := x + 1
+       y := virt
      }"
 
 let test_preincr _ =
@@ -303,13 +304,13 @@ let test_and_short_circ _ =
        y = 5;
      }"
     "{
-       _$1 := x
-       if (_$1) {
+       virt := x
+       if (virt) {
          call(f)
          virt := R0
-         _$1 := virt
+         virt := virt
        }
-       if (_$1) {
+       if (virt) {
          y := 5
        }
      }"
@@ -322,17 +323,27 @@ let test_or_short_circ _ =
        y = 5;
      }"
     "{
-       _$1 := x
-       if (_$1) {
+       virt := x
+       if (virt) {
        }
        else {
          call(f)
          virt := R0
-         _$1 := virt
+         virt := virt
        }
-       if (_$1) {
+       if (virt) {
          y := 5
        }
+     }"
+
+let test_add_assign _ =
+  assert_parse_eq
+    "int x, y;
+     (x += y) += (y += x);"
+    "{
+       y := y + x
+       x := x + y
+       x := x + y
      }"
 
 let suite = [
@@ -361,4 +372,5 @@ let suite = [
   "Test pre increment assign" >:: test_preincr_assign;
   "Test AND short-circuit" >:: test_and_short_circ;
   "Test OR short-circuit" >:: test_or_short_circ;
+  "Test ADD_ASSIGN" >:: test_add_assign;
 ]

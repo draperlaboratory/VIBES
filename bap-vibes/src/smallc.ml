@@ -263,11 +263,10 @@ module Transl = struct
     type t = {
       target : Theory.target;
       tenv : tenv;
-      no_virtual : int;
     }
 
     let create ~(target : Theory.target) () =
-      {target; tenv = String.Map.empty; no_virtual = 0}
+      {target; tenv = String.Map.empty}
 
     let typeof (var : string) (env : t) : typ option =
       Map.find env.tenv var
@@ -295,20 +294,6 @@ let new_tmp (t : typ) : var transl =
       env with tenv = Map.set env.tenv ~key:(Theory.Var.name v) ~data:t;
     } in
   v, t
-
-(* Create a fresh temporary variable that is not virtual. *)
-let new_tmp_no_virtual (t : typ) : var transl =
-  let* {target; tenv; no_virtual} = Transl.get () in
-  let no_virtual = no_virtual + 1 in
-  let s = Theory.Bitv.define @@ size_of_typ target t in
-  let v = Theory.Var.(forget @@ define s @@ sprintf "_$%d" no_virtual) in
-  let tenv = Map.set tenv ~key:(Theory.Var.name v) ~data:t in
-  let+ () = Transl.update @@ fun env -> {env with tenv; no_virtual} in
-  v, t
-
-let is_temp_physical (v : Theory.Var.Top.t) : bool =
-  not (Theory.Var.is_virtual v) &&
-  String.is_prefix (Theory.Var.name v) ~prefix:"_$"
 
 (* Translate a base type. *)
 let rec translate_type
@@ -406,6 +391,39 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
     then Some (tl, r) else Some (tl, with_type r tl)
+
+(* The elaboration will leave a bunch of nops in the AST which makes
+   pretty-printing quite ugly. This pass removes them. *)
+let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
+  | NOP -> NOP
+  | BLOCK (tenv, s) -> begin
+      match cleanup_nop_sequences s with
+      | NOP -> NOP
+      | s -> BLOCK (tenv, s)
+    end
+  | ASSIGN ((v1, _), VARIABLE (v2, _)) when Theory.Var.Top.(v1 = v2) -> NOP
+  | ASSIGN _ -> s
+  | CALL _ -> s
+  | CALLASSIGN _ -> s
+  | STORE _ -> s
+  | SEQUENCE (NOP, s) -> cleanup_nop_sequences s
+  | SEQUENCE (s, NOP) -> cleanup_nop_sequences s
+  | SEQUENCE (s1, s2) -> begin
+      let s1 = cleanup_nop_sequences s1 in
+      let s2 = cleanup_nop_sequences s2 in
+      match s1, s2 with
+      | NOP, _ -> s2
+      | _, NOP -> s1
+      | _ -> SEQUENCE (s1, s2)
+    end
+  | IF (cond, st, sf) -> begin
+      let st = cleanup_nop_sequences st in
+      let sf = cleanup_nop_sequences sf in
+      match st, sf with
+      | NOP, NOP -> NOP
+      | _ -> IF (cond, st, sf)
+    end
+  | GOTO _ -> s
 
 (* Translate a scoped statement. *)
 let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
@@ -697,6 +715,75 @@ and increment (e : Cabs.expression) (t : typ) : exp transl =
     let i = if equal_sign sign SIGNED then Word.signed i else i in
     Transl.return @@ CONST_INT (i, sign)
 
+(* If the expression had side-effects, then store the result in a
+   temporary variable.
+
+   `no_post` indicates that a temporary shouldn't be generated if
+   there are no post-effects.
+*)
+and new_tmp_or_simple
+    ?(no_post : bool = false)
+    (pre : stmt)
+    (e : exp)
+    (post : stmt) : (exp, stmt * exp * stmt) Either.t transl =
+  let pre = cleanup_nop_sequences pre in
+  let post = cleanup_nop_sequences post in
+  match pre, post with
+  | NOP, NOP -> Transl.return @@ First e
+  | _, NOP -> Transl.return @@ Second (pre, e, post)
+  | _ ->
+    let+ tmp = new_tmp @@ typeof e in
+    let pre = sequence [pre; ASSIGN (tmp, e)] in
+    Second (pre, VARIABLE tmp, post)
+
+(* Helper for binary operators where the sequencing of side-effects
+   for the operands is important. *)
+and binary_tmp_or_simple
+    (op : binop)
+    (pre1 : stmt)
+    (e1 : exp)
+    (post1 : stmt)
+    (pre2 : stmt)
+    (e2 : exp)
+    (post2 : stmt)
+    (t : typ)
+    ~(f : binop -> exp -> exp -> typ -> exp transl)
+  : (stmt * exp option * stmt) transl =
+  (* Evaluate left to right. *)
+  let* te1 = new_tmp_or_simple pre1 e1 post1 in
+  let* te2 = new_tmp_or_simple pre2 e2 post2 ~no_post:true in
+  match te1, te2 with
+  | First e1, First e2 ->
+    let+ e = f op e1 e2 t in
+    NOP, Some e, NOP
+  | First e1, Second (pre, e2, post) ->
+    let* tmp = new_tmp t in
+    let eff = sequence [
+        ASSIGN (tmp, e1);
+        pre;
+        post;
+      ] in
+    let+ e = f op (VARIABLE tmp) e2 t in
+    eff, Some e, NOP
+  | Second (pre, e1, post), First e2 ->
+    let* tmp = new_tmp t in
+    let eff = sequence [
+        pre;
+        post;
+        ASSIGN (tmp, e2);
+      ] in
+    let+ e = f op e1 (VARIABLE tmp) t in
+    eff, Some e, NOP
+  | Second (pre1, e1, post1), Second (pre2, e2, post2) ->
+    let eff = sequence [
+        pre1;
+        post1;
+        pre2;
+        post2;
+      ] in
+    let+ e = f op e1 e2 t in
+    eff, Some e, NOP
+
 (* Translate binary operators. *)
 and translate_binary_operator
     (b : Cabs.binary_operator)
@@ -715,19 +802,8 @@ and translate_binary_operator
     | Some t ->
       let e1 = with_type e1 t in
       let e2 = with_type e2 t in
-      let* tmp1 = new_tmp t in
-      let+ tmp2 = new_tmp t in
-      let eff = sequence [
-          spre1;
-          ASSIGN (tmp1, e1);
-          spost1;
-          spre2;
-          ASSIGN (tmp2, e2);
-          spost2;
-        ] in
-      eff,
-      Some (BINARY (op, VARIABLE tmp1, VARIABLE tmp2, t)),
-      NOP in
+      let f op e1 e2 t = Transl.return @@ BINARY (op, e1, e2, t) in
+      binary_tmp_or_simple op spre1 e1 spost1 spre2 e2 spost2 t ~f in
   match b with
   | Cabs.ADD -> translate_arith ADD b lhs rhs
   | Cabs.SUB -> translate_arith SUB b lhs rhs
@@ -745,7 +821,7 @@ and translate_binary_operator
       | Some (INT (size, sign) as t) ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
-        let+ tmp = new_tmp_no_virtual t in
+        let+ tmp = new_tmp t in
         let eff = sequence [
             spre1;
             ASSIGN (tmp, e1);
@@ -775,7 +851,7 @@ and translate_binary_operator
       | Some (INT (size, sign) as t) ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
-        let+ tmp = new_tmp_no_virtual t in
+        let+ tmp = new_tmp t in
         let eff = sequence [
             spre1;
             ASSIGN (tmp, e1);
@@ -801,14 +877,39 @@ and translate_binary_operator
   | Cabs.SHR -> default SHR ~no_ptr:true
   | Cabs.EQ -> default EQ
   | Cabs.NE -> default NE
+  | Cabs.LT -> default LT
   | Cabs.GT -> default GT
   | Cabs.LE -> default LE
   | Cabs.GE -> default GE
   | Cabs.ASSIGN -> translate_assign lhs rhs
-  | _ -> Transl.fail @@ Other "unimpl"
+  | Cabs.ADD_ASSIGN -> translate_compound ADD b lhs rhs
+  | Cabs.SUB_ASSIGN -> translate_compound SUB b lhs rhs
+  | Cabs.MUL_ASSIGN -> translate_compound MUL b lhs rhs ~no_ptr:true
+  | Cabs.DIV_ASSIGN -> translate_compound DIV b lhs rhs ~no_ptr:true
+  | Cabs.MOD_ASSIGN -> translate_compound MOD b lhs rhs ~no_ptr:true
+  | Cabs.BAND_ASSIGN -> translate_compound LAND b lhs rhs ~no_ptr:true
+  | Cabs.BOR_ASSIGN -> translate_compound LOR b lhs rhs ~no_ptr:true
+  | Cabs.XOR_ASSIGN -> translate_compound XOR b lhs rhs ~no_ptr:true
+  | Cabs.SHL_ASSIGN -> translate_compound SHL b lhs rhs ~no_ptr:true
+  | Cabs.SHR_ASSIGN -> translate_compound SHR b lhs rhs ~no_ptr:true
+
+and translate_compound
+    ?(no_ptr : bool = false)
+    ?(e : Cabs.expression = NOTHING)
+    (b : binop)
+    (b' : Cabs.binary_operator)
+    (lhs : Cabs.expression)
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let lval = translate_expression_lvalue "translate_compound" in
+  let exp = translate_expression_strict "translate_compound" in
+  let* spre1, e1, spost1 = lval lhs in
+  let* spre2, e2, spost2 = exp rhs in
+  let e = Cabs.(BINARY (b', lhs, rhs)) in
+  let* e' = make_arith b e1 e2 ~e ~no_ptr in
+  translate_assign' spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
 
 and translate_arith
-    ?(no_ptr = false)
+    ?(no_ptr : bool = false)
     (b : binop)
     (b' : Cabs.binary_operator)
     (lhs : Cabs.expression)
@@ -817,8 +918,8 @@ and translate_arith
   let e = Cabs.(BINARY (b', lhs, rhs)) in
   let* spre1, e1, spost1 = exp lhs in
   let* spre2, e2, spost2 = exp rhs in
-  let+ e = make_arith b e1 e2 ~e in
-  sequence [spre1; spre2], Some e, sequence [spost1; spost2]
+  let f op e1 e2 _ = make_arith op e1 e2 ~e ~no_ptr in
+  binary_tmp_or_simple b spre1 e1 spost1 spre2 e2 spost2 VOID ~f
 
 and make_arith
     ?(no_ptr : bool = false)
@@ -860,6 +961,19 @@ and translate_assign
   let* spre2, e2, spost2 = match e1 with
     | VARIABLE v -> exp rhs ~assign:(Some v)
     | _ -> exp rhs in
+  translate_assign'
+    spre1 e1 spost1 spre2 e2 spost2 ~lhs
+    ~e:Cabs.(BINARY (ASSIGN, lhs, rhs))
+
+and translate_assign'
+    ?(lhs : Cabs.expression = NOTHING)
+    ?(e : Cabs.expression = NOTHING)
+    (spre1 : stmt)
+    (e1 : exp)
+    (spost1 : stmt)
+    (spre2 : stmt)
+    (e2 : exp)
+    (spost2 : stmt) : (stmt * exp option * stmt) transl =
   let* is_store = match e1 with
     | VARIABLE (_, t) -> Transl.return false
     | UNARY (MEMOF, _, t) -> Transl.return true
@@ -868,11 +982,15 @@ and translate_assign
       Transl.fail @@ Core_c_error (
         sprintf "Csmall.translate_assign: expected an l-value \
                  for LHS of assignment, got:\n\n%s\n" s) in
-  let+ s = make_assign e1 e2 ~is_store ~e:Cabs.(BINARY (ASSIGN, lhs, rhs)) in
-  (* Order of evaluation is right-to-left. *)
-  sequence [spre2; spre1; s],
-  Some e1,
-  sequence [spost2; spost1]
+  (* We follow order of evaluation as right-to-left. *)
+  let* te2 = new_tmp_or_simple spre2 e2 spost2 ~no_post:true in
+  match te2 with
+  | First e2 ->
+    let+ s = make_assign e1 e2 ~is_store ~e in
+    sequence [spre1; s], Some e1, spost1
+  | Second (spre2, e2, spost2) ->
+    let+ s = make_assign e1 e2 ~is_store ~e in
+    sequence [spre2; spost2; spre1; s], Some e1, spost1
 
 and make_assign
     ?(is_store : bool = false)
@@ -933,7 +1051,7 @@ and translate_question
     let eelse = with_type eelse t in
     let+ v = match assign with
       | Some v -> Transl.return v
-      | None -> new_tmp_no_virtual t in
+      | None -> new_tmp t in
     let pre = sequence [
         scondpre;
         IF (
@@ -1168,38 +1286,6 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
     Transl.fail @@ Core_c_error (
       sprintf "Smallc.translate_statement: unsupported:\n\n%s\n" s)
 
-(* The elaboration will leave a bunch of nops in the AST which makes
-   pretty-printing quite ugly. This pass removes them. *)
-let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
-  | NOP -> NOP
-  | BLOCK (tenv, s) -> begin
-      match cleanup_nop_sequences s with
-      | NOP -> NOP
-      | s -> BLOCK (tenv, s)
-    end
-  | ASSIGN _ -> s
-  | CALL _ -> s
-  | CALLASSIGN _ -> s
-  | STORE _ -> s
-  | SEQUENCE (NOP, s) -> cleanup_nop_sequences s
-  | SEQUENCE (s, NOP) -> cleanup_nop_sequences s
-  | SEQUENCE (s1, s2) -> begin
-      let s1 = cleanup_nop_sequences s1 in
-      let s2 = cleanup_nop_sequences s2 in
-      match s1, s2 with
-      | NOP, _ -> s2
-      | _, NOP -> s1
-      | _ -> SEQUENCE (s1, s2)
-    end
-  | IF (cond, st, sf) -> begin
-      let st = cleanup_nop_sequences st in
-      let sf = cleanup_nop_sequences sf in
-      match st, sf with
-      | NOP, NOP -> NOP
-      | _ -> IF (cond, st, sf)
-    end
-  | GOTO _ -> s
-
 (* Remove unnecessary casts from expressions. *)
 let rec simpl_casts_exp : exp -> exp = function
   | UNARY (u, e, t) -> UNARY (u, simpl_casts_exp e, t)
@@ -1272,113 +1358,20 @@ and used_stmt : stmt -> unit used = function
     used_stmt sf
   | GOTO _ -> Used.return ()
 
-(* Propagation of assignments to virtual temporary vars. *)
-
-module Prop = struct
-
-  module Env = struct
-
-    type t = {
-      target : Theory.target;
-      prop : exp String.Map.t;
-      used : String.Set.t;
-    }
-
-    let insert (e : exp) (v : string) (env : t) : t =
-      {env with prop = Map.set env.prop ~key:v ~data:e}
-
-    let lookup (v : string) (env : t) : exp option =
-      Map.find env.prop v
-
-  end
-
-  include Monad.State.T1(Env)(Monad.Ident)
-  include Monad.State.Make(Env)(Monad.Ident)
-
-end
-
-open Prop.Let
-
-type 'a prop = 'a Prop.t
-
-let rec prop_exp : exp -> exp prop = function
-  | UNARY (u, e, t) ->
-    let+ e = prop_exp e in
-    UNARY (u, e, t)
-  | BINARY (b, l, r, t) ->
-    let* l = prop_exp l in
-    let+ r = prop_exp r in
-    BINARY (b, l, r, t)
-  | CAST (t, e) ->
-    let+ e = prop_exp e in
-    CAST (t, e)
-  | CONST_INT _ as e -> Prop.return e
-  | VARIABLE (v, _) as e ->
-    let+ e' = Prop.(gets @@ Env.lookup @@ Theory.Var.name v) in
-    Option.value e' ~default:e
-
-and prop_stmt : stmt -> stmt prop = function
-  | NOP -> Prop.return NOP
-  | BLOCK (tenv, s) ->
-    let* {prop; _} = Prop.get () in
-    let* s = prop_stmt s in
-    let+ () = Prop.update @@ fun env ->
-      (* Variables that were introduced in this scope must be removed
-         from the environment since we are now leaving this scope. *)
-      let prop = Map.filter_keys env.prop ~f:(Map.mem prop) in
-      {env with prop} in
-    BLOCK (tenv, s)
-  | ASSIGN ((v, t), e) -> begin
-      let* e = prop_exp e in
-      match e with
-      | VARIABLE v' when equal_var (v, t) v' -> Prop.return NOP
-      | _ when is_temp_physical v ->
-        (* Physical temps are not allowed to be propagated since they may
-           cross side effects. However, if they never end up being used
-           in an expression, then we can just remove them. *)
-        let+ {used; _} = Prop.get () in
-        if Set.mem used @@ Theory.Var.name v
-        then ASSIGN ((v, t), e) else NOP
-      | _ when Theory.Var.is_virtual v ->
-        let+ () = Prop.(update @@ Env.insert e @@ Theory.Var.name v) in
-        NOP
-      | _ -> Prop.return @@ ASSIGN ((v, t), e)
-    end
-  | CALL (f, args) ->
-    let* f = prop_exp f in
-    let+ args = Prop.List.map args ~f:prop_exp in
-    CALL (f, args)
-  | CALLASSIGN (v, f, args) ->
-    let* f = prop_exp f in
-    let+ args = Prop.List.map args ~f:prop_exp in
-    CALLASSIGN (v, f, args)
-  | STORE (l, r) ->
-    let* l = prop_exp l in
-    let+ r = prop_exp r in
-    STORE (l, r)
+let rec remove_unused_temps (used : String.Set.t) : stmt -> stmt = function
+  | NOP -> NOP
+  | BLOCK (tenv, s) -> BLOCK (tenv, remove_unused_temps used s)
+  | ASSIGN ((v, _), _)
+    when Theory.Var.is_virtual v
+      && not (Set.mem used @@ Theory.Var.name v) -> NOP
+  | ASSIGN _ as s -> s
+  | (CALL _ | CALLASSIGN _) as s -> s
+  | STORE _ as s -> s
   | SEQUENCE (s1, s2) ->
-    let* s1 = prop_stmt s1 in
-    let+ s2 = prop_stmt s2 in
-    SEQUENCE (s1, s2)
+    SEQUENCE (remove_unused_temps used s1, remove_unused_temps used s2)
   | IF (cond, st, sf) ->
-    (* We need to be careful to restore the old environment since each
-       branch may have introduced new scopes or clobbered old assignments. *)
-    let* {prop; _} = Prop.get () in
-    let* cond = prop_exp cond in
-    let* st = prop_stmt st in
-    let* {prop = pt; _} = Prop.get () in
-    let* () = Prop.update @@ fun env -> {env with prop} in
-    let* sf = prop_stmt sf in
-    let* {prop = pf; _} = Prop.get () in
-    (* However, we can merge them if we know that the results will be the
-       same (and the variable is within scope). *)
-    let prop = Map.merge pt pf ~f:(fun ~key -> function
-        | `Left _ | `Right _ -> None
-        | `Both (e1, e2) when Map.mem prop key && equal_exp e1 e2 -> Some e1
-        | `Both _ -> None) in
-    let+ () = Prop.update @@ fun env -> {env with prop} in
-    IF (cond, st, sf)
-  | GOTO _ as s -> Prop.return s
+    IF (cond, remove_unused_temps used st, remove_unused_temps used sf)
+  | GOTO _ as s -> s
 
 (* Translate a definition. *)
 let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
@@ -1395,13 +1388,8 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     Transl.(Env.create ~target () |> run (translate_body body)) in
   (* Perform some simplification passes. *)
   let s = simpl_casts_stmt s in
-  let s = cleanup_nop_sequences s in
   let used = Monad.State.exec (used_stmt s) String.Set.empty in
-  let s = Monad.State.eval (prop_stmt s) {
-      target;
-      prop = String.Map.empty;
-      used
-    } in
+  let s = remove_unused_temps used s in
   let s = cleanup_nop_sequences s in
   (* Success! *)
   let prog = tenv, s in
