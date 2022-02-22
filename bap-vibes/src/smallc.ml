@@ -1143,24 +1143,23 @@ and translate_call
     else
       (* Do we already know who we're assigning to? *)
       let+ v = match assign with
-        | Some (v, t) -> begin
-            (* Type checking. Use a dummy RHS since calls are not
-               expressions. *)
-            let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
-            match typ_unify_assign t tret dummy with
-            | Some _ -> Transl.return (v, t)
-            | None ->
-              let s =
-                Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-              let t = string_of_typ t in
-              let tret = string_of_typ tret in
-              Transl.fail @@ Core_c_error (
-                sprintf "Smallc.translate_call:\n\n%s\n\n\
-                         has return type %s, cannot unify with var %s of \
-                         type %s"
-                  s tret (Theory.Var.name v) t)
-          end
-        | None -> new_tmp tret in
+        | None -> new_tmp tret
+        | Some (v, t) ->
+          (* Type checking. Use a dummy RHS since calls are not
+             expressions. *)
+          let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
+          match typ_unify_assign t tret dummy with
+          | Some _ -> Transl.return (v, t)
+          | None ->
+            let s =
+              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+            let t = string_of_typ t in
+            let tret = string_of_typ tret in
+            Transl.fail @@ Core_c_error (
+              sprintf "Smallc.translate_call:\n\n%s\n\n\
+                       has return type %s, cannot unify with var %s of \
+                       type %s"
+                s tret (Theory.Var.name v) t) in
       sequence [eff; CALLASSIGN (v, f', args')], Some (VARIABLE v)
   | t ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
