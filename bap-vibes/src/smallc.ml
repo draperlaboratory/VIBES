@@ -360,6 +360,17 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
         Some (INT (size1, UNSIGNED))
       | _ -> Some t1
 
+(* Cast pointers to integers. *)
+let rec typ_unify_ptr_to_int (bits : int) (t1 : typ) (t2 : typ) : typ option =
+  match t1, t2 with
+  | PTR _, INT (_, sign) -> Some (INT (Size.of_int_exn bits, UNSIGNED))
+  | INT (_, sign), PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
+  | PTR _, PTR _ -> Some (PTR VOID)
+  | (INT _ | PTR _), FUN (ret, _) -> typ_unify_ptr_to_int bits t1 ret
+  | FUN (ret, _), (INT _ | PTR _) -> typ_unify_ptr_to_int bits ret t2
+  | INT _, INT _ -> typ_unify t1 t2
+  | _ -> None
+
 (* Same as `typ_unify_ptr` but favor the lhs. *)
 let rec typ_unify_ptr_assign (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
@@ -814,13 +825,15 @@ and translate_binary_operator
   | Cabs.MOD -> translate_arith MOD b lhs rhs ~no_ptr:true
   | Cabs.AND -> begin
       (* Short-circuiting boolean AND *)
+      let* bits =
+        Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
       let* spre1, e1, spost1 = exp lhs in
       let t1 = typeof e1 in
       let* spre2, e2, spost2 = exp rhs in
       let t2 = typeof e2 in
-      match typ_unify t1 t2 with
+      match typ_unify_ptr_to_int bits t1 t2 with
       | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some (INT (size, sign) as t) ->
+      | Some t ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
         let+ tmp = new_tmp t in
@@ -838,19 +851,18 @@ and translate_binary_operator
               NOP);
           ] in
         eff, Some (VARIABLE tmp), NOP
-      | Some t ->
-        typ_error Cabs.(BINARY (b, lhs, rhs)) t
-          "Expected an integer type."
     end
   | Cabs.OR -> begin
       (* Short-circuiting boolean OR *)
+      let* bits =
+        Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
       let* spre1, e1, spost1 = exp lhs in
       let t1 = typeof e1 in
       let* spre2, e2, spost2 = exp rhs in
       let t2 = typeof e2 in
-      match typ_unify t1 t2 with
+      match typ_unify_ptr_to_int bits t1 t2 with
       | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some (INT (size, sign) as t) ->
+      | Some t ->
         let e1 = with_type e1 t in
         let e2 = with_type e2 t in
         let+ tmp = new_tmp t in
@@ -868,9 +880,6 @@ and translate_binary_operator
               ]);
           ] in
         eff, Some (VARIABLE tmp), NOP
-      | Some t ->
-        typ_error Cabs.(BINARY (b, lhs, rhs)) t
-          "Expected an integer type."
     end
   | Cabs.BAND -> default LAND ~no_ptr:true
   | Cabs.BOR -> default LOR ~no_ptr:true
@@ -904,11 +913,16 @@ and translate_compound
     (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
   let lval = translate_expression_lvalue "translate_compound" in
   let exp = translate_expression_strict "translate_compound" in
-  let* spre1, e1, spost1 = lval lhs in
-  let* spre2, e2, spost2 = exp rhs in
-  let e = Cabs.(BINARY (b', lhs, rhs)) in
-  let* e' = make_arith b e1 e2 ~e ~no_ptr in
-  translate_assign' spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
+  match lhs with
+  | Cabs.QUESTION (c, l, r) when is_lvalue lhs ->
+    translate_question c
+      Cabs.(BINARY (b', l, rhs)) Cabs.(BINARY (b', r, rhs))
+  | _ ->
+    let* spre1, e1, spost1 = lval lhs in
+    let* spre2, e2, spost2 = exp rhs in
+    let e = Cabs.(BINARY (b', lhs, rhs)) in
+    let* e' = make_arith b e1 e2 ~e ~no_ptr in
+    translate_assign' spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
 
 and translate_arith
     ?(no_ptr : bool = false)

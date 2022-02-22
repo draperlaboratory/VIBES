@@ -361,6 +361,22 @@ let test_add_assign _ =
        x := x + y
      }"
 
+let test_ternary_compound _ =
+  assert_parse_eq
+    "int c, x, y, z;
+     z = (c ? x : y) += 5;"
+    "{
+       if (c) {
+         x := x + 5
+         virt := x
+       }
+       else {
+         y := y + 5
+         virt := y
+       }
+       z := virt
+     }"
+    
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -389,4 +405,5 @@ let suite = [
   "Test AND short-circuit" >:: test_and_short_circ;
   "Test OR short-circuit" >:: test_or_short_circ;
   "Test ADD_ASSIGN" >:: test_add_assign;
+  "Test ternary compound" >:: test_ternary_compound;
 ]
