@@ -739,6 +739,7 @@ and new_tmp_or_simple
 (* Helper for binary operators where the sequencing of side-effects
    for the operands is important. *)
 and binary_tmp_or_simple
+    ?(no_post : bool = false)
     (op : binop)
     (pre1 : stmt)
     (e1 : exp)
@@ -751,7 +752,7 @@ and binary_tmp_or_simple
   : (stmt * exp option * stmt) transl =
   (* Evaluate left to right. *)
   let* te1 = new_tmp_or_simple pre1 e1 post1 in
-  let* te2 = new_tmp_or_simple pre2 e2 post2 ~no_post:true in
+  let* te2 = new_tmp_or_simple pre2 e2 post2 ~no_post in
   match te1, te2 with
   | First e1, First e2 ->
     let+ e = f op e1 e2 t in
@@ -803,7 +804,8 @@ and translate_binary_operator
       let e1 = with_type e1 t in
       let e2 = with_type e2 t in
       let f op e1 e2 t = Transl.return @@ BINARY (op, e1, e2, t) in
-      binary_tmp_or_simple op spre1 e1 spost1 spre2 e2 spost2 t ~f in
+      binary_tmp_or_simple op spre1 e1 spost1 spre2 e2 spost2 t ~f
+        ~no_post:true in
   match b with
   | Cabs.ADD -> translate_arith ADD b lhs rhs
   | Cabs.SUB -> translate_arith SUB b lhs rhs
@@ -919,7 +921,7 @@ and translate_arith
   let* spre1, e1, spost1 = exp lhs in
   let* spre2, e2, spost2 = exp rhs in
   let f op e1 e2 _ = make_arith op e1 e2 ~e ~no_ptr in
-  binary_tmp_or_simple b spre1 e1 spost1 spre2 e2 spost2 VOID ~f
+  binary_tmp_or_simple b spre1 e1 spost1 spre2 e2 spost2 VOID ~f ~no_post:true
 
 and make_arith
     ?(no_ptr : bool = false)
@@ -1071,6 +1073,41 @@ and translate_question
       ] in
     pre, Some (VARIABLE v), NOP
 
+and translate_call_args
+    ?(e : Cabs.expression = NOTHING)
+    (args : Cabs.expression list)
+    (targs : typ list) : (stmt * exp * stmt) list transl =
+  let exp = translate_expression_strict "translate_call_args" in
+  match List.zip args targs with
+  | Ok l ->
+    (* Evaluated left to right. *)
+    Transl.List.fold_right l ~init:[]
+      ~f:(fun (arg, t) acc ->
+          let* spre, a, spost = exp arg in
+          let ta = typeof a in
+          match typ_unify t ta with
+          | None ->
+            let s =
+              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+            let a =
+              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
+            let t = string_of_typ t in
+            let ta = string_of_typ ta in
+            Transl.fail @@ Core_c_error (
+              sprintf "Smallc.translate_call_args:\n\n%s\
+                       \n\nargument %s has type %s but type %s was \
+                       expected" s a ta t)
+          | Some t ->
+            let a = with_type a t in
+            Transl.return ((spre, a, spost) :: acc))
+  | Unequal_lengths ->
+    let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+    let l1 = List.length targs in
+    let l2 = List.length args in
+    Transl.fail @@ Core_c_error (
+      sprintf "Smallc.translate_call_args:\n\n%s\n\n\
+               expected %d arguments, got %d" s l1 l2)
+
 and translate_call
     ?(assign : var option = None)
     ?(computation : bool = false)
@@ -1081,60 +1118,34 @@ and translate_call
   let* sfpre, f', sfpost = exp f in
   match typeof f' with
   | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
-    let* sargspre, args', sargspost = match List.zip args targs with
-      | Ok l ->
-        (* Evaluated left to right. *)
-        Transl.List.fold_right l ~init:([], [], [])
-          ~f:(fun (arg, t) (sargspre, args', sargspost) ->
-              let* spre, a, spost = exp arg in
-              let ta = typeof a in
-              match typ_unify t ta with
-              | None ->
-                let s =
-                  Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-                let a =
-                  Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
-                let t = string_of_typ t in
-                let ta = string_of_typ ta in
-                Transl.fail @@ Core_c_error (
-                  sprintf "Smallc.translate_call:\n\n%s\
-                           \n\nargument %s has type %s but type %s was \
-                           expected" s a ta t)
-              | Some t ->
-                let a = with_type a t in
-                Transl.return (spre :: sargspre, a :: args', spost :: sargspost))
-      | Unequal_lengths ->
-        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let l1 = List.length targs in
-        let l2 = List.length args in
-        Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_call:\n\n%s\n\n\
-                   expected %d arguments, got %d" s l1 l2) in
+    let* args = translate_call_args args targs ~e in
+    let* eff, args' =
+      (* Sequence the effects of each arg expression. *)
+      let rec aux (pre, args, post) = function
+        | [] -> Transl.return (sequence [pre; post], List.rev args)
+        | (spre, e, spost) :: rest ->
+          let no_post = List.is_empty rest in
+          let* te = new_tmp_or_simple spre e spost ~no_post in
+          let eff, e = match te with
+            | First e -> sequence [pre; post], e
+            | Second (spre, e, spost) -> sequence [pre; post; spre], e in
+          aux (eff, e :: args, spost) rest in
+      aux (sfpre, [], sfpost) args in
     let is_void = match typ_unify tret VOID with
       | Some VOID -> true
       | Some _ -> false
       | None -> false in
-    if computation then
-      let init = CALL (f', args') in
-      let s = List.fold_right
-          (* XXX: THIS IS WRONG *)
-          (sfpre :: sfpost :: (sargspre @ sargspost))
-          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
-      Transl.return (s, None)
+    if computation
+    then Transl.return (sequence [eff; CALL (f', args')], None)
     else if is_void then
       let+ dummy = new_tmp VOID in
-      let init = CALL (f', args') in
-      let s =
-        List.fold_right
-          (* XXX: THIS IS WRONG *)
-          (sfpre :: sfpost :: (sargspre @ sargspost))
-          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
-      s, Some (VARIABLE dummy)
+      sequence [eff; CALL (f', args')], Some (VARIABLE dummy)
     else
       (* Do we already know who we're assigning to? *)
       let+ v = match assign with
         | Some (v, t) -> begin
-            (* Type checking. Use a dummy RHS since calls are not expressions.  *)
+            (* Type checking. Use a dummy RHS since calls are not
+               expressions. *)
             let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
             match typ_unify_assign t tret dummy with
             | Some _ -> Transl.return (v, t)
@@ -1150,13 +1161,7 @@ and translate_call
                   s tret (Theory.Var.name v) t)
           end
         | None -> new_tmp tret in
-      let init = CALLASSIGN (v, f', args') in
-      let s =
-        List.fold_right
-          (* XXX: THIS IS WRONG *)
-          (sfpre :: sfpost :: (sargspre @ sargspost))
-          ~init ~f:(fun s acc -> SEQUENCE (s, acc)) in
-      s, Some (VARIABLE v)
+      sequence [eff; CALLASSIGN (v, f', args')], Some (VARIABLE v)
   | t ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ t in

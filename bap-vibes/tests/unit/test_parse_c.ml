@@ -159,6 +159,21 @@ let test_call_args_2 _ =
        call(f)
      }"
 
+let test_call_args_eff _ =
+  assert_parse_eq
+    "int a, b, c;
+     void (*f)(int, int, int);
+     f(a, b++, ++c);"
+    "{
+       virt := b
+       b := b + 1
+       c := c + 1
+       R0 := a
+       R1 := virt
+       R2 := c
+       call(f)
+     }"
+
 let test_call_args_ret _ =
   assert_parse_eq
     "int a, b, c, d;
@@ -358,6 +373,7 @@ let suite = [
   "Test call hex" >:: test_call_hex;
   "Test call args 1" >:: test_call_args_1;
   "Test call args 2" >:: test_call_args_2;
+  "Test call args eff" >:: test_call_args_eff;
   "Test call args ret" >:: test_call_args_ret;
   "Test call args ret store" >:: test_call_args_ret_store;
   "Test call args addrof" >:: test_call_args_addrof;
