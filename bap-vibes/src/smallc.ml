@@ -832,64 +832,8 @@ and translate_binary_operator
   | Cabs.MUL -> translate_arith MUL b lhs rhs ~no_ptr:true
   | Cabs.DIV -> translate_arith DIV b lhs rhs ~no_ptr:true
   | Cabs.MOD -> translate_arith MOD b lhs rhs ~no_ptr:true
-  | Cabs.AND -> begin
-      (* Short-circuiting boolean AND *)
-      let* bits =
-        Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-      let* spre1, e1, spost1 = exp lhs in
-      let t1 = typeof e1 in
-      let* spre2, e2, spost2 = exp rhs in
-      let t2 = typeof e2 in
-      match typ_unify_ptr_to_int bits t1 t2 with
-      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some t ->
-        let e1 = with_type e1 t in
-        let e2 = with_type e2 t in
-        let+ tmp = new_tmp t in
-        let eff = sequence [
-            spre1;
-            ASSIGN (tmp, e1);
-            spost1;
-            IF (
-              VARIABLE tmp,
-              sequence [
-                spre2;
-                ASSIGN (tmp, e2);
-                spost2
-              ],
-              NOP);
-          ] in
-        eff, Some (VARIABLE tmp), NOP
-    end
-  | Cabs.OR -> begin
-      (* Short-circuiting boolean OR *)
-      let* bits =
-        Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
-      let* spre1, e1, spost1 = exp lhs in
-      let t1 = typeof e1 in
-      let* spre2, e2, spost2 = exp rhs in
-      let t2 = typeof e2 in
-      match typ_unify_ptr_to_int bits t1 t2 with
-      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some t ->
-        let e1 = with_type e1 t in
-        let e2 = with_type e2 t in
-        let+ tmp = new_tmp t in
-        let eff = sequence [
-            spre1;
-            ASSIGN (tmp, e1);
-            spost1;
-            IF (
-              VARIABLE tmp,
-              NOP,
-              sequence [
-                spre2;
-                ASSIGN (tmp, e2);
-                spost2;
-              ]);
-          ] in
-        eff, Some (VARIABLE tmp), NOP
-    end
+  | Cabs.AND -> translate_short_circuit_and lhs rhs
+  | Cabs.OR -> translate_short_circuit_or lhs rhs
   | Cabs.BAND -> default LAND ~no_ptr:true
   | Cabs.BOR -> default LOR ~no_ptr:true
   | Cabs.XOR -> default XOR ~no_ptr:true
@@ -912,6 +856,70 @@ and translate_binary_operator
   | Cabs.XOR_ASSIGN -> translate_compound XOR b lhs rhs ~no_ptr:true
   | Cabs.SHL_ASSIGN -> translate_compound SHL b lhs rhs ~no_ptr:true
   | Cabs.SHR_ASSIGN -> translate_compound SHR b lhs rhs ~no_ptr:true
+
+(* Captures the short-circuiting semantics of the && operator. *)
+and translate_short_circuit_and
+    (lhs : Cabs.expression)
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let exp = translate_expression_strict "translate_short_circuit_and" in
+  let* bits =
+    Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
+  let* spre1, e1, spost1 = exp lhs in
+  let t1 = typeof e1 in
+  let* spre2, e2, spost2 = exp rhs in
+  let t2 = typeof e2 in
+  match typ_unify_ptr_to_int bits t1 t2 with
+  | None -> typ_unify_error Cabs.(BINARY (AND, lhs, rhs)) t1 t2
+  | Some t ->
+    let e1 = with_type e1 t in
+    let e2 = with_type e2 t in
+    let+ tmp = new_tmp t in
+    let eff = sequence [
+        spre1;
+        ASSIGN (tmp, e1);
+        spost1;
+        IF (
+          VARIABLE tmp,
+          sequence [
+            spre2;
+            ASSIGN (tmp, e2);
+            spost2
+          ],
+          NOP);
+      ] in
+    eff, Some (VARIABLE tmp), NOP
+
+(* Captures the short-circuiting semantics of the || operator. *)
+and translate_short_circuit_or
+    (lhs : Cabs.expression)
+    (rhs : Cabs.expression) : (stmt * exp option * stmt) transl =
+  let exp = translate_expression_strict "translate_short_circuit_or" in
+  let* bits =
+    Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
+  let* spre1, e1, spost1 = exp lhs in
+  let t1 = typeof e1 in
+  let* spre2, e2, spost2 = exp rhs in
+  let t2 = typeof e2 in
+  match typ_unify_ptr_to_int bits t1 t2 with
+  | None -> typ_unify_error Cabs.(BINARY (OR, lhs, rhs)) t1 t2
+  | Some t ->
+    let e1 = with_type e1 t in
+    let e2 = with_type e2 t in
+    let+ tmp = new_tmp t in
+    let eff = sequence [
+        spre1;
+        ASSIGN (tmp, e1);
+        spost1;
+        IF (
+          VARIABLE tmp,
+          NOP,
+          sequence [
+            spre2;
+            ASSIGN (tmp, e2);
+            spost2;
+          ]);
+      ] in
+    eff, Some (VARIABLE tmp), NOP
 
 and translate_compound
     ?(no_ptr : bool = false)
