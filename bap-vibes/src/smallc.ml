@@ -521,6 +521,14 @@ and translate_expression
   | Cabs.CALL (f, args) ->
     let+ s, e = translate_call f args ~assign ~computation in
     s, e, NOP
+  | Cabs.COMMA exps ->
+    let e = List.last_exn exps in
+    let* stmts =
+      List.drop_last_exn exps |>
+      List.map ~f:(fun e -> Cabs.COMPUTATION e) |>
+      Transl.List.map ~f:translate_statement in
+    let+ pre, e, post = translate_expression e ~assign in
+    sequence (stmts @ [pre]), e, post
   | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in

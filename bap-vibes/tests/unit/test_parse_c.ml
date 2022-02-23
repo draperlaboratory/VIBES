@@ -376,7 +376,25 @@ let test_ternary_compound _ =
        }
        z := virt
      }"
-    
+
+let test_comma _ =
+  assert_parse_eq
+    "int x, y, z;
+     z = (x = 5, y * x);"
+    "{
+       x := 5
+       z := y * x
+     }"
+
+let test_comma_ambig _ =
+  assert_parse_eq
+    "int x, y, z;
+     z = x = 5, y * x;"
+    "{
+       x := 5
+       z := x
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -406,4 +424,6 @@ let suite = [
   "Test OR short-circuit" >:: test_or_short_circ;
   "Test ADD_ASSIGN" >:: test_add_assign;
   "Test ternary compound" >:: test_ternary_compound;
+  "Test comma" >:: test_comma;
+  "Test comma ambiguous" >:: test_comma_ambig;
 ]
