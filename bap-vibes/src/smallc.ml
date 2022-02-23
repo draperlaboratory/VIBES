@@ -922,7 +922,7 @@ and translate_compound
     let* spre2, e2, spost2 = exp rhs in
     let e = Cabs.(BINARY (b', lhs, rhs)) in
     let* e' = make_arith b e1 e2 ~e ~no_ptr in
-    translate_assign' spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
+    translate_assign_aux spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
 
 and translate_arith
     ?(no_ptr : bool = false)
@@ -937,6 +937,8 @@ and translate_arith
   let f op e1 e2 _ = make_arith op e1 e2 ~e ~no_ptr in
   binary_tmp_or_simple b spre1 e1 spost1 spre2 e2 spost2 VOID ~f ~no_post:true
 
+(* Generate an arithmetic expression depending on whether pointer
+   arithmetic is allowed. *)
 and make_arith
     ?(no_ptr : bool = false)
     ?(e : Cabs.expression = Cabs.NOTHING)
@@ -977,11 +979,13 @@ and translate_assign
   let* spre2, e2, spost2 = match e1 with
     | VARIABLE v -> exp rhs ~assign:(Some v)
     | _ -> exp rhs in
-  translate_assign'
+  translate_assign_aux
     spre1 e1 spost1 spre2 e2 spost2 ~lhs
     ~e:Cabs.(BINARY (ASSIGN, lhs, rhs))
 
-and translate_assign'
+(* The operands have been compiled and their side effects are explicit,
+   so continue compiling the assignment. *)
+and translate_assign_aux
     ?(lhs : Cabs.expression = NOTHING)
     ?(e : Cabs.expression = NOTHING)
     (spre1 : stmt)
@@ -1008,6 +1012,7 @@ and translate_assign'
     let+ s = make_assign e1 e2 ~is_store ~e in
     sequence [spre2; spost2; spre1; s], Some e1, spost1
 
+(* Do type checking and either generate an assignment or a store. *)
 and make_assign
     ?(is_store : bool = false)
     ?(e : Cabs.expression = NOTHING)
