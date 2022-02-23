@@ -521,7 +521,9 @@ and translate_expression
   | Cabs.CALL (f, args) ->
     let+ s, e = translate_call f args ~assign ~computation in
     s, e, NOP
+  | Cabs.COMMA [] -> Transl.return (NOP, None, NOP)
   | Cabs.COMMA exps ->
+    (* Guarded by the pattern match above. *)
     let e = List.last_exn exps in
     let* stmts =
       List.drop_last_exn exps |>
