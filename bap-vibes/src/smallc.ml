@@ -510,8 +510,7 @@ and translate_expression
     let+ spre, e, spost = translate_binary_operator b lhs rhs in
     if computation then spre, None, spost else spre, e, spost
   | Cabs.QUESTION (cond, then_, else_) ->
-    let+ spre, e, spost = translate_question cond then_ else_ ~assign in
-    spre, e, spost
+    translate_question cond then_ else_ ~assign
   | Cabs.CAST (t, e) ->
     let* t = translate_type t in
     let+ spre, e', spost =
