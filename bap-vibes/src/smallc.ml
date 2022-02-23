@@ -973,15 +973,20 @@ and translate_assign
   let exp ?(assign = None) =
     translate_expression_strict "translate_assign" ~assign in
   let lval = translate_expression_lvalue "translate_assign" in
-  let* spre1, e1, spost1 = match lhs_pre with
-    | Some e -> Transl.return (NOP, e, NOP)
-    | None -> lval lhs in
-  let* spre2, e2, spost2 = match e1 with
-    | VARIABLE v -> exp rhs ~assign:(Some v)
-    | _ -> exp rhs in
-  translate_assign_aux
-    spre1 e1 spost1 spre2 e2 spost2 ~lhs
-    ~e:Cabs.(BINARY (ASSIGN, lhs, rhs))
+  match lhs with
+  | Cabs.QUESTION (c, l, r) when is_lvalue lhs ->
+    translate_question c
+      Cabs.(BINARY (ASSIGN, l, rhs)) Cabs.(BINARY (ASSIGN, r, rhs))
+  | _ ->
+    let* spre1, e1, spost1 = match lhs_pre with
+      | Some e -> Transl.return (NOP, e, NOP)
+      | None -> lval lhs in
+    let* spre2, e2, spost2 = match e1 with
+      | VARIABLE v -> exp rhs ~assign:(Some v)
+      | _ -> exp rhs in
+    translate_assign_aux
+      spre1 e1 spost1 spre2 e2 spost2 ~lhs
+      ~e:Cabs.(BINARY (ASSIGN, lhs, rhs))
 
 (* The operands have been compiled and their side effects are explicit,
    so continue compiling the assignment. *)
