@@ -58,4 +58,5 @@ let run_minizinc
                        "--solver"; "chuffed";
                        model_filepath ] in
   Utils.lift_kb_result (Utils.run_process "minizinc" minizinc_args) >>= fun () ->
+  Events.(send @@ Info (sprintf "Solution file: %s\n" solution_filepath));
   KB.return (Yojson.Safe.from_file solution_filepath)

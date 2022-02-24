@@ -40,6 +40,10 @@ array[operand_t, opcode_t] of set of reg_t : class_t;
 array[opcode_t] of int: latency; % latency of instruction
 
 
+array[block_t] of operation_t : block_ins;
+array[block_t] of operation_t : block_outs;
+% array[block_t] of set of operation_t : block_operations
+
 int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from file.
 
 % todo: resource parameter
@@ -142,12 +146,12 @@ function array[int] of var int : block_array(array[temp_t] of var int : a, block
 % sizes ( dx [ i ], dy [ i ]), to be non-overlapping. Zero-width rectangles can be packed anywhere.
 
 % still need to include live[t] condition
-constraint forall(b in block_t)(
-        diffn(block_array(reg,b),  % built in global minizinc constraint
-              block_array(start_cycle,b),
+constraint forall(blk in block_t)(
+        diffn(block_array(reg,blk),  % built in global minizinc constraint
+              block_array(start_cycle,blk),
             %  block_array([width[t] * bool2int(live[t]) | t in temp_t ], b), % no this is bad
-            block_array(width, b),
-              [end_cycle[t] - start_cycle[t] | t in temp_t where temp_block[t] = b])
+            block_array(width, blk),
+              [end_cycle[t] - start_cycle[t] | t in temp_t where temp_block[t] = blk])
 );
 
 
@@ -231,6 +235,16 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
        [ issue[operand_operation[p]]  | p in users[t] where temp[p] == t  ]  )
        % shouldn't this also be contingent on whether the user is active?
        % I suppose the temporary won't be live then.
+);
+
+% In blocks must be at start of block
+% Outs must be at end
+
+constraint forall (blk in block_t)(
+    issue[block_ins[blk]] == 0
+    /\
+    issue[block_outs[blk]] == MAXC
+    % better constraint  forall(o in block_ops[blk]) (issue[o] <= issue[block_outs[blk]])
 );
 
 

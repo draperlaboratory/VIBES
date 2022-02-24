@@ -104,8 +104,9 @@ val create_id : unit -> int
     a set of instructions to choose from,
     a flag of whether the operation is optional,
     a list of operands. *)
+type operation_id = int
 type operation = {
-  id : int;
+  id : operation_id;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
@@ -157,6 +158,11 @@ val map_operands : f:(operand -> operand) -> t -> t
 
 val operation_to_string : operation -> string
 val op_var_to_string : op_var -> string
+
+module Blk :
+sig
+    val all_temps : blk -> Var.Set.t
+end
 
 val all_temps : t -> Var.Set.t
 val all_operands : t -> Var.Set.t
@@ -214,3 +220,6 @@ val to_string : t -> string
 (** Populate the [pre_assign] field with [`R0] if it is not already
     assigned. Useful for testing purposes. *)
 val dummy_reg_alloc : t -> t
+
+val ins_map : t -> operation_id Tid.Map.t
+val outs_map : t -> operation_id Tid.Map.t

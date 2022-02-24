@@ -25,8 +25,9 @@ module Var_pair : sig
   include Comparator.S with type t := t
 end
 
-type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t 
+type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
+type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
 (** We define "domains" for the types used in our properties. *)
 val string_domain       : string option KB.Domain.t
 val int_domain          : int option KB.Domain.t
@@ -38,7 +39,7 @@ val assembly_domain     : string list option KB.Domain.t
 val unit_domain         : unit KB.Domain.t
 val higher_vars_domain  : Hvar.t list option KB.Domain.t
 val var_pair_set_domain : var_pair_set KB.Domain.t
-
+val ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t
 (** These are the top-level class definitions.
 
     - type [cls] is the class of the top-level VIBES KB object that stores
@@ -76,6 +77,7 @@ module Patch : sig
   val raw_ir : (patch_cls, Ir.t option) KB.slot
   val exclude_regs : (patch_cls, String.Set.t option) KB.slot
   val congruence : (patch_cls, var_pair_set) KB.slot
+  val ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   val sp_align : (patch_cls, int option) KB.slot
   (* The language/encoding of the assembly, typically used to
@@ -143,6 +145,8 @@ module Patch : sig
   val add_congruence : t -> var * var -> unit KB.t
   val get_congruence : t -> var_pair_set KB.t
 
+  val set_ins_outs_map : t -> ins_outs Tid.Map.t -> unit KB.t
+  val get_ins_outs_map : t -> ins_outs Tid.Map.t KB.t
 end
 
 (** Sets of patches *)

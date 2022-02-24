@@ -17,12 +17,14 @@ open Bap.Std
 open Bap_core_theory
 open Monads.Std
 
+let prefix_from_tid (tid : Tid.t) : string =
+  let tid_str = Tid.to_string tid in
+  String.drop_prefix tid_str 1
+
 (* Use the tid of the blk as the prefix, dropping the '%' at
    the beginning. *)
 let prefix_from (blk : Blk.t) : string =
-  let tid = Term.tid blk in
-  let tid_str = Tid.to_string tid in
-  String.drop_prefix tid_str 1
+  prefix_from_tid @@ Term.tid blk
 
 let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
   let name = Var.name var in
@@ -48,6 +50,12 @@ let orig_name (name : string) : string =
     | [name; _] -> name
     | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name in
   if is_reg then Substituter.mark_reg_name name else name
+
+let convert (b : Tid.t) (v :var) : var =
+  let name = Var.name v in
+  let name = String.drop_prefix name prefix_len in
+  let prefix = prefix_from_tid b in
+  linearize ~prefix (Var.create name (Var.typ v))
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in
@@ -184,16 +192,41 @@ let linearize_blk (blk : blk term) : blk term linear =
      congruence between linear SSA vars. *)
   Blk.create ~phis:[] ~defs ~jmps ~tid:(Term.tid blk) ()
 
+
+let compute_liveness (sub : sub term) : Data.ins_outs Tid.Map.t =
+  let liveness = Sub.compute_liveness sub in
+  let blks = Term.enum blk_t sub in
+  let outs = Seq.map blks ~f:(fun blk ->
+    let tid = Term.tid blk in
+    let outs = Graphlib.Std.Solution.get liveness tid in
+    let prefix = prefix_from blk in
+    let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
+    (* Not quite right. I need to ignore phis? *)
+    let blk_no_phi = Blk.create ~defs:(Seq.to_list @@ Term.enum def_t blk) ~jmps:(Seq.to_list @@ Term.enum jmp_t blk) () in
+    let ins = Var.Set.filter outs ~f:(fun var -> not (Blk.defines_var blk_no_phi var)) in
+    let ins_outs : Data.ins_outs = {ins; outs} in
+    tid, ins_outs)
+  in
+  Tid.Map.of_sequence_exn outs
+
+let all_live_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
+  let inouts = Tid.Map.data ins_outs in
+  Var.Set.union_list (List.map ~f:(fun {ins ;outs} -> Var.Set.union ins outs) inouts)
+
 let transform
     ?(patch : Data.Patch.t option = None)
     (sub : sub term) : blk term list KB.t =
   let open KB.Let in
-  let blks, Linear.Env.{vars; _} = 
+  let ins_outs_map = compute_liveness sub in
+  let blks, Linear.Env.{vars; _} =
     Linear.Env.{prefix = ""; vars = Var.Set.empty} |>
     Linear.run (go blk_t sub ~f:linearize_blk) in
+  (* Add in live variables that persist across blocks that don't use them *)
+  let vars = Var.Set.union vars (all_live_vars ins_outs_map) in
   let+ () = match patch with
     | None -> KB.return ()
     | Some patch ->
+      let* () = Data.Patch.set_ins_outs_map patch ins_outs_map in
       let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
       Var.Set.to_list vars |>
       KB.List.iter ~f:(fun v1 ->

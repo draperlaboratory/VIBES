@@ -45,6 +45,10 @@ val orig_name : string -> string
     the same [orig_name]. *)
 val same : var -> var -> bool
 
+(** [convert var blk] converts a linear ssa variable to it's equivalent in another block.
+    *)
+val convert : Tid.t -> var -> var
+
 (** [congruent v1 v2] checks whether [v1] and [v2] are "congruent"
     in the sense described in the comment at the beginning of the module.
     [v1] and [v2] must be in the linear SSA form. *)

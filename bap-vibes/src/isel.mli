@@ -93,6 +93,7 @@ end
 
 val run :
   isel_model_filepath:string ->
+  Data.ins_outs Tid.Map.t ->
   Blk.t list ->
   info ->
   Ir.t KB.t

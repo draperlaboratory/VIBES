@@ -62,7 +62,8 @@ let create_vibes_ir
             let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
             List.iter ir ~f:(fun blk ->
             Events.(send @@ Info (sprintf "The patch has the following BIL: %a" Blk.pps blk)));
-            let* ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns in
+            let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
+            let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
             KB.return ir
           end
       in
@@ -128,6 +129,14 @@ let compile_one_assembly
       Arm_selector.gpr target lang >>= fun gpr ->
       Data.Patch.get_congruence patch >>= fun congruence ->
       let congruence = Set.to_list congruence in
+      (* We need to revisit this one *)
+      let congruence = let all_temps = Var.Set.to_list @@ Ir.all_temps ir in
+                       let t2 = List.cartesian_product all_temps all_temps in
+                       List.filter ~f:(fun (x,y) -> Linear_ssa.congruent x y) t2
+      in
+      List.iter congruence~f:(fun (x,y) -> 
+        Events.(send @@ Info (sprintf "congruence %a %a\n" Var.pps x Var.pps y)));
+     
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       create_assembly
