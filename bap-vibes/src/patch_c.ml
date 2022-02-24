@@ -273,7 +273,7 @@ let rec with_type (e : exp) (t : typ) : exp = match e with
                an unsigned representation, but we want it to be signed. *)
             Word.signed @@ ext ~hi:Int.(sz - 1) i in
        CONST_INT (i, sign')
-      | _ -> e
+      | _ -> CAST (t, e)
     end
 
 (* State monad for elaboration and type-checking. *)
@@ -350,7 +350,7 @@ let rec translate_type
   | Cabs.PROTO (_, _, true) ->
     let s = Utils.print_c (Cprint.print_type ident) t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_type: %sVariadic functions are \
+      sprintf "Patch_c.translate_type: %sVariadic functions are \
                unsupported:\n\n%s\n" msg s)
   | Cabs.PROTO (ret, names, false) ->
     let* ret = translate_type ret ~msg in
@@ -361,7 +361,7 @@ let rec translate_type
   | _ ->
     let s = Utils.print_c (Cprint.print_type ident) t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_type: %sunsupported type:\n\n%s" msg s)
+      sprintf "Patch_c.translate_type: %sunsupported type:\n\n%s" msg s)
 
 (* See whether the elements of the pointer type can unify. *)
 let rec typ_unify_ptr (t1 : typ) (t2 : typ) : typ option =
@@ -482,7 +482,7 @@ let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
           | def ->
             let s = Utils.print_c Cprint.print_def def in
             Transl.fail @@ Core_c_error (
-              sprintf "Smallc.translate_body: unexpected definition:\n\n%s\n\n\
+              sprintf "Patch_c.translate_body: unexpected definition:\n\n%s\n\n\
                        expected a declaration" s)) in
   let* inits = translate_inits @@ List.rev inits in
   let* () = Transl.update @@ fun env -> {env with tenv = new_tenv} in
@@ -593,7 +593,7 @@ and translate_expression
         NOP, Some (VARIABLE (v, t)), NOP
       | None ->
         Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_expression: undeclared variable %s\n" v)
+          sprintf "Patch_c.translate_expression: undeclared variable %s\n" v)
     end
   | Cabs.EXPR_SIZEOF _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.EXPR_SIZEOF e ->
@@ -616,7 +616,7 @@ and translate_expression
   | _ ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_expression: unsupported:\n\n%s\n" s)
+      sprintf "Patch_c.translate_expression: unsupported:\n\n%s\n" s)
 
 (* Translate an expression and expect that the value is not `None`. *)
 and translate_expression_strict
@@ -629,7 +629,7 @@ and translate_expression_strict
   | None ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.%s: invalid expression:\n\n%s\n" stage s)
+      sprintf "Patch_c.%s: invalid expression:\n\n%s\n" stage s)
 
 (* Translate an expression that must be an l-value. *)
 and translate_expression_lvalue
@@ -641,7 +641,7 @@ and translate_expression_lvalue
   else
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.%s: expression:\n\n%s\n\nis not an l-value" stage s)
+      sprintf "Patch_c.%s: expression:\n\n%s\n\nis not an l-value" stage s)
 
 (* Translate unary operators. *)
 and translate_unary_operator
@@ -673,7 +673,7 @@ and translate_unary_operator
           Utils.print_c Cprint.print_statement
             Cabs.(COMPUTATION (UNARY (u, e))) in
         Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_unary_operator: in expression\
+          sprintf "Patch_c.translate_unary_operator: in expression\
                    \n\n%s\n\ncannot dereference a value of type void*" s)
       | PTR t -> Transl.return (spre, Some (UNARY (MEMOF, e', t)), spost)
       | _ ->
@@ -681,7 +681,7 @@ and translate_unary_operator
           Utils.print_c Cprint.print_statement
             Cabs.(COMPUTATION (UNARY (u, e))) in
         Transl.fail @@ Core_c_error (
-          sprintf "Smallc.translate_unary_operator: expected pointer type \
+          sprintf "Patch_c.translate_unary_operator: expected pointer type \
                    for operand of expression:\n\n%s\n" s)
     end
   | Cabs.ADDROF ->
@@ -740,7 +740,7 @@ and translate_increment_operand
   else
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_increment_operand: \
+      sprintf "Patch_c.translate_increment_operand: \
                expression:\n\n%s\n\nis not an l-value" s)
 
 (* Increment value based on the type. *)
@@ -759,7 +759,7 @@ and increment (e : Cabs.expression) (t : typ) : exp transl =
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.increment: expression:\n\n%s\n\n\
+      sprintf "Patch_c.increment: expression:\n\n%s\n\n\
                has type %s. Cannot be an l-value." s t)
   | INT (size, sign) ->
     let i = Word.one bits in
@@ -1165,7 +1165,7 @@ and translate_call_args
           let t = string_of_typ t in
           let ta = string_of_typ ta in
           Transl.fail @@ Core_c_error (
-            sprintf "Smallc.translate_call_args:\n\n%s\
+            sprintf "Patch_c.translate_call_args:\n\n%s\
                      \n\nargument %s has type %s but type %s was \
                      expected" s a ta t)
         | Some (t, a) ->
@@ -1176,7 +1176,7 @@ and translate_call_args
     let l1 = List.length targs in
     let l2 = List.length args in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_call_args:\n\n%s\n\n\
+      sprintf "Patch_c.translate_call_args:\n\n%s\n\n\
                expected %d arguments, got %d" s l1 l2)
 
 and translate_call
@@ -1227,7 +1227,7 @@ and translate_call
             let t = string_of_typ t in
             let tret = string_of_typ tret in
             Transl.fail @@ Core_c_error (
-              sprintf "Smallc.translate_call:\n\n%s\n\n\
+              sprintf "Patch_c.translate_call:\n\n%s\n\n\
                        has return type %s, cannot unify with var %s of \
                        type %s"
                 s tret (Theory.Var.name v) t) in
@@ -1236,7 +1236,7 @@ and translate_call
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ t in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_call:\n\n%s\n\n\
+      sprintf "Patch_c.translate_call:\n\n%s\n\n\
                has type %s, expected function type" s t)
 
 (* This function returns the side effects, the pointer to the element in the
@@ -1315,14 +1315,14 @@ and translate_index
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ tidx in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_index: in expression:\n\n%s\n\nIndex operand \
+      sprintf "Patch_c.translate_index: in expression:\n\n%s\n\nIndex operand \
                has type %s. Expected integer.\n" s t)
   | _, _ ->
     let e = Cabs.(INDEX (ptr, idx)) in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = string_of_typ tptr in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_index: in expression:\n\n%s\n\nArray operand \
+      sprintf "Patch_c.translate_index: in expression:\n\n%s\n\nArray operand \
                has type %s. Expected pointer.\n" s t)
 
 (* Translate a statement. *)
@@ -1359,7 +1359,7 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
   | _ ->
     let s = Utils.print_c Cprint.print_statement s in
     Transl.fail @@ Core_c_error (
-      sprintf "Smallc.translate_statement: unsupported:\n\n%s\n" s)
+      sprintf "Patch_c.translate_statement: unsupported:\n\n%s\n" s)
 
 (* Remove unnecessary casts from expressions. *)
 let rec simplify_casts_exp : exp -> exp = function
@@ -1460,7 +1460,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     | _ ->
       let s = Utils.print_c Cprint.print_def patch in
       Err.fail @@ Core_c_error (
-        sprintf "Smallc.translate: unexpected patch shape:\n\n%s\n\n\
+        sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
                  expected a single function definition" s) in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
@@ -1473,7 +1473,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   (* Success! *)
   let prog = tenv, s in
   Events.send @@ Rule;
-  Events.send @@ Info "Translated to the following SmallC program:";
+  Events.send @@ Info "Translated to the following PatchC program:";
   Events.send @@ Info "";
   Events.send @@ Info (to_string prog);
   Events.send @@ Rule;

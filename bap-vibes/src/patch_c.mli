@@ -108,7 +108,7 @@ and stmt =
 (** A scope where statements may occur under a typing environment. *)
 and body = tenv * stmt
 
-(** A SmallC definition is a scoped statement. *)
+(** A PatchC definition is a scoped statement. *)
 type t = body
 
 val equal_exp : exp -> exp -> bool
@@ -120,8 +120,8 @@ val string_of_stmt : stmt -> string
 (** Returns the type embedded in an expression. *)
 val typeof : exp -> typ
 
-(** Pretty prints the SmallC definition. *)
+(** Pretty prints the PatchC definition. *)
 val to_string : t -> string
 
-(** Translate a FrontC definition to a SmallC definition. *)
+(** Translate a FrontC definition to a PatchC definition. *)
 val translate : Cabs.definition -> target:Theory.target -> t KB.t

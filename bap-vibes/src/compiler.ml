@@ -59,6 +59,7 @@ let create_vibes_ir
             ~patch:(Some patch) ~argument_tids ~is_thumb
         | Some isel_model_filepath ->
           Events.(send @@ Info "Running Minizinc instruction selector.");
+          let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
           let* ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns in
           KB.return ir in
       Arm.preassign tgt ir ~is_thumb
