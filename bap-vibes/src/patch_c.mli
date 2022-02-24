@@ -1,9 +1,28 @@
-(** This module implements SmallC, which is a subset of the FrontC abstract
-    representation of C programs. AST nodes are elaborated and explicitly
-    typed. Through elaboration, we simplify the AST and separate expressions
-    from statements in that only statements may produce side effects. This
-    combination of design choices makes SmallC a more adequate intermediate
-    language for lowering to Core Theory. *)
+(***************************************************************************)
+(*                                                                         *)
+(*  Copyright (C) 2022/2023 The Charles Stark Draper Laboratory, Inc.      *)
+(*                                                                         *)
+(*  This file is provided under the license found in the LICENSE file in   *)
+(*  the top-level directory of this project.                               *)
+(*                                                                         *)
+(*  This research was developed with funding from the Defense Advanced     *)
+(*  Research Projects Agency (DARPA).                                      *)
+(*                                                                         *)
+(***************************************************************************)
+
+(** This module implements PatchC, which is a subset of the FrontC abstract
+    representation of C programs. 
+
+    Similar to other intermediate languages like CIL, AST nodes are elaborated
+    and explicitly typed. Through elaboration, we simplify the AST and
+    separate expressions from statements in that only statements may produce
+    side effects. This combination of design choices makes PatchC a more
+    adequate intermediate language for lowering to Core Theory.
+
+    In addition, the supported subset of C language features are those suited
+    for writing patches, as opposed to full C programs. Hence the name
+    "PatchC".
+*)
 
 open Core_kernel
 open Bap.Std

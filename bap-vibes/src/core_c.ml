@@ -30,7 +30,7 @@
  * So we use this language to build the semantics of the various bits of
  * C syntax. The main complications are as follows:
  *
- * - C has complex types and operations over those types. The [SmallC] 
+ * - C has complex types and operations over those types. The [PatchC] 
  *   intermediate language has this information for us, and ensures that
  *   the program is explicitly and strictly typed. Later, we apply the
  *   remaining implicit conversion rules when lowering to [Core].
@@ -146,7 +146,7 @@ module Eval(CT : Theory.Core) = struct
 
   let ty_of_base_type
       (info : _ interp_info)
-      (c_ty : Smallc.typ) : _ T.Bitv.t T.Value.sort =
+      (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
     | VOID -> T.Bitv.define 0
     | INT (`r8, _) -> char_ty
@@ -158,12 +158,12 @@ module Eval(CT : Theory.Core) = struct
 
   let ty_op_pointer_type
       (info : _ interp_info)
-      (c_ty : Smallc.typ) : _ T.Bitv.t T.Value.sort =
+      (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
     | PTR ty -> ty_of_base_type info ty
     | _ -> info.word_sort
 
-  let is_signed (ty : Smallc.typ) : Smallc.sign =
+  let is_signed (ty : Patch_c.typ) : Patch_c.sign =
     match ty with
     | INT (_, s) -> s
     | VOID | PTR _ | FUN _ -> UNSIGNED
@@ -189,9 +189,9 @@ module Eval(CT : Theory.Core) = struct
 
   let binop_to_pure
       (info : _ interp_info)
-      (op : Smallc.binop)
-      (ty_a : Smallc.typ)
-      (ty_b : Smallc.typ) : unit pure -> unit pure -> unit pure =
+      (op : Patch_c.binop)
+      (ty_a : Patch_c.typ)
+      (ty_b : Patch_c.typ) : unit pure -> unit pure -> unit pure =
     let lift_bitv op =
       lift_binop op
         (ty_of_base_type info ty_a)
@@ -253,8 +253,8 @@ module Eval(CT : Theory.Core) = struct
     KB.return @@ T.Value.forget res
 
   let unop_to_pure info
-      (op : Smallc.unop)
-      (ty : Smallc.typ) : unit pure -> unit pure =
+      (op : Patch_c.unop)
+      (ty : Patch_c.typ) : unit pure -> unit pure =
     let lift_bitv op = lift_uop op info.word_sort in
     match op with
     | MINUS -> lift_bitv CT.neg
@@ -300,18 +300,18 @@ module Eval(CT : Theory.Core) = struct
 
   let rec expr_to_pure
       (info : _ interp_info)
-      (e : Smallc.exp) : unit pure =
+      (e : Patch_c.exp) : unit pure =
     let aux = expr_to_pure info in
     match e with
     | UNARY (ADDROF, VARIABLE (v, _), _) -> addr_of_var info @@ T.Var.name v
     | UNARY (ADDROF, UNARY (MEMOF, a, _), _) -> aux a
     | UNARY (op, a, _) ->
-      let ty_a = Smallc.typeof a in
+      let ty_a = Patch_c.typeof a in
       let* a = aux a in
       unop_to_pure info op ty_a !!a
     | BINARY (op, a, b, _) ->
-      let ty_a = Smallc.typeof a in
-      let ty_b = Smallc.typeof b in
+      let ty_a = Patch_c.typeof a in
+      let ty_b = Patch_c.typeof b in
       let* a = aux a in
       let* b = aux b in
       binop_to_pure info op ty_a ty_b !!a !!b
@@ -320,9 +320,9 @@ module Eval(CT : Theory.Core) = struct
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
       T.Value.forget i
     | CAST (t, e) ->
-      let t' = Smallc.typeof e in
-      let sz = Smallc.size_of_typ info.tgt t in
-      let sz' = Smallc.size_of_typ info.tgt t' in
+      let t' = Patch_c.typeof e in
+      let sz = Patch_c.size_of_typ info.tgt t in
+      let sz' = Patch_c.size_of_typ info.tgt t' in
       let* e = aux e in
       if sz = sz' then !!e
       else
@@ -371,7 +371,7 @@ module Eval(CT : Theory.Core) = struct
 
   let determine_call_dst
       (info : _ interp_info)
-      (f : Smallc.exp) : (T.label * T.Effect.Sort.data T.effect) KB.t =
+      (f : Patch_c.exp) : (T.label * T.Effect.Sort.data T.effect) KB.t =
     match f with
     | VARIABLE (v, _) ->
       let+ dst = call_dst_with_name @@ T.Var.name v in
@@ -394,7 +394,7 @@ module Eval(CT : Theory.Core) = struct
 
   let rec stmt_to_eff
       (info : _ interp_info)
-      (s : Smallc.stmt) : unit eff =
+      (s : Patch_c.stmt) : unit eff =
     let aux = stmt_to_eff info in
     match s with
     | NOP -> empty_blk
@@ -428,7 +428,7 @@ module Eval(CT : Theory.Core) = struct
     | STORE (l, r) ->
       let* l = expr_to_pure info l in
       let l = resort info.word_sort l in
-      let sr = ty_of_base_type info @@ Smallc.typeof r in
+      let sr = ty_of_base_type info @@ Patch_c.typeof r in
       let* r = expr_to_pure info r in
       let r = resort sr r in
       let* st =
@@ -456,12 +456,12 @@ module Eval(CT : Theory.Core) = struct
       let* goto = KB.(label >>= CT.goto) in
       ctrl goto
 
-  and body_to_eff info ((_, stmt) : Smallc.t) : unit eff =
+  and body_to_eff info ((_, stmt) : Patch_c.t) : unit eff =
     stmt_to_eff info stmt
 
   let c_patch_to_eff (hvars : Hvar.t list) (tgt : T.target)
       (patch : Cabs.definition) : unit eff =
-    let* body = Smallc.translate patch ~target:tgt in
+    let* body = Patch_c.translate patch ~target:tgt in
     let* info = mk_interp_info hvars tgt in
     body_to_eff info body
 
