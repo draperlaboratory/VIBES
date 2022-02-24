@@ -324,6 +324,13 @@ let rec translate_type
   | Cabs.VOID -> Transl.return VOID
   | Cabs.BOOL -> Transl.return @@ INT (`r8, UNSIGNED)
   | Cabs.CHAR sign -> begin
+      (* NOTE: The C standard says that whether `char` is equivalent to
+         either `signed char` or `unsigned char` is implementation-defined.
+         We're taking the approach that `char` is by default signed.
+
+         GCC seems to take this approach when compiling to x86, but not
+         when compiling to ARM. Go figure.
+      *)
       match sign with
       | Cabs.(NO_SIGN | SIGNED) -> Transl.return @@ INT (`r8, SIGNED)
       | Cabs.UNSIGNED -> Transl.return @@ INT (`r8, UNSIGNED)
