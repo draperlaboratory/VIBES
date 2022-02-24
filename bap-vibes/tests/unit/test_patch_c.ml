@@ -23,8 +23,10 @@ let assert_error s =
     assert_failure
       (Printf.sprintf "FrontC failed to parse:\n\n%s\n\nwith error %s" s e)
   | Ok ast -> try Toplevel.exec begin
-      let* _prog = Patch_c.translate ast ~target:(Helpers.the_target ()) in
-      KB.return @@ failwith "expected error"
+      let* prog = Patch_c.translate ast ~target:(Helpers.the_target ()) in
+      KB.return @@ failwithf
+        "Expected error:\n\n%s\n\nis not well-formed"
+        (Patch_c.to_string prog) ()
     end with Toplevel.Conflict _ -> ()
 
 let assert_ok s =
