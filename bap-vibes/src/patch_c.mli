@@ -111,6 +111,12 @@ and body = tenv * stmt
 (** A SmallC definition is a scoped statement. *)
 type t = body
 
+val equal_exp : exp -> exp -> bool
+val equal_stmt : stmt -> stmt -> bool
+
+val string_of_exp : exp -> string
+val string_of_stmt : stmt -> string
+
 (** Returns the type embedded in an expression. *)
 val typeof : exp -> typ
 

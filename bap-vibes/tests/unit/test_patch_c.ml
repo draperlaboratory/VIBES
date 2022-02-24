@@ -39,6 +39,18 @@ let assert_ok s =
       KB.return ()
     end
 
+let assert_eq s p =
+  match Parse_c.parse_c_patch s with
+  | Error e ->
+    assert_failure
+      (Printf.sprintf "FrontC failed to parse:\n\n%s\n\nwith error %s" s e)
+  | Ok ast -> Toplevel.exec begin
+      let* _, prog = Patch_c.translate ast ~target:(Helpers.the_target ()) in
+      KB.return @@ assert_equal p prog
+        ~cmp:Patch_c.equal_stmt
+        ~printer:Patch_c.string_of_stmt
+    end
+
 let test_void_ptr_implicit_downcast _ =
   assert_ok
     "int *x;
@@ -92,6 +104,61 @@ let test_bad_lvalue_posincr _ =
     "int x, y;
      x++ = y;"
 
+let test_char_assign _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 8 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r8, SIGNED) in
+    let c = Word.of_int ~width:8 @@ Char.to_int 'a' in
+    let c = Word.signed c in
+    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+  assert_eq "char x; x = 'a';" p
+
+let test_char_assign_ext _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 32 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r32, SIGNED) in
+    let c = Word.of_int ~width:32 @@ Char.to_int 'a' in
+    let c = Word.signed c in
+    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+  assert_eq "int x; x = 'a';" p
+
+let test_int_assign _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 32 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r32, SIGNED) in
+    let c = Word.of_int ~width:32 255 in
+    let c = Word.signed c in
+    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+  assert_eq "int x; x = 255;" p
+
+let test_char_assign_signed_ext _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 32 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r32, SIGNED) in
+    let c = Word.of_int ~width:32 (-1) in
+    let c = Word.signed c in
+    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+  assert_eq "int x; x = (char)255;" p
+
+let test_char_assign_unsigned_ext _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 32 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r32, SIGNED) in
+    let c = Word.of_int ~width:32 255 in
+    let c = Word.signed c in
+    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+  assert_eq "int x; x = (unsigned char)255;" p
+
 let suite = [
   "Test void pointer implicit downcast" >:: test_void_ptr_implicit_downcast;
   "Test void pointer implicit upcast" >:: test_void_ptr_implicit_upcast;
@@ -103,4 +170,9 @@ let suite = [
   "Test pointer arithmetic" >:: test_ptr_arith;
   "Test bad pointer arithmetic" >:: test_bad_ptr_arith;
   "Test bad lvalue post-increment" >:: test_bad_lvalue_posincr;
+  "Test char assign" >:: test_char_assign;
+  "Test char assign ext" >:: test_char_assign_ext;
+  "Test int assign" >:: test_int_assign;
+  "Test char assign signed ext" >:: test_char_assign_signed_ext;
+  "Test char assign unsigned ext" >:: test_char_assign_unsigned_ext;
 ]

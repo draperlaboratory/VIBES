@@ -251,18 +251,28 @@ let typeof : exp -> typ = function
   | VARIABLE (_, t) -> t
 
 (* Convert to a particular type. *)
-let with_type (e : exp) (t : typ) : exp = match e with
+let rec with_type (e : exp) (t : typ) : exp = match e with
   | UNARY _ | BINARY _ | VARIABLE _ -> CAST (t, e)
-  | CAST (_, e) -> CAST (t, e)
-  | CONST_INT (i, _) -> begin 
+  | CAST (t', e) -> begin
+      match with_type e t' with
+      | CONST_INT _ as e -> with_type e t
+      | e -> CAST (t, e)
+    end
+  | CONST_INT (i, sign) -> begin 
       match t with
       | INT (size', sign') ->
+        let sz = Size.in_bits size' in
+        let ext = Bitvector.extract_exn in
         let i = match sign' with
-          | SIGNED -> Word.signed i
-          | UNSIGNED -> Word.unsigned i in
-        let w = Size.in_bits size' in
-        let i = Word.extract_exn ~hi:(w - 1) i in
-        CONST_INT (i, sign')
+          | UNSIGNED -> ext ~hi:Int.(sz - 1) i
+          | SIGNED ->
+            let i = match sign with
+              | UNSIGNED -> Word.unsigned i
+              | SIGNED -> Word.signed i in
+            (* For some reason the extract operation always returns
+               an unsigned representation, but we want it to be signed. *)
+            Word.signed @@ ext ~hi:Int.(sz - 1) i in
+       CONST_INT (i, sign')
       | _ -> e
     end
 
@@ -545,20 +555,22 @@ and translate_expression
   | Cabs.CONSTANT _ when computation -> Transl.return (NOP, None, NOP)
   | Cabs.(CONSTANT (CONST_INT s)) ->
     let i = Int64.of_string s in
-    let sign = if Int64.is_negative i then SIGNED else UNSIGNED in
+    (* Try to fit it in the word size of the target machine, otherwise
+       default to 64-bit. *)
+    let+ {target; _} = Transl.get () in
+    let width = Theory.Target.bits target in
     let width =
-      (* Fits inside a byte. *)
-      if Int64.(i >= -128L && i <= 127L) then 8
-      (* Fits inside a halfword. *)
-      else if Int64.(i >= -32_768L && i <= 32_767L) then 16
-      (* Fits inside a word. *)
-      else if Int64.(i >= -2_147_483_648L && i <= 2_147_483_647L) then 32
-      (* Fits inside a long. *)
-      else 64 in
-    let i = Word.of_int64 ~width i in
-    (* `word` is unsigned by default. *)
-    let i = if equal_sign sign SIGNED then Word.signed i else i in
-    Transl.return (NOP, Some (CONST_INT (i, sign)), NOP)
+      if width = 64 then width
+      else
+        let min_val_signed = Int64.(1L lsl Int.(width - 1)) in
+        let max_val_signed = Int64.(min_val_signed - 1L) in
+        let min_val_unsigned = 0L in
+        let max_val_unsigned = Int64.((1L lsl width) - 1L) in
+        if Int64.((i >= min_val_signed && i <= max_val_signed) ||
+                  (i >= min_val_unsigned && i <= max_val_unsigned))
+        then width else 64 in
+    let i = Word.(signed @@ of_int64 ~width i) in
+    NOP, Some (CONST_INT (i, SIGNED)), NOP
   | Cabs.(CONSTANT (CONST_CHAR s)) ->
     let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
     let i = Word.signed i in
@@ -1137,7 +1149,7 @@ and translate_call_args
     Transl.List.fold_right l ~init:[] ~f:(fun (arg, t) acc ->
         let* spre, a, spost = exp arg in
         let ta = typeof a in
-        match typ_unify t ta with
+        match typ_unify_assign t ta a with
         | None ->
           let s =
             Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -1149,7 +1161,7 @@ and translate_call_args
             sprintf "Smallc.translate_call_args:\n\n%s\
                      \n\nargument %s has type %s but type %s was \
                      expected" s a ta t)
-        | Some t ->
+        | Some (t, a) ->
           let a = with_type a t in
           Transl.return ((spre, a, spost) :: acc))
   | Unequal_lengths ->
