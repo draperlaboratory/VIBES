@@ -41,7 +41,8 @@ let create_vibes_ir
     (patch : Data.Patch.t)
     (isel_model_filepath : string option) : (Ir.t * String.Set.t) KB.t =
   let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch in
-  Events.(send @@ Info "Transformed BIR\n");
+  Events.(send @@ Info "Transformed BIR:\n");
+  Events.(send @@ Rule);
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));

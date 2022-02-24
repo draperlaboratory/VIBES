@@ -1122,25 +1122,24 @@ and translate_call_args
   match List.zip args targs with
   | Ok l ->
     (* Evaluated left to right. *)
-    Transl.List.fold_right l ~init:[]
-      ~f:(fun (arg, t) acc ->
-          let* spre, a, spost = exp arg in
-          let ta = typeof a in
-          match typ_unify t ta with
-          | None ->
-            let s =
-              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-            let a =
-              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
-            let t = string_of_typ t in
-            let ta = string_of_typ ta in
-            Transl.fail @@ Core_c_error (
-              sprintf "Smallc.translate_call_args:\n\n%s\
-                       \n\nargument %s has type %s but type %s was \
-                       expected" s a ta t)
-          | Some t ->
-            let a = with_type a t in
-            Transl.return ((spre, a, spost) :: acc))
+    Transl.List.fold_right l ~init:[] ~f:(fun (arg, t) acc ->
+        let* spre, a, spost = exp arg in
+        let ta = typeof a in
+        match typ_unify t ta with
+        | None ->
+          let s =
+            Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+          let a =
+            Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
+          let t = string_of_typ t in
+          let ta = string_of_typ ta in
+          Transl.fail @@ Core_c_error (
+            sprintf "Smallc.translate_call_args:\n\n%s\
+                     \n\nargument %s has type %s but type %s was \
+                     expected" s a ta t)
+        | Some t ->
+          let a = with_type a t in
+          Transl.return ((spre, a, spost) :: acc))
   | Unequal_lengths ->
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let l1 = List.length targs in

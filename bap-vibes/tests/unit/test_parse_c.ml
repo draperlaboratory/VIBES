@@ -395,6 +395,20 @@ let test_comma_ambig _ =
        z := x
      }"
 
+let test_ternary_deref _ =
+  assert_parse_eq
+    "int c, *x, *y;
+     *(c ? x : y) = 5;"
+    "{
+       if (c) {
+         virt := x
+       }
+       else {
+         virt := y
+       }
+       mem := mem with [virt, el]:u32 <- 5
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -426,4 +440,5 @@ let suite = [
   "Test ternary compound" >:: test_ternary_compound;
   "Test comma" >:: test_comma;
   "Test comma ambiguous" >:: test_comma_ambig;
+  "Test ternary deref" >:: test_ternary_deref;
 ]
