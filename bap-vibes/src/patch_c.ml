@@ -569,8 +569,10 @@ and translate_expression
     let width =
       if width = 64 then width
       else
-        let min_val_signed = Int64.(1L lsl Int.(width - 1)) in
-        let max_val_signed = Int64.(min_val_signed - 1L) in
+        (* Pad the upper 64-width bits with ones. *)
+        let padding = Int64.((-1L) lsl Int.(64 - width)) in
+        let min_val_signed = Int64.(padding lor (1L lsl Int.(width - 1))) in
+        let max_val_signed = Int64.((1L lsl Int.(width - 1)) - 1L) in
         let min_val_unsigned = 0L in
         let max_val_unsigned = Int64.((1L lsl width) - 1L) in
         if Int64.((i >= min_val_signed && i <= max_val_signed) ||
