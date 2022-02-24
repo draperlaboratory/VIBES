@@ -417,10 +417,10 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
 
 (* The elaboration will leave a bunch of nops in the AST which makes
    pretty-printing quite ugly. This pass removes them. *)
-let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
+let rec simplify_nops (s : stmt) : stmt = match s with
   | NOP -> NOP
   | BLOCK (tenv, s) -> begin
-      match cleanup_nop_sequences s with
+      match simplify_nops s with
       | NOP -> NOP
       | s -> BLOCK (tenv, s)
     end
@@ -429,19 +429,19 @@ let rec cleanup_nop_sequences (s : stmt) : stmt = match s with
   | CALL _ -> s
   | CALLASSIGN _ -> s
   | STORE _ -> s
-  | SEQUENCE (NOP, s) -> cleanup_nop_sequences s
-  | SEQUENCE (s, NOP) -> cleanup_nop_sequences s
+  | SEQUENCE (NOP, s) -> simplify_nops s
+  | SEQUENCE (s, NOP) -> simplify_nops s
   | SEQUENCE (s1, s2) -> begin
-      let s1 = cleanup_nop_sequences s1 in
-      let s2 = cleanup_nop_sequences s2 in
+      let s1 = simplify_nops s1 in
+      let s2 = simplify_nops s2 in
       match s1, s2 with
       | NOP, _ -> s2
       | _, NOP -> s1
       | _ -> SEQUENCE (s1, s2)
     end
   | IF (cond, st, sf) -> begin
-      let st = cleanup_nop_sequences st in
-      let sf = cleanup_nop_sequences sf in
+      let st = simplify_nops st in
+      let sf = simplify_nops sf in
       match st, sf with
       | NOP, NOP -> NOP
       | _ -> IF (cond, st, sf)
@@ -758,8 +758,8 @@ and new_tmp_or_simple
     (pre : stmt)
     (e : exp)
     (post : stmt) : (exp, stmt * exp * stmt) Either.t transl =
-  let pre = cleanup_nop_sequences pre in
-  let post = cleanup_nop_sequences post in
+  let pre = simplify_nops pre in
+  let post = simplify_nops post in
   match pre, post with
   | NOP, NOP -> Transl.return @@ First e
   | _, NOP -> Transl.return @@ Second (pre, e, post)
@@ -1343,26 +1343,30 @@ and translate_statement (s : Cabs.statement) : stmt transl = match s with
       sprintf "Smallc.translate_statement: unsupported:\n\n%s\n" s)
 
 (* Remove unnecessary casts from expressions. *)
-let rec simpl_casts_exp : exp -> exp = function
-  | UNARY (u, e, t) -> UNARY (u, simpl_casts_exp e, t)
-  | BINARY (b, l, r, t) -> BINARY (b, simpl_casts_exp l, simpl_casts_exp r, t)
+let rec simplify_casts_exp : exp -> exp = function
+  | UNARY (u, e, t) -> UNARY (u, simplify_casts_exp e, t)
+  | BINARY (b, l, r, t) ->
+    BINARY (b, simplify_casts_exp l, simplify_casts_exp r, t)
   | CAST (t, e) ->
-    let e = simpl_casts_exp e in
+    let e = simplify_casts_exp e in
     if equal_typ t @@ typeof e then e else CAST (t, e)
   | (CONST_INT _ | VARIABLE _) as e -> e
 
-and simpl_casts_stmt : stmt -> stmt = function
+and simplify_casts_stmt : stmt -> stmt = function
   | NOP -> NOP
-  | BLOCK (tenv, s) -> BLOCK (tenv, simpl_casts_stmt s)
-  | ASSIGN (v, e) -> ASSIGN (v, simpl_casts_exp e)
+  | BLOCK (tenv, s) -> BLOCK (tenv, simplify_casts_stmt s)
+  | ASSIGN (v, e) -> ASSIGN (v, simplify_casts_exp e)
   | CALL (f, args) ->
-    CALL (simpl_casts_exp f, List.map args ~f:simpl_casts_exp)
+    CALL (simplify_casts_exp f, List.map args ~f:simplify_casts_exp)
   | CALLASSIGN (v, f, args) ->
-    CALLASSIGN (v, simpl_casts_exp f, List.map args ~f:simpl_casts_exp)
-  | STORE (l, r) -> STORE (simpl_casts_exp l, simpl_casts_exp r)
-  | SEQUENCE (s1, s2) -> SEQUENCE (simpl_casts_stmt s1, simpl_casts_stmt s2)
+    CALLASSIGN (v, simplify_casts_exp f, List.map args ~f:simplify_casts_exp)
+  | STORE (l, r) -> STORE (simplify_casts_exp l, simplify_casts_exp r)
+  | SEQUENCE (s1, s2) ->
+    SEQUENCE (simplify_casts_stmt s1, simplify_casts_stmt s2)
   | IF (cond, st, sf) ->
-    IF (simpl_casts_exp cond, simpl_casts_stmt st, simpl_casts_stmt sf)
+    IF (simplify_casts_exp cond,
+        simplify_casts_stmt st,
+        simplify_casts_stmt sf)
   | GOTO _ as s -> s
 
 (* Find which vars are used *)
@@ -1443,10 +1447,10 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let* (tenv, s), _ =
     Transl.(Env.create ~target () |> run (translate_body body)) in
   (* Perform some simplification passes. *)
-  let s = simpl_casts_stmt s in
+  let s = simplify_casts_stmt s in
   let used = Monad.State.exec (used_stmt s) String.Set.empty in
   let s = remove_unused_temps used s in
-  let s = cleanup_nop_sequences s in
+  let s = simplify_nops s in
   (* Success! *)
   let prog = tenv, s in
   Events.send @@ Rule;
