@@ -47,18 +47,16 @@ let assert_parse_eq ?(hvars = []) s1 s2 =
   match Parse_c.parse_c_patch s1 with
   | Error e ->
     assert_failure
-      (Printf.sprintf "FrontC failed to parse %s\n with error %s" s1 e)
-  | Ok ast ->
-    Bap.Std.Toplevel.exec
-      begin
-        let* theory = Theory.instance () in
-        let* (module T) = Theory.require theory in
-        let module Eval = Core_c.Eval(T) in
-        let* sem = Eval.c_patch_to_eff hvars (Helpers.the_target ()) ast in
-        let sem = fix_bil_names @@ Insn.bil sem in
-        let sem_str = eff_to_str sem in
-        KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
-      end
+      (Printf.sprintf "FrontC failed to parse:\n\n%s\n\nwith error %s" s1 e)
+  | Ok ast -> Bap.Std.Toplevel.exec begin
+      let* theory = Theory.instance () in
+      let* (module T) = Theory.require theory in
+      let module Eval = Core_c.Eval(T) in
+      let* sem = Eval.c_patch_to_eff hvars (Helpers.the_target ()) ast in
+      let sem = fix_bil_names @@ Insn.bil sem in
+      let sem_str = eff_to_str sem in
+      KB.return @@ assert_equal ~cmp:compare_sem ~printer:ident s2 sem_str
+    end
 
 let test_var_decl _ =
   assert_parse_eq
