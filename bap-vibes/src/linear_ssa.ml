@@ -200,10 +200,13 @@ let compute_liveness (sub : sub term) : Data.ins_outs Tid.Map.t =
     let tid = Term.tid blk in
     let outs = Graphlib.Std.Solution.get liveness tid in
     let prefix = prefix_from blk in
-    let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
-    (* Not quite right. I need to ignore phis? *)
-    let blk_no_phi = Blk.create ~defs:(Seq.to_list @@ Term.enum def_t blk) ~jmps:(Seq.to_list @@ Term.enum jmp_t blk) () in
+    let blk_no_phi = Blk.create
+      ~defs:(Seq.to_list @@ Term.enum def_t blk)
+      ~jmps:(Seq.to_list @@ Term.enum jmp_t blk) () in
     let ins = Var.Set.filter outs ~f:(fun var -> not (Blk.defines_var blk_no_phi var)) in
+    let ins = Var.Set.union (Blk.free_vars blk_no_phi) ins in
+    let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
+    let ins = Var.Set.map ins ~f:(fun var -> linearize ~prefix var) in
     let ins_outs : Data.ins_outs = {ins; outs} in
     tid, ins_outs)
   in
@@ -233,5 +236,4 @@ let transform
           let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
           KB.List.iter vars ~f:(fun v2 ->
               Data.Patch.add_congruence patch (v1, v2))) in
-  
   blks
