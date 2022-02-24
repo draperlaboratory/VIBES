@@ -129,12 +129,7 @@ let compile_one_assembly
       Arm_selector.gpr target lang >>= fun gpr ->
       Data.Patch.get_congruence patch >>= fun congruence ->
       let congruence = Set.to_list congruence in
-      (* We need to revisit this one *)
-      let congruence = let all_temps = Var.Set.to_list @@ Ir.all_temps ir in
-                       let t2 = List.cartesian_product all_temps all_temps in
-                       List.filter ~f:(fun (x,y) -> Linear_ssa.congruent x y) t2
-      in
-      List.iter congruence~f:(fun (x,y) -> 
+      List.iter congruence~f:(fun (x,y) ->
         Events.(send @@ Info (sprintf "congruence %a %a\n" Var.pps x Var.pps y)));
      
       let regs = Arm_selector.regs target lang in

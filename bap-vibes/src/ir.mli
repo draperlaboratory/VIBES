@@ -221,5 +221,8 @@ val to_string : t -> string
     assigned. Useful for testing purposes. *)
 val dummy_reg_alloc : t -> t
 
+(** Build a mapping from block tid to ins operation *)
 val ins_map : t -> operation_id Tid.Map.t
+
+(** Build a mapping from block tid to outs operation *)
 val outs_map : t -> operation_id Tid.Map.t

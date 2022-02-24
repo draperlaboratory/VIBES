@@ -17,14 +17,14 @@ open Bap.Std
 open Bap_core_theory
 open Monads.Std
 
-let prefix_from_tid (tid : Tid.t) : string =
-  let tid_str = Tid.to_string tid in
-  String.drop_prefix tid_str 1
+
 
 (* Use the tid of the blk as the prefix, dropping the '%' at
    the beginning. *)
 let prefix_from (blk : Blk.t) : string =
-  prefix_from_tid @@ Term.tid blk
+  let tid = Term.tid blk in
+  let tid_str = Tid.to_string tid in
+  String.drop_prefix tid_str 1
 
 let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
   let name = Var.name var in
@@ -50,12 +50,6 @@ let orig_name (name : string) : string =
     | [name; _] -> name
     | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name in
   if is_reg then Substituter.mark_reg_name name else name
-
-let convert (b : Tid.t) (v :var) : var =
-  let name = Var.name v in
-  let name = String.drop_prefix name prefix_len in
-  let prefix = prefix_from_tid b in
-  linearize ~prefix (Var.create name (Var.typ v))
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in

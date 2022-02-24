@@ -635,7 +635,7 @@ module Utils = struct
 end
 
 module Merge = struct
-  (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
+  (* TODO: should make helper functions in Ir for making ins/outs *)
   let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
     assert (Tid.equal blk1.id blk2.id);
     if (List.length blk1.ctrl > 0) && (List.length blk2.ctrl > 0) then
@@ -652,33 +652,7 @@ module Merge = struct
       outs = {outs with lhs = List.append blk1.outs.lhs blk2.outs.lhs};
       frequency = 0
     }
-  (* [add_liveness] is responsible for filling the [blk.outs] field. It does this
-     by using the bap liveness analysis on BIR and trasnferring the result over keyed
-     by tid. This is not correct. I need to sometimes propagate variables that do not appear.
-     This only works if patterns do not generate new blocks.
-  *)
-  let add_liveness (matchee : Blk.t list) (vir : Ir.t) : Ir.t =
-    let sub = Sub.create ~blks:matchee () in
-    let liveness = Sub.compute_liveness sub in
-    Ir.map_blks vir ~f:(fun blk ->
-      let livevars : Var.Set.t = Graphlib.Std.Solution.get liveness blk.id in (* Hmm what if block isn't in solution? This returns emty set. Should be ok? *)
-      (* Only the variables local to block go into outs because of Linear SSA
-         This is wrong. I need to filter.
-         No, but sometimes I need to generate new stuff too. cripes.
-      *)
-      (* let vars = Var.Set.inter livevars (Ir.Blk.all_temps blk) in *)
-      let vars = Var.Set.map ~f:(Linear_ssa.convert blk.id) livevars in
-      let vars = Var.Set.to_list vars in
-      let out_ops = List.map vars ~f:(fun temp -> Ir.Var (Ir.simple_var temp)) in
-      let out_ops = blk.outs.lhs @ out_ops in
-      let outs = Ir.empty_op () in
-      let outs = {outs with operands = out_ops} in
-      (* let ins = Ir.empty_op () in
-      let ins = {ins with operands = in_ops} in *)
-      (* Need to add to congruents also
-      Something is not right. These temps don't look right.
-      *)
-      {blk with outs})
+
   let merge_ir (vir1 : Ir.t) (vir2 : Ir.t) : Ir.t =
     let blkmap1 = Tid.Map.of_alist_exn (List.map vir1.blks ~f:(fun blk -> (blk.id, [blk]))) in
     let blkmap = List.fold vir2.blks ~init:blkmap1 ~f:(fun acc blk2 ->
@@ -702,7 +676,7 @@ module Merge = struct
       | Some {ins ; outs} ->
         let operands vars =
           let vars = Var.Set.to_list vars in
-          (* Assuming Ir.Var is not right here. They may Void. *)
+          (* TODO: Assuming Ir.Var is not right here. They may Void. *)
           let vars = List.map ~f:(fun v -> Ir.Var (Ir.simple_var v)) vars in
           vars
         in
@@ -715,8 +689,6 @@ module Merge = struct
         {blk with ins; outs}
       )
     in
-    (* let vir = add_liveness matchee vir in
-    let vir = Ir.add_in_vars vir in *)
     vir
 
 end
