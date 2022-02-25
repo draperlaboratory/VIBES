@@ -226,7 +226,8 @@ let to_string ((tenv, s) : t) : string =
 let is_lvalue (e : Cabs.expression) : bool =
   (* XXX: Seems like a hack. *)
   let rec aux ?(mem = false) = function
-    | Cabs.(UNARY (MEMOF, e)) -> aux e ~mem:true
+    | Cabs.(UNARY (MEMOF, e))
+    | Cabs.(INDEX (e, _)) -> aux e ~mem:true
     | Cabs.(UNARY (POSINCR, e))
     | Cabs.(UNARY (PREINCR, e))
     | Cabs.(UNARY (POSDECR, e))
@@ -240,8 +241,7 @@ let is_lvalue (e : Cabs.expression) : bool =
     | Cabs.(BINARY (BAND_ASSIGN, e, _))
     | Cabs.(BINARY (BOR_ASSIGN, e, _))
     | Cabs.(BINARY (SHL_ASSIGN, e, _))
-    | Cabs.(BINARY (SHR_ASSIGN, e, _))
-    | Cabs.(INDEX (e, _)) -> aux e
+    | Cabs.(BINARY (SHR_ASSIGN, e, _)) -> aux e
     | Cabs.(VARIABLE _) -> true
     | Cabs.(QUESTION (_, l, r)) -> aux l && aux r
     | _ -> false in
