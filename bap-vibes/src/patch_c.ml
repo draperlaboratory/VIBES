@@ -223,22 +223,29 @@ let to_string ((tenv, s) : t) : string =
   sprintf "%s\n%s" vars stmt
 
 (* Returns true if an expression is an l-value (i.e. can be mutated). *)
-let rec is_lvalue : Cabs.expression -> bool = function
-  | Cabs.(UNARY (MEMOF, e)) -> is_lvalue e
-  | Cabs.(BINARY (ASSIGN, e, _)) -> is_lvalue e
-  | Cabs.(BINARY (ADD_ASSIGN, e, _))
-  | Cabs.(BINARY (SUB_ASSIGN, e, _))
-  | Cabs.(BINARY (MUL_ASSIGN, e, _))
-  | Cabs.(BINARY (DIV_ASSIGN, e, _))
-  | Cabs.(BINARY (MOD_ASSIGN, e, _))
-  | Cabs.(BINARY (BAND_ASSIGN, e, _))
-  | Cabs.(BINARY (BOR_ASSIGN, e, _))
-  | Cabs.(BINARY (SHL_ASSIGN, e, _))
-  | Cabs.(BINARY (SHR_ASSIGN, e, _))
-  | Cabs.(INDEX (e, _)) -> is_lvalue e
-  | Cabs.(VARIABLE _) -> true
-  | Cabs.(QUESTION (_, l, r)) -> is_lvalue l && is_lvalue r
-  | _ -> false
+let is_lvalue (e : Cabs.expression) : bool =
+  (* XXX: Seems like a hack. *)
+  let rec aux ?(mem = false) = function
+    | Cabs.(UNARY (MEMOF, e)) -> aux e ~mem:true
+    | Cabs.(UNARY (POSINCR, e)) -> mem && aux e
+    | Cabs.(UNARY (PREINCR, e)) -> mem && aux e
+    | Cabs.(UNARY (POSDECR, e)) -> mem && aux e
+    | Cabs.(UNARY (PREDECR, e)) -> mem && aux e
+    | Cabs.(BINARY (ASSIGN, e, _)) -> aux e
+    | Cabs.(BINARY (ADD_ASSIGN, e, _))
+    | Cabs.(BINARY (SUB_ASSIGN, e, _))
+    | Cabs.(BINARY (MUL_ASSIGN, e, _))
+    | Cabs.(BINARY (DIV_ASSIGN, e, _))
+    | Cabs.(BINARY (MOD_ASSIGN, e, _))
+    | Cabs.(BINARY (BAND_ASSIGN, e, _))
+    | Cabs.(BINARY (BOR_ASSIGN, e, _))
+    | Cabs.(BINARY (SHL_ASSIGN, e, _))
+    | Cabs.(BINARY (SHR_ASSIGN, e, _))
+    | Cabs.(INDEX (e, _)) -> aux e
+    | Cabs.(VARIABLE _) -> true
+    | Cabs.(QUESTION (_, l, r)) -> aux l && aux r
+    | _ -> false in
+  aux e
 
 (* Extract the embedded type of an expression. *)
 let typeof : exp -> typ = function

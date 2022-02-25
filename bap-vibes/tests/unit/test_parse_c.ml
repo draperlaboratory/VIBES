@@ -407,6 +407,17 @@ let test_ternary_deref _ =
        mem := mem with [virt, el]:u32 <- 5
      }"
 
+let test_char_deref_posincr _ =
+  assert_parse_eq
+    "char *a, *b;
+     *a++ = *b++;"
+    "{
+       virt := mem[b]
+       b := b + 1
+       mem := mem with [a] <- virt
+       a := a + 1
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -439,4 +450,5 @@ let suite = [
   "Test comma" >:: test_comma;
   "Test comma ambiguous" >:: test_comma_ambig;
   "Test ternary deref" >:: test_ternary_deref;
+  "Test char deref post increment" >:: test_char_deref_posincr;
 ]
