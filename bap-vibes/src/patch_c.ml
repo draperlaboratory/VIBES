@@ -568,15 +568,16 @@ and translate_expression
     let width = Theory.Target.bits target in
     let width =
       if width = 64 then width
-      else
-        (* Pad the upper 64-width bits with ones. *)
-        let padding = Int64.((-1L) lsl Int.(64 - width)) in
-        let min_val_signed = Int64.(padding lor (1L lsl Int.(width - 1))) in
-        let max_val_signed = Int64.((1L lsl Int.(width - 1)) - 1L) in
+      else let open Int64 in
+        (* Pad the upper `64 - width` bits with ones. *)
+        let padding = (-1L) lsl Int.(64 - width) in
+        let wm1 = Int.(width - 1) in
+        let min_val_signed = padding lor (1L lsl wm1) in
+        let max_val_signed = (1L lsl wm1) - 1L in
         let min_val_unsigned = 0L in
-        let max_val_unsigned = Int64.((1L lsl width) - 1L) in
-        if Int64.((i >= min_val_signed && i <= max_val_signed) ||
-                  (i >= min_val_unsigned && i <= max_val_unsigned))
+        let max_val_unsigned = (1L lsl width) - 1L in
+        if (i >= min_val_signed && i <= max_val_signed)
+        || (i >= min_val_unsigned && i <= max_val_unsigned)
         then width else 64 in
     let i = Word.(signed @@ of_int64 ~width i) in
     NOP, Some (CONST_INT (i, SIGNED)), NOP
