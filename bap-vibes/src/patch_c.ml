@@ -227,9 +227,9 @@ let is_lvalue (e : Cabs.expression) : bool =
   (* XXX: Seems like a hack. *)
   let rec aux ?(mem = false) = function
     | Cabs.(UNARY (MEMOF, e)) -> aux e ~mem:true
-    | Cabs.(UNARY (POSINCR, e)) -> mem && aux e
-    | Cabs.(UNARY (PREINCR, e)) -> mem && aux e
-    | Cabs.(UNARY (POSDECR, e)) -> mem && aux e
+    | Cabs.(UNARY (POSINCR, e))
+    | Cabs.(UNARY (PREINCR, e))
+    | Cabs.(UNARY (POSDECR, e))
     | Cabs.(UNARY (PREDECR, e)) -> mem && aux e
     | Cabs.(BINARY (ASSIGN, e, _))
     | Cabs.(BINARY (ADD_ASSIGN, e, _))
