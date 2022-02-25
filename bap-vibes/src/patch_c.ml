@@ -231,7 +231,7 @@ let is_lvalue (e : Cabs.expression) : bool =
     | Cabs.(UNARY (PREINCR, e)) -> mem && aux e
     | Cabs.(UNARY (POSDECR, e)) -> mem && aux e
     | Cabs.(UNARY (PREDECR, e)) -> mem && aux e
-    | Cabs.(BINARY (ASSIGN, e, _)) -> aux e
+    | Cabs.(BINARY (ASSIGN, e, _))
     | Cabs.(BINARY (ADD_ASSIGN, e, _))
     | Cabs.(BINARY (SUB_ASSIGN, e, _))
     | Cabs.(BINARY (MUL_ASSIGN, e, _))
