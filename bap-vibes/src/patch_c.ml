@@ -226,12 +226,18 @@ let to_string ((tenv, s) : t) : string =
 let is_lvalue (e : Cabs.expression) : bool =
   (* XXX: Seems like a hack. *)
   let rec aux ?(mem = false) = function
+    (* We can use increment inside of a memory operation, while
+       still having the expression result in an l-value. *)
     | Cabs.(UNARY (MEMOF, e))
     | Cabs.(INDEX (e, _)) -> aux e ~mem:true
+    (* Operand of increment must be an l-value regardless of
+       whether we're inside of a MEMOF or not. *)
     | Cabs.(UNARY (POSINCR, e))
     | Cabs.(UNARY (PREINCR, e))
     | Cabs.(UNARY (POSDECR, e))
     | Cabs.(UNARY (PREDECR, e)) -> mem && aux e
+    (* LHS of assign must be an l-value regardless of whether
+       we're inside of a MEMOF or not. *)
     | Cabs.(BINARY (ASSIGN, e, _))
     | Cabs.(BINARY (ADD_ASSIGN, e, _))
     | Cabs.(BINARY (SUB_ASSIGN, e, _))
@@ -243,7 +249,8 @@ let is_lvalue (e : Cabs.expression) : bool =
     | Cabs.(BINARY (SHL_ASSIGN, e, _))
     | Cabs.(BINARY (SHR_ASSIGN, e, _)) -> aux e
     | Cabs.(VARIABLE _) -> true
-    | Cabs.(QUESTION (_, l, r)) -> aux l && aux r
+    (* If we're inside a MEMOF, propagate that to the children. *)
+    | Cabs.(QUESTION (_, l, r)) -> aux l ~mem && aux r ~mem
     | _ -> false in
   aux e
 
