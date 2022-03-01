@@ -716,7 +716,7 @@ let to_linear_ssa
     (sub : sub term) : blk term list KB.t =
   Sub.ssa sub |> Linear_ssa.transform ~patch:(Some patch)
 
-let run (patch : Data.Patch.t) : t KB.t =
+let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let* code = Data.Patch.get_bir patch in
   let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
   Events.(send @@ Info info_str);
@@ -753,5 +753,5 @@ let run (patch : Data.Patch.t) : t KB.t =
   let+ ir = to_linear_ssa patch sub in
   (* Turn explicit fallthroughs into implicit ones where possible.
      XXX: this shouldn't be done at the BIR level. *)
-  let ir = Opt.merge_adjacent ir in
+  let ir = if merge_adjacent then Opt.merge_adjacent ir else ir in
   {ir; exclude_regs; argument_tids}

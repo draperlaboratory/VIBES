@@ -108,6 +108,7 @@ module Pattern = struct
     | Var pv ->
       begin
         match mexp with
+        (* We should also check that the types make sense probably *)
         | Var _ | Int _ -> Some ([Var (pv, mexp)])
         | _ -> failwith (sprintf "Isel.check_exp: Matchee not in Flattened Form %a" Exp.pps mexp)
       end
@@ -205,8 +206,6 @@ module Pattern = struct
      [check_jmp] checks the compatibility of a Jmp match.
   *)
   let check_jmp (mjmp : Jmp.t) (pjmp : Jmp.t) (env : env) : Ob.t list option =
-    (* TODO: This is incomplete jump checking functionality. *)
-    let () = failwith "Isel:check_jmp : jumps unsupported in minizinc instruction selector" in
     let (let*) x f = Option.bind x ~f in
     let mkind = Jmp.kind mjmp in
     let pkind = Jmp.kind pjmp in
@@ -302,8 +301,12 @@ module Pattern = struct
       ~pat:(pat : Blk.t list) : match_ list =
     (* We use List based nondeterminism for search *)
     let (let*) x f = List.bind ~f x in
-    let blk_tid_map = List.map matchee ~f:(fun blk -> (Term.tid blk, blk)) in
-    let env = { blk_map = Tid.Map.of_alist_exn blk_tid_map  } in
+    let env =
+      let blk_tid_map blks = List.map blks ~f:(fun blk -> (Term.tid blk, blk)) in
+      let pat_blk_map = blk_tid_map pat in
+      let matchee_blk_map = blk_tid_map matchee in
+      { blk_map = Tid.Map.of_alist_exn (pat_blk_map @ matchee_blk_map) }
+    in
     let matches = List.fold pat ~init:[empty_match_]
         ~f:(fun matches pblk ->
             (* Guess block from matchee *)
@@ -316,10 +319,9 @@ module Pattern = struct
                entire ctrl section of the block. This can be considered a more typical match,
                whereas Def.t matching is taking into account a kind of commutativity.
                The ctrl section is a kind of monolithic all or nothing matching.
-               No. I should only allow contiguous matches?
-               *)
+            *)
             let pjmps = Term.enum jmp_t pblk |> Seq.to_list in
-            let matches = if Int.(List.length pjmps = 0) then matches 
+            let matches = if Int.(List.length pjmps = 0) then matches
               else begin
                 let mjmps = Term.enum jmp_t mblk |> Seq.to_list in
                 let match_or_unequal = List.fold2 pjmps mjmps
@@ -405,14 +407,21 @@ module Pattern = struct
       def_vars
     let operand_of_var (v : Var.t) : operand = mzn_enum (Var.to_string v)
     let operation_of_tid (t : Tid.t) : operation = mzn_enum (Tid.to_string t)
-    let serial_of_matches (matches : match_ list) serial : match_serial =
+
+    (* The first match is a null_def match. This match covers every free variable in
+       the matchee and no operations. It is necessary for the model to find a solution.
+       This extra match_ is stripped in [filter_templates] when interpretng the solution
+    *)
+    let serial_of_matches matchee (matches : match_ list) serial : match_serial =
       (* TODO: replace to_string functions with Sexp functions? *)
+      let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
+      let covered_by_null_def = mzn_set_of_list @@ List.map ~f:operand_of_var @@ Var.Set.to_list free_vars in 
       {
         serial with
-        numMatches = List.length matches;
-        operationsCoveredByMatch = List.map matches ~f:(fun match_ ->
+        numMatches = 1 + List.length matches;
+        operationsCoveredByMatch = mzn_set_of_list [] :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operation_of_tid (covered_ops match_));
-        operandsDefinedByMatch = List.map matches ~f:(fun match_ ->
+        operandsDefinedByMatch = covered_by_null_def :: List.map matches ~f:(fun match_ ->
             mzn_set_of_list @@ List.map ~f:operand_of_var (defines_vars match_))
       }
     let all_vars (blk : Blk.t) : Var.Set.t =
@@ -449,7 +458,7 @@ module Pattern = struct
 
     let build_serial (matchee : Blk.t list) (matches : match_ list) : Yojson.Safe.t =
       let serial = empty in
-      let serial = serial_of_matches matches serial in
+      let serial = serial_of_matches matchee matches serial in
       let serial = enumerate_nodes matchee serial in
       match_serial_to_yojson serial
 
@@ -462,7 +471,8 @@ module Pattern = struct
       } [@@deriving yojson]
 
     let filter_templates (sol : sol_serial) (templates : 'a list) =
-      List.map2_exn sol.sel templates
+      (* List.tl_exn to remove null_def match*)
+      List.map2_exn (List.tl_exn sol.sel) templates
         ~f:(fun sel temp -> if sel then Some temp else None) |> List.filter_opt
 
   end (* Serial *)
@@ -493,7 +503,10 @@ module Template = struct
                                "Isel.instantiate_ir_template: Variable matched to non variable or literal %a"
                                Exp.pps mexp)
           end
-        | _ -> failwith "undealt with operand case"
+        | Label tid ->
+            let {mblk; _} : Pattern.blk_match = Tid.Map.find_exn blk_map tid in
+            Label (Term.tid mblk)
+        | _ -> failwith "[Isel.instantiate_isel_template]: undealt with operand case"
       )
     in
     template
@@ -531,7 +544,7 @@ module Utils = struct
     { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
       congruent = []}
 
-  let store : Pattern.pat * Template.t =
+  let store (opcode : Ir.opcode) : Pattern.pat * Template.t =
     let mem = memvar "mem" in
     let mem' = memvar "mem'" in
     let addr = var64 "addr" in
@@ -542,17 +555,17 @@ module Utils = struct
           mem' := store ~mem:(var mem) ~addr:(var addr) (var value) LittleEndian Size.r64;
         ]) () 
     in
-    let template : Template.t = 
-      let blkid = Term.tid pat in 
+    let template : Template.t =
+      let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
-      let operation = Ir.simple_op (Ir.Opcode.create "str") 
+      let operation = Ir.simple_op opcode
           (operand mem') [operand mem; operand addr; operand value] in
       { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
         congruent = []}
     in
     ([pat], template)
 
-  let load : Pattern.t * Template.t =
+  let load (opcode : Ir.opcode) : Pattern.t * Template.t =
     let mem = memvar "mem" in
     let addr = var64 "addr" in
     let value = var64 "val" in
@@ -564,35 +577,73 @@ module Utils = struct
     let template : Template.t =
       let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
-      let operation = Ir.simple_op (Ir.Opcode.create "ld") 
+      let operation = Ir.simple_op opcode
           (operand value) [operand mem; operand addr] in
       { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
         congruent = []}
     in
     ([pat], template)
 
-end
+    (* Does the pattern require the second block or not? Yes it is required.
+       These blocks need to be looked up in env
+    *)
+    let goto (opcode : Ir.opcode) : Pattern.pat * Template.t =
+      let jmp_target = Blk.create () in
+      let jmp_target_tid = Term.tid jmp_target in
+      let jmp_origin = Blk.create ~jmps:[Jmp.create_goto (Direct jmp_target_tid)] () in
+      let jmp_origin_tid = Term.tid jmp_origin in
+      let pat = [jmp_origin; jmp_target] in
+      let template : Template.t =
+        let operation = Ir.empty_op () in
+        let operation = { operation with
+            opcodes = [opcode];
+            operands = [Ir.Label jmp_target_tid]
+          }
+        in
+        { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation];
+                  Ir.simple_blk jmp_target_tid ~data:[] ~ctrl:[]];
+          congruent = []}
+      in
+      (pat, template)
 
-(** [null_def_match] produces a null definition match and empty no-op instantiated template
-    The null definition pattern is a default pattern that covers externally defined variables
-    in the matchee. This pattern will be selected to cover/define them, but then the no-op
-    Ir chunk is used, which does nothing to the resulting Ir.t when merged
-*)
-let null_def_match (matchee : Blk.t list) : Pattern.match_ * Ir.t =
-  let free_vars = Sub.free_vars (Sub.create ~blks:matchee ()) in
-  {Pattern.empty_match_ with
-   vmap = Var.Set.to_map ~f:(fun x -> Bil.Var x) free_vars
-  },
-  Ir.empty
+      (* A not taken jump followed by a goto. *)
+    let null_jump (branch_opcode : Ir.opcode) : Pattern.pat * Template.t =
+        let null_jmp_target = Blk.create () in
+        let null_jmp_target_tid = Term.tid null_jmp_target in
+        let jmp_target = Blk.create () in
+        let jmp_target_tid = Term.tid jmp_target in
+        let jmp_origin = Blk.create ~jmps:[
+          Jmp.create_goto ~cond:(Bil.int (Word.zero 1)) (Direct null_jmp_target_tid);
+          Jmp.create_goto (Direct jmp_target_tid)] () in
+        let jmp_origin_tid = Term.tid jmp_origin in
+        let pat = [jmp_origin; jmp_target; null_jmp_target] in
+        let template : Template.t =
+          let operation = Ir.empty_op () in
+          let operation = { operation with
+              opcodes = [branch_opcode];
+              operands = [Ir.Label jmp_target_tid]
+            }
+          in
+          { blks = [Ir.simple_blk jmp_origin_tid ~data:[] ~ctrl:[operation];
+                    Ir.simple_blk jmp_target_tid ~data:[] ~ctrl:[];
+                    Ir.simple_blk null_jmp_target_tid ~data:[] ~ctrl:[]];
+            congruent = []}
+        in
+        (pat, template)
+
+
+end
 
 (* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
 let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
   assert (Tid.equal blk1.id blk2.id);
-  assert ((List.length blk1.ctrl) + (List.length blk2.ctrl) <= 1);
+  if (List.length blk1.ctrl > 0) && (List.length blk2.ctrl > 0) then
+    failwith (sprintf "[Isel.merge_blk] Two merging blocks have ctrl flow: blk1: %s blk2:%s"
+      (Ir.pretty_blk blk1) (Ir.pretty_blk blk2))
+  else ();
   {
     id = blk1.id;
     data = List.append blk1.data blk2.data;
-    (* TODO: This may not be right. It is unclear how to maintain ctrl block ordering *)
     ctrl = List.append blk1.ctrl blk2.ctrl;
     ins = Ir.empty_op ();
     outs = Ir.empty_op ();
@@ -622,8 +673,17 @@ let run
           match_, Template.instantiate_ir_template match_ template)
     )
   in
+  let enable_match_printing = false in
+  if enable_match_printing then
+    Events.(send @@ Info "Discovered matches:\n");
+    String.Map.iteri matches ~f:(fun ~key ~data ->
+      if not (List.is_empty data) then begin
+        Events.(send @@ Info (sprintf "From Pattern %s:\n" key));
+        List.iter data ~f:(fun (_, template) ->
+          Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template))))
+      end
+      else ());
   let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
-  let match_templates = (null_def_match matchee) :: match_templates in
   let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
   let* sol_json = Minizinc_utils.run_minizinc ~model_filepath:isel_model_filepath params in
@@ -633,4 +693,5 @@ let run
   let good_templates = Pattern.Serial.filter_templates sol_serial templates in
   let vir = List.reduce ~f:merge_ir good_templates in
   let vir = Option.value ~default:Ir.empty vir in
+  let vir = Ir.add_in_vars vir in
   KB.return vir

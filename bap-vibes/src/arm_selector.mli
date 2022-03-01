@@ -45,7 +45,7 @@ val is_arm_or_thumb : Theory.language -> bool KB.t
 
 (** Extracts the concrete [Ir.t] from the abstract [arm_eff]
     representation. *)
-val ir : arm_eff -> Ir.t KB.t
+val ir_of_arm_eff : arm_eff -> Ir.t KB.t
 
 (** Performs various ARM specific simplifications of a given [ir]
    program, aimed mostly to conserve space. *)

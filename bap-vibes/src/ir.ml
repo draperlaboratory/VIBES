@@ -180,7 +180,7 @@ let empty_op () : operation =
   { id = create_id ();
     lhs = [];
     opcodes = [];
-    optional = true;
+    optional = false;
     operands = []
   }
 
@@ -540,47 +540,39 @@ end
 
 module OpSet = Set.Make(Operand)
 
-let is_defined (defs : OpSet.t) (v : operand) : bool =
-  let vars =
-    match v with
-    | Var v | Void v -> v.temps
-    | _ -> []
-  in
-  OpSet.fold defs ~init:false
-    ~f:(fun is_def o ->
-        match o with
-        | Var v | Void v ->
-          let def_vars = v.temps in
-          let v_set = Var.Set.of_list vars in
-          let def_set = Var.Set.of_list def_vars in
-          let b = Var.Set.is_empty (Var.Set.inter v_set def_set) in
-          (not b) || is_def
-        | _ -> is_def)
-
 let add_in_vars_blk (b : blk) : blk =
   let ops = b.data @ b.ctrl in
-  let collect_vars_op_list l =
-    List.fold l ~init:OpSet.empty
-      ~f:(fun set o ->
-          match o with
-          | Var _ | Void _ -> OpSet.add set o
-          | _ -> set)
+  (* We need to remember whether temps are Var or Void. We use a boolean flag for this in
+     a Map with domain of temps. *)
+  let collect_temps (l : operand list) temp_map : bool Var.Map.t =
+      let add_temps temp_map (temps : Var.t list) (is_var : bool) =
+         List.fold temps ~init:temp_map ~f:(fun temp_map temp ->
+          Var.Map.set temp_map ~key:temp ~data:is_var
+          )
+      in
+      List.fold l ~init:temp_map
+        ~f:(fun temp_map o ->
+            match o with
+            | Var op_var -> add_temps temp_map op_var.temps true
+            | Void op_var -> add_temps temp_map op_var.temps false
+            | _ -> temp_map)
   in
-  (* Simultaneously collect defined and undefined vars *)
-  let _, undefined =
-    List.fold ops ~init:(OpSet.empty, OpSet.empty)
-      ~f:(fun (defined, undefined) o ->
-          let undef = collect_vars_op_list o.operands in
-          let undef = OpSet.filter undef
-              ~f:(fun o -> not @@ is_defined defined o)
-          in
-          let undef = OpSet.filter undef
-              ~f:(fun o -> not @@ is_defined undefined o)
-          in
-          let def = collect_vars_op_list o.lhs in
-          OpSet.union defined def, OpSet.union undefined undef)
+  let lhs_temp_map = List.fold ops ~init:Var.Map.empty
+    ~f:(fun temp_map o -> collect_temps o.lhs temp_map)
   in
-  let ins = OpSet.to_list undefined |> List.map ~f:freshen_operand
+  let rhs_temp_map = List.fold ops ~init:Var.Map.empty
+    ~f:(fun temp_map o -> collect_temps o.operands temp_map)
+  in
+  (* The indefined temporaries are those that are in right hand sides, 
+     but not left hand sides *)
+  let undef_temps =
+      let lhs_temps = Var.Map.keys lhs_temp_map |> Var.Set.of_list in
+      let rhs_temps = Var.Map.keys rhs_temp_map |> Var.Set.of_list in
+      Var.Set.diff rhs_temps lhs_temps |> Var.Set.to_list in
+  let ins = List.map undef_temps ~f:(fun temp ->
+    let op_var = (simple_var temp) in
+    (* Since set difference, temp should be in rhs_temps, therefore find_exn is ok *)
+    if Var.Map.find_exn rhs_temp_map temp then Var op_var else Void op_var)
   in
   (* We add dummy operation with no instructions and as lhs all the
      [ins] variables *)
