@@ -544,7 +544,7 @@ module Utils = struct
     { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
       congruent = []}
 
-  let store : Pattern.pat * Template.t =
+  let store (opcode : Ir.opcode) : Pattern.pat * Template.t =
     let mem = memvar "mem" in
     let mem' = memvar "mem'" in
     let addr = var64 "addr" in
@@ -558,14 +558,14 @@ module Utils = struct
     let template : Template.t =
       let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
-      let operation = Ir.simple_op (Ir.Opcode.create "str") 
+      let operation = Ir.simple_op opcode
           (operand mem') [operand mem; operand addr; operand value] in
       { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
         congruent = []}
     in
     ([pat], template)
 
-  let load : Pattern.t * Template.t =
+  let load (opcode : Ir.opcode) : Pattern.t * Template.t =
     let mem = memvar "mem" in
     let addr = var64 "addr" in
     let value = var64 "val" in
@@ -577,7 +577,7 @@ module Utils = struct
     let template : Template.t =
       let blkid = Term.tid pat in
       let operand v = Ir.Var (Ir.simple_var v) in
-      let operation = Ir.simple_op (Ir.Opcode.create "ld") 
+      let operation = Ir.simple_op opcode
           (operand value) [operand mem; operand addr] in
       { blks = [Ir.simple_blk blkid ~data:[operation] ~ctrl:[]];
         congruent = []}
@@ -587,7 +587,7 @@ module Utils = struct
     (* Does the pattern require the second block or not? Yes it is required.
        These blocks need to be looked up in env
     *)
-    let goto : Pattern.pat * Template.t =
+    let goto (opcode : Ir.opcode) : Pattern.pat * Template.t =
       let jmp_target = Blk.create () in
       let jmp_target_tid = Term.tid jmp_target in
       let jmp_origin = Blk.create ~jmps:[Jmp.create_goto (Direct jmp_target_tid)] () in
@@ -596,7 +596,7 @@ module Utils = struct
       let template : Template.t =
         let operation = Ir.empty_op () in
         let operation = { operation with
-            opcodes = [Ir.Opcode.create "b"];
+            opcodes = [opcode];
             operands = [Ir.Label jmp_target_tid]
           }
         in
@@ -607,7 +607,7 @@ module Utils = struct
       (pat, template)
 
       (* A not taken jump followed by a goto. *)
-    let null_jump : Pattern.pat * Template.t =
+    let null_jump (branch_opcode : Ir.opcode) : Pattern.pat * Template.t =
         let null_jmp_target = Blk.create () in
         let null_jmp_target_tid = Term.tid null_jmp_target in
         let jmp_target = Blk.create () in
@@ -620,7 +620,7 @@ module Utils = struct
         let template : Template.t =
           let operation = Ir.empty_op () in
           let operation = { operation with
-              opcodes = [Ir.Opcode.create "b"];
+              opcodes = [branch_opcode];
               operands = [Ir.Label jmp_target_tid]
             }
           in
@@ -706,14 +706,16 @@ let run
           match_, Template.instantiate_ir_template match_ template)
     )
   in
-  Events.(send @@ Info "Discovered matches:\n");
-  String.Map.iteri matches ~f:(fun ~key ~data ->
-    if not (List.is_empty data) then begin
-      Events.(send @@ Info (sprintf "From Pattern %s:\n" key));
-      List.iter data ~f:(fun (_, template) ->
-        Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template))))
-    end
-    else ());
+  let enable_match_printing = false in
+  if enable_match_printing then
+    Events.(send @@ Info "Discovered matches:\n");
+    String.Map.iteri matches ~f:(fun ~key ~data ->
+      if not (List.is_empty data) then begin
+        Events.(send @@ Info (sprintf "From Pattern %s:\n" key));
+        List.iter data ~f:(fun (_, template) ->
+          Events.(send @@ Info (sprintf "%s\n" (Ir.pretty_ir template))))
+      end
+      else ());
   let match_templates = List.concat_map (String.Map.to_alist matches) ~f:snd in
   let matches, templates = List.unzip match_templates in
   let params = Pattern.Serial.build_serial matchee matches in
