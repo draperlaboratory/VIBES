@@ -190,7 +190,7 @@ let linearize_blk (blk : blk term) : blk term linear =
 let compute_liveness (sub : sub term) : Data.ins_outs Tid.Map.t =
   let liveness = Sub.compute_liveness sub in
   let blks = Term.enum blk_t sub in
-  let outs = Seq.map blks ~f:(fun blk ->
+  let ins_outs_map = Seq.map blks ~f:(fun blk ->
     let tid = Term.tid blk in
     let outs = Graphlib.Std.Solution.get liveness tid in
     let prefix = prefix_from blk in
@@ -204,7 +204,7 @@ let compute_liveness (sub : sub term) : Data.ins_outs Tid.Map.t =
     let ins_outs : Data.ins_outs = {ins; outs} in
     tid, ins_outs)
   in
-  Tid.Map.of_sequence_exn outs
+  Tid.Map.of_sequence_exn ins_outs_map
 
 let all_live_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
   let inouts = Tid.Map.data ins_outs in
