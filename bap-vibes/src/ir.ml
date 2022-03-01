@@ -673,3 +673,7 @@ let ins_map vir : operation_id Tid.Map.t =
 
 let outs_map vir : operation_id Tid.Map.t =
   Tid.Map.of_alist_exn @@ List.map vir.blks ~f:(fun blk -> blk.id, blk.outs.id)
+
+let block_ops vir : operation_id list Tid.Map.t =
+  Tid.Map.of_alist_exn @@ List.map vir.blks ~f:(fun blk ->
+    (blk.id , List.map ~f:(fun o -> o.id) (Blk.all_operations blk)))

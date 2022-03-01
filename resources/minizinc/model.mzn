@@ -42,7 +42,7 @@ array[opcode_t] of int: latency; % latency of instruction
 
 array[block_t] of operation_t : block_ins;
 array[block_t] of operation_t : block_outs;
-% array[block_t] of set of operation_t : block_operations
+array[block_t] of set of operation_t : block_operations;
 
 int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from file.
 
@@ -243,8 +243,9 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 constraint forall (blk in block_t)(
     issue[block_ins[blk]] == 0
     /\
-    issue[block_outs[blk]] == MAXC
-    % better constraint  forall(o in block_ops[blk]) (issue[o] <= issue[block_outs[blk]])
+    % issue[block_outs[blk]] == MAXC
+    % better constraint  
+    forall(o in block_operations[blk]) (issue[o] <= issue[block_outs[blk]])
 );
 
 

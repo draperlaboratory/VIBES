@@ -226,3 +226,7 @@ val ins_map : t -> operation_id Tid.Map.t
 
 (** Build a mapping from block tid to outs operation *)
 val outs_map : t -> operation_id Tid.Map.t
+
+(** Build a mapping from block tid to all operation ids in that block *)
+val block_ops : t -> operation_id list Tid.Map.t
+

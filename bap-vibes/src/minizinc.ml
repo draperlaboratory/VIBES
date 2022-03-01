@@ -54,7 +54,8 @@ type mzn_params = {
   temps : Var.Set.t;
   class_ : (Theory.role Ir.Opcode.Map.t) Var.Map.t;
   ins_map : Ir.operation_id Tid.Map.t;
-  outs_map : Ir.operation_id Tid.Map.t
+  outs_map : Ir.operation_id Tid.Map.t;
+  block_ops : Ir.operation_id list Tid.Map.t
 }
 
 (** [mzn_params_of_vibes_ir] converts a Ir.t subroutine into the intermediate data
@@ -78,7 +79,8 @@ let mzn_params_of_vibes_ir (sub : Ir.t) : mzn_params =
     operands = Ir.all_operands sub;
     class_ = Ir.op_classes sub;
     ins_map = Ir.ins_map sub;
-    outs_map = Ir.outs_map sub
+    outs_map = Ir.outs_map sub;
+    block_ops = Ir.block_ops sub
   }
 
 type operand = mzn_enum [@@deriving yojson]
@@ -111,7 +113,8 @@ type mzn_params_serial = {
   number_excluded : int;
   exclude_reg : (int, (temp, reg) mzn_map) mzn_map;
   block_outs : (block, operation) mzn_map;
-  block_ins : (block, operation) mzn_map
+  block_ins : (block, operation) mzn_map;
+  block_operations : (block, operation mzn_set) mzn_map
 }  [@@deriving yojson]
 
 
@@ -325,6 +328,8 @@ let serialize_mzn_params
             key_map temps sol.reg ~f:mzn_enum_of_var);
     block_ins = key_map blocks ~f:(fun i -> mzn_enum @@ Int.to_string i) params.ins_map;
     block_outs = key_map blocks ~f:(fun i -> mzn_enum @@ Int.to_string i) params.outs_map;
+    block_operations = key_map blocks ~f:(fun ops -> mzn_set_of_list @@
+              List.map ops ~f:(fun i -> mzn_enum @@ Int.to_string i)) params.block_ops;
   },
   {
     temps = temps;

@@ -28,6 +28,7 @@ end
 type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
 type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
+
 (** We define "domains" for the types used in our properties. *)
 val string_domain       : string option KB.Domain.t
 val int_domain          : int option KB.Domain.t
@@ -40,6 +41,7 @@ val unit_domain         : unit KB.Domain.t
 val higher_vars_domain  : Hvar.t list option KB.Domain.t
 val var_pair_set_domain : var_pair_set KB.Domain.t
 val ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t
+
 (** These are the top-level class definitions.
 
     - type [cls] is the class of the top-level VIBES KB object that stores

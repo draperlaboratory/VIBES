@@ -115,7 +115,8 @@ type mzn_params_serial = {
   number_excluded : int;
   exclude_reg : (int, (temp, reg) mzn_map) mzn_map;
   block_outs : (block, operation) mzn_map;
-  block_ins : (block, operation) mzn_map
+  block_ins : (block, operation) mzn_map;
+  block_operations : (block, operation mzn_set) mzn_map;
 } [@@deriving yojson]
 
 type serialization_info = {

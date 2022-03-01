@@ -665,7 +665,6 @@ module Merge = struct
       congruent = List.append vir1.congruent vir2.congruent
     }
   let merge
-    (matchee : Blk.t list)
     (ins_outs_map : Data.ins_outs Tid.Map.t)
     (good_templates : Ir.t list) : Ir.t =
     let vir = List.reduce ~f:merge_ir good_templates in
@@ -724,5 +723,5 @@ let run
     | Ok sol_serial -> KB.return sol_serial
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
   let good_templates = Pattern.Serial.filter_templates sol_serial templates in
-  let vir = Merge.merge matchee ins_outs_map good_templates in
+  let vir = Merge.merge ins_outs_map good_templates in
   KB.return vir

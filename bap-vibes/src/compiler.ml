@@ -129,9 +129,6 @@ let compile_one_assembly
       Arm_selector.gpr target lang >>= fun gpr ->
       Data.Patch.get_congruence patch >>= fun congruence ->
       let congruence = Set.to_list congruence in
-      List.iter congruence~f:(fun (x,y) ->
-        Events.(send @@ Info (sprintf "congruence %a %a\n" Var.pps x Var.pps y)));
-     
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       create_assembly

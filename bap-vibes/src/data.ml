@@ -37,6 +37,8 @@ let var_pair_set_domain : var_pair_set KB.Domain.t =
     ~inspect:Var_pair.sexp_of_t
     "var-pair-set-domain"
 
+(* [ins_outs] is useful for carrying liveness information from BIR to Vibes IR for
+   the `ins` and `outs` fields of Vibes IR blocks *)
 type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
 let ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t =
   KB.Domain.mapping (module Tid)
