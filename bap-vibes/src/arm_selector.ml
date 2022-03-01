@@ -1099,10 +1099,10 @@ module Isel = struct
     String.Map.of_alist_exn [
     "add", binop PLUS (ARM_ops.Ops.add false);
     "mov", mov (ARM_ops.Ops.mov false);
-    "str", store;
-    "ld",  load;
-    "b",   goto;
-    "null_jump", null_jump
+    "str", store (Ir.Opcode.create "str");
+    "ld",  load (Ir.Opcode.create "ld");
+    "b",   goto (Ir.Opcode.create "b");
+    "null_jump", null_jump (Ir.Opcode.create "b")
   ]
 
 end
