@@ -40,7 +40,7 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 let create_vibes_ir
     (patch : Data.Patch.t)
     (isel_model_filepath : string option) : (Ir.t * String.Set.t) KB.t =
-  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch in
+  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch ~merge_adjacent:(Option.is_none isel_model_filepath) in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
