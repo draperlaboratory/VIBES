@@ -243,8 +243,8 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 constraint forall (blk in block_t)(
     issue[block_ins[blk]] == 0
     /\
+    % worse but possibly faster
     % issue[block_outs[blk]] == MAXC
-    % better constraint  
     forall(o in block_operations[blk]) (issue[o] <= issue[block_outs[blk]])
 );
 
