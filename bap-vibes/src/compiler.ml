@@ -62,7 +62,8 @@ let create_vibes_ir
             let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
             List.iter ir ~f:(fun blk ->
             Events.(send @@ Info (sprintf "The patch has the following BIL: %a" Blk.pps blk)));
-            let* ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns in
+            let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
+            let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
             KB.return ir
           end
       in

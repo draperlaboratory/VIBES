@@ -27,6 +27,7 @@ type patch = {
   minizinc_solutions : Minizinc.sol_set;
   exclude_regs : String.Set.t option;
   congruence : Data.var_pair_set;
+  ins_outs_map : Data.ins_outs Bap.Std.Tid.Map.t;
 }
 
 (* A bundle of seed info that can be used to seed the KB
@@ -46,7 +47,8 @@ let extract_patch (p : Data.Patch.t) (s : KB.state)
     let minizinc_solutions = KB.Value.get Data.Patch.minizinc_solutions value in
     let exclude_regs = KB.Value.get Data.Patch.exclude_regs value in
     let congruence = KB.Value.get Data.Patch.congruence value in
-    Some { raw_ir; patch_name; minizinc_solutions; exclude_regs; congruence }
+    let ins_outs_map = KB.Value.get Data.Patch.ins_outs_map value in
+    Some { raw_ir; patch_name; minizinc_solutions; exclude_regs; congruence; ins_outs_map}
 
 (* Given a bundle of [seed] info, find the seed info for the patch with
    the specified [name]. *)
@@ -100,6 +102,7 @@ let create_patches
           obj patch_seed.minizinc_solutions in
         let* () = Data.Patch.set_raw_ir obj (Some patch_seed.raw_ir) in
         let* () = Data.Patch.set_exclude_regs obj patch_seed.exclude_regs in
+        let* () = Data.Patch.set_ins_outs_map obj patch_seed.ins_outs_map in
         Data.Patch.set_congruence obj patch_seed.congruence
     in
     KB.return obj

@@ -159,8 +159,10 @@ let create_id =
     incr next;
     id
 
+type operation_id = int [@@deriving compare, equal, sexp]
+
 type operation = {
-  id : int;
+  id : operation_id;
   lhs : operand list;
   opcodes : opcode list;
   optional : bool;
@@ -191,20 +193,12 @@ let write_multiple_op opcode written args =
     optional = false;
     (* Operands need to have unique ids *)
     operands = List.map ~f:freshen_operand args;
-  } 
+  }
 
 let op_no_args opcode =
   { id = create_id ();
     lhs = [];
     opcodes = [opcode];
-    optional = false;
-    operands = [];
-  }
-
-let mk_empty_operation () =
-  { id = create_id ();
-    lhs = [];
-    opcodes = [];
     optional = false;
     operands = [];
   }
@@ -225,8 +219,8 @@ let simple_blk tid ~data ~ctrl =
     data= data;
     ctrl = ctrl;
     (* Probably we should just add every variable in ops here *)
-    ins = mk_empty_operation ();
-    outs = mk_empty_operation ();
+    ins = empty_op ();
+    outs = empty_op ();
     frequency = 1
   }
 
@@ -541,7 +535,7 @@ end
 module OpSet = Set.Make(Operand)
 
 let add_in_vars_blk (b : blk) : blk =
-  let ops = b.data @ b.ctrl in
+  let ops = b.ins :: b.outs :: b.data @ b.ctrl in
   (* We need to remember whether temps are Var or Void. We use a boolean flag for this in
      a Map with domain of temps. *)
   let collect_temps (l : operand list) temp_map : bool Var.Map.t =
@@ -672,3 +666,14 @@ let freshen_operation_ids vir =
       operation with
       id = create_id ()
     })
+
+
+let ins_map vir : operation_id Tid.Map.t =
+  Tid.Map.of_alist_exn @@ List.map vir.blks ~f:(fun blk -> blk.id, blk.ins.id)
+
+let outs_map vir : operation_id Tid.Map.t =
+  Tid.Map.of_alist_exn @@ List.map vir.blks ~f:(fun blk -> blk.id, blk.outs.id)
+
+let block_ops vir : operation_id list Tid.Map.t =
+  Tid.Map.of_alist_exn @@ List.map vir.blks ~f:(fun blk ->
+    (blk.id , List.map ~f:(fun o -> o.id) (Blk.all_operations blk)))
