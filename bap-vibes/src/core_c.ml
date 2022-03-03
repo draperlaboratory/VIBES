@@ -227,33 +227,37 @@ module Eval(CT : Theory.Core) = struct
     | NE  -> KB.return @@ lift_bitv CT.neq
     | LT -> begin
         match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, None -> KB.return @@ lift_bitv CT.ult
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
-            sprintf "LT requires a signedness on both operands")
+            sprintf "LT requires a signedness on both operands or on none")
         | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ult
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.slt
       end
     | GT -> begin
         match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, None -> KB.return @@ lift_bitv CT.ugt
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
-            sprintf "GT requires a signedness on both operands")          
+            sprintf "GT requires a signedness on both operands or on none")          
         | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ugt
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sgt
       end
     | LE -> begin
         match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, None -> KB.return @@ lift_bitv CT.ule
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
-            sprintf "LE requires a signedness on both operands") 
+            sprintf "LE requires a signedness on both operands or on none") 
         | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ule
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sle
       end
     | GE -> begin
         match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, None -> KB.return @@ lift_bitv CT.uge
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
-            sprintf "GE requires a signedness on both operands") 
+            sprintf "GE requires a signedness on both operands or on none") 
         | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.uge
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sge
       end

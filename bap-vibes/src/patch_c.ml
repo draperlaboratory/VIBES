@@ -870,8 +870,13 @@ and translate_binary_operator
     let t2 = typeof e2 in
     match typ_unify t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-    | Some (PTR _) when no_ptr ->
-      typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+    | Some VOID ->
+      let msg = if no_ptr then "Expected integral type"
+        else "Expected integral or pointer type" in
+      typ_error Cabs.(BINARY (b, lhs, rhs)) VOID msg
+    | Some ((PTR _) as t) when no_ptr ->
+      typ_error Cabs.(BINARY (b, lhs, rhs)) t
+        "Pointer type is not allowed"
     | Some t ->
       let e1 = with_type e1 t in
       let e2 = with_type e2 t in
