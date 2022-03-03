@@ -714,7 +714,7 @@ end
 let to_linear_ssa
     (patch : Data.Patch.t)
     (sub : sub term) : blk term list KB.t =
-  Sub.ssa sub |> Linear_ssa.transform ~patch:(Some patch)
+  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
 let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let* code = Data.Patch.get_bir patch in
@@ -747,9 +747,7 @@ let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let* ir = Shape.reorder_blks ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
-  let ir = Seq.to_list @@ Term.enum blk_t sub in
   (* Linear SSA form is needed for VIBES IR. *)
-  let* sub = Helper.create_sub ir in
   let+ ir = to_linear_ssa patch sub in
   (* Turn explicit fallthroughs into implicit ones where possible.
      XXX: this shouldn't be done at the BIR level. *)

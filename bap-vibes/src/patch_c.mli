@@ -31,10 +31,10 @@ open Bap_core_theory
 (** Use BAP's definition of immediate sizes. *)
 type nonrec size = size
 
-(** Subset of `Cabs.sign`, where now signedness is explicit. *)
+(** Subset of [Cabs.sign], where now signedness is explicit. *)
 type sign = SIGNED | UNSIGNED
 
-(** Subset of `Cabs.base_type` for types supported by VIBES. *)
+(** Subset of [Cabs.base_type] for types supported by VIBES. *)
 type typ =
   | VOID
   | INT of size * sign
@@ -45,12 +45,12 @@ type typ =
 val size_of_typ : Theory.target -> typ -> int
 
 (** Returns the signedness of the type. *)
-val sign_of_typ : typ -> sign
+val sign_of_typ : typ -> sign option
 
 (** Compares two types for equality. *)
 val equal_typ : typ -> typ -> bool
 
-(** Subset of `Cabs.binary_operator`, where only pure binary operations
+(** Subset of [Cabs.binary_operator], where only pure binary operations
     are allowed. *)
 type binop =
   | ADD
@@ -70,7 +70,7 @@ type binop =
   | LE
   | GE
 
-(** Subset of `Cabs.unary_operator`, where only pure unary operations
+(** Subset of [Cabs.unary_operator], where only pure unary operations
     are allowed. *)
 type unop =
   | MINUS
@@ -84,7 +84,7 @@ type tenv = typ String.Map.t
 (** A typed var. *)
 type var = Theory.Var.Top.t * typ
 
-(** Subset of `Cabs.expression`, where all expressions are pure and
+(** Subset of [Cabs.expression], where all expressions are pure and
     explicitly typed. *)
 type exp =
   | UNARY of unop * exp * typ
@@ -93,7 +93,26 @@ type exp =
   | CONST_INT of word * sign
   | VARIABLE of var
 
-(** Subset of `Cabs.statement`. *)
+(** Subset of [Cabs.statement]. 
+
+    [STORE (l, r)] takes two expressions as [l] and [r].
+    [l] evaluates to a pointer to some location in memory, whose
+    contents are replaced with [r]. It is equivalent to [*l = r]
+    in normal C parlance.
+
+    It is distinct from [ASSIGN (v, e)], where we are explicitly
+    updating the contents of a variable [v] with [e]. Since the
+    storage classifications for variables (e.g. stack, global, or
+    register) are not determined by PatchC, we assume that variables
+    and memory locations are distinct. Therefore, we require a
+    distinction between writing to a memory location and assigning
+    to a variable.
+
+    [CALLASSIGN (v, f, args)] explicitly says that the return value
+    of calling [f] with [args] will be assigned to [v]. We cannot
+    use [ASSIGN (v, CALL (f, args))], since [CALL] is not a pure
+    expression, and all expressions in PatchC must be pure.
+*)
 and stmt =
   | NOP
   | BLOCK of body

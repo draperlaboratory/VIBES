@@ -298,9 +298,37 @@ test_arm_isel_jmp () {
     run_arm_exe "${TEST_PATCH_EXE}" 2
 }
 
+run_test() {
+    local FOLDERNAME=$1
+    local ORIGVAL=$2
+    local PATCHVAL=$3
+    local TEST_DIR="${EXES_DIR}/${FOLDERNAME}"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
+
+    print_header "Checking ${TEST_DIR}"
+
+    # Check the precompiled executables.
+    run_make "make main -C ${TEST_DIR}" 0
+    run_make "make main.patched.reference -C ${TEST_DIR}" 0
+    run_arm_exe "${MAIN_EXE}" $ORIGVAL
+    run_arm_exe "${PATCH_EXE}" $PATCHVAL
+
+    # Check that vibes patches correctly.
+    run_make "make clean -C ${TEST_DIR}" 0
+    run_make "make main.patched -C ${TEST_DIR}" 0
+    run_arm_exe "${TEST_PATCH_EXE}" $PATCHVAL
+}
+
+test_arm_isel_jmp2 () {
+    run_test "arm-isel-jmp2" 5 6
+}
+
 # Run all tests
 run_all () {
     test_arm_simple
+    test_arm_isel_jmp2
     test_arm_isel_jmp
     test_arm_simple_sum
     test_arm_simple_inline

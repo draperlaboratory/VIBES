@@ -634,35 +634,67 @@ module Utils = struct
 
 end
 
-(* TODO: Really, merge_blk should fuse remove anything that is in the ins and outs? *)
-let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
-  assert (Tid.equal blk1.id blk2.id);
-  if (List.length blk1.ctrl > 0) && (List.length blk2.ctrl > 0) then
-    failwith (sprintf "[Isel.merge_blk] Two merging blocks have ctrl flow: blk1: %s blk2:%s"
-      (Ir.pretty_blk blk1) (Ir.pretty_blk blk2))
-  else ();
-  {
-    id = blk1.id;
-    data = List.append blk1.data blk2.data;
-    ctrl = List.append blk1.ctrl blk2.ctrl;
-    ins = Ir.empty_op ();
-    outs = Ir.empty_op ();
-    frequency = 0
-  }
-let merge_ir (vir1 : Ir.t) (vir2 : Ir.t) : Ir.t =
-  let blkmap1 = Tid.Map.of_alist_exn (List.map vir1.blks ~f:(fun blk -> (blk.id, [blk]))) in
-  let blkmap = List.fold vir2.blks ~init:blkmap1 ~f:(fun acc blk2 ->
-      Tid.Map.add_multi acc ~key:(blk2.id) ~data:blk2
-    ) in
-  let blkmap = Tid.Map.map blkmap ~f:(fun blks -> List.reduce blks ~f:merge_blk |> Option.value_exn ) in
-  let blks = Tid.Map.data blkmap in
-  {
-    blks;
-    congruent = List.append vir1.congruent vir2.congruent
-  }
+module Merge = struct
+  (* TODO: should make helper functions in Ir for making ins/outs *)
+  let merge_blk (blk1 : Ir.blk) (blk2 : Ir.blk) : Ir.blk =
+    assert (Tid.equal blk1.id blk2.id);
+    if (List.length blk1.ctrl > 0) && (List.length blk2.ctrl > 0) then
+      failwith (sprintf "[Isel.merge_blk] Two merging blocks have ctrl flow: blk1: %s blk2:%s"
+        (Ir.pretty_blk blk1) (Ir.pretty_blk blk2))
+    else ();
+    let ins = Ir.empty_op () in
+    let outs = Ir.empty_op () in
+    {
+      id = blk1.id;
+      data = List.append blk1.data blk2.data;
+      ctrl = List.append blk1.ctrl blk2.ctrl;
+      ins = {ins with operands = List.append blk1.ins.operands blk2.ins.operands};
+      outs = {outs with lhs = List.append blk1.outs.lhs blk2.outs.lhs};
+      frequency = 0
+    }
+
+  let merge_ir (vir1 : Ir.t) (vir2 : Ir.t) : Ir.t =
+    let blkmap1 = Tid.Map.of_alist_exn (List.map vir1.blks ~f:(fun blk -> (blk.id, [blk]))) in
+    let blkmap = List.fold vir2.blks ~init:blkmap1 ~f:(fun acc blk2 ->
+        Tid.Map.add_multi acc ~key:(blk2.id) ~data:blk2
+      ) in
+    let blkmap = Tid.Map.map blkmap ~f:(fun blks -> List.reduce blks ~f:merge_blk |> Option.value_exn ) in
+    let blks = Tid.Map.data blkmap in
+    {
+      blks;
+      congruent = List.append vir1.congruent vir2.congruent
+    }
+  let merge
+    (ins_outs_map : Data.ins_outs Tid.Map.t)
+    (good_templates : Ir.t list) : Ir.t =
+    let vir = List.reduce ~f:merge_ir good_templates in
+    let vir = Option.value ~default:Ir.empty vir in
+    let vir = Ir.map_blks vir ~f:(fun blk ->
+      match Tid.Map.find ins_outs_map blk.id with
+      | None -> blk
+      | Some {ins ; outs} ->
+        let operands vars =
+          let vars = Var.Set.to_list vars in
+          (* TODO: Assuming Ir.Var is not right here. They may Void. *)
+          let vars = List.map ~f:(fun v -> Ir.Var (Ir.simple_var v)) vars in
+          vars
+        in
+        let in_operands = operands ins in
+        let ins = Ir.empty_op () in
+        let ins = {ins with lhs = blk.ins.lhs @ in_operands} in
+        let out_operands = operands outs in
+        let outs = Ir.empty_op () in
+        let outs = {outs with operands = blk.outs.operands @ out_operands} in
+        {blk with ins; outs}
+      )
+    in
+    vir
+
+end
 
 let run
     ~isel_model_filepath:(isel_model_filepath : string)
+    (ins_outs_map : Data.ins_outs Tid.Map.t)
     (matchee : Blk.t list)
     (pats : (Pattern.t * Template.t) String.Map.t) : Ir.t Knowledge.t =
   Events.(send @@ Info "Running Instruction Selector.\n");
@@ -691,7 +723,5 @@ let run
     | Ok sol_serial -> KB.return sol_serial
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
   let good_templates = Pattern.Serial.filter_templates sol_serial templates in
-  let vir = List.reduce ~f:merge_ir good_templates in
-  let vir = Option.value ~default:Ir.empty vir in
-  let vir = Ir.add_in_vars vir in
+  let vir = Merge.merge ins_outs_map good_templates in
   KB.return vir

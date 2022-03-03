@@ -49,14 +49,14 @@ let rec string_of_typ : typ -> string = function
       (String.concat ~sep:", " @@ List.map args ~f:string_of_typ)
 
 let size_of_typ (target : Theory.target) : typ -> int = function
-  | VOID -> 0
+  | VOID -> 8
   | INT (size, _) -> Size.in_bits size
   | PTR _ | FUN _ -> Theory.Target.bits target
 
-let sign_of_typ : typ -> sign = function
-  | VOID -> UNSIGNED
-  | INT (_, s) -> s
-  | PTR _ | FUN _ -> UNSIGNED
+let sign_of_typ : typ -> sign option = function
+  | VOID -> None
+  | INT (_, s) -> Some s
+  | PTR _ | FUN _ -> None
 
 type binop =
   | ADD
@@ -155,8 +155,9 @@ let rec cabs_of_typ : typ -> Cabs.base_type = function
   | INT (`r32, UNSIGNED) -> Cabs.(INT (LONG, UNSIGNED))
   | INT (`r64, SIGNED)   -> Cabs.(INT (LONG_LONG, SIGNED))
   | INT (`r64, UNSIGNED) -> Cabs.(INT (LONG_LONG, UNSIGNED))
-  | INT _                -> assert false
   | PTR t                -> Cabs.PTR (cabs_of_typ t)
+  | INT (`r128, _) -> failwith "Patch_c.cabs_of_typ: bad integer size 128"
+  | INT (`r256, _) -> failwith "Patch_c.cabs_of_typ: bad integer size 256"
   | FUN (ret, args) ->
     let names = List.map args ~f:(fun t ->
         let t = cabs_of_typ t in
@@ -202,7 +203,7 @@ and cabs_of_stmt : stmt -> Cabs.statement = function
         BINARY (
           ASSIGN,
           UNARY (MEMOF, cabs_of_exp addr),
-          cabs_of_exp addr)))
+          cabs_of_exp value)))
   | SEQUENCE (s1, s2) -> Cabs.SEQUENCE (cabs_of_stmt s1, cabs_of_stmt s2)
   | IF (cond, st, sf) ->
     Cabs.IF (cabs_of_exp cond, cabs_of_stmt st, cabs_of_stmt sf)
@@ -340,24 +341,26 @@ let rec translate_type
   | Cabs.CHAR sign -> begin
       (* NOTE: The C standard says that whether `char` is equivalent to
          either `signed char` or `unsigned char` is implementation-defined.
-         We're taking the approach that `char` is by default signed.
+         We're taking the approach that `char` is by default unsigned.
 
-         GCC seems to take this approach when compiling to x86, but not
-         when compiling to ARM. Go figure.
+         GCC seems to take this approach when compiling to ARM, but not
+         when compiling to x86. Go figure.
       *)
       match sign with
-      | Cabs.(NO_SIGN | SIGNED) -> Transl.return @@ INT (`r8, SIGNED)
-      | Cabs.UNSIGNED -> Transl.return @@ INT (`r8, UNSIGNED)
+      | Cabs.SIGNED -> Transl.return @@ INT (`r8, SIGNED)
+      | Cabs.(NO_SIGN | UNSIGNED) -> Transl.return @@ INT (`r8, UNSIGNED)
     end
   | Cabs.(INT (size, sign)) ->
+    let+ bits = Transl.gets @@ fun {target; _} -> Theory.Target.bits target in
     let size = match size with
-      | Cabs.(NO_SIZE | LONG) -> `r32
+      | Cabs.NO_SIZE -> `r32
+      | Cabs.LONG -> if bits = 32 then `r32 else `r64
       | Cabs.SHORT -> `r16
       | Cabs.LONG_LONG -> `r64 in
     let sign = match sign with
       | Cabs.(NO_SIGN | SIGNED) -> SIGNED
       | Cabs.UNSIGNED -> UNSIGNED in
-    Transl.return @@ INT (size, sign)
+    INT (size, sign)
   | Cabs.PTR t ->
     let+ t = translate_type t ~msg in
     PTR t
@@ -403,27 +406,27 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
         Some (INT (size1, UNSIGNED))
       | _ -> Some t1
 
-(* Cast pointers to integers. *)
+(* Unify pointer types to integers. *)
 let rec typ_unify_ptr_to_int (bits : int) (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
   | PTR _, INT (_, sign) -> Some (INT (Size.of_int_exn bits, UNSIGNED))
   | INT (_, sign), PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-  | PTR _, PTR _ -> Some (PTR VOID)
+  | PTR _, PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
   | (INT _ | PTR _), FUN (ret, _) -> typ_unify_ptr_to_int bits t1 ret
   | FUN (ret, _), (INT _ | PTR _) -> typ_unify_ptr_to_int bits ret t2
   | INT _, INT _ -> typ_unify t1 t2
   | _ -> None
 
 (* Same as `typ_unify_ptr` but favor the lhs. *)
-let rec typ_unify_ptr_assign (t1 : typ) (t2 : typ) : typ option =
+let rec typ_cast_ptr_assign (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
-  | PTR t1, PTR t2 -> typ_unify_ptr_assign t1 t2
+  | PTR t1, PTR t2 -> typ_cast_ptr_assign t1 t2
   | VOID, _ | _, VOID -> Some t1
   | _ -> if equal_typ t1 t2 then Some t1 else None
 
 (* Perform type conversions for an assignment. Returns the unified type
    and the expression with an explicit cast. *)
-let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
+let typ_cast_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
   match tl, tr with
   | VOID, _ | _, VOID -> None
   | INT _, PTR _ | PTR _, INT _ -> None
@@ -440,7 +443,7 @@ let typ_unify_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
     end
   | FUN _, _ | _, FUN _ -> None
   | PTR t1', PTR t2' ->
-    typ_unify_ptr_assign t1' t2' |>
+    typ_cast_ptr_assign t1' t2' |>
     Option.map ~f:(fun t -> tl, with_type r tl)
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
@@ -479,6 +482,20 @@ let rec simplify_nops (s : stmt) : stmt = match s with
     end
   | GOTO _ -> s
 
+let typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
+  fun e t1 t2 ->
+  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+  let s1 = string_of_typ t1 in
+  let s2 = string_of_typ t2 in
+  Transl.fail @@ Core_c_error (
+    sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
+
+let typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
+  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+  let t = string_of_typ t in
+  Transl.fail @@ Core_c_error (
+    sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
+
 (* Translate a scoped statement. *)
 let rec translate_body ((defs, stmt) : Cabs.body) : t transl =
   let* {target; tenv} = Transl.get () in
@@ -512,24 +529,11 @@ and translate_inits (inits : (var * Cabs.expression) list) : stmt transl =
       | None -> sequence [acc; spre; spost]
       | Some e' -> sequence [acc; spre; ASSIGN (v, e'); spost])
 
-and typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
-  fun e t1 t2 ->
-  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let s1 = string_of_typ t1 in
-  let s2 = string_of_typ t2 in
-  Transl.fail @@ Core_c_error (
-    sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
-
-and typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
-  let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-  let t = string_of_typ t in
-  Transl.fail @@ Core_c_error (
-    sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
-
 (* Translate an expression which may be `None`. Also returns any side effects
-   produced by the expression. We separate effects that happen before the
-   expression is evaluated, and effects that happen after. This is to handle
-   compound expressions on lvalues, as well as pre and post increment
+   produced by the expression which are required to compute its result.
+
+   We separate effects that happen before the expression is evaluated, and
+   effects that happen after. This is solely to handle POSINCR/POSDECR
    operators.
 
    `assign` denotes whether we want the result of evaluating this expression
@@ -598,8 +602,7 @@ and translate_expression
   | Cabs.(CONSTANT (CONST_CHAR s)) ->
     let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
     let i = Word.signed i in
-    Transl.return (NOP, Some (CONST_INT (i, SIGNED)), NOP)
-  | Cabs.VARIABLE _ when computation -> Transl.return (NOP, None, NOP)
+    Transl.return (NOP, Some (CONST_INT (i, UNSIGNED)), NOP)
   | Cabs.VARIABLE v -> begin
       let* t = Transl.(gets @@ Env.typeof v) in
       match t with
@@ -607,7 +610,8 @@ and translate_expression
         let+ {target; _} = Transl.get () in
         let s = Theory.Bitv.define @@ size_of_typ target t in
         let v = Theory.Var.define s v |> Theory.Var.forget in
-        NOP, Some (VARIABLE (v, t)), NOP
+        let e = if computation then None else Some (VARIABLE (v, t)) in
+        NOP, e, NOP
       | None ->
         Transl.fail @@ Core_c_error (
           sprintf "Patch_c.translate_expression: undeclared variable %s\n" v)
@@ -678,7 +682,7 @@ and translate_unary_operator
     let+ {target; _} = Transl.get () in
     let width = size_of_typ target @@ typeof e in
     let i = Word.zero width in
-    spre, Some (BINARY (NE, e, CONST_INT (i, UNSIGNED),typeof e)), spost
+    spre, Some (BINARY (EQ, e, CONST_INT (i, UNSIGNED),typeof e)), spost
   | Cabs.BNOT ->
     let+ spre, e, spost = exp e in
     spre, Some (UNARY (LNOT, e, typeof e)), spost
@@ -1090,7 +1094,7 @@ and make_assign
     (e2 : exp) : stmt transl =
   let t1 = typeof e1 in
   let t2 = typeof e2 in
-  match typ_unify_assign t1 t2 e2 with
+  match typ_cast_assign t1 t2 e2 with
   | None ->
     let t1 = if is_store then PTR t1 else t1 in
     typ_unify_error e t1 t2
@@ -1173,7 +1177,7 @@ and translate_call_args
     Transl.List.fold_right l ~init:[] ~f:(fun (arg, t) acc ->
         let* spre, a, spost = exp arg in
         let ta = typeof a in
-        match typ_unify_assign t ta a with
+        match typ_cast_assign t ta a with
         | None ->
           let s =
             Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -1236,7 +1240,7 @@ and translate_call
           (* Type checking. Use a dummy RHS since calls are not
              expressions. *)
           let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
-          match typ_unify_assign t tret dummy with
+          match typ_cast_assign t tret dummy with
           | Some _ -> Transl.return (v, t)
           | None ->
             let s =

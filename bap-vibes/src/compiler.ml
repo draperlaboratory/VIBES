@@ -60,7 +60,11 @@ let create_vibes_ir
         | Some isel_model_filepath ->
           Events.(send @@ Info "Running Minizinc instruction selector.");
           let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
-          let* ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns in
+          List.iter ir ~f:(fun blk ->
+              Events.(send @@ Info (
+                  sprintf "The patch has the following BIL: %a" Blk.pps blk)));
+          let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
+          let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
           KB.return ir in
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (

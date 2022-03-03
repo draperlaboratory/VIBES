@@ -163,11 +163,6 @@ module Eval(CT : Theory.Core) = struct
     | PTR ty -> ty_of_base_type info ty
     | _ -> info.word_sort
 
-  let is_signed (ty : Patch_c.typ) : Patch_c.sign =
-    match ty with
-    | INT (_, s) -> s
-    | VOID | PTR _ | FUN _ -> UNSIGNED
-
   let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
     T.Value.resort (fun _ -> Some sort) v |>
@@ -191,55 +186,76 @@ module Eval(CT : Theory.Core) = struct
       (info : _ interp_info)
       (op : Patch_c.binop)
       (ty_a : Patch_c.typ)
-      (ty_b : Patch_c.typ) : unit pure -> unit pure -> unit pure =
+      (ty_b : Patch_c.typ) : (unit pure -> unit pure -> unit pure) KB.t =
     let lift_bitv op =
       lift_binop op
         (ty_of_base_type info ty_a)
         (ty_of_base_type info ty_b) in
     match op with
-    | ADD -> lift_bitv CT.add
-    | SUB -> lift_bitv CT.sub
-    | MUL -> lift_bitv CT.mul
+    | ADD -> KB.return @@ lift_bitv CT.add
+    | SUB -> KB.return @@ lift_bitv CT.sub
+    | MUL -> KB.return @@ lift_bitv CT.mul
     | DIV -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.div
-        | SIGNED, SIGNED -> lift_bitv CT.sdiv
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "DIV requires a signedness on both operands")
+        | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.div
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sdiv
       end
     | MOD -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.modulo
-        | SIGNED, SIGNED -> lift_bitv CT.smodulo
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "MOD requires a signedness on both operands")
+        | Some UNSIGNED, _ | _, Some UNSIGNED ->
+          KB.return @@ lift_bitv CT.modulo
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.smodulo
       end
-    | LAND -> lift_bitv CT.logand
-    | LOR -> lift_bitv CT.logor
-    | XOR -> lift_bitv CT.logxor
-    | SHL -> lift_bitv CT.lshift
+    | LAND -> KB.return @@ lift_bitv CT.logand
+    | LOR -> KB.return @@ lift_bitv CT.logor
+    | XOR -> KB.return @@ lift_bitv CT.logxor
+    | SHL -> KB.return @@ lift_bitv CT.lshift
     | SHR  -> begin
-        match is_signed ty_a with
-        | SIGNED -> lift_bitv CT.arshift
-        | UNSIGNED -> lift_bitv CT.rshift
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | Some SIGNED, Some _ -> KB.return @@ lift_bitv CT.arshift
+        | Some UNSIGNED, Some _ -> KB.return @@ lift_bitv CT.rshift
+        | None, _ | _, None -> Err.fail @@ Core_c_error (
+            sprintf "SHR requires a signedness on both operands")
       end
-    | EQ  -> lift_bitv CT.eq
-    | NE  -> lift_bitv CT.neq
+    | EQ  -> KB.return @@ lift_bitv CT.eq
+    | NE  -> KB.return @@ lift_bitv CT.neq
     | LT -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ult
-        | SIGNED, SIGNED -> lift_bitv CT.slt
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "LT requires a signedness on both operands")
+        | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ult
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.slt
       end
     | GT -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ugt
-        | SIGNED, SIGNED -> lift_bitv CT.sgt
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "GT requires a signedness on both operands")          
+        | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ugt
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sgt
       end
     | LE -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.ule
-        | SIGNED, SIGNED -> lift_bitv CT.sle
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "LE requires a signedness on both operands") 
+        | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.ule
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sle
       end
     | GE -> begin
-        match is_signed ty_a, is_signed ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> lift_bitv CT.uge
-        | SIGNED, SIGNED -> lift_bitv CT.sge
+        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        | None, _ | _, None ->
+          Err.fail @@ Core_c_error (
+            sprintf "GE requires a signedness on both operands") 
+        | Some UNSIGNED, _ | _, Some UNSIGNED -> KB.return @@ lift_bitv CT.uge
+        | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sge
       end
 
   type 'a bitv = 'a T.bitv
@@ -314,7 +330,8 @@ module Eval(CT : Theory.Core) = struct
       let ty_b = Patch_c.typeof b in
       let* a = aux a in
       let* b = aux b in
-      binop_to_pure info op ty_a ty_b !!a !!b
+      let* o = binop_to_pure info op ty_a ty_b in
+      o !!a !!b
     | VARIABLE (v, _) -> CT.var v
     | CONST_INT (w, _) ->
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
@@ -332,12 +349,17 @@ module Eval(CT : Theory.Core) = struct
         let+ c =
           (* No extension, just grab the lower bits. *)
           if sz < sz' then CT.low s e
-          else (* Apply the integral promotion rules. *)
-            match is_signed t, is_signed t' with
-            | SIGNED,   SIGNED   -> CT.signed   s e
-            | SIGNED,   UNSIGNED -> CT.unsigned s e
-            | UNSIGNED, SIGNED   -> CT.signed   s e
-            | UNSIGNED, UNSIGNED -> CT.unsigned s e in
+          else
+            (* Apply the integral promotion rules. Based on the signedness of
+               each type, figure out if we need a sign extension or a zero
+               extension. *)
+            match Patch_c.sign_of_typ t, Patch_c.sign_of_typ t' with
+            | Some SIGNED,   Some SIGNED   -> CT.signed   s e
+            | Some SIGNED,   Some UNSIGNED -> CT.unsigned s e
+            | Some UNSIGNED, Some SIGNED   -> CT.signed   s e
+            | Some UNSIGNED, Some UNSIGNED -> CT.unsigned s e
+            (* Assume unsigned. *)
+            | None, _ | _, None -> CT.unsigned s e in
         T.Value.forget c
 
   type 'a eff = 'a T.eff

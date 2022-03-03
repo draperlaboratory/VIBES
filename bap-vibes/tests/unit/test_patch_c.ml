@@ -109,10 +109,10 @@ let test_char_assign _ =
     let open Patch_c in
     let s = Theory.Bitv.define 8 in
     let v = Theory.Var.(forget @@ define s "x") in
-    let t = INT (`r8, SIGNED) in
+    let t = INT (`r8, UNSIGNED) in
     let c = Word.of_int ~width:8 @@ Char.to_int 'a' in
     let c = Word.signed c in
-    ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
+    ASSIGN ((v, t), CONST_INT (c, UNSIGNED)) in
   assert_eq "char x; x = 'a';" p
 
 let test_char_assign_ext _ =
@@ -146,7 +146,7 @@ let test_char_assign_signed_ext _ =
     let c = Word.of_int ~width:32 (-1) in
     let c = Word.signed c in
     ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
-  assert_eq "int x; x = (char)255;" p
+  assert_eq "int x; x = (signed char)255;" p
 
 let test_char_assign_unsigned_ext _ =
   let p =
@@ -157,7 +157,38 @@ let test_char_assign_unsigned_ext _ =
     let c = Word.of_int ~width:32 255 in
     let c = Word.signed c in
     ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
-  assert_eq "int x; x = (unsigned char)255;" p
+  assert_eq "int x; x = (char)255;" p
+
+(* NOTE: this is actually a bug with FrontC. The precedence of
+   the cast versus the unary minus operator is not correct.
+
+   See example 9 in:
+   https://people.eecs.berkeley.edu/~necula/cil/cil016.html
+*)
+let test_cast_precedence _ =
+  let p =
+    let open Patch_c in
+    let s = Theory.Bitv.define 32 in
+    let v = Theory.Var.(forget @@ define s "x") in
+    let t = INT (`r32, UNSIGNED) in
+    let t' = INT (`r32, SIGNED) in
+    let cl = Word.of_int ~width:32 1 in
+    let cr = Word.of_int ~width:32 8 in
+    ASSIGN (
+      (v, t),
+      CAST (
+        t,
+        UNARY (
+          MINUS,
+          BINARY (
+            DIV,
+            CONST_INT (cl, SIGNED),
+            CONST_INT (cr, SIGNED),
+            t'),
+          t'))) in
+  assert_eq
+    "unsigned long x;
+     x = (unsigned long) - 1 / 8;" p
 
 let suite = [
   "Test void pointer implicit downcast" >:: test_void_ptr_implicit_downcast;
@@ -175,4 +206,5 @@ let suite = [
   "Test int assign" >:: test_int_assign;
   "Test char assign signed ext" >:: test_char_assign_signed_ext;
   "Test char assign unsigned ext" >:: test_char_assign_unsigned_ext;
+  "Test cast precedence" >:: test_cast_precedence;
 ]

@@ -418,6 +418,18 @@ let test_char_deref_posincr _ =
        a := a + 1
      }"
 
+let test_bool_not _ =
+  assert_parse_eq
+    "int x, y;
+     if (!x) {
+       x = y;
+     }"
+    "{
+       if (x = 0) {
+         x := y
+       }
+     }"
+
 let suite = [
   "Test vardecls" >:: test_var_decl;
   "Test assignment" >:: test_assign;
@@ -451,4 +463,5 @@ let suite = [
   "Test comma ambiguous" >:: test_comma_ambig;
   "Test ternary deref" >:: test_ternary_deref;
   "Test char deref post increment" >:: test_char_deref_posincr;
+  "Test bool not" >:: test_bool_not;
 ]

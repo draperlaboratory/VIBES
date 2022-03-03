@@ -30,12 +30,21 @@ module Var_pair = struct
   include Comparator.Make(T)
 end
 
-type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t 
+type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
 let var_pair_set_domain : var_pair_set KB.Domain.t =
   KB.Domain.powerset (module Var_pair)
     ~inspect:Var_pair.sexp_of_t
     "var-pair-set-domain"
+
+(* [ins_outs] is useful for carrying liveness information from BIR to Vibes IR for
+   the `ins` and `outs` fields of Vibes IR blocks *)
+type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
+let ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t =
+  KB.Domain.mapping (module Tid)
+    ~inspect:sexp_of_ins_outs
+    ~equal:equal_ins_outs
+    "ins-outs-map-domain"
 
 let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~empty:()
@@ -169,7 +178,10 @@ module Patch = struct
 
   let congruence : (patch_cls, var_pair_set) KB.slot =
     KB.Class.property ~package patch "congruence" var_pair_set_domain
-  
+
+  let ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot =
+    KB.Class.property ~package patch "ins_outs_map" ins_outs_map_domain
+
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
 
@@ -318,7 +330,13 @@ module Patch = struct
   let add_congruence (obj : t) (data : var * var) : unit KB.t =
     get_congruence obj >>= fun cong ->
     KB.provide congruence obj @@ Set.add cong data
-  
+
+  let get_ins_outs_map (obj : t) : ins_outs Tid.Map.t KB.t =
+    KB.collect ins_outs_map obj
+
+  let set_ins_outs_map (obj : t) (data : ins_outs Tid.Map.t) : unit KB.t =
+    KB.provide ins_outs_map obj data
+
 end
 
 (* Sets of patches *)
