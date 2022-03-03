@@ -58,9 +58,9 @@ let vir1,
     operands1,
     operations1,
     oprnd_temps1 =
-  let t1 = Var.create "t1" (Imm 32) in
-  let t2 = Var.create "t2" (Imm 32) in
-  let t3 = Var.create "t3" (Imm 32) in
+  let t1 = Var.create "_000004ff_t1" (Imm 32) in
+  let t2 = Var.create "_000004ff_t2" (Imm 32) in
+  let t3 = Var.create "_000004ff_t3" (Imm 32) in
   let mov = Ir.Opcode.create ~arch:"arm" "mov" in
   let temps = [t1; t2; t3] in
   let op1 = (t2 := mov) [t1] in

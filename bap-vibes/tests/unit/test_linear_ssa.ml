@@ -48,7 +48,7 @@ let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
 let test_orig_name (_ : test_ctxt) : unit =
   let orig = "_01234567_R0" in
   let expected = "R0" in
-  let result = Linear_ssa.orig_name orig in 
+  let result = Option.value_exn (Linear_ssa.orig_name orig) in
   let err = Format.sprintf "expected '%s' but got '%s'" expected result in
   let comparison = String.equal result expected in
   assert_bool err comparison
@@ -56,7 +56,7 @@ let test_orig_name (_ : test_ctxt) : unit =
 let test_orig_name_with_ssa (_ : test_ctxt) : unit =
   let orig = "_01234567_R0_1" in
   let expected = "R0" in
-  let result = Linear_ssa.orig_name orig in 
+  let result = Option.value_exn (Linear_ssa.orig_name orig) in 
   let err = Format.sprintf "expected '%s' but got '%s'" expected result in
   let comparison = String.equal result expected in
   assert_bool err comparison

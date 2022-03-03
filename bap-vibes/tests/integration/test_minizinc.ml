@@ -56,9 +56,9 @@ let (:=) lhs opcode = fun args -> simple_op' opcode lhs args
 let mov = Ir.Opcode.create ~arch:"arm" "mov"
 
 (* Define some temporaries to use in a test. *)
-let t1 = Var.create "t1" (Imm 32)
-let t2 = Var.create "t2" (Imm 32)
-let t3 = Var.create "t3" (Imm 32)
+let t1 = Var.create "_000004ff_t1" (Imm 32)
+let t2 = Var.create "_000004ff_t2" (Imm 32)
+let t3 = Var.create "_000004ff_t3" (Imm 32)
 let temps1 = [t1; t2; t3]
 
 (* Define some opcodes to use in a test. *)
@@ -129,6 +129,7 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     let regs = Arm_selector.regs arm_tgt arm_lang in
     (* Now run the compiler. *)
     Minizinc.run_allocation_and_scheduling
+      ~extra_constraints:None
       arm_tgt
       []
       ex1

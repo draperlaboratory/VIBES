@@ -325,9 +325,14 @@ test_arm_isel_jmp2 () {
     run_test "arm-isel-jmp2" 5 6
 }
 
+test_arm_extra_constraints () {
+    run_test "arm-extra-constraints" 5 3
+}
+
 # Run all tests
 run_all () {
     test_arm_simple
+    test_arm_extra_constraints
     test_arm_isel_jmp2
     test_arm_isel_jmp
     test_arm_simple_sum
