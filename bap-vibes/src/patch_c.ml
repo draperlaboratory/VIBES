@@ -19,6 +19,7 @@ module Err = Kb_error
 module Hvar = Higher_var
 
 module Size = struct
+
   type t = [`r8 | `r16 | `r32 | `r64]
 
   let of_int_exn : int -> t = function
@@ -37,6 +38,7 @@ module Size = struct
 
   let in_bits (s : t) : int = Size.in_bits (s :> size)
   let in_bytes (s : t) : int = Size.in_bytes (s :> size)
+
 end
 
 type size = Size.t
