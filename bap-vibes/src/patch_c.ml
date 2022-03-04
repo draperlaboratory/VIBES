@@ -555,7 +555,7 @@ module Transl = struct
   include Monad.State.T1(Env)(KB)
   include Monad.State.Make(Env)(KB)
 
-  let fail (err : Err.t) : 'a t = lift @@ Err.fail err
+  let fail (msg : string) : 'a t = lift @@ Err.fail @@ Patch_c_error msg
 
 end
 
@@ -618,7 +618,7 @@ module Main = struct
       PTR t
     | Cabs.PROTO (_, _, true) ->
       let s = Utils.print_c (Cprint.print_type ident) t in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_type: %sVariadic functions are \
                  unsupported:\n\n%s\n" msg s)
     | Cabs.PROTO (ret, names, false) ->
@@ -629,7 +629,7 @@ module Main = struct
       FUN (ret, args)
     | _ ->
       let s = Utils.print_c (Cprint.print_type ident) t in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_type: %sunsupported type:\n\n%s" msg s)
 
   let typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
@@ -637,13 +637,13 @@ module Main = struct
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let s1 = Type.to_string t1 in
     let s2 = Type.to_string t2 in
-    fail @@ Core_c_error (
+    fail (
       sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
   let typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
     let t = Type.to_string t in
-    fail @@ Core_c_error (
+    fail (
       sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
   (* An elaborated expression. *)
@@ -668,7 +668,7 @@ module Main = struct
                     tenv, ((v, t), e) :: inits)
             | def ->
               let s = Utils.print_c Cprint.print_def def in
-              fail @@ Core_c_error (
+              fail (
                 sprintf "Patch_c.go_body: unexpected definition:\n\n%s\n\n\
                          expected a declaration" s)) in
     let* inits = go_inits @@ List.rev inits in
@@ -769,7 +769,7 @@ module Main = struct
           let e = if computation then None else Some (VARIABLE (v, t)) in
           NOP, e, NOP
         | None ->
-          fail @@ Core_c_error (
+          fail (
             sprintf "Patch_c.go_expression: undeclared variable %s\n" v)
       end
     | Cabs.EXPR_SIZEOF _ when computation -> return (NOP, None, NOP)
@@ -792,7 +792,7 @@ module Main = struct
       spre, Some (UNARY (MEMOF, CAST (PTR t, e), t)), spost
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_expression: unsupported:\n\n%s\n" s)
 
   (* Translate an expression and expect that the value is not `None`. *)
@@ -805,7 +805,7 @@ module Main = struct
     | Some e' -> return (spre, e', spost)
     | None ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.%s: invalid expression:\n\n%s\n" stage s)
 
   (* Translate an expression that must be an l-value. *)
@@ -817,7 +817,7 @@ module Main = struct
     then go_expression_strict stage e ~assign
     else
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.%s: expression:\n\n%s\n\nis not an l-value" stage s)
 
   (* Translate unary operators. *)
@@ -849,7 +849,7 @@ module Main = struct
           let s =
             Utils.print_c Cprint.print_statement
               Cabs.(COMPUTATION (UNARY (u, e))) in
-          fail @@ Core_c_error (
+          fail (
             sprintf "Patch_c.go_unary_operator: in expression\
                      \n\n%s\n\ncannot dereference a value of type void*" s)
         | PTR t -> return (spre, Some (UNARY (MEMOF, e', t)), spost)
@@ -857,7 +857,7 @@ module Main = struct
           let s =
             Utils.print_c Cprint.print_statement
               Cabs.(COMPUTATION (UNARY (u, e))) in
-          fail @@ Core_c_error (
+          fail (
             sprintf "Patch_c.go_unary_operator: expected pointer type \
                      for operand of expression:\n\n%s\n" s)
       end
@@ -916,7 +916,7 @@ module Main = struct
         pre, e, post, false
     else
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_increment_operand: \
                  expression:\n\n%s\n\nis not an l-value" s)
 
@@ -935,7 +935,7 @@ module Main = struct
     | FUN _ | VOID ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let t = Type.to_string t in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.increment: expression:\n\n%s\n\n\
                  has type %s. Cannot be an l-value." s t)
     | INT (size, sign) ->
@@ -1223,7 +1223,7 @@ module Main = struct
       | UNARY (MEMOF, _, t) -> return true
       | _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
-        fail @@ Core_c_error (
+        fail (
           sprintf "Csmall.go_assign: expected an l-value \
                    for LHS of assignment, got:\n\n%s\n" s) in
     (* We follow order of evaluation as right-to-left. *)
@@ -1250,8 +1250,7 @@ module Main = struct
     | Some (_, e2) -> match e1 with
       | VARIABLE var -> return @@ ASSIGN (var, e2)
       | UNARY (MEMOF, addr, _) -> return @@ STORE (addr, e2)
-      | _ -> fail @@
-        Core_c_error "Csmall.make_assign: unexpected shape"
+      | _ -> fail "Csmall.make_assign: unexpected shape"
 
   and go_question
       ?(lval = false)
@@ -1334,7 +1333,7 @@ module Main = struct
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
             let t = Type.to_string t in
             let ta = Type.to_string ta in
-            fail @@ Core_c_error (
+            fail (
               sprintf "Patch_c.go_call_args:\n\n%s\
                        \n\nargument %s has type %s but type %s was \
                        expected" s a ta t)
@@ -1345,7 +1344,7 @@ module Main = struct
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let l1 = List.length targs in
       let l2 = List.length args in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_call_args:\n\n%s\n\n\
                  expected %d arguments, got %d" s l1 l2)
 
@@ -1396,7 +1395,7 @@ module Main = struct
                 Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
               let t = Type.to_string t in
               let tret = Type.to_string tret in
-              fail @@ Core_c_error (
+              fail (
                 sprintf "Patch_c.go_call:\n\n%s\n\n\
                          has return type %s, cannot unify with var %s of \
                          type %s"
@@ -1405,7 +1404,7 @@ module Main = struct
     | t ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let t = Type.to_string t in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_call:\n\n%s\n\n\
                  has type %s, expected function type" s t)
 
@@ -1487,14 +1486,14 @@ module Main = struct
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let t = Type.to_string tidx in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
                  has type %s. Expected integer.\n" s t)
     | _, _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let t = Type.to_string tptr in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
                  has type %s. Expected pointer.\n" s t)
 
@@ -1531,7 +1530,7 @@ module Main = struct
     | Cabs.GOTO lbl -> return @@ GOTO lbl
     | _ ->
       let s = Utils.print_c Cprint.print_statement s in
-      fail @@ Core_c_error (
+      fail (
         sprintf "Patch_c.go_statement: unsupported:\n\n%s\n" s)
 
 end
@@ -1543,7 +1542,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     | FUNDEF (_, b) -> KB.return b
     | _ ->
       let s = Utils.print_c Cprint.print_def patch in
-      Err.fail @@ Core_c_error (
+      Err.fail @@ Patch_c_error (
         sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
                  expected a single function definition" s) in
   (* Perform type-checking and elaboration. *)
