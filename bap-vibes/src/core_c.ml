@@ -148,20 +148,22 @@ module Eval(CT : Theory.Core) = struct
       (info : _ interp_info)
       (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
     match c_ty with
-    | VOID -> T.Bitv.define 0
+    | VOID -> T.Bitv.define 8
     | INT (`r8, _) -> char_ty
     | INT (`r16, _) -> short_ty
     | INT (`r32, _) -> long_ty
     | INT (`r64, _) -> long_long_ty
-    | INT _ -> assert false
-    | PTR _ | FUN _ -> info.word_sort
+    | PTR _ -> T.Bitv.define @@ Theory.Target.data_addr_size info.tgt
+    | FUN _ -> T.Bitv.define @@ Theory.Target.code_addr_size info.tgt
 
   let ty_op_pointer_type
       (info : _ interp_info)
-      (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
+      (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort KB.t =
     match c_ty with
-    | PTR ty -> ty_of_base_type info ty
-    | _ -> info.word_sort
+    | PTR ty -> KB.return @@ ty_of_base_type info ty
+    | FUN _ -> KB.return @@ ty_of_base_type info c_ty
+    | _ -> Err.fail @@ Core_c_error
+        "Core_c.ty_op_pointer_type: expected pointer type"
 
   let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
@@ -274,18 +276,18 @@ module Eval(CT : Theory.Core) = struct
 
   let unop_to_pure info
       (op : Patch_c.unop)
-      (ty : Patch_c.typ) : unit pure -> unit pure =
+      (ty : Patch_c.typ) : (unit pure -> unit pure) KB.t =
     let lift_bitv op = lift_uop op info.word_sort in
     match op with
-    | MINUS -> lift_bitv CT.neg
-    | LNOT -> lift_bitv CT.not
+    | MINUS -> KB.return @@ lift_bitv CT.neg
+    | LNOT -> KB.return @@ lift_bitv CT.not
     | MEMOF ->
-      let ty = ty_op_pointer_type info ty in
+      let+ ty = ty_op_pointer_type info ty in
       let load : _ bitv -> _ bitv =
         CT.(loadw ty !!(info.endian) (var info.mem_var)) in
       lift_bitv load
-    | ADDROF -> fun _ -> 
-      Err.fail @@ Core_c_error "unop_to_pure: ADDROF unsupported by VIBES"
+    | ADDROF -> Err.fail @@ Core_c_error
+        "unop_to_pure: ADDROF unsupported by VIBES"
 
   let addr_of_var info (v : string) : unit pure =
     match Hvar.find v info.hvars with
@@ -296,8 +298,8 @@ module Eval(CT : Theory.Core) = struct
       | Hvar.Storage {at_entry; _} -> begin
           match at_entry with
           | Hvar.(Memory (Frame (reg, off))) ->
-            let* reg = try KB.return @@ Substituter.mark_reg_exn info.tgt reg with
-              | Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
+            let* reg = try KB.return @@ Substituter.mark_reg_exn info.tgt reg
+              with Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
                   (sprintf "addr_of_var: substitution failed: %s" msg) in
             let reg =
               T.Var.create info.word_sort @@
@@ -328,7 +330,8 @@ module Eval(CT : Theory.Core) = struct
     | UNARY (op, a, _) ->
       let ty_a = Patch_c.typeof a in
       let* a = aux a in
-      unop_to_pure info op ty_a !!a
+      let* o = unop_to_pure info op ty_a in
+      o !!a
     | BINARY (op, a, b, _) ->
       let ty_a = Patch_c.typeof a in
       let ty_b = Patch_c.typeof b in

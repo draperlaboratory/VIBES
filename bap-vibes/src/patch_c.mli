@@ -29,7 +29,7 @@ open Bap.Std
 open Bap_core_theory
 
 (** Use BAP's definition of immediate sizes. *)
-type nonrec size = size
+type size = [`r8 | `r16 | `r32 | `r64]
 
 (** Subset of [Cabs.sign], where now signedness is explicit. *)
 type sign = SIGNED | UNSIGNED

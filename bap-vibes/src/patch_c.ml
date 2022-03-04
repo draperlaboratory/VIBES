@@ -18,9 +18,20 @@ open Bap_core_theory
 module Err = Kb_error
 module Hvar = Higher_var
 
-type nonrec size = size
+type size = [`r8 | `r16 | `r32 | `r64]
 
-let equal_size = Size.equal
+let size_of_int_exn : int -> size = function
+  | 8 -> `r8
+  | 16 -> `r16
+  | 32 -> `r32
+  | 64 -> `r64
+  | n -> invalid_argf "Patch_c.size_of_int_exn: invalid size integer %d" n ()
+  
+let equal_size (a : size) (b : size) : bool =
+  Size.equal (a :> Bap.Std.size) (b :> Bap.Std.size)
+
+let compare_size (a : size) (b : size) : int =
+  Size.compare (a :> Bap.Std.size) (b :> Bap.Std.size)
 
 type sign = SIGNED | UNSIGNED [@@deriving equal]
 
@@ -33,15 +44,14 @@ type typ =
 
 let rec string_of_typ : typ -> string = function
   | VOID -> "void"
-  | INT (`r8, SIGNED) -> "char"
+  | INT (`r8, SIGNED) -> "signed char"
   | INT (`r8, UNSIGNED) -> "unsigned char"
-  | INT (`r16, SIGNED) -> "short"
+  | INT (`r16, SIGNED) -> "unsigned short"
   | INT (`r16, UNSIGNED) -> "unsigned short"
-  | INT (`r32, SIGNED) -> "int"
+  | INT (`r32, SIGNED) -> "signed int"
   | INT (`r32, UNSIGNED) -> "unsigned int"
   | INT (`r64, SIGNED) -> "long long"
   | INT (`r64, UNSIGNED) -> "unsigned long long"
-  | INT _ -> assert false
   | PTR t -> sprintf "%s*" @@ string_of_typ t
   | FUN (ret, args) ->
     sprintf "%s (*)(%s)"
@@ -51,7 +61,8 @@ let rec string_of_typ : typ -> string = function
 let size_of_typ (target : Theory.target) : typ -> int = function
   | VOID -> 8
   | INT (size, _) -> Size.in_bits size
-  | PTR _ | FUN _ -> Theory.Target.bits target
+  | PTR _ -> Theory.Target.data_addr_size target
+  | FUN _ -> Theory.Target.code_addr_size target
 
 let sign_of_typ : typ -> sign option = function
   | VOID -> None
@@ -156,8 +167,6 @@ let rec cabs_of_typ : typ -> Cabs.base_type = function
   | INT (`r64, SIGNED)   -> Cabs.(INT (LONG_LONG, SIGNED))
   | INT (`r64, UNSIGNED) -> Cabs.(INT (LONG_LONG, UNSIGNED))
   | PTR t                -> Cabs.PTR (cabs_of_typ t)
-  | INT (`r128, _) -> failwith "Patch_c.cabs_of_typ: bad integer size 128"
-  | INT (`r256, _) -> failwith "Patch_c.cabs_of_typ: bad integer size 256"
   | FUN (ret, args) ->
     let names = List.map args ~f:(fun t ->
         let t = cabs_of_typ t in
@@ -262,7 +271,7 @@ let typeof : exp -> typ = function
   | CAST (t, _) -> t
   | CONST_INT (i, sign) ->
     let w = Word.bitwidth i in
-    INT (Size.of_int_exn w, sign)
+    INT (size_of_int_exn w, sign)
   | VARIABLE (_, t) -> t
 
 (* Convert to a particular type. *)
@@ -398,7 +407,7 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
   | PTR t1', PTR t2' ->
     typ_unify_ptr t1' t2' |> Option.map ~f:(fun t -> PTR t)
   | INT (size1, sign1), INT (size2, sign2) ->
-    match Size.compare size1 size2 with
+    match compare_size size1 size2 with
     | n when n < 0 -> Some t2
     | n when n > 0 -> Some t1
     | _ -> match sign1, sign2 with
@@ -409,9 +418,9 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
 (* Unify pointer types to integers. *)
 let rec typ_unify_ptr_to_int (bits : int) (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
-  | PTR _, INT (_, sign) -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-  | INT (_, sign), PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-  | PTR _, PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
+  | PTR _, INT (_, sign) -> Some (INT (size_of_int_exn bits, UNSIGNED))
+  | INT (_, sign), PTR _ -> Some (INT (size_of_int_exn bits, UNSIGNED))
+  | PTR _, PTR _ -> Some (INT (size_of_int_exn bits, UNSIGNED))
   | (INT _ | PTR _), FUN (ret, _) -> typ_unify_ptr_to_int bits t1 ret
   | FUN (ret, _), (INT _ | PTR _) -> typ_unify_ptr_to_int bits ret t2
   | INT _, INT _ -> typ_unify t1 t2
@@ -1318,12 +1327,13 @@ and translate_index
        w = 8
        i = (2 * 4) + (1 * 4 * 8) = 8 + 32 = 40
 
-       We multiply by 4 since that is the size of an `int`.
+       We multiply by 4 since that is the size of an `int` 
+       on the 32-bit ARM target.
     *)
     let+ {target; _} = Transl.get () in
     let bits = Theory.Target.bits target in
     let scale = Word.of_int ~width:bits (size_of_typ target t lsr 3) in
-    let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
+    let tidx = INT (size_of_int_exn bits, UNSIGNED) in
     let eidx = with_type eidx tidx in
     let e =
       BINARY (
