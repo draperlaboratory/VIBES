@@ -41,14 +41,22 @@ type typ =
   | PTR of typ
   | FUN of typ * typ list
 
-(** Returns the size of the type in bits. *)
-val size_of_typ : Theory.target -> typ -> int
-
-(** Returns the signedness of the type. *)
-val sign_of_typ : typ -> sign option
-
 (** Compares two types for equality. *)
 val equal_typ : typ -> typ -> bool
+
+module Type : sig
+
+  type t = typ
+
+  val equal : t -> t -> bool
+
+  (** Returns the size of the type in bits. *)
+  val size : Theory.target -> typ -> int
+
+  (** Returns the signedness of the type. *)
+  val sign : typ -> sign option
+
+end
 
 (** Subset of [Cabs.binary_operator], where only pure binary operations
     are allowed. *)
@@ -130,14 +138,24 @@ and body = tenv * stmt
 (** A PatchC definition is a scoped statement. *)
 type t = body
 
-val equal_exp : exp -> exp -> bool
-val equal_stmt : stmt -> stmt -> bool
+module Exp : sig
 
-val string_of_exp : exp -> string
-val string_of_stmt : stmt -> string
+  type t = exp [@@deriving equal]
 
-(** Returns the type embedded in an expression. *)
-val typeof : exp -> typ
+  val to_string : t -> string
+
+  (** Returns the type embedded in an expression. *)
+  val typeof : t -> typ
+
+end
+
+module Stmt : sig
+
+  type t = stmt [@@deriving equal]
+
+  val to_string : t -> string
+
+end
 
 (** Pretty prints the PatchC definition. *)
 val to_string : t -> string

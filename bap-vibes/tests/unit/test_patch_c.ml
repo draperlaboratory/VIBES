@@ -47,8 +47,8 @@ let assert_eq s p =
   | Ok ast -> Toplevel.exec begin
       let* _, prog = Patch_c.translate ast ~target:(Helpers.the_target ()) in
       KB.return @@ assert_equal p prog
-        ~cmp:Patch_c.equal_stmt
-        ~printer:Patch_c.string_of_stmt
+        ~cmp:Patch_c.Stmt.equal
+        ~printer:Patch_c.Stmt.to_string
     end
 
 let test_void_ptr_implicit_downcast _ =

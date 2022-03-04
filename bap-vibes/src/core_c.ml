@@ -198,7 +198,7 @@ module Eval(CT : Theory.Core) = struct
     | SUB -> KB.return @@ lift_bitv CT.sub
     | MUL -> KB.return @@ lift_bitv CT.mul
     | DIV -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
             sprintf "DIV requires a signedness on both operands")
@@ -206,7 +206,7 @@ module Eval(CT : Theory.Core) = struct
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sdiv
       end
     | MOD -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
             sprintf "MOD requires a signedness on both operands")
@@ -219,7 +219,7 @@ module Eval(CT : Theory.Core) = struct
     | XOR -> KB.return @@ lift_bitv CT.logxor
     | SHL -> KB.return @@ lift_bitv CT.lshift
     | SHR  -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | Some SIGNED, Some _ -> KB.return @@ lift_bitv CT.arshift
         | Some UNSIGNED, Some _ -> KB.return @@ lift_bitv CT.rshift
         | None, _ | _, None -> Err.fail @@ Core_c_error (
@@ -228,7 +228,7 @@ module Eval(CT : Theory.Core) = struct
     | EQ  -> KB.return @@ lift_bitv CT.eq
     | NE  -> KB.return @@ lift_bitv CT.neq
     | LT -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, None -> KB.return @@ lift_bitv CT.ult
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
@@ -237,7 +237,7 @@ module Eval(CT : Theory.Core) = struct
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.slt
       end
     | GT -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, None -> KB.return @@ lift_bitv CT.ugt
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
@@ -246,7 +246,7 @@ module Eval(CT : Theory.Core) = struct
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sgt
       end
     | LE -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, None -> KB.return @@ lift_bitv CT.ule
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
@@ -255,7 +255,7 @@ module Eval(CT : Theory.Core) = struct
         | Some SIGNED, Some SIGNED -> KB.return @@ lift_bitv CT.sle
       end
     | GE -> begin
-        match Patch_c.sign_of_typ ty_a, Patch_c.sign_of_typ ty_b with
+        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
         | None, None -> KB.return @@ lift_bitv CT.uge
         | None, _ | _, None ->
           Err.fail @@ Core_c_error (
@@ -328,13 +328,13 @@ module Eval(CT : Theory.Core) = struct
     | UNARY (ADDROF, VARIABLE (v, _), _) -> addr_of_var info @@ T.Var.name v
     | UNARY (ADDROF, UNARY (MEMOF, a, _), _) -> aux a
     | UNARY (op, a, _) ->
-      let ty_a = Patch_c.typeof a in
+      let ty_a = Patch_c.Exp.typeof a in
       let* a = aux a in
       let* o = unop_to_pure info op ty_a in
       o !!a
     | BINARY (op, a, b, _) ->
-      let ty_a = Patch_c.typeof a in
-      let ty_b = Patch_c.typeof b in
+      let ty_a = Patch_c.Exp.typeof a in
+      let ty_b = Patch_c.Exp.typeof b in
       let* a = aux a in
       let* b = aux b in
       let* o = binop_to_pure info op ty_a ty_b in
@@ -344,9 +344,9 @@ module Eval(CT : Theory.Core) = struct
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
       T.Value.forget i
     | CAST (t, e) ->
-      let t' = Patch_c.typeof e in
-      let sz = Patch_c.size_of_typ info.tgt t in
-      let sz' = Patch_c.size_of_typ info.tgt t' in
+      let t' = Patch_c.Exp.typeof e in
+      let sz = Patch_c.Type.size info.tgt t in
+      let sz' = Patch_c.Type.size info.tgt t' in
       let* e = aux e in
       if sz = sz' then !!e
       else
@@ -360,7 +360,7 @@ module Eval(CT : Theory.Core) = struct
             (* Apply the integral promotion rules. Based on the signedness of
                each type, figure out if we need a sign extension or a zero
                extension. *)
-            match Patch_c.sign_of_typ t, Patch_c.sign_of_typ t' with
+            match Patch_c.Type.sign t, Patch_c.Type.sign t' with
             | Some SIGNED,   Some SIGNED   -> CT.signed   s e
             | Some SIGNED,   Some UNSIGNED -> CT.unsigned s e
             | Some UNSIGNED, Some SIGNED   -> CT.signed   s e
@@ -457,7 +457,7 @@ module Eval(CT : Theory.Core) = struct
     | STORE (l, r) ->
       let* l = expr_to_pure info l in
       let l = resort info.word_sort l in
-      let sr = ty_of_base_type info @@ Patch_c.typeof r in
+      let sr = ty_of_base_type info @@ Patch_c.Exp.typeof r in
       let* r = expr_to_pure info r in
       let r = resort sr r in
       let* st =
