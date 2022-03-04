@@ -392,7 +392,7 @@ let rec translate_type
 (* See whether the elements of the pointer type can unify. *)
 let rec typ_unify_ptr (t1 : typ) (t2 : typ) : typ option =
   match t1, t2 with
-  | PTR t1, PTR t2 -> typ_unify_ptr t1 t2 |> Option.map ~f:(fun t -> PTR t)
+  | PTR t1, PTR t2 -> Option.(typ_unify_ptr t1 t2 >>| fun t -> PTR t)
   | VOID, _ -> Some t2
   | _, VOID -> Some t1
   | _ -> if equal_typ t1 t2 then Some t1 else None
@@ -405,7 +405,7 @@ let typ_unify (t1 : typ) (t2 : typ) : typ option =
   | INT _, PTR _ | PTR _, INT _ -> None
   | _, FUN _ | FUN _, _ -> None
   | PTR t1', PTR t2' ->
-    typ_unify_ptr t1' t2' |> Option.map ~f:(fun t -> PTR t)
+    Option.(typ_unify_ptr t1' t2' >>| fun t -> PTR t)
   | INT (size1, sign1), INT (size2, sign2) ->
     match compare_size size1 size2 with
     | n when n < 0 -> Some t2
@@ -452,8 +452,7 @@ let typ_cast_assign (tl : typ) (tr : typ) (r : exp) : (typ * exp) option =
     end
   | FUN _, _ | _, FUN _ -> None
   | PTR t1', PTR t2' ->
-    typ_cast_ptr_assign t1' t2' |>
-    Option.map ~f:(fun t -> tl, with_type r tl)
+    Option.(typ_cast_ptr_assign t1' t2' >>| fun _ -> tl, with_type r tl)
   | INT (sizel, signl), INT (sizer, signr) ->
     if equal_size sizel sizer && equal_sign signl signr
     then Some (tl, r) else Some (tl, with_type r tl)
