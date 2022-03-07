@@ -868,7 +868,6 @@ module Main = struct
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
       else
-        let* spre, e', spost = lval e in
         let n = CONST_INT (Word.one 8, UNSIGNED) in
         let* rhs = make_arith ADD e' n in
         let+ eff = make_assign e' rhs in
@@ -877,7 +876,6 @@ module Main = struct
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
       else
-        let* spre, e', spost = lval e in
         let n = CONST_INT (Word.one 8, UNSIGNED) in
         let* rhs = make_arith ADD e' n in
         let+ eff = make_assign e' rhs in
