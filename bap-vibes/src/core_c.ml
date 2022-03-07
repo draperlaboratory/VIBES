@@ -473,7 +473,8 @@ module Eval(CT : Theory.Core) = struct
       let* goto = KB.(label >>= CT.goto) in
       ctrl goto
 
-  and body_to_eff info ((_, stmt) : Patch_c.t) : unit eff =
+  and body_to_eff info (prog : Patch_c.t) : unit eff =
+    let _, stmt = prog.body in
     stmt_to_eff info stmt
 
   let c_patch_to_eff (hvars : Hvar.t list) (tgt : T.target)

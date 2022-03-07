@@ -30,6 +30,10 @@ module Data_model = struct
     sizes : C.Data.model;
     schar : bool;
   }
+
+  let sizes (data : t) : C.Data.model = data.sizes
+  let schar (data : t) : bool = data.schar
+
   (* Same across all data models. *)
   let char_size : int = 8
   let short_size : int = 16
@@ -141,7 +145,10 @@ and stmt =
 
 and body = tenv * stmt [@@deriving equal]
 
-type t = body
+type t = {
+  data : Data_model.t;
+  body: body;
+}
 
 (* Helper for generating a sequence from a list of statements. *)
 let sequence : stmt list -> stmt =
@@ -331,21 +338,41 @@ module Type = struct
 
   type t = typ [@@deriving equal]
 
-  let rec to_string : t -> string = function
-    | VOID -> "void"
-    | INT (`r8, SIGNED) -> "signed char"
-    | INT (`r8, UNSIGNED) -> "unsigned char"
-    | INT (`r16, SIGNED) -> "unsigned short"
-    | INT (`r16, UNSIGNED) -> "unsigned short"
-    | INT (`r32, SIGNED) -> "signed int"
-    | INT (`r32, UNSIGNED) -> "unsigned int"
-    | INT (`r64, SIGNED) -> "long long"
-    | INT (`r64, UNSIGNED) -> "unsigned long long"
-    | PTR t -> sprintf "%s*" @@ to_string t
-    | FUN (ret, args) ->
-      sprintf "%s (*)(%s)"
-        (to_string ret)
-        (String.concat ~sep:", " @@ List.map args ~f:to_string)
+  let to_string (data : Data_model.t) (t : t) : string =
+    let rec aux = function
+      | VOID -> "void"
+      | INT (`r8, SIGNED) -> "signed char"
+      | INT (`r8, UNSIGNED) -> "unsigned char"
+      | INT (`r16, SIGNED) -> "short"
+      | INT (`r16, UNSIGNED) -> "unsigned short"
+      | INT (`r32, SIGNED) -> begin
+          match data.sizes with
+          | `LP32 -> "long"
+          | `ILP32 | `LLP64 | `LP64 -> "int"
+          | `ILP64 -> failwith "ILP64 has no 32-bit integer types"
+        end
+      | INT (`r32, UNSIGNED) -> begin
+          match data.sizes with
+          | `LP32 -> "unsigned long"
+          | `ILP32 | `LLP64 | `LP64 -> "unsigned int"
+          | `ILP64 -> failwith "ILP64 has no 32-bit integer types"
+        end
+      | INT (`r64, SIGNED) -> begin
+          match data.sizes with
+          | `LP32 | `ILP32 | `LLP64 | `LP64 -> "long long"
+          | `ILP64 -> "long"
+        end
+      | INT (`r64, UNSIGNED) ->  begin
+          match data.sizes with
+          | `LP32 | `ILP32 | `LLP64 | `LP64 -> "unsigned long long"
+          | `ILP64 -> "unsigned long"
+        end
+      | PTR t -> sprintf "%s*" @@ aux t
+      | FUN (ret, args) ->
+        sprintf "%s (*)(%s)"
+          (aux ret)
+          (String.concat ~sep:", " @@ List.map args ~f:aux) in
+    aux t
 
   let size (target : Theory.target) : t -> int = function
     | VOID -> 8
@@ -429,14 +456,14 @@ module Type = struct
 
 end
 
-let to_string ((tenv, s) : t) : string =
+let to_string (prog : t) : string =
+  let tenv, s = prog.body in
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
-        sprintf "%s %s;" (Type.to_string t) v) |>
+        sprintf "%s %s;" (Type.to_string prog.data t) v) |>
     String.concat ~sep:"\n" in
   let stmt = Utils.print_c Cprint.print_statement @@ Cabs.of_stmt s in
   sprintf "%s\n%s" vars stmt
-
 
 (* Optimization and simplification passes. *)
 module Opt = struct
@@ -670,15 +697,17 @@ module Main = struct
 
   let typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
     fun e t1 t2 ->
+    let* data = gets @@ fun {data; _} -> data in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-    let s1 = Type.to_string t1 in
-    let s2 = Type.to_string t2 in
+    let s1 = Type.to_string data t1 in
+    let s2 = Type.to_string data t2 in
     fail (
       sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
 
   let typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
+    let* data = gets @@ fun {data; _} -> data in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-    let t = Type.to_string t in
+    let t = Type.to_string data t in
     fail (
       sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
 
@@ -689,8 +718,8 @@ module Main = struct
   type eexp_strict = stmt * exp * stmt
 
   (* Translate a scoped statement. *)
-  let rec go_body ((defs, stmt) : Cabs.body) : t transl =
-    let* {target; tenv} = get () in
+  let rec go_body ((defs, stmt) : Cabs.body) : body transl =
+    let* {target; tenv; _} = get () in
     let* new_tenv, inits =
       Transl.List.fold defs ~init:(tenv, [])
         ~f:(fun (tenv, inits) -> function
@@ -970,8 +999,9 @@ module Main = struct
       let i = Word.of_int ~width (width lsr 3) in
       return @@ CONST_INT (i, UNSIGNED)
     | FUN _ | VOID ->
+      let* data = gets @@ fun {data; _} -> data in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string t in
+      let t = Type.to_string data t in
       fail (
         sprintf "Patch_c.increment: expression:\n\n%s\n\n\
                  has type %s. Cannot be an l-value." s t)
@@ -1368,8 +1398,9 @@ module Main = struct
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
             let a =
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
-            let t = Type.to_string t in
-            let ta = Type.to_string ta in
+            let* data = gets @@ fun {data; _} -> data in
+            let t = Type.to_string data t in
+            let ta = Type.to_string data ta in
             fail (
               sprintf "Patch_c.go_call_args:\n\n%s\
                        \n\nargument %s has type %s but type %s was \
@@ -1430,8 +1461,9 @@ module Main = struct
             | None ->
               let s =
                 Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-              let t = Type.to_string t in
-              let tret = Type.to_string tret in
+              let* data = gets @@ fun {data; _} -> data in
+              let t = Type.to_string data t in
+              let tret = Type.to_string data tret in
               fail (
                 sprintf "Patch_c.go_call:\n\n%s\n\n\
                          has return type %s, cannot unify with var %s of \
@@ -1439,8 +1471,9 @@ module Main = struct
                   s tret (Theory.Var.name v) t) in
         sequence [eff; CALLASSIGN (v, f', args')], Some (VARIABLE v)
     | t ->
+      let* data = gets @@ fun {data; _} -> data in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string t in
+      let t = Type.to_string data t in
       fail (
         sprintf "Patch_c.go_call:\n\n%s\n\n\
                  has type %s, expected function type" s t)
@@ -1522,14 +1555,16 @@ module Main = struct
     | PTR _, _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string tidx in
+      let* data = gets @@ fun {data; _} -> data in
+      let t = Type.to_string data tidx in
       fail (
         sprintf "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
                  has type %s. Expected integer.\n" s t)
     | _, _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string tptr in
+      let* data = gets @@ fun {data; _} -> data in
+      let t = Type.to_string data tptr in
       fail (
         sprintf "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
                  has type %s. Expected pointer.\n" s t)
@@ -1603,7 +1638,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let s = Opt.Unused.remove s in
   let s = Opt.Nops.go s in
   (* Success! *)
-  let prog = tenv, s in
+  let prog = {data; body = tenv, s} in
   Events.send @@ Rule;
   Events.send @@ Info "Translated to the following PatchC program:";
   Events.send @@ Info "";

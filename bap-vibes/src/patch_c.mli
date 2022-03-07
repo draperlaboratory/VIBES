@@ -26,7 +26,21 @@
 
 open Core_kernel
 open Bap.Std
+open Bap_c.Std
 open Bap_core_theory
+
+module Data_model : sig
+
+  (** The C data model. *)
+  type t
+
+  (** Returns the data model for integer types. *)
+  val sizes : t -> C.Data.model
+
+  (** Returns true if `char` is signed by default. *)
+  val schar : t -> bool
+
+end
 
 (** Use BAP's definition of immediate sizes. *)
 type size = [`r8 | `r16 | `r32 | `r64]
@@ -135,8 +149,12 @@ and stmt =
 (** A scope where statements may occur under a typing environment. *)
 and body = tenv * stmt
 
-(** A PatchC definition is a scoped statement. *)
-type t = body
+(** A PatchC definition is a scoped statement. We also include the
+    data model for sizing of integers. *)
+type t = {
+  data : Data_model.t;
+  body: body;
+}
 
 module Exp : sig
 
