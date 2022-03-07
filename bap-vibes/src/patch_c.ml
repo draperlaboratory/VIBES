@@ -410,67 +410,68 @@ module Opt = struct
 
   (* The elaboration will leave a bunch of nops in the AST which makes
      pretty-printing quite ugly. This pass removes them. *)
-  let rec simplify_nops (s : stmt) : stmt = match s with
-    | NOP -> NOP
-    | BLOCK (tenv, s) -> begin
-        match simplify_nops s with
-        | NOP -> NOP
-        | s -> BLOCK (tenv, s)
-      end
-    | ASSIGN ((v1, _), VARIABLE (v2, _)) when Theory.Var.Top.(v1 = v2) -> NOP
-    | ASSIGN _ -> s
-    | CALL _ -> s
-    | CALLASSIGN _ -> s
-    | STORE _ -> s
-    | SEQUENCE (NOP, s) -> simplify_nops s
-    | SEQUENCE (s, NOP) -> simplify_nops s
-    | SEQUENCE (s1, s2) -> begin
-        let s1 = simplify_nops s1 in
-        let s2 = simplify_nops s2 in
-        match s1, s2 with
-        | NOP, _ -> s2
-        | _, NOP -> s1
-        | _ -> SEQUENCE (s1, s2)
-      end
-    | IF (cond, st, sf) -> begin
-        let st = simplify_nops st in
-        let sf = simplify_nops sf in
-        match st, sf with
-        | NOP, NOP -> NOP
-        | _ -> IF (cond, st, sf)
-      end
-    | GOTO _ -> s
+  module Nops = struct
 
-  (* Remove unnecessary casts from expressions. *)
-  let rec simplify_casts_exp : exp -> exp = function
-    | UNARY (u, e, t) -> UNARY (u, simplify_casts_exp e, t)
-    | BINARY (b, l, r, t) ->
-      BINARY (b, simplify_casts_exp l, simplify_casts_exp r, t)
-    | CAST (t, e) ->
-      let e = simplify_casts_exp e in
-      if equal_typ t @@ Exp.typeof e then e else CAST (t, e)
-    | (CONST_INT _ | VARIABLE _) as e -> e
+    let rec go (s : stmt) : stmt = match s with
+      | NOP -> NOP
+      | BLOCK (tenv, s) -> begin
+          match go s with
+          | NOP -> NOP
+          | s -> BLOCK (tenv, s)
+        end
+      | ASSIGN ((v1, _), VARIABLE (v2, _)) when Theory.Var.Top.(v1 = v2) -> NOP
+      | ASSIGN _ -> s
+      | CALL _ -> s
+      | CALLASSIGN _ -> s
+      | STORE _ -> s
+      | SEQUENCE (NOP, s) -> go s
+      | SEQUENCE (s, NOP) -> go s
+      | SEQUENCE (s1, s2) -> begin
+          let s1 = go s1 in
+          let s2 = go s2 in
+          match s1, s2 with
+          | NOP, _ -> s2
+          | _, NOP -> s1
+          | _ -> SEQUENCE (s1, s2)
+        end
+      | IF (cond, st, sf) -> begin
+          let st = go st in
+          let sf = go sf in
+          match st, sf with
+          | NOP, NOP -> NOP
+          | _ -> IF (cond, st, sf)
+        end
+      | GOTO _ -> s
 
-  and simplify_casts_stmt : stmt -> stmt = function
-    | NOP -> NOP
-    | BLOCK (tenv, s) -> BLOCK (tenv, simplify_casts_stmt s)
-    | ASSIGN (v, e) -> ASSIGN (v, simplify_casts_exp e)
-    | CALL (f, args) ->
-      CALL (simplify_casts_exp f, List.map args ~f:simplify_casts_exp)
-    | CALLASSIGN (v, f, args) ->
-      CALLASSIGN (v, simplify_casts_exp f, List.map args ~f:simplify_casts_exp)
-    | STORE (l, r) -> STORE (simplify_casts_exp l, simplify_casts_exp r)
-    | SEQUENCE (s1, s2) ->
-      SEQUENCE (simplify_casts_stmt s1, simplify_casts_stmt s2)
-    | IF (cond, st, sf) ->
-      IF (simplify_casts_exp cond,
-          simplify_casts_stmt st,
-          simplify_casts_stmt sf)
-    | GOTO _ as s -> s
+  end
 
-  (* Find which vars are used *)
+  module Cast = struct
 
-  module Used = struct
+    (* Remove unnecessary casts from expressions. *)
+    let rec exp : exp -> exp = function
+      | UNARY (u, e, t) -> UNARY (u, exp e, t)
+      | BINARY (b, l, r, t) ->
+        BINARY (b, exp l, exp r, t)
+      | CAST (t, e) ->
+        let e = exp e in
+        if equal_typ t @@ Exp.typeof e then e else CAST (t, e)
+      | (CONST_INT _ | VARIABLE _) as e -> e
+
+    and go : stmt -> stmt = function
+      | NOP -> NOP
+      | BLOCK (tenv, s) -> BLOCK (tenv, go s)
+      | ASSIGN (v, e) -> ASSIGN (v, exp e)
+      | CALL (f, args) -> CALL (exp f, List.map args ~f:exp)
+      | CALLASSIGN (v, f, args) -> CALLASSIGN (v, exp f, List.map args ~f:exp)
+      | STORE (l, r) -> STORE (exp l, exp r)
+      | SEQUENCE (s1, s2) -> SEQUENCE (go s1, go s2)
+      | IF (cond, st, sf) -> IF (exp cond, go st, go sf)
+      | GOTO _ as s -> s
+
+  end
+
+  (* Find which vars are used, and remove assignments to unused temps. *)
+  module Unused = struct
 
     module Env = struct
 
@@ -483,54 +484,53 @@ module Opt = struct
     include Monad.State.T1(Env)(Monad.Ident)
     include Monad.State.Make(Env)(Monad.Ident)
 
+    let rec collect_exp : exp -> unit t = function
+      | UNARY (_, e, _) -> collect_exp e
+      | BINARY (_, l, r, _) ->
+        let* () = collect_exp l in
+        collect_exp r
+      | CAST (_, e) -> collect_exp e
+      | CONST_INT _ -> return ()
+      | VARIABLE (v, _) -> update @@ Env.use @@ Theory.Var.name v
+
+    and collect_stmt : stmt -> unit t = function
+      | NOP -> return ()
+      | BLOCK (_, s) -> collect_stmt s
+      | ASSIGN (_, e) -> collect_exp e
+      | CALL (f, args) | CALLASSIGN (_, f, args) ->
+        let* () = collect_exp f in
+        List.iter args ~f:collect_exp
+      | STORE (l, r) ->
+        let* () = collect_exp l in
+        collect_exp r
+      | SEQUENCE (s1, s2) ->
+        let* () = collect_stmt s1 in
+        collect_stmt s2
+      | IF (cond, st, sf) ->
+        let* () = collect_exp cond in
+        let* () = collect_stmt st in
+        collect_stmt sf
+      | GOTO _ -> return ()
+
+    let remove (s : stmt) : stmt =
+      let rec aux used = function
+        | NOP -> NOP
+        | BLOCK (tenv, s) -> BLOCK (tenv, aux used s)
+        | ASSIGN ((v, _), _)
+          when Theory.Var.is_virtual v
+            && not (Set.mem used @@ Theory.Var.name v) -> NOP
+        | ASSIGN _ as s -> s
+        | (CALL _ | CALLASSIGN _) as s -> s
+        | STORE _ as s -> s
+        | SEQUENCE (s1, s2) ->
+          SEQUENCE (aux used s1, aux used s2)
+        | IF (cond, st, sf) ->
+          IF (cond, aux used st, aux used sf)
+        | GOTO _ as s -> s in
+      let used = Monad.State.exec (collect_stmt s) String.Set.empty in
+      aux used s
+
   end
-
-  type 'a used = 'a Used.t
-
-  open Used.Let
-
-  let rec used_exp : exp -> unit used = function
-    | UNARY (_, e, _) -> used_exp e
-    | BINARY (_, l, r, _) ->
-      let* () = used_exp l in
-      used_exp r
-    | CAST (_, e) -> used_exp e
-    | CONST_INT _ -> Used.return ()
-    | VARIABLE (v, _) -> Used.(update @@ Env.use @@ Theory.Var.name v)
-
-  and used_stmt : stmt -> unit used = function
-    | NOP -> Used.return ()
-    | BLOCK (_, s) -> used_stmt s
-    | ASSIGN (_, e) -> used_exp e
-    | CALL (f, args) | CALLASSIGN (_, f, args) ->
-      let* () = used_exp f in
-      Used.List.iter args ~f:used_exp
-    | STORE (l, r) ->
-      let* () = used_exp l in
-      used_exp r
-    | SEQUENCE (s1, s2) ->
-      let* () = used_stmt s1 in
-      used_stmt s2
-    | IF (cond, st, sf) ->
-      let* () = used_exp cond in
-      let* () = used_stmt st in
-      used_stmt sf
-    | GOTO _ -> Used.return ()
-
-  let rec remove_unused_temps (used : String.Set.t) : stmt -> stmt = function
-    | NOP -> NOP
-    | BLOCK (tenv, s) -> BLOCK (tenv, remove_unused_temps used s)
-    | ASSIGN ((v, _), _)
-      when Theory.Var.is_virtual v
-        && not (Set.mem used @@ Theory.Var.name v) -> NOP
-    | ASSIGN _ as s -> s
-    | (CALL _ | CALLASSIGN _) as s -> s
-    | STORE _ as s -> s
-    | SEQUENCE (s1, s2) ->
-      SEQUENCE (remove_unused_temps used s1, remove_unused_temps used s2)
-    | IF (cond, st, sf) ->
-      IF (cond, remove_unused_temps used st, remove_unused_temps used sf)
-    | GOTO _ as s -> s
 
 end
 
@@ -954,8 +954,8 @@ module Main = struct
       (pre : stmt)
       (e : exp)
       (post : stmt) : (exp, eexp_strict) Either.t transl =
-    let pre = Opt.simplify_nops pre in
-    let post = Opt.simplify_nops post in
+    let pre = Opt.Nops.go pre in
+    let post = Opt.Nops.go post in
     match pre, post with
     | NOP, NOP -> return @@ First e
     | _, NOP -> return @@ Second (pre, e, post)
@@ -1549,10 +1549,9 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let* (tenv, s), _ =
     Transl.(Env.create ~target () |> run (Main.go_body body)) in
   (* Perform some simplification passes. *)
-  let s = Opt.simplify_casts_stmt s in
-  let used = Monad.State.exec (Opt.used_stmt s) String.Set.empty in
-  let s = Opt.remove_unused_temps used s in
-  let s = Opt.simplify_nops s in
+  let s = Opt.Cast.go s in
+  let s = Opt.Unused.remove s in
+  let s = Opt.Nops.go s in
   (* Success! *)
   let prog = tenv, s in
   Events.send @@ Rule;
