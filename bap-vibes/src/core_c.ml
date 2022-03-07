@@ -139,22 +139,10 @@ module Eval(CT : Theory.Core) = struct
       hvars;
     }
 
-  let char_ty = T.Bitv.define 8
-  let short_ty = T.Bitv.define 16
-  let long_ty = T.Bitv.define 32
-  let long_long_ty = T.Bitv.define 64
-
   let ty_of_base_type
       (info : _ interp_info)
       (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
-    match c_ty with
-    | VOID -> T.Bitv.define 8
-    | INT (`r8, _) -> char_ty
-    | INT (`r16, _) -> short_ty
-    | INT (`r32, _) -> long_ty
-    | INT (`r64, _) -> long_long_ty
-    | PTR _ -> T.Bitv.define @@ Theory.Target.data_addr_size info.tgt
-    | FUN _ -> T.Bitv.define @@ Theory.Target.code_addr_size info.tgt
+    T.Bitv.define @@ Patch_c.Type.size info.tgt c_ty
 
   let ty_op_pointer_type
       (info : _ interp_info)

@@ -12,11 +12,44 @@
 
 open Core_kernel
 open Bap.Std
+open Bap_c.Std
 open Monads.Std
 open Bap_core_theory
 
 module Err = Kb_error
 module Hvar = Higher_var
+
+(* Describes the data model used by the target.
+
+   `sizes` describes the sizes of addresses and integers.
+   `schar` describes whether `char` is signed or unsigned.
+*)
+module Data_model = struct
+
+  type t = {
+    sizes : C.Data.model;
+    schar : bool;
+  }
+  (* Same across all data models. *)
+  let char_size : int = 8
+  let short_size : int = 16
+  let long_long_size : int = 64
+
+  let int_size (data : t) : int = match data.sizes with
+    | `LP32 -> 16
+    | `ILP32 | `LLP64 | `LP64 -> 32
+    | `ILP64 -> 64
+
+  let long_size (data : t) : int = match data.sizes with
+    | `LP32 | `ILP32 | `LLP64 -> 32
+    | `ILP64 | `LP64 -> 64
+
+  (* Size of pointers. *)
+  let addr_size (data : t) : int = match data.sizes with
+    | #C.Data.model32 -> 32
+    | #C.Data.model64 -> 64
+
+end
 
 module Size = struct
 
@@ -541,11 +574,12 @@ module Transl = struct
 
     type t = {
       target : Theory.target;
+      data : Data_model.t;
       tenv : tenv;
     }
 
-    let create ~(target : Theory.target) () =
-      {target; tenv = String.Map.empty}
+    let create ~(target : Theory.target) ~(data : Data_model.t) () =
+      {target; data; tenv = String.Map.empty}
 
     let typeof (var : string) (env : t) : typ option =
       Map.find env.tenv var
@@ -593,26 +627,28 @@ module Main = struct
     | Cabs.CHAR sign -> begin
         (* NOTE: The C standard says that whether `char` is equivalent to
            either `signed char` or `unsigned char` is implementation-defined.
-           We're taking the approach that `char` is by default unsigned.
 
            GCC seems to take this approach when compiling to ARM, but not
            when compiling to x86. Go figure.
         *)
+        let+ default = gets @@ fun {data; _} ->
+          if data.schar then SIGNED else UNSIGNED in
         match sign with
-        | Cabs.SIGNED -> return @@ INT (`r8, SIGNED)
-        | Cabs.(NO_SIGN | UNSIGNED) -> return @@ INT (`r8, UNSIGNED)
+        | Cabs.SIGNED -> INT (`r8, SIGNED)
+        | Cabs.UNSIGNED -> INT (`r8, UNSIGNED)
+        | Cabs.NO_SIGN -> INT (`r8, default)
       end
     | Cabs.(INT (size, sign)) ->
-      let+ bits = gets @@ fun {target; _} -> Theory.Target.bits target in
+      let+ data = gets @@ fun {data; _} -> data in
       let size = match size with
-        | Cabs.NO_SIZE -> `r32
-        | Cabs.LONG -> if bits = 32 then `r32 else `r64
-        | Cabs.SHORT -> `r16
-        | Cabs.LONG_LONG -> `r64 in
+        | Cabs.NO_SIZE -> Data_model.int_size data
+        | Cabs.LONG -> Data_model.long_size data
+        | Cabs.SHORT -> Data_model.short_size
+        | Cabs.LONG_LONG -> Data_model.long_long_size in
       let sign = match sign with
         | Cabs.(NO_SIGN | SIGNED) -> SIGNED
         | Cabs.UNSIGNED -> UNSIGNED in
-      INT (size, sign)
+      INT (Size.of_int_exn size, sign)
     | Cabs.PTR t ->
       let+ t = go_type t ~msg in
       PTR t
@@ -756,9 +792,11 @@ module Main = struct
       let i = Word.(signed @@ of_int64 ~width i) in
       NOP, Some (CONST_INT (i, SIGNED)), NOP
     | Cabs.(CONSTANT (CONST_CHAR s)) ->
+      let+ sign = gets @@ fun {data; _} ->
+        if data.schar then SIGNED else UNSIGNED in
       let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
       let i = Word.signed i in
-      return (NOP, Some (CONST_INT (i, UNSIGNED)), NOP)
+      NOP, Some (CONST_INT (i, UNSIGNED)), NOP
     | Cabs.VARIABLE v -> begin
         let* t = Transl.(gets @@ Env.typeof v) in
         match t with
@@ -777,14 +815,14 @@ module Main = struct
       let* _, e, _ =
         go_expression_strict "go_expression (EXPR_SIZEOF)" e in
       let+ {target; _} = get () in
-      let width = Theory.Target.bits target in
+      let width = Theory.Target.data_addr_size target in
       let size = Type.size target @@ Exp.typeof e in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.TYPE_SIZEOF t ->
       let s = Utils.print_c Cprint.print_base_type t in
-      let* t = go_type t ~msg:(sprintf "In expression %s: " s) in
+      let* t = go_type t ~msg:(sprintf "go_expression (TYPE_SIZEOF) %s: " s) in
       let+ {target; _} = get () in
-      let width = Theory.Target.bits target in
+      let width = Theory.Target.data_addr_size target in
       let size = Type.size target t in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.INDEX (ptr, idx) ->
@@ -920,15 +958,16 @@ module Main = struct
 
   (* Increment value based on the type. *)
   and increment (e : Cabs.expression) (t : typ) : exp transl =
-    let* bits = gets @@ fun {target; _} -> Theory.Target.bits target in
+    let* width = gets @@ fun {target; _} ->
+      Theory.Target.data_addr_size target in
     match t with
     | PTR (INT (size, _)) ->
       (* Pointer to some element type, use the element size. *)
-      let i = Word.of_int ~width:bits @@ Size.in_bytes size in
+      let i = Word.of_int ~width @@ Size.in_bytes size in
       return @@ CONST_INT (i, UNSIGNED)
     | PTR (PTR _ | FUN _ | VOID) ->
       (* Pointer to a pointer: use the word size. *)
-      let i = Word.of_int ~width:bits (bits lsr 3) in
+      let i = Word.of_int ~width (width lsr 3) in
       return @@ CONST_INT (i, UNSIGNED)
     | FUN _ | VOID ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -937,7 +976,7 @@ module Main = struct
         sprintf "Patch_c.increment: expression:\n\n%s\n\n\
                  has type %s. Cannot be an l-value." s t)
     | INT (size, sign) ->
-      let i = Word.one bits in
+      let i = Word.one width in
       let i = if equal_sign sign SIGNED then Word.signed i else i in
       return @@ CONST_INT (i, sign)
 
@@ -1068,13 +1107,13 @@ module Main = struct
       (lhs : Cabs.expression)
       (rhs : Cabs.expression) : eexp transl =
     let exp = go_expression_strict "go_short_circuit_and" in
-    let* bits =
-      gets @@ fun {target; _} -> Theory.Target.bits target in
+    let* width = gets @@ fun {target; _} ->
+      Theory.Target.data_addr_size target in
     let* spre1, e1, spost1 = exp lhs in
     let t1 = Exp.typeof e1 in
     let* spre2, e2, spost2 = exp rhs in
     let t2 = Exp.typeof e2 in
-    match Type.unify_ptr_to_int bits t1 t2 with
+    match Type.unify_ptr_to_int width t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (AND, lhs, rhs)) t1 t2
     | Some t ->
       let e1 = Exp.with_type e1 t in
@@ -1100,13 +1139,13 @@ module Main = struct
       (lhs : Cabs.expression)
       (rhs : Cabs.expression) : eexp transl =
     let exp = go_expression_strict "go_short_circuit_or" in
-    let* bits =
-      gets @@ fun {target; _} -> Theory.Target.bits target in
+    let* width = gets @@ fun {target; _} ->
+      Theory.Target.data_addr_size target in
     let* spre1, e1, spost1 = exp lhs in
     let t1 = Exp.typeof e1 in
     let* spre2, e2, spost2 = exp rhs in
     let t2 = Exp.typeof e2 in
-    match Type.unify_ptr_to_int bits t1 t2 with
+    match Type.unify_ptr_to_int width t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (OR, lhs, rhs)) t1 t2
     | Some t ->
       let e1 = Exp.with_type e1 t in
@@ -1463,9 +1502,9 @@ module Main = struct
          on the 32-bit ARM target.
       *)
       let+ {target; _} = get () in
-      let bits = Theory.Target.bits target in
-      let scale = Word.of_int ~width:bits (Type.size target t lsr 3) in
-      let tidx = INT (Size.of_int_exn bits, UNSIGNED) in
+      let width = Theory.Target.data_addr_size target in
+      let scale = Word.of_int ~width (Type.size target t lsr 3) in
+      let tidx = INT (Size.of_int_exn width, UNSIGNED) in
       let eidx = Exp.with_type eidx tidx in
       let e =
         BINARY (
@@ -1533,9 +1572,22 @@ module Main = struct
 
 end
 
+(* Get the C data model of the target, if we support it. *)
+let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
+  let fail () =
+    Err.fail @@ Patch_c_error (
+      Format.asprintf "Unsupported target %a"
+        Theory.Target.pp target) in
+  if Theory.Target.matches target "arm" then
+    if Theory.Target.bits target = 32
+    then KB.return Data_model.{sizes = `ILP32; schar = false}
+    else fail ()
+  else fail ()
+
 (* Translate a definition. *)
 let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let open KB.Let in
+  let* data = data_of_tgt target in
   let* body = match patch with
     | FUNDEF (_, b) -> KB.return b
     | _ ->
@@ -1545,7 +1597,7 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
                  expected a single function definition" s) in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
-    Transl.(Env.create ~target () |> run (Main.go_body body)) in
+    Transl.(Env.create ~target ~data () |> run (Main.go_body body)) in
   (* Perform some simplification passes. *)
   let s = Opt.Cast.go s in
   let s = Opt.Unused.remove s in
