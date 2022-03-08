@@ -665,36 +665,39 @@ module Merge = struct
       congruent = List.append vir1.congruent vir2.congruent
     }
   let merge
-    (ins_outs_map : Data.ins_outs Tid.Map.t)
     (good_templates : Ir.t list) : Ir.t =
     let vir = List.reduce ~f:merge_ir good_templates in
     let vir = Option.value ~default:Ir.empty vir in
-    let vir = Ir.map_blks vir ~f:(fun blk ->
-      match Tid.Map.find ins_outs_map blk.id with
-      | None -> blk
-      | Some {ins ; outs} ->
-        let operands vars =
-          let vars = Var.Set.to_list vars in
-          (* TODO: Assuming Ir.Var is not right here. They may Void. *)
-          let vars = List.map ~f:(fun v -> Ir.Var (Ir.simple_var v)) vars in
-          vars
-        in
-        let in_operands = operands ins in
-        let ins = Ir.empty_op () in
-        let ins = {ins with lhs = blk.ins.lhs @ in_operands} in
-        let out_operands = operands outs in
-        let outs = Ir.empty_op () in
-        let outs = {outs with operands = blk.outs.operands @ out_operands} in
-        {blk with ins; outs}
-      )
-    in
     vir
+
 
 end
 
+let populate_ins_outs (ins_outs_map : Data.ins_outs Tid.Map.t) (vir : Ir.t) : Ir.t =
+  let vir = Ir.map_blks vir ~f:(fun blk ->
+    match Tid.Map.find ins_outs_map blk.id with
+    | None -> blk
+    | Some {ins ; outs} ->
+      let operands vars =
+        let vars = Var.Set.to_list vars in
+        (* TODO: Assuming Ir.Var is not right here. They may Void. *)
+        let vars = List.map ~f:(fun v -> Ir.Var (Ir.simple_var v)) vars in
+        vars
+      in
+      let in_operands = operands ins in
+      let ins = Ir.empty_op () in
+      let ins = {ins with lhs = blk.ins.lhs @ in_operands} in
+      let out_operands = operands outs in
+      let outs = Ir.empty_op () in
+      let outs = {outs with operands = blk.outs.operands @ out_operands} in
+      {blk with ins; outs}
+    )
+  in
+  vir
+
+
 let run
     ~isel_model_filepath:(isel_model_filepath : string)
-    (ins_outs_map : Data.ins_outs Tid.Map.t)
     (matchee : Blk.t list)
     (pats : (Pattern.t * Template.t) String.Map.t) : Ir.t Knowledge.t =
   Events.(send @@ Info "Running Instruction Selector.\n");
@@ -723,5 +726,5 @@ let run
     | Ok sol_serial -> KB.return sol_serial
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
   let good_templates = Pattern.Serial.filter_templates sol_serial templates in
-  let vir = Merge.merge ins_outs_map good_templates in
+  let vir = Merge.merge good_templates in
   KB.return vir

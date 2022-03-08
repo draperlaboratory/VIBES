@@ -91,9 +91,10 @@ module Utils : sig
   val z : Var.t
 end
 
+val populate_ins_outs : Data.ins_outs Tid.Map.t -> Ir.t -> Ir.t
+
 val run :
   isel_model_filepath:string ->
-  Data.ins_outs Tid.Map.t ->
   Blk.t list ->
   info ->
   Ir.t KB.t

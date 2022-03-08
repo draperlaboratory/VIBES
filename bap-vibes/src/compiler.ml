@@ -50,7 +50,7 @@ let create_vibes_ir
   let* lang = Data.Patch.get_lang patch in
   let* tgt = Data.Patch.get_target patch in
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
-  let+ ir =
+  let* ir =
     if is_arm || is_thumb then
       let+ ir = 
         match isel_model_filepath with
@@ -63,12 +63,13 @@ let create_vibes_ir
           List.iter ir ~f:(fun blk ->
               Events.(send @@ Info (
                   sprintf "The patch has the following BIL: %a" Blk.pps blk)));
-          let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
-          let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
-          KB.return ir in
+          let+ ir = Isel.run ~isel_model_filepath ir Arm.Isel.patterns in
+          ir in
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
+  let+ ins_outs_map = Data.Patch.get_ins_outs_map patch in
+  let ir = Isel.populate_ins_outs ins_outs_map ir in
   ir, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)
