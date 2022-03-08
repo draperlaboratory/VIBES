@@ -717,6 +717,144 @@ module Main = struct
   (* An elaboratex expression that must have some result. *)
   type eexp_strict = stmt * exp * stmt
 
+  (* Helper functions used during translation. *)
+  module Helper = struct
+
+    (* If the expression had side-effects, then store the result in a
+       temporary variable.
+
+       `no_post` indicates that a temporary shouldn't be generated if
+       there are no post-effects.
+    *)
+    let new_tmp_or_simple
+        ?(no_post : bool = false)
+        (pre : stmt)
+        (e : exp)
+        (post : stmt) : (exp, eexp_strict) Either.t transl =
+      let pre = Opt.Nops.go pre in
+      let post = Opt.Nops.go post in
+      match pre, post with
+      | NOP, NOP -> return @@ First e
+      | _, NOP -> return @@ Second (pre, e, post)
+      | _ ->
+        let+ tmp = new_tmp @@ Exp.typeof e in
+        let pre = sequence [pre; ASSIGN (tmp, e)] in
+        Second (pre, VARIABLE tmp, post)
+
+    (* Helper for binary operators where the sequencing of side-effects
+       for the operands is important. *)
+    let binary_tmp_or_simple
+        ?(no_post : bool = false)
+        (op : binop)
+        (pre1 : stmt) (e1 : exp) (post1 : stmt)
+        (pre2 : stmt) (e2 : exp) (post2 : stmt)
+        (t : typ)
+        ~(f : binop -> exp -> exp -> typ -> exp transl) : eexp transl =
+      (* Evaluate left to right. *)
+      let* te1 = new_tmp_or_simple pre1 e1 post1 in
+      let* te2 = new_tmp_or_simple pre2 e2 post2 ~no_post in
+      match te1, te2 with
+      | First e1, First e2 ->
+        let+ e = f op e1 e2 t in
+        NOP, Some e, NOP
+      | First e1, Second (pre, e2, post) ->
+        let* tmp = new_tmp t in
+        let eff = sequence [
+            ASSIGN (tmp, e1);
+            pre;
+            post;
+          ] in
+        let+ e = f op (VARIABLE tmp) e2 t in
+        eff, Some e, NOP
+      | Second (pre, e1, post), First e2 ->
+        let* tmp = new_tmp t in
+        let eff = sequence [
+            pre;
+            post;
+            ASSIGN (tmp, e2);
+          ] in
+        let+ e = f op e1 (VARIABLE tmp) t in
+        eff, Some e, NOP
+      | Second (pre1, e1, post1), Second (pre2, e2, post2) ->
+        let eff = sequence [
+            pre1;
+            post1;
+            pre2;
+            post2;
+          ] in
+        let+ e = f op e1 e2 t in
+        eff, Some e, NOP
+
+    (* Increment value based on the type. *)
+    let increment (e : Cabs.expression) (t : typ) : exp transl =
+      let* width = gets @@ fun {target; _} ->
+        Theory.Target.data_addr_size target in
+      match t with
+      | PTR (INT (size, _)) ->
+        (* Pointer to some element type, use the element size. *)
+        let i = Word.of_int ~width @@ Size.in_bytes size in
+        return @@ CONST_INT (i, UNSIGNED)
+      | PTR (PTR _ | FUN _ | VOID) ->
+        (* Pointer to a pointer: use the word size. *)
+        let i = Word.of_int ~width (width lsr 3) in
+        return @@ CONST_INT (i, UNSIGNED)
+      | FUN _ | VOID ->
+        let* data = gets @@ fun {data; _} -> data in
+        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+        let t = Type.to_string data t in
+        fail (
+          sprintf "Patch_c.increment: expression:\n\n%s\n\n\
+                   has type %s. Cannot be an l-value." s t)
+      | INT (size, sign) ->
+        let i = Word.one width in
+        let i = if equal_sign sign SIGNED then Word.signed i else i in
+        return @@ CONST_INT (i, sign)
+
+    (* Do type checking and either generate an assignment or a store. *)
+    let make_assign
+        ?(is_store : bool = false)
+        ?(e : Cabs.expression = NOTHING)
+        (e1 : exp) (e2 : exp) : stmt transl =
+      let t1 = Exp.typeof e1 in
+      let t2 = Exp.typeof e2 in
+      match Type.cast_assign t1 t2 e2 with
+      | None ->
+        let t1 = if is_store then PTR t1 else t1 in
+        typ_unify_error e t1 t2
+      | Some (_, e2) -> match e1 with
+        | VARIABLE var -> return @@ ASSIGN (var, e2)
+        | UNARY (MEMOF, addr, _) -> return @@ STORE (addr, e2)
+        | _ -> fail "Csmall.make_assign: unexpected shape"
+
+    (* Generate an arithmetic expression depending on whether pointer
+       arithmetic is allowed. *)
+    let make_arith
+        ?(no_ptr : bool = false)
+        ?(e : Cabs.expression = Cabs.NOTHING)
+        (b : binop) (e1 : exp) (e2 : exp) : exp transl =
+      let t1 = Exp.typeof e1 in
+      let t2 = Exp.typeof e2 in
+      match t1, t2 with
+      | PTR VOID, _ | _, PTR VOID -> typ_unify_error e t1 t2
+      | (PTR _, _ | _, PTR _) when no_ptr -> typ_unify_error e t1 t2
+      | PTR _, PTR _ -> typ_unify_error e t1 t2
+      | _ ->
+        let+ t, e1, e2 = match t1, t2 with
+          | PTR _, INT _ ->
+            let+ inc = increment NOTHING t1 in
+            t1, e1, BINARY (MUL, e2, inc, t2)
+          | INT _, PTR _ ->
+            let+ inc = increment NOTHING t2 in
+            t2, BINARY (MUL, e1, inc, t1), e2
+          | INT _, INT _ ->
+            let t = Type.unify t1 t2 in
+            let t = Option.value_exn t in
+            return (t, e1, e2)
+          | _ -> typ_unify_error e t1 t2 in
+        BINARY (b, e1, e2, t)
+
+  end
+
   (* Translate a scoped statement. *)
   let rec go_body ((defs, stmt) : Cabs.body) : body transl =
     let* {target; tenv; _} = get () in
@@ -936,32 +1074,32 @@ module Main = struct
       if expanded then return (spre, Some e', spost)
       else
         let n = CONST_INT (Word.one 8, UNSIGNED) in
-        let* rhs = make_arith ADD e' n in
-        let+ eff = make_assign e' rhs in
+        let* rhs = Helper.make_arith ADD e' n in
+        let+ eff = Helper.make_assign e' rhs in
         sequence [spre; eff], Some e', spost
     | Cabs.POSINCR ->
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
       else
         let n = CONST_INT (Word.one 8, UNSIGNED) in
-        let* rhs = make_arith ADD e' n in
-        let+ eff = make_assign e' rhs in
+        let* rhs = Helper.make_arith ADD e' n in
+        let+ eff = Helper.make_assign e' rhs in
         spre, Some e', sequence [spost; eff]
     | Cabs.PREDECR ->
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
       else
         let n = CONST_INT (Word.one 8, UNSIGNED) in
-        let* rhs = make_arith SUB e' n in
-        let+ eff = make_assign e' rhs in
+        let* rhs = Helper.make_arith SUB e' n in
+        let+ eff = Helper.make_assign e' rhs in
         sequence [spre; eff], Some e', spost
     | Cabs.POSDECR ->
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
       else
         let n = CONST_INT (Word.one 8, UNSIGNED) in
-        let* rhs = make_arith SUB e' n in
-        let+ eff = make_assign e' rhs in
+        let* rhs = Helper.make_arith SUB e' n in
+        let+ eff = Helper.make_assign e' rhs in
         spre, Some e', sequence [spost; eff]
 
   (* Expand the increment into the operand if necessary. *)
@@ -984,96 +1122,6 @@ module Main = struct
       fail (
         sprintf "Patch_c.go_increment_operand: \
                  expression:\n\n%s\n\nis not an l-value" s)
-
-  (* Increment value based on the type. *)
-  and increment (e : Cabs.expression) (t : typ) : exp transl =
-    let* width = gets @@ fun {target; _} ->
-      Theory.Target.data_addr_size target in
-    match t with
-    | PTR (INT (size, _)) ->
-      (* Pointer to some element type, use the element size. *)
-      let i = Word.of_int ~width @@ Size.in_bytes size in
-      return @@ CONST_INT (i, UNSIGNED)
-    | PTR (PTR _ | FUN _ | VOID) ->
-      (* Pointer to a pointer: use the word size. *)
-      let i = Word.of_int ~width (width lsr 3) in
-      return @@ CONST_INT (i, UNSIGNED)
-    | FUN _ | VOID ->
-      let* data = gets @@ fun {data; _} -> data in
-      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string data t in
-      fail (
-        sprintf "Patch_c.increment: expression:\n\n%s\n\n\
-                 has type %s. Cannot be an l-value." s t)
-    | INT (size, sign) ->
-      let i = Word.one width in
-      let i = if equal_sign sign SIGNED then Word.signed i else i in
-      return @@ CONST_INT (i, sign)
-
-  (* If the expression had side-effects, then store the result in a
-     temporary variable.
-
-     `no_post` indicates that a temporary shouldn't be generated if
-     there are no post-effects.
-  *)
-  and new_tmp_or_simple
-      ?(no_post : bool = false)
-      (pre : stmt)
-      (e : exp)
-      (post : stmt) : (exp, eexp_strict) Either.t transl =
-    let pre = Opt.Nops.go pre in
-    let post = Opt.Nops.go post in
-    match pre, post with
-    | NOP, NOP -> return @@ First e
-    | _, NOP -> return @@ Second (pre, e, post)
-    | _ ->
-      let+ tmp = new_tmp @@ Exp.typeof e in
-      let pre = sequence [pre; ASSIGN (tmp, e)] in
-      Second (pre, VARIABLE tmp, post)  
-
-  (* Helper for binary operators where the sequencing of side-effects
-     for the operands is important. *)
-  and binary_tmp_or_simple
-      ?(no_post : bool = false)
-      (op : binop)
-      (pre1 : stmt) (e1 : exp) (post1 : stmt)
-      (pre2 : stmt) (e2 : exp) (post2 : stmt)
-      (t : typ)
-      ~(f : binop -> exp -> exp -> typ -> exp transl) : eexp transl =
-    (* Evaluate left to right. *)
-    let* te1 = new_tmp_or_simple pre1 e1 post1 in
-    let* te2 = new_tmp_or_simple pre2 e2 post2 ~no_post in
-    match te1, te2 with
-    | First e1, First e2 ->
-      let+ e = f op e1 e2 t in
-      NOP, Some e, NOP
-    | First e1, Second (pre, e2, post) ->
-      let* tmp = new_tmp t in
-      let eff = sequence [
-          ASSIGN (tmp, e1);
-          pre;
-          post;
-        ] in
-      let+ e = f op (VARIABLE tmp) e2 t in
-      eff, Some e, NOP
-    | Second (pre, e1, post), First e2 ->
-      let* tmp = new_tmp t in
-      let eff = sequence [
-          pre;
-          post;
-          ASSIGN (tmp, e2);
-        ] in
-      let+ e = f op e1 (VARIABLE tmp) t in
-      eff, Some e, NOP
-    | Second (pre1, e1, post1), Second (pre2, e2, post2) ->
-      let eff = sequence [
-          pre1;
-          post1;
-          pre2;
-          post2;
-        ] in
-      let+ e = f op e1 e2 t in
-      eff, Some e, NOP
 
   (* Translate binary operators. *)
   and go_binary_operator
@@ -1099,8 +1147,10 @@ module Main = struct
         let e1 = Exp.with_type e1 t in
         let e2 = Exp.with_type e2 t in
         let f op e1 e2 t = return @@ BINARY (op, e1, e2, t) in
-        binary_tmp_or_simple op spre1 e1 spost1 spre2 e2 spost2 t ~f
-          ~no_post:true in
+        Helper.binary_tmp_or_simple op
+          spre1 e1 spost1
+          spre2 e2 spost2
+          t ~f ~no_post:true in
     match b with
     | Cabs.ADD -> go_arith ADD b lhs rhs
     | Cabs.SUB -> go_arith SUB b lhs rhs
@@ -1196,6 +1246,7 @@ module Main = struct
         ] in
       eff, Some (VARIABLE tmp), NOP
 
+  (* Compound binary operator (+=, -=, *=, etc). *)
   and go_compound
       ?(no_ptr : bool = false)
       ?(e : Cabs.expression = NOTHING)
@@ -1213,9 +1264,10 @@ module Main = struct
       let* spre1, e1, spost1 = lval lhs in
       let* spre2, e2, spost2 = exp rhs in
       let e = Cabs.(BINARY (b', lhs, rhs)) in
-      let* e' = make_arith b e1 e2 ~e ~no_ptr in
+      let* e' = Helper.make_arith b e1 e2 ~e ~no_ptr in
       go_assign_aux spre1 e1 spost1 spre2 e' spost2 ~e ~lhs
 
+  (* Generic arithmetic operator. *)
   and go_arith
       ?(no_ptr : bool = false)
       (b : binop) (b' : Cabs.binary_operator)
@@ -1224,39 +1276,13 @@ module Main = struct
     let e = Cabs.(BINARY (b', lhs, rhs)) in
     let* spre1, e1, spost1 = exp lhs in
     let* spre2, e2, spost2 = exp rhs in
-    let f op e1 e2 _ = make_arith op e1 e2 ~e ~no_ptr in
-    binary_tmp_or_simple b
+    let f op e1 e2 _ = Helper.make_arith op e1 e2 ~e ~no_ptr in
+    Helper.binary_tmp_or_simple b
       spre1 e1 spost1
       spre2 e2 spost2
       VOID ~f ~no_post:true
 
-  (* Generate an arithmetic expression depending on whether pointer
-     arithmetic is allowed. *)
-  and make_arith
-      ?(no_ptr : bool = false)
-      ?(e : Cabs.expression = Cabs.NOTHING)
-      (b : binop) (e1 : exp) (e2 : exp) : exp transl =
-    let t1 = Exp.typeof e1 in
-    let t2 = Exp.typeof e2 in
-    match t1, t2 with
-    | PTR VOID, _ | _, PTR VOID -> typ_unify_error e t1 t2
-    | (PTR _, _ | _, PTR _) when no_ptr -> typ_unify_error e t1 t2
-    | PTR _, PTR _ -> typ_unify_error e t1 t2
-    | _ ->
-      let+ t, e1, e2 = match t1, t2 with
-        | PTR _, INT _ ->
-          let+ inc = increment NOTHING t1 in
-          t1, e1, BINARY (MUL, e2, inc, t2)
-        | INT _, PTR _ ->
-          let+ inc = increment NOTHING t2 in
-          t2, BINARY (MUL, e1, inc, t1), e2
-        | INT _, INT _ ->
-          let t = Type.unify t1 t2 in
-          let t = Option.value_exn t in
-          return (t, e1, e2)
-        | _ -> typ_unify_error e t1 t2 in
-      BINARY (b, e1, e2, t)
-
+  (* Compile an assignment expression. *)
   and go_assign
       ?(lhs_pre : exp option = None)
       (lhs : Cabs.expression) (rhs : Cabs.expression) : eexp transl =
@@ -1294,31 +1320,16 @@ module Main = struct
           sprintf "Csmall.go_assign: expected an l-value \
                    for LHS of assignment, got:\n\n%s\n" s) in
     (* We follow order of evaluation as right-to-left. *)
-    let* te2 = new_tmp_or_simple spre2 e2 spost2 ~no_post:true in
+    let* te2 = Helper.new_tmp_or_simple spre2 e2 spost2 ~no_post:true in
     match te2 with
     | First e2 ->
-      let+ s = make_assign e1 e2 ~is_store ~e in
+      let+ s = Helper.make_assign e1 e2 ~is_store ~e in
       sequence [spre1; s], Some e1, spost1
     | Second (spre2, e2, spost2) ->
-      let+ s = make_assign e1 e2 ~is_store ~e in
+      let+ s = Helper.make_assign e1 e2 ~is_store ~e in
       sequence [spre2; spost2; spre1; s], Some e1, spost1
 
-  (* Do type checking and either generate an assignment or a store. *)
-  and make_assign
-      ?(is_store : bool = false)
-      ?(e : Cabs.expression = NOTHING)
-      (e1 : exp) (e2 : exp) : stmt transl =
-    let t1 = Exp.typeof e1 in
-    let t2 = Exp.typeof e2 in
-    match Type.cast_assign t1 t2 e2 with
-    | None ->
-      let t1 = if is_store then PTR t1 else t1 in
-      typ_unify_error e t1 t2
-    | Some (_, e2) -> match e1 with
-      | VARIABLE var -> return @@ ASSIGN (var, e2)
-      | UNARY (MEMOF, addr, _) -> return @@ STORE (addr, e2)
-      | _ -> fail "Csmall.make_assign: unexpected shape"
-
+  (* Translate the ternary operator. *)
   and go_question
       ?(lval = false)
       ?(assign : var option = None)
@@ -1433,7 +1444,7 @@ module Main = struct
           | [] -> return (sequence [pre; post], List.rev args)
           | (spre, e, spost) :: rest ->
             let no_post = List.is_empty rest in
-            let* te = new_tmp_or_simple spre e spost ~no_post in
+            let* te = Helper.new_tmp_or_simple spre e spost ~no_post in
             let eff, e = match te with
               | First e -> sequence [pre; post], e
               | Second (spre, e, spost) -> sequence [pre; post; spre], e in
