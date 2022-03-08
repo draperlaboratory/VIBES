@@ -714,7 +714,7 @@ module Main = struct
   (* An elaborated expression. *)
   type eexp = stmt * exp option * stmt
 
-  (* An elaboratex expression that must have some result. *)
+  (* An elaborated expression that must have some result. *)
   type eexp_strict = stmt * exp * stmt
 
   (* Helper functions used during translation. *)
