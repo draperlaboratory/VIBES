@@ -680,8 +680,14 @@ let populate_ins_outs (ins_outs_map : Data.ins_outs Tid.Map.t) (vir : Ir.t) : Ir
     | Some {ins ; outs} ->
       let operands vars =
         let vars = Var.Set.to_list vars in
-        (* TODO: Assuming Ir.Var is not right here. They may Void. *)
-        let vars = List.map ~f:(fun v -> Ir.Var (Ir.simple_var v)) vars in
+        (* TODO: This is not a good way to find register class *)
+        let vars = List.map vars ~f:(fun v ->
+          let sv = Ir.simple_var v in
+          match (Var.typ v) with
+          | Imm _     -> Ir.Var sv
+          | Mem (_,_) -> Ir.Void sv
+          | Unk       -> Ir.Void sv)
+        in
         vars
       in
       let in_operands = operands ins in
