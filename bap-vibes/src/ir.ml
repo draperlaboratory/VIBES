@@ -534,57 +534,6 @@ end
 
 module OpSet = Set.Make(Operand)
 
-let add_in_vars_blk (b : blk) : blk =
-  let ops = b.ins :: b.outs :: b.data @ b.ctrl in
-  (* We need to remember whether temps are Var or Void. We use a boolean flag for this in
-     a Map with domain of temps. *)
-  let collect_temps (l : operand list) temp_map : bool Var.Map.t =
-      let add_temps temp_map (temps : Var.t list) (is_var : bool) =
-         List.fold temps ~init:temp_map ~f:(fun temp_map temp ->
-          Var.Map.set temp_map ~key:temp ~data:is_var
-          )
-      in
-      List.fold l ~init:temp_map
-        ~f:(fun temp_map o ->
-            match o with
-            | Var op_var -> add_temps temp_map op_var.temps true
-            | Void op_var -> add_temps temp_map op_var.temps false
-            | _ -> temp_map)
-  in
-  let lhs_temp_map = List.fold ops ~init:Var.Map.empty
-    ~f:(fun temp_map o -> collect_temps o.lhs temp_map)
-  in
-  let rhs_temp_map = List.fold ops ~init:Var.Map.empty
-    ~f:(fun temp_map o -> collect_temps o.operands temp_map)
-  in
-  (* The indefined temporaries are those that are in right hand sides, 
-     but not left hand sides *)
-  let undef_temps =
-      let lhs_temps = Var.Map.keys lhs_temp_map |> Var.Set.of_list in
-      let rhs_temps = Var.Map.keys rhs_temp_map |> Var.Set.of_list in
-      Var.Set.diff rhs_temps lhs_temps |> Var.Set.to_list in
-  let ins = List.map undef_temps ~f:(fun temp ->
-    let op_var = (simple_var temp) in
-    (* Since set difference, temp should be in rhs_temps, therefore find_exn is ok *)
-    if Var.Map.find_exn rhs_temp_map temp then Var op_var else Void op_var)
-  in
-  (* We add dummy operation with no instructions and as lhs all the
-     [ins] variables *)
-  let ins = {
-    id = create_id ();
-    lhs = ins;
-    opcodes = [];
-    optional = false;
-    operands = [];
-  } in
-  {b with ins = ins}
-
-(* Collect all the variables appearing on rhs that are not defined by
-   an lhs before-hand, and add them to the [in] field. *)
-let add_in_vars (t : t) : t =
-  { t with blks = List.map ~f:add_in_vars_blk t.blks }
-
-
 (* Get every single opcode, removing duplicates. *)
 let all_opcodes (t : t) : opcode list =
   let blks = t.blks in

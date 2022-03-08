@@ -91,6 +91,9 @@ module Utils : sig
   val z : Var.t
 end
 
+(** [populate_ins_outs] uses the ins_outs_map to populate the
+    ins and outs operations with operands
+*)
 val populate_ins_outs : Data.ins_outs Tid.Map.t -> Ir.t -> Ir.t
 
 val run :
