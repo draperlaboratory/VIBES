@@ -51,6 +51,7 @@ type t =
   | Max_tries of int
   | Minizinc_deserialization of string
   | Core_c_error of string
+  | Patch_c_error of string
   | Unknown_target
   | Unknown_encoding
   | Other of string

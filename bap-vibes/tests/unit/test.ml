@@ -22,6 +22,7 @@ let suite () =
     "Verifier" >::: Test_verifier.suite;
     "Arm_selector" >::: Test_arm_selector.suite;
     "Bir_opt" >::: Test_bir_opt.suite;
+    "Patch_c" >::: Test_patch_c.suite;
     "C Parser" >::: Test_parse_c.suite;
     "Linear SSA" >::: Test_linear_ssa.suite;
     "Substituter" >::: Test_substituter.suite;

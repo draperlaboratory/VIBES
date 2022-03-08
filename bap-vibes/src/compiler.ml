@@ -40,7 +40,8 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 let create_vibes_ir
     (patch : Data.Patch.t)
     (isel_model_filepath : string option) : (Ir.t * String.Set.t) KB.t =
-  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch ~merge_adjacent:(Option.is_none isel_model_filepath) in
+  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch
+      ~merge_adjacent:(Option.is_none isel_model_filepath) in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
@@ -57,16 +58,14 @@ let create_vibes_ir
           Arm.ARM_Gen.select ir
             ~patch:(Some patch) ~argument_tids ~is_thumb
         | Some isel_model_filepath ->
-          begin
-            Events.(send @@ Info "Running Minizinc instruction selector.");
-            let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
-            List.iter ir ~f:(fun blk ->
-            Events.(send @@ Info (sprintf "The patch has the following BIL: %a" Blk.pps blk)));
-            let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
-            let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
-            KB.return ir
-          end
-      in
+          Events.(send @@ Info "Running Minizinc instruction selector.");
+          let* ir = KB.List.map ~f:Flatten.flatten_blk ir in
+          List.iter ir ~f:(fun blk ->
+              Events.(send @@ Info (
+                  sprintf "The patch has the following BIL: %a" Blk.pps blk)));
+          let* ins_outs_map = Data.Patch.get_ins_outs_map patch in
+          let* ir = Isel.run ~isel_model_filepath ins_outs_map ir Arm.Isel.patterns in
+          KB.return ir in
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in

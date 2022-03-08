@@ -1,3 +1,4 @@
 (executable
-  (name test)
-  (libraries bap bap_wp bap-vibes ounit2 str))
+ (name test)
+ (flags -w -58)
+ (libraries bap bap_wp bap-vibes ounit2 str))
