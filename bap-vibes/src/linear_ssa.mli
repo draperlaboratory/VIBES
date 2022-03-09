@@ -38,7 +38,7 @@ open Bap_core_theory
 
     Example: if [name] is ["_00001234_R0_1"] then [orig_name name] is
     ["R0"]. Similarly, if [name] is ["_00001234_R0"], then [orig_name name]
-    is also ["R0"]. Any other patterns will raise an exception. *)
+    is also ["R0"]. Any other patterns will return [None]. *)
 val orig_name : string -> string option
 
 (** [same v1 v2] checks whether [v1] and [v2] are trivially equal, or have
