@@ -198,12 +198,6 @@ val freshen_operands : t -> t
 (** [freshen_operation_ids] gives a unique tid to every operation *)
 val freshen_operation_ids : t -> t
 
-(** [add_in_vars t] initializes the [in] field of every block. It
-    operates by collecting all the variables appearing on rhs that are
-    not defined by an lhs before-hand, and adding the new ones to the
-    [in] field of the current block. *)
-val add_in_vars : t -> t
-
 (** Various getter functions *)
 val operation_opcodes : t -> opcode list Int.Map.t
 val all_opcodes : t -> opcode list
