@@ -79,7 +79,7 @@ type mzn_params_serial = {
   reg_t : mzn_enum_def;
   opcode_t : mzn_enum_def;
   temp_t : mzn_enum_def;
-  hvar_t : mzn_enum_def;
+  hvar_t : mzn_enum_def; (* user friendly names for extra constraints injection *)
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
   block_t : mzn_enum_def;
@@ -99,7 +99,7 @@ type mzn_params_serial = {
   block_outs : (block, operation) mzn_map;
   block_ins : (block, operation) mzn_map;
   block_operations : (block, operation mzn_set) mzn_map;
-  hvars_temps : (hvar, temp mzn_set) mzn_map
+  hvars_temps : (hvar, temp mzn_set) mzn_map (* map from user friendly names to temporaries derived from them *)
 } [@@deriving yojson]
 
 type serialization_info = {

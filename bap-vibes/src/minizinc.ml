@@ -37,6 +37,7 @@ open Minizinc_utils
    [class_] The role of a given operand for a given opcode
    [ins_map] Map from block tid to `ins` operation id
    [outs_map] Map from block tid to `outs` operation id
+   [block_ops] Map from block tid to set of operations in block
 *)
 
 type mzn_params = {
@@ -202,6 +203,7 @@ let serialize_mzn_params
   let dummy = dummy_reg |> Var.to_string in
   let regs = Set.to_list regs in
   let regs = List.map ~f:(fun r -> Var.to_string r, r) regs in
+  (* Add the dummy register for void/virtual variables *)
   let regs = (dummy, dummy_reg) :: regs in
   let reg_map = String.Map.of_alist_exn regs in
   let regs, _ = List.unzip regs in
@@ -229,10 +231,8 @@ let serialize_mzn_params
   let temp_names =
     List.map ~f:(fun t -> Var.to_string t) temps
   in
-  let hvars = List.map temps ~f:(fun temp -> Linear_ssa.orig_name (Var.to_string temp)) in
-  let hvars = String.Set.of_list (List.filter_opt hvars) in
-  let hvars = String.Set.diff hvars (String.Set.of_list (gpr @ regs)) in
-  let hvars = String.Set.to_list hvars in
+  let hvars = List.filter_map temps ~f:(fun temp -> Linear_ssa.orig_name (Var.to_string temp)) in
+  let hvars = String.Set.to_list @@ String.Set.of_list hvars in
   let* class_t =
     key_map_kb operands params.class_
       ~f:(fun m -> key_map_kb opcodes m
@@ -245,10 +245,11 @@ let serialize_mzn_params
     | [] -> Kb_error.fail @@ Other (
         Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt) in
   {
-    (* Add the dummy register for void/virtual variables *)
     reg_t = mzn_enum_def_of_list regs;
     opcode_t = mzn_enum_def_of_list opcodes_str;
     temp_t = mzn_enum_def_of_list temp_names;
+    (* prefix "hvar_" to (typically) avoid identifier collisions. Minizinc will crash
+       if there is a collision *)
     hvar_t = mzn_enum_def_of_list @@ List.map ~f:(fun hvar -> "hvar_" ^ hvar) hvars;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Int.to_string);
@@ -421,6 +422,10 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
+(** [build_extra_constraints_file] makes a simple minizinc file that
+    "include"s (a minizinc keyword) the ordinary model but also appends
+    the extra constraints string.
+*)
 let build_extra_constraints_file ~extra_constraints ~model_filepath : string =
   let wrapper_filepath = Stdlib.Filename.temp_file "vibes-mzn-model" ".mzn" in
   let outc = Out_channel.create wrapper_filepath in
