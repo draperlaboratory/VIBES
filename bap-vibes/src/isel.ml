@@ -692,6 +692,10 @@ let populate_ins_outs (ins_outs_map : Data.ins_outs Tid.Map.t) (vir : Ir.t) : Ir
       in
       let in_operands = operands ins in
       let ins = Ir.empty_op () in
+      (* The only intended way for [blk.ins.lhs] or [blk.outs.operands]
+         to have anything in it is from internal variables in templates.
+         Danger! May result in duplicates if misused.
+      *)
       let ins = {ins with lhs = blk.ins.lhs @ in_operands} in
       let out_operands = operands outs in
       let outs = Ir.empty_op () in
