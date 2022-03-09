@@ -12,9 +12,11 @@ include "globals.mzn";
 enum reg_t;
 enum opcode_t;
 enum temp_t;
+enum hvar_t;
 enum operand_t;
 enum operation_t;
 enum block_t;
+
 
 
 array[operand_t] of operation_t : operand_operation; % map from operand to operations it belongs to
@@ -43,6 +45,9 @@ array[opcode_t] of int: latency; % latency of instruction
 array[block_t] of operation_t : block_ins;
 array[block_t] of operation_t : block_outs;
 array[block_t] of set of operation_t : block_operations;
+
+% map from user friendly names to temporaries derived them via linear ssa.
+array[hvar_t] of set of temp_t : hvars_temps;
 
 int: MAXC = 100; % maximum cycle. This should possibily be a parameter read from file.
 
@@ -250,6 +255,13 @@ constraint forall (blk in block_t)(
 
 
 % anything that has a where clause that isn't just parameters makes me queasy. What is this going to do?
+
+%----------------------
+% HELPERS
+%----------------------
+
+predicate set_reg(hvar_t: hvar, reg_t: r) =
+ forall(t in hvars_temps[hvar])(reg[t] = r);
 
 %--------------------------------
 % OBJECTIVE

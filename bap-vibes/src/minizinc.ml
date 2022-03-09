@@ -37,6 +37,7 @@ open Minizinc_utils
    [class_] The role of a given operand for a given opcode
    [ins_map] Map from block tid to `ins` operation id
    [outs_map] Map from block tid to `outs` operation id
+   [block_ops] Map from block tid to set of operations in block
 *)
 
 type mzn_params = {
@@ -89,6 +90,7 @@ type block = mzn_enum [@@deriving yojson]
 type temp = mzn_enum [@@deriving yojson]
 type opcode = mzn_enum [@@deriving yojson]
 type reg = mzn_enum [@@deriving yojson]
+type hvar = mzn_enum [@@deriving yojson]
 
 (* [mzn_params_serial] is a type ready for Minizinc serialization *)
 
@@ -96,6 +98,7 @@ type mzn_params_serial = {
   reg_t : mzn_enum_def;
   opcode_t : mzn_enum_def;
   temp_t : mzn_enum_def;
+  hvar_t : mzn_enum_def;
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
   block_t : mzn_enum_def;
@@ -114,7 +117,8 @@ type mzn_params_serial = {
   exclude_reg : (int, (temp, reg) mzn_map) mzn_map;
   block_outs : (block, operation) mzn_map;
   block_ins : (block, operation) mzn_map;
-  block_operations : (block, operation mzn_set) mzn_map
+  block_operations : (block, operation mzn_set) mzn_map;
+  hvars_temps : (hvar, temp mzn_set) mzn_map
 }  [@@deriving yojson]
 
 
@@ -124,6 +128,7 @@ type mzn_params_serial = {
 type serialization_info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
+  reg_map : Var.t String.Map.t;
   operations : Int.t list;
   operands : Var.t list;
 } [@@deriving equal]
@@ -139,25 +144,9 @@ type serialization_info = {
 *)
 
 
-type sol = {
-  reg : var Var.Map.t;
-  opcode : Ir.opcode Int.Map.t;
-  temp : Var.t Var.Map.t;
-  active : bool Int.Map.t;
-  issue : int Int.Map.t;
-} [@@deriving sexp, compare]
+type sol = Data.sol
 
-module Sol = struct
-  module S = struct
-    type t = sol
-    let compare = compare_sol
-    let sexp_of_t = sexp_of_sol
-  end
-  include S
-  include Base.Comparable.Make(S)
-end
-
-type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
+type sol_set = Data.sol_set
 
 (* Generic minizinc enumeration builder *)
 let key_map ~f:(f : 'a -> 'c)
@@ -208,21 +197,21 @@ let serialize_mzn_params
     Set.to_list gpr |>
     List.filter ~f:(fun v ->
         not @@ Set.mem exclude_regs @@ Var.name v) |>
-    List.map ~f:Var.sexp_of_t |>
-    List.map ~f:Sexp.to_string
+    List.map ~f:Var.to_string
   in
   let dummy_reg = Var.create ~is_virtual:false ~fresh:false "dummy_reg" Unk in
-  let dummy = dummy_reg |> Var.sexp_of_t |> Sexp.to_string |> List.return in
-  let regs =
-    Set.to_list regs |>
-    List.map ~f:Var.sexp_of_t |>
-    List.map ~f:Sexp.to_string
-  in
+  let dummy = dummy_reg |> Var.to_string in
+  let regs = Set.to_list regs in
+  let regs = List.map ~f:(fun r -> Var.to_string r, r) regs in
+  (* Add the dummy register for void/virtual variables *)
+  let regs = (dummy, dummy_reg) :: regs in
+  let reg_map = String.Map.of_alist_exn regs in
+  let regs, _ = List.unzip regs in
   let regs_of_role r =
     if Theory.Role.(r = Register.general) then
       KB.return gpr
     else if Theory.Role.(r = Ir.dummy_role) then
-      KB.return dummy
+      KB.return [dummy]
     else if Theory.Role.(r = Ir.preassigned) then
       KB.return regs
     else
@@ -240,8 +229,10 @@ let serialize_mzn_params
             | Some s -> Set.add s t1)) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
-    List.map ~f:(fun t -> Var.sexp_of_t t |> Sexp.to_string) temps
+    List.map ~f:(fun t -> Var.to_string t) temps
   in
+  let hvars = List.filter_map temps ~f:(fun temp -> Linear_ssa.orig_name (Var.to_string temp)) in
+  let hvars = String.Set.to_list @@ String.Set.of_list hvars in
   let* class_t =
     key_map_kb operands params.class_
       ~f:(fun m -> key_map_kb opcodes m
@@ -254,10 +245,12 @@ let serialize_mzn_params
     | [] -> Kb_error.fail @@ Other (
         Format.asprintf "Target %a has no registers!" Theory.Target.pp tgt) in
   {
-    (* Add the dummy register for void/virtual variables *)
-    reg_t = mzn_enum_def_of_list (regs @ dummy);
+    reg_t = mzn_enum_def_of_list regs;
     opcode_t = mzn_enum_def_of_list opcodes_str;
     temp_t = mzn_enum_def_of_list temp_names;
+    (* prefix "hvar_" to (typically) avoid identifier collisions. Minizinc will crash
+       if there is a collision *)
+    hvar_t = mzn_enum_def_of_list @@ List.map ~f:(fun hvar -> "hvar_" ^ hvar) hvars;
     operand_t = mzn_enum_def_of_list (List.map ~f:Var.to_string operands);
     operation_t = mzn_enum_def_of_list (List.map operations ~f:Int.to_string);
     block_t = List.map ~f:Tid.to_string blocks |>  mzn_enum_def_of_list;
@@ -330,10 +323,18 @@ let serialize_mzn_params
     block_outs = key_map blocks ~f:(fun i -> mzn_enum @@ Int.to_string i) params.outs_map;
     block_operations = key_map blocks ~f:(fun ops -> mzn_set_of_list @@
               List.map ops ~f:(fun i -> mzn_enum @@ Int.to_string i)) params.block_ops;
+    hvars_temps = List.map hvars ~f:(fun hvar ->
+        mzn_set_of_list @@
+        List.map ~f:mzn_enum_of_var @@
+        List.filter temps ~f:(fun temp ->
+          match (Linear_ssa.orig_name @@ Var.to_string temp) with
+          | Some oname -> String.equal oname hvar
+          | None -> false))
   },
   {
     temps = temps;
     temp_map = List.zip_exn temp_names temps |> String.Map.of_alist_exn;
+    reg_map;
     operations = operations;
     operands  = operands
   }
@@ -368,7 +369,7 @@ let deserialize_sol (s : sol_serial) (names : serialization_info) : sol =
     List.map ~f:(fun t -> t.e) l
   in
   let reg =
-    List.map ~f:(fun r -> Sexp.of_string r.e |> Var.t_of_sexp) s.reg
+    List.map ~f:(fun r -> String.Map.find_exn names.reg_map r.e) s.reg
   in
   {
     reg = List.zip_exn names.temps reg |> Var.Map.of_alist_exn;
@@ -421,9 +422,21 @@ let delete_empty_blocks vir =
   in
   {vir with blks = blks}
 
+(** [build_extra_constraints_file] makes a simple minizinc file that
+    "include"s (a minizinc keyword) the ordinary model but also appends
+    the extra constraints string.
+*)
+let build_extra_constraints_file ~extra_constraints ~model_filepath : string =
+  let wrapper_filepath = Stdlib.Filename.temp_file "vibes-mzn-model" ".mzn" in
+  let outc = Out_channel.create wrapper_filepath in
+  Out_channel.fprintf outc "include \"%s\";\n%s" model_filepath extra_constraints;
+  Out_channel.close outc;
+  wrapper_filepath
+
 let run_allocation_and_scheduling
     ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
+    ~extra_constraints:(extra_constraints : string option)
     (tgt : Theory.target)
     (prev_sols : sol list)
     (vir : Ir.t)
@@ -433,6 +446,11 @@ let run_allocation_and_scheduling
   Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
   Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
   let vir_clean = delete_empty_blocks vir in
+  let model_filepath = match extra_constraints with
+  | None -> model_filepath
+  | Some extra_constraints -> build_extra_constraints_file ~extra_constraints ~model_filepath
+  in
+  Events.(send @@ Info (sprintf "Minizinc Model Filepath: %s\n" model_filepath));
   let* params, name_maps =
     serialize_mzn_params tgt vir_clean prev_sols
       ~gpr ~regs ~congruence ~exclude_regs in

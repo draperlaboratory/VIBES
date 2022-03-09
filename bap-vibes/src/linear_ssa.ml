@@ -38,25 +38,27 @@ let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
    tid string (8 chars), ending with another underscore (1 char). *)
 let prefix_len = 10
 
-let orig_name (name : string) : string =
+let orig_name (name : string) : string option =
+  let (let*) x f = Option.bind x ~f in
   let name = String.drop_prefix name prefix_len in
   let name, is_reg =
     Substituter.unmark_reg_name name |>
     Option.value_map ~default:(name, false) ~f:(fun name ->
         name, true) in
-  let name = match String.split name ~on:'_' with
-    | [] -> name
-    | [name] when not @@ String.is_empty name -> name
-    | [name; _] -> name
-    | _ -> failwith @@ sprintf "Unexpected name pattern: %s" name in
-  if is_reg then Substituter.mark_reg_name name else name
+  let* name = match String.split name ~on:'_' with
+    | [] -> Some name
+    | [name] when not @@ String.is_empty name -> Some name
+    | [name; _] -> Some name
+    | _ -> None
+  in
+  if is_reg then Some (Substituter.mark_reg_name name) else Some name
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in
-  String.equal a b || begin try
-      String.equal (orig_name a) (orig_name b)
-    with _ -> false
-  end
+  String.equal a b ||
+  match (orig_name a), (orig_name b) with
+  | Some a, Some b -> String.equal a b
+  | _ ->  false
 
 let congruent (a : var) (b : var) : bool =
   let name_1 = String.drop_prefix (Var.name a) prefix_len in

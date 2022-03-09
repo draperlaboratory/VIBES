@@ -46,6 +46,28 @@ let ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t =
     ~equal:equal_ins_outs
     "ins-outs-map-domain"
 
+(* While logically these belong in Minzinc, for cicular module dependency issues they
+   need to be up here *)
+type sol = {
+  reg : var Var.Map.t;
+  opcode : Ir.opcode Int.Map.t;
+  temp : Var.t Var.Map.t;
+  active : bool Int.Map.t;
+  issue : int Int.Map.t;
+} [@@deriving sexp, compare]
+
+module Sol = struct
+  module S = struct
+    type t = sol
+    let compare = compare_sol
+    let sexp_of_t = sexp_of_sol
+  end
+  include S
+  include Base.Comparable.Make(S)
+end
+
+type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
+
 let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~empty:()
     ~equal:Unit.equal
@@ -98,8 +120,8 @@ let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
    "ir-domain"
 
 (* For storing sets of minizinc solutions *)
-let minizinc_solution_domain : Minizinc.sol_set KB.Domain.t =
-  KB.Domain.powerset (module Minizinc.Sol) "minizinc-solution-domain"
+let minizinc_solution_domain : sol_set KB.Domain.t =
+  KB.Domain.powerset (module Sol) "minizinc-solution-domain"
 
 (* For storing higher variables *)
 let higher_vars_domain : Hvar.t list option KB.Domain.t = KB.Domain.optional
@@ -163,7 +185,7 @@ module Patch = struct
   let target : (patch_cls, Theory.target) KB.slot =
     KB.Class.property ~package patch "patch-target" Theory.Target.domain
 
-  let minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot =
+  let minizinc_solutions : (patch_cls, sol_set) KB.slot =
     KB.Class.property ~package patch "minizinc-solutions"
     minizinc_solution_domain
 
@@ -181,6 +203,9 @@ module Patch = struct
 
   let ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot =
     KB.Class.property ~package patch "ins_outs_map" ins_outs_map_domain
+
+  let extra_constraints : (patch_cls, string option) KB.slot =
+    KB.Class.property ~package patch "extra-constraints" string_domain
 
   let set_patch_name (obj : t) (data : string option) : unit KB.t =
     KB.provide patch_name obj data
@@ -288,13 +313,13 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_assembly
     | Some value -> KB.return value
 
-  let get_minizinc_solutions (obj : t) : Minizinc.sol_set KB.t =
+  let get_minizinc_solutions (obj : t) : sol_set KB.t =
     KB.collect minizinc_solutions obj
 
-  let add_minizinc_solution (obj : t) (sol : Minizinc.sol) : unit KB.t =
-    KB.provide minizinc_solutions obj (Set.singleton (module Minizinc.Sol) sol)
+  let add_minizinc_solution (obj : t) (sol : sol) : unit KB.t =
+    KB.provide minizinc_solutions obj (Set.singleton (module Sol) sol)
 
-  let union_minizinc_solution (obj : t) (sol_set : Minizinc.sol_set)
+  let union_minizinc_solution (obj : t) (sol_set : sol_set)
       : unit KB.t =
     KB.provide minizinc_solutions obj sol_set
 
@@ -337,6 +362,11 @@ module Patch = struct
   let set_ins_outs_map (obj : t) (data : ins_outs Tid.Map.t) : unit KB.t =
     KB.provide ins_outs_map obj data
 
+  let set_extra_constraints (obj : t) (data : string option) : unit KB.t =
+      KB.provide extra_constraints obj data
+
+  let get_extra_constraints (obj : t) : string option KB.t =
+      KB.collect extra_constraints obj
 end
 
 (* Sets of patches *)

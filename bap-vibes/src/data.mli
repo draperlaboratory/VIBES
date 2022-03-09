@@ -29,6 +29,31 @@ type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
 type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
 
+type sol = {
+  reg : var Var.Map.t;
+  opcode : Ir.opcode Int.Map.t;
+  temp : Var.t Var.Map.t;
+  active : bool Int.Map.t;
+  issue : int Int.Map.t;
+} [@@deriving sexp, compare]
+
+(** This is a module necessary for building Sets of [sol] *)
+module Sol : sig
+  module S :
+  sig
+    type t = sol
+    val compare : sol -> sol -> int
+    val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
+  end
+  type t = sol
+  val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
+  val compare : S.t -> S.t -> int
+  type comparator_witness = Base__Comparable.Make(S).comparator_witness
+  val comparator : (S.t, comparator_witness) Base__.Comparator.comparator
+end
+
+type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
+
 (** We define "domains" for the types used in our properties. *)
 val string_domain       : string option KB.Domain.t
 val int_domain          : int option KB.Domain.t
@@ -87,7 +112,7 @@ module Patch : sig
   (* TODO: add the target as well. *)
   val lang : (patch_cls, Theory.language) KB.slot
   val target : (patch_cls, Theory.target) KB.slot
-  val minizinc_solutions : (patch_cls, Minizinc.sol_set) KB.slot
+  val minizinc_solutions : (patch_cls, sol_set) KB.slot
   (* High variables for the patch *)
   val patch_vars : (patch_cls, Hvar.t list option) KB.slot
 
@@ -131,9 +156,9 @@ module Patch : sig
   val set_target : t -> Theory.target -> unit KB.t
   val get_target : t -> Theory.target KB.t
 
-  val get_minizinc_solutions : t -> Minizinc.sol_set KB.t
-  val add_minizinc_solution : t -> Minizinc.sol -> unit KB.t
-  val union_minizinc_solution : t -> Minizinc.sol_set -> unit KB.t
+  val get_minizinc_solutions : t -> sol_set KB.t
+  val add_minizinc_solution : t -> sol -> unit KB.t
+  val union_minizinc_solution : t -> sol_set -> unit KB.t
 
   val set_patch_vars : t -> Hvar.t list option -> unit KB.t
   val get_patch_vars : t -> Hvar.t list option KB.t
@@ -149,6 +174,9 @@ module Patch : sig
 
   val set_ins_outs_map : t -> ins_outs Tid.Map.t -> unit KB.t
   val get_ins_outs_map : t -> ins_outs Tid.Map.t KB.t
+
+  val set_extra_constraints : t -> string option -> unit KB.t
+  val get_extra_constraints : t -> string option KB.t
 end
 
 (** Sets of patches *)

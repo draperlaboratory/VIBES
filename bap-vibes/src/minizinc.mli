@@ -40,13 +40,7 @@ module KB = Knowledge
 
 *)
 
-type sol = {
-  reg : var Var.Map.t;
-  opcode : Ir.opcode Int.Map.t;
-  temp : Var.t Var.Map.t;
-  active : bool Int.Map.t;
-  issue : int Int.Map.t;
-} [@@deriving sexp, compare]
+type sol = Data.sol
 
 (**
 
@@ -61,6 +55,7 @@ type sol = {
 val run_allocation_and_scheduling :
   ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
+  extra_constraints:string option ->
   Theory.target ->
   sol list ->
   Ir.t ->
@@ -68,22 +63,7 @@ val run_allocation_and_scheduling :
   gpr:Var.Set.t ->
   regs:Var.Set.t -> (Ir.t * sol) KB.t
 
-(** This is a module necessary for building Sets of [sol] *)
-module Sol : sig
-  module S :
-  sig
-    type t = sol
-    val compare : sol -> sol -> int
-    val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
-  end
-  type t = sol
-  val sexp_of_t : sol -> Ppx_sexp_conv_lib.Sexp.t
-  val compare : S.t -> S.t -> int
-  type comparator_witness = Base__Comparable.Make(S).comparator_witness
-  val comparator : (S.t, comparator_witness) Base__.Comparator.comparator
-end
-
-type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
+type sol_set = Data.sol_set
 
 (* Exposed for unit testing. *)
 
@@ -93,11 +73,13 @@ type block = mzn_enum [@@deriving yojson]
 type temp = mzn_enum [@@deriving yojson]
 type opcode = mzn_enum [@@deriving yojson]
 type reg = mzn_enum [@@deriving yojson]
+type hvar = mzn_enum [@@deriving yojson]
 
 type mzn_params_serial = {
   reg_t : mzn_enum_def;
   opcode_t : mzn_enum_def;
   temp_t : mzn_enum_def;
+  hvar_t : mzn_enum_def; (* user friendly names for extra constraints injection *)
   operand_t : mzn_enum_def;
   operation_t : mzn_enum_def;
   block_t : mzn_enum_def;
@@ -117,11 +99,13 @@ type mzn_params_serial = {
   block_outs : (block, operation) mzn_map;
   block_ins : (block, operation) mzn_map;
   block_operations : (block, operation mzn_set) mzn_map;
+  hvars_temps : (hvar, temp mzn_set) mzn_map (* map from user friendly names to temporaries derived from them *)
 } [@@deriving yojson]
 
 type serialization_info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
+  reg_map : Var.t String.Map.t;
   operations : Int.t list;
   operands : Var.t list;
 } [@@deriving equal]

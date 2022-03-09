@@ -1,0 +1,20 @@
+{
+  "max-tries": 1,
+  "wp-params": {
+    "func": "main",
+    "postcond": "(assert (= R0_mod #x00000003))"
+  },
+  "patches" : [
+    {"patch-name" : "ret-3",
+     "patch-code" : "int retvar; retvar = 3;",
+     "patch-point" : "0x103c8",
+     "patch-size" : 4,
+     "patch-vars": [],
+      "extra-constraints" : "
+      %expanded form:  \n
+      %constraint forall(t in hvars_temps['hvar_retvar'])(reg[t] = 'R0');\n
+      constraint set_reg('hvar_retvar', 'R0');
+      "
+      }
+  ]
+}

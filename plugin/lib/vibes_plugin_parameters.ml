@@ -207,7 +207,12 @@ let validate_patch_sp_align (obj : Json.t)
   | `Null -> Err.return 0
   | _ -> Err.fail @@
     Errors.Invalid_sp_align "expected integer for patch-sp-align"
-
+let validate_patch_extra_constraints (obj : Json.t)
+  : (string option, error) Stdlib.result =
+  match Json.Util.member "extra-constraints" obj with
+  | `Null -> Err.return None
+  | `String constraints -> Err.return (Some constraints)
+  | _ -> Err.fail Errors.Invalid_extra_constraints
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t)
   : (Vibes_config.patch, error) Stdlib.result =
@@ -217,9 +222,10 @@ let validate_patch (obj : Json.t)
   validate_patch_size obj >>= fun patch_size ->
   validate_patch_vars obj >>= fun patch_vars ->
   validate_patch_sp_align obj >>= fun patch_sp_align ->
+  validate_patch_extra_constraints obj >>= fun patch_extra_constraints ->
   let p = Vibes_config.create_patch
       ~patch_name ~patch_code ~patch_point ~patch_size ~patch_vars
-      ~patch_sp_align in
+      ~patch_sp_align ~patch_extra_constraints in
   Err.return p
 
 (* Extract and validate the patch fragment list, or error. *)
