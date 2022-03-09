@@ -376,18 +376,18 @@ module ARM_ops = struct
       ~(is_thumb : bool) : arm_eff KB.t =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
-    | Ir.Var _, Ir.Var _
-      when not @@ List.is_empty arg2_sem.current_data -> begin
-        (* FIXME: absolute hack! if we have vars here, we can assume
-           that the last operation assigned to a temporary, and we can
-           just replace that temporary with the known destination, and
-           return that as the effect. *)
-        match arg2_sem.current_data with
-        | [] -> assert false (* excluded by the guard above *)
-        | op :: ops ->
-          let op = {op with Ir.lhs = [arg1]} in
-          KB.return {arg2_sem with current_data = op :: ops}
-      end
+    (* | Ir.Var _, Ir.Var _ *)
+    (*   when not @@ List.is_empty arg2_sem.current_data -> begin *)
+    (*     (\* FIXME: absolute hack! if we have vars here, we can assume *)
+    (*        that the last operation assigned to a temporary, and we can *)
+    (*        just replace that temporary with the known destination, and *)
+    (*        return that as the effect. *\) *)
+    (*     match arg2_sem.current_data with *)
+    (*     | [] -> assert false (\* excluded by the guard above *\) *)
+    (*     | op :: ops -> *)
+    (*       let op = {op with Ir.lhs = [arg1]} in *)
+    (*       KB.return {arg2_sem with current_data = op :: ops} *)
+    (*   end *)
     | Ir.Var _, Ir.Var _ ->
       let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
       KB.return @@ instr mov arg2_sem
@@ -613,7 +613,9 @@ module ARM_ops = struct
           it :: cmp :: sem.current_data
         else cmp :: sem.current_data in
       let br, op_val = generate cond in
-      let sem = {sem with current_data; current_ctrl = [br]} in
+      let sem = {
+        sem with current_data; current_ctrl = br :: sem.current_ctrl
+      } in
       (* Keep in mind, `op_val` should be discarded. *)
       KB.return @@ {op_val; op_eff = sem}
     | None ->
@@ -630,8 +632,11 @@ module ARM_ops = struct
       let* () = match patch with
         | None -> KB.return ()
         | Some patch ->
-          Data.Patch.add_congruence patch
-            (List.hd_exn tmp1.temps, List.hd_exn tmp2.temps) in
+          let t1 = List.hd_exn tmp1.temps in
+          let t2 = List.hd_exn tmp2.temps in
+          eprintf "%s, %s\n%!" (Var.to_string t1) (Var.to_string t2);
+          let* () = Data.Patch.add_congruence patch (t1, t2) in
+          Data.Patch.add_congruence patch (t2, t1) in
       let then_ = Ops.movcc @@ Some cond in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
       let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in
@@ -920,7 +925,7 @@ struct
       end
     | Var v -> begin
         match Var.typ v with
-        | Imm 1 when Option.is_some branch ->
+        | Imm _ when Option.is_some branch ->
           (* Lazy way to compute the boolean. *)
           let v = var v in
           let c = const @@ Word.zero 32 in
@@ -1004,6 +1009,8 @@ struct
           | _ ->
             let+ {op_eff = eff; _} =
               exp cond ~branch:(Some (Branch.create dst ~is_call)) in
+            List.iter eff.current_ctrl ~f:(fun op ->
+                Format.eprintf "%a: %s\n%!" Tid.pp (Term.tid jmp) (Ir.pretty_operation op));
             eff
       end
     | `Phi _ -> KB.return empty_eff

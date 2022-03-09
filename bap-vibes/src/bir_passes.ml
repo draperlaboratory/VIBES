@@ -736,14 +736,14 @@ let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
   (* This is needed for inserting a common exit block, where we will
      readjust the stack if necessary. *)
-  let* ir = Shape.adjust_noreturn_exits ir in
+  (* let* ir = Shape.adjust_noreturn_exits ir in *)
   let* ir, hvars =
     ABI.spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
   let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   (* Substitute higher vars. *)
   let* ir = Subst.substitute tgt hvars ir in
   (* Optimization. *)
-  let ir = Opt.apply ir in
+  (* let ir = Opt.apply ir in *)
   let* ir = Shape.reorder_blks ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
@@ -751,5 +751,5 @@ let run (patch : Data.Patch.t) ~(merge_adjacent : bool) : t KB.t =
   let+ ir = to_linear_ssa patch sub in
   (* Turn explicit fallthroughs into implicit ones where possible.
      XXX: this shouldn't be done at the BIR level. *)
-  let ir = if merge_adjacent then Opt.merge_adjacent ir else ir in
+  (* let ir = if merge_adjacent then Opt.merge_adjacent ir else ir in *)
   {ir; exclude_regs; argument_tids}
