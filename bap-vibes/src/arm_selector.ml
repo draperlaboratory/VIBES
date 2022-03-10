@@ -260,6 +260,19 @@ module ARM_ops = struct
       | HS -> "hs"
       | LS -> "ls"
 
+    let of_string : string -> t option = function
+      | "eq" -> Some EQ
+      | "ne" -> Some NE
+      | "le" -> Some LE
+      | "gt" -> Some GT
+      | "lt" -> Some LT
+      | "ge" -> Some GE
+      | "hi" -> Some HI
+      | "lo" -> Some LO
+      | "hs" -> Some HS
+      | "ls" -> Some LS
+      | _ -> None
+
     let opposite : t -> t = function
       | EQ -> NE
       | NE -> EQ
@@ -368,6 +381,18 @@ module ARM_ops = struct
     | n when n <= 0xFFFF -> Ops.movw
     | _ -> Ops.ldr 
 
+  (* Detect the movcc pattern when storing the result of a comparison. *)
+  let movcc_pattern (o1 : Ir.operation) (o2 : Ir.operation) : bool =
+    let n1 = Ir.Opcode.name @@ List.hd_exn o1.opcodes in
+    let n2 = Ir.Opcode.name @@ List.hd_exn o2.opcodes in
+    String.is_prefix n1 ~prefix:"mov" &&
+    String.is_prefix n2 ~prefix:"mov"  &&
+    let n1 = String.drop_prefix n1 3 in
+    let n2 = String.drop_prefix n2 3 in
+    match Cond.of_string n1, Cond.of_string n2 with
+    | Some _, Some _ -> true
+    | _ -> false
+
   (* Some cowboy type checking here, to check which kind of mov to
      use. Currently doesn't work if variables are instantiated
      with spilled registers! Can be fixed by having seperate Variable
@@ -376,18 +401,27 @@ module ARM_ops = struct
       ~(is_thumb : bool) : arm_eff KB.t =
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
-    (* | Ir.Var _, Ir.Var _ *)
-    (*   when not @@ List.is_empty arg2_sem.current_data -> begin *)
-    (*     (\* FIXME: absolute hack! if we have vars here, we can assume *)
-    (*        that the last operation assigned to a temporary, and we can *)
-    (*        just replace that temporary with the known destination, and *)
-    (*        return that as the effect. *\) *)
-    (*     match arg2_sem.current_data with *)
-    (*     | [] -> assert false (\* excluded by the guard above *\) *)
-    (*     | op :: ops -> *)
-    (*       let op = {op with Ir.lhs = [arg1]} in *)
-    (*       KB.return {arg2_sem with current_data = op :: ops} *)
-    (*   end *)
+    | Ir.Var _, Ir.Var _
+      when not @@ List.is_empty arg2_sem.current_data -> begin
+        (* FIXME: absolute hack! if we have vars here, we can assume
+           that the last operation assigned to a temporary, and we can
+           just replace that temporary with the known destination, and
+           return that as the effect.
+
+           Additionally, we ignore the conditional move pattern generated
+           by `binop_cmp`. The reason is that we require both temporaries
+           to be present since we have stored information in the KB that
+           they are congruent.
+        *)
+        match arg2_sem.current_data with
+        | [] -> assert false (* excluded by the guard above *)
+        | o1 :: o2 :: _ when movcc_pattern o1 o2 ->
+          let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
+          KB.return @@ instr mov arg2_sem
+        | op :: ops ->
+          let op = {op with Ir.lhs = [arg1]} in
+          KB.return {arg2_sem with current_data = op :: ops}
+      end
     | Ir.Var _, Ir.Var _ ->
       let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
       KB.return @@ instr mov arg2_sem
@@ -634,7 +668,6 @@ module ARM_ops = struct
         | Some patch ->
           let t1 = List.hd_exn tmp1.temps in
           let t2 = List.hd_exn tmp2.temps in
-          eprintf "%s, %s\n%!" (Var.to_string t1) (Var.to_string t2);
           let* () = Data.Patch.add_congruence patch (t1, t2) in
           Data.Patch.add_congruence patch (t2, t1) in
       let then_ = Ops.movcc @@ Some cond in
@@ -1009,8 +1042,6 @@ struct
           | _ ->
             let+ {op_eff = eff; _} =
               exp cond ~branch:(Some (Branch.create dst ~is_call)) in
-            List.iter eff.current_ctrl ~f:(fun op ->
-                Format.eprintf "%a: %s\n%!" Tid.pp (Term.tid jmp) (Ir.pretty_operation op));
             eff
       end
     | `Phi _ -> KB.return empty_eff
@@ -1110,13 +1141,13 @@ module Isel = struct
   open Isel.Utils
   let patterns : (Isel.Pattern.t * Isel.Template.t) String.Map.t =
     String.Map.of_alist_exn [
-    "add", binop PLUS (ARM_ops.Ops.add false);
-    "mov", mov (ARM_ops.Ops.mov false);
-    "str", store (Ir.Opcode.create "str");
-    "ld",  load (Ir.Opcode.create "ld");
-    "b",   goto (Ir.Opcode.create "b");
-    "null_jump", null_jump (Ir.Opcode.create "b")
-  ]
+      "add", binop PLUS (ARM_ops.Ops.add false);
+      "mov", mov (ARM_ops.Ops.mov false);
+      "str", store (Ir.Opcode.create "str");
+      "ld",  load (Ir.Opcode.create "ld");
+      "b",   goto (Ir.Opcode.create "b");
+      "null_jump", null_jump (Ir.Opcode.create "b")
+    ]
 
 end
 

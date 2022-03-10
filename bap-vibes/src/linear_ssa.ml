@@ -17,16 +17,16 @@ open Bap.Std
 open Bap_core_theory
 open Monads.Std
 
-
-
-(* Use the tid of the blk as the prefix, dropping the '%' at
-   the beginning. *)
-let prefix_from (blk : Blk.t) : string =
-  let tid = Term.tid blk in
+let prefix_of_tid (tid : tid) : string =
   let tid_str = Tid.to_string tid in
   String.drop_prefix tid_str 1
 
-let linearize ~prefix:(prefix : string) (var : Var.t) : Var.t =
+(* Use the tid of the blk as the prefix, dropping the '%' at
+   the beginning. *)
+let prefix_from (blk : blk term) : string =
+  prefix_of_tid @@ Term.tid blk
+
+let linearize ~(prefix : string) (var : var) : var =
   let name = Var.name var in
   let typ = Var.typ var in
   let new_name = prefix ^ "_" ^ name in
@@ -77,6 +77,11 @@ module Linear = struct
     type t = {
       vars : Var.Set.t;
       prefix : string;
+    }
+
+    let empty = {
+      vars = Var.Set.empty;
+      prefix = "";
     }
 
     let add_var v env = {env with vars = Set.add env.vars v}
@@ -194,23 +199,23 @@ let compute_liveness (sub : sub term) : Data.ins_outs Tid.Map.t =
   let liveness = Sub.compute_liveness sub in
   let blks = Term.enum blk_t sub in
   let ins_outs_map = Seq.map blks ~f:(fun blk ->
-    let tid = Term.tid blk in
-    let outs = Graphlib.Std.Solution.get liveness tid in
-    let prefix = prefix_from blk in
-    (* Delete phis because they "define" variables in way we don't want *)
-    let blk_no_phi = Blk.create
-      ~defs:(Seq.to_list @@ Term.enum def_t blk)
-      ~jmps:(Seq.to_list @@ Term.enum jmp_t blk) () in
-    (* The ins are the outs minus the variables defined in the block
-       unioned with any variable occuring free in the blocks (possibly
-       last occurences so possibly not live at end of block). *)
-    let ins = Var.Set.filter outs ~f:(fun var ->
-        not (Blk.defines_var blk_no_phi var)) in
-    let ins = Var.Set.union (Blk.free_vars blk_no_phi) ins in
-    let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
-    let ins = Var.Set.map ins ~f:(fun var -> linearize ~prefix var) in
-    let ins_outs : Data.ins_outs = {ins; outs} in
-    tid, ins_outs)
+      let tid = Term.tid blk in
+      let outs = Graphlib.Std.Solution.get liveness tid in
+      let prefix = prefix_from blk in
+      (* Delete phis because they "define" variables in way we don't want *)
+      let blk_no_phi = Blk.create
+          ~defs:(Seq.to_list @@ Term.enum def_t blk)
+          ~jmps:(Seq.to_list @@ Term.enum jmp_t blk) () in
+      (* The ins are the outs minus the variables defined in the block
+         unioned with any variable occuring free in the blocks (possibly
+         last occurences so possibly not live at end of block). *)
+      let ins = Var.Set.filter outs ~f:(fun var ->
+          not (Blk.defines_var blk_no_phi var)) in
+      let ins = Var.Set.union (Blk.free_vars blk_no_phi) ins in
+      let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
+      let ins = Var.Set.map ins ~f:(fun var -> linearize ~prefix var) in
+      let ins_outs : Data.ins_outs = {ins; outs} in
+      tid, ins_outs)
   in
   Tid.Map.of_sequence_exn ins_outs_map
 
@@ -224,9 +229,9 @@ let transform
     (sub : sub term) : blk term list KB.t =
   let open KB.Let in
   let ins_outs_map = compute_liveness sub in
+  (* let* () = Kb_error.fail @@ Other "" in *)
   let blks, Linear.Env.{vars; _} =
-    Linear.Env.{prefix = ""; vars = Var.Set.empty} |>
-    Linear.run (go blk_t sub ~f:linearize_blk) in
+    Linear.(run (go blk_t sub ~f:linearize_blk) Env.empty) in
   (* Add in live variables that persist across blocks that don't use them *)
   let vars = Var.Set.union vars (all_ins_outs_vars ins_outs_map) in
   let* () = match patch with
@@ -234,9 +239,8 @@ let transform
     | Some patch ->
       let* () = Data.Patch.set_ins_outs_map patch ins_outs_map in
       let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
-      Var.Set.to_list vars |>
-      KB.List.iter ~f:(fun v1 ->
-          let vars = Set.filter vars ~f:(cong v1) |> Set.to_list in
-          KB.List.iter vars ~f:(fun v2 ->
+      Var.Set.to_list vars |> KB.List.iter ~f:(fun v1 ->
+          let vars = Set.filter vars ~f:(cong v1) in
+          Set.to_list vars |> KB.List.iter ~f:(fun v2 ->
               Data.Patch.add_congruence patch (v1, v2))) in
   KB.return blks
