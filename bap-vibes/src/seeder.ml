@@ -13,6 +13,7 @@
 (** Implements {!Seeder}. *)
 
 open !Core_kernel
+open Bap.Std
 open Bap_knowledge
 open Bap_core_theory
 
@@ -22,7 +23,7 @@ open KB.Let
 
 (* Seed information about a particular patch. *)
 type patch = {
-  raw_ir : Ir.t;
+  raw_ir : Ir.t * Graphs.Tid.t;
   patch_name : string;
   minizinc_solutions : Minizinc.sol_set;
   exclude_regs : String.Set.t option;

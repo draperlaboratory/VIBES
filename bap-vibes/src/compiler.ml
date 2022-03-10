@@ -22,15 +22,17 @@ open Knowledge.Let
 module Arm = Arm_selector
 
 (* Applies the peephole optimizer to the output of a given solver. *)
-let optimized solver =
-  function ir ->
-    let+ (ir, sol) = solver ir in
-    (Arm.peephole ir, sol)
+let optimized
+    (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
+    (ir : Ir.t)
+    (cfg : Graphs.Tid.t) : (Ir.t * Minizinc.sol) KB.t =
+  let+ ir, sol = solver ir in
+  Arm.peephole ir, sol
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
-    (ir : Ir.t) : (string list * Minizinc.sol) KB.t =
-  optimized solver ir >>= fun (ir, new_sol) ->
+    (ir : Ir.t) (cfg : Graphs.Tid.t) : (string list * Minizinc.sol) KB.t =
+  optimized solver ir cfg >>= fun (ir, new_sol) ->
   let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
   match pretty_ir with
   | Ok assembly -> KB.return (assembly, new_sol)
@@ -39,8 +41,9 @@ let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_vibes_ir
     (patch : Data.Patch.t)
-    (isel_model_filepath : string option) : (Ir.t * String.Set.t) KB.t =
-  let* {ir; exclude_regs; argument_tids} = Bir_passes.run patch in
+    (isel_model_filepath : string option)
+  : (Ir.t * Graphs.Tid.t * String.Set.t) KB.t =
+  let* {ir; cfg; exclude_regs; argument_tids} = Bir_passes.run patch in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
@@ -69,22 +72,24 @@ let create_vibes_ir
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
-  ir, exclude_regs
+  ir, cfg, exclude_regs
 
 (* Compile one patch from BIR to VIBES IR *)
 let compile_one_vibes_ir
-  (isel_model_filepath : string option) 
-  (count : int KB.t)
-  (patch : Data.Patch.t) : int KB.t =
+    (isel_model_filepath : string option) 
+    (count : int KB.t)
+    (patch : Data.Patch.t) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
       Events.(send @@ Info "The patch has no IR to translate.\n");
       KB.return () (* Assembly already set. Presumably by the user. *)
     | None ->
-      let info_str = Format.sprintf "Translating patch %d BIR to VIBES IR..." n in
+      let info_str =
+        Format.sprintf "Translating patch %d BIR to VIBES IR..." n in
       Events.(send @@ Info info_str);
-      create_vibes_ir patch isel_model_filepath >>= fun (ir, exclude_regs) ->
-      Data.Patch.set_raw_ir patch (Some ir) >>= fun () ->
+      create_vibes_ir patch isel_model_filepath
+      >>= fun (ir, cfg, exclude_regs) ->
+      Data.Patch.set_raw_ir patch (Some (ir, cfg)) >>= fun () ->
       Data.Patch.set_exclude_regs patch (Some exclude_regs) >>= fun () ->
       Events.(send @@ Info "The patch has the following VIBES IR:\n");
       Events.(send @@ Rule);
@@ -120,7 +125,7 @@ let compile_one_assembly
           (string_of_int n)
       in
       Events.(send @@ Info info_str);
-      Data.Patch.get_raw_ir_exn patch >>= fun ir ->
+      Data.Patch.get_raw_ir_exn patch >>= fun (ir, cfg) ->
       Data.Patch.get_exclude_regs patch >>= fun exclude_regs ->
       let exclude_regs = Option.value exclude_regs ~default:String.Set.empty in
       Data.Patch.get_minizinc_solutions patch >>= fun prev_sols ->
@@ -132,9 +137,13 @@ let compile_one_assembly
       let congruence = Set.to_list congruence in
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
-      create_assembly
-        (solver target prev_sols ~extra_constraints ~gpr ~regs ~exclude_regs ~congruence)
-        ir >>= fun (assembly, new_sol) ->
+      let s = solver target prev_sols
+          ~extra_constraints
+          ~gpr
+          ~regs
+          ~exclude_regs
+          ~congruence in
+      create_assembly s ir cfg >>= fun (assembly, new_sol) ->
       Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
       Events.(send @@ Info "The patch has the following assembly:\n");
       Events.(send @@ Rule);
@@ -168,8 +177,8 @@ type solver =
 
 (* Converts the patch (as IR) to assembly instructions. *)
 let compile_assembly
-  ?(solver : solver = Minizinc.run_allocation_and_scheduling)
-  (obj : Data.t) : unit KB.t =
+    ?(solver : solver = Minizinc.run_allocation_and_scheduling)
+    (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
   Events.(send @@ Info ("Using minizinc model: " ^ mzn_model));

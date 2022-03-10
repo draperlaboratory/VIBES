@@ -25,6 +25,7 @@ module Err = Kb_error
 
 type t = {
   ir : blk term list;
+  cfg : Graphs.Tid.t;
   exclude_regs : String.Set.t;
   argument_tids : Tid.Set.t;
 }
@@ -90,7 +91,8 @@ module Opt = struct
 
     (* Short-circuit jumps to blocks that have a single unconditional Goto. *)
     let go : t = fun blks ->
-      let rec loop removed blks =
+      let module G = Graphs.Tid in
+      let rec loop blks =
         (* Collect all blocks that contain only a single unconditional Goto.
            These will be the candidates for short-circuit optimizations. *)
         let singles =
@@ -106,41 +108,57 @@ module Opt = struct
                 | _ -> None
               else None) |>
           Tid.Table.of_alist_exn in
-        (* `visited` is local to each call, so if we find a cycle
-           then we know that the jmp can't be simplified further. *)
-        let rec find_single ?(visited = Tid.Set.empty) tid =
+        (* If `tid` is a "single", and it is part of an arbitrarily long chain
+           of "singles", then we can try to chase down the final destination.
+           Since we may encounter a cycle, we carry around the set of visited
+           nodes. *)
+        let rec find_single_dst ?(visited = Tid.Set.empty) tid =
           if Set.mem visited tid then None
           else
             let visited = Set.add visited tid in
             Tid.Table.find singles tid |> Option.bind ~f:(fun tid' ->
-                match find_single tid' ~visited with
+                match find_single_dst tid' ~visited with
                 | Some _ as next -> next
                 | None -> Some tid') in
-        let removed, blks, changed =
-          let init = removed, [], false in
-          List.fold blks ~init ~f:(fun (removed, blks, changed) blk ->
+        let contracted, blks, changed =
+          let init = Tid.Set.empty, [], false in
+          List.fold blks ~init ~f:(fun (contracted, blks, changed) blk ->
               let tid = Term.tid blk in
-              (* Node was marked as having been removed. *)
-              if Set.mem removed tid then (removed, blks, true)
+              (* Ignore "singles" that were part of a contraction on
+                 this iteration. We will keep them in the IR until they
+                 are no longer reachable. *)
+              if Set.mem contracted tid
+              then contracted, blk :: blks, changed
               else
-                let removed = ref removed in
+                let contracted = ref contracted in
                 let changed = ref changed in
                 let blk = Term.map jmp_t blk ~f:(fun jmp ->
                     match Jmp.kind jmp with
                     | Goto (Direct tid') when Tid.(tid <> tid') -> begin
-                        match find_single tid' with
+                        match find_single_dst tid' with
                         | Some tid'' when Tid.(tid' <> tid'') ->
-                          removed := Set.add !removed tid';
+                          contracted := Set.add !contracted tid';
                           changed := true;
                           Jmp.with_kind jmp @@ Goto (Direct tid'')
                         | _ -> jmp
                       end
                     | _ -> jmp) in
-                !removed, blk :: blks, !changed) in
+                !contracted, blk :: blks, !changed) in
         (* Repeat until we reach a fixed point. *)
         let blks = List.rev blks in
-        if changed then loop removed blks else blks in
-      KB.return @@ loop Tid.Set.empty blks
+        if changed then
+          (* Remove unreachable nodes before iterating again. *)
+          let* sub = Helper.create_sub blks in
+          let cfg = Sub.to_graph sub in
+          loop @@ List.filter blks ~f:(fun blk ->
+              let tid = Term.tid blk in
+              if Set.mem contracted tid then
+                let preds =
+                  G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+                not @@ Tid.Set.(is_empty @@ remove preds G.start)
+              else true)
+        else KB.return blks in
+      loop blks
 
   end
 
@@ -754,6 +772,7 @@ let run (patch : Data.Patch.t) : t KB.t =
   let* ir = Opt.apply ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
+  let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
   let* ir = to_linear_ssa patch sub in
-  KB.return {ir; exclude_regs; argument_tids}
+  KB.return {ir; cfg; exclude_regs; argument_tids}

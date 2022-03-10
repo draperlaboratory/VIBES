@@ -115,9 +115,11 @@ let assembly_domain : string list option KB.Domain.t = KB.Domain.optional
 
 (* Optional Ir domain for storing ir immediately after translation
    from core_theory *)
-let ir_domain : Ir.t option KB.Domain.t = KB.Domain.optional
-   ~equal:Ir.equal
-   "ir-domain"
+let ir_domain : (Ir.t * Graphs.Tid.t) option KB.Domain.t = KB.Domain.optional
+    ~equal:(fun (ir, g) (ir', g') ->
+        Ir.equal ir ir' &&
+        Graphs.Tid.equal g g')
+    "ir-domain"
 
 (* For storing sets of minizinc solutions *)
 let minizinc_solution_domain : sol_set KB.Domain.t =
@@ -167,7 +169,7 @@ module Patch = struct
   let patch_label : (patch_cls, Theory.label option) KB.slot =
     KB.Class.property ~package patch "patch-label" lab_domain
 
-  let raw_ir : (patch_cls, Ir.t option) KB.slot =
+  let raw_ir : (patch_cls, (Ir.t * Graphs.Tid.t) option) KB.slot =
     KB.Class.property ~package patch "patch-raw-ir" ir_domain
 
   let patch_point : (patch_cls, Bitvec.t option) KB.slot =
@@ -283,13 +285,13 @@ module Patch = struct
   let get_target (obj : t) : Theory.target KB.t =
     KB.collect target obj
 
-  let set_raw_ir (obj : t) (data : Ir.t option) : unit KB.t =
+  let set_raw_ir (obj : t) (data : (Ir.t * Graphs.Tid.t) option) : unit KB.t =
     KB.provide raw_ir obj data
 
-  let get_raw_ir (obj : t) : Ir.t option KB.t =
+  let get_raw_ir (obj : t) : (Ir.t * Graphs.Tid.t) option KB.t =
     KB.collect raw_ir obj
 
-  let get_raw_ir_exn (obj : t) : Ir.t KB.t =
+  let get_raw_ir_exn (obj : t) : (Ir.t * Graphs.Tid.t) KB.t =
     get_raw_ir obj >>= fun result ->
     match result with
     | None -> Kb_error.fail Kb_error.Missing_raw_ir

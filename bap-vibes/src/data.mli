@@ -101,7 +101,7 @@ module Patch : sig
   val patch_point : (patch_cls, Bitvec.t option) KB.slot
   val patch_size : (patch_cls, int option) KB.slot
   val patch_label : (patch_cls, Theory.label option) KB.slot
-  val raw_ir : (patch_cls, Ir.t option) KB.slot
+  val raw_ir : (patch_cls, (Ir.t * Graphs.Tid.t) option) KB.slot
   val exclude_regs : (patch_cls, String.Set.t option) KB.slot
   val congruence : (patch_cls, var_pair_set) KB.slot
   val ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot
@@ -139,9 +139,9 @@ module Patch : sig
   val set_bir : t -> insn -> unit KB.t
   val get_bir : t -> insn KB.t
 
-  val set_raw_ir : t -> Ir.t option -> unit KB.t
-  val get_raw_ir : t -> Ir.t option KB.t
-  val get_raw_ir_exn : t -> Ir.t KB.t
+  val set_raw_ir : t -> (Ir.t * Graphs.Tid.t) option -> unit KB.t
+  val get_raw_ir : t -> (Ir.t * Graphs.Tid.t) option KB.t
+  val get_raw_ir_exn : t -> (Ir.t * Graphs.Tid.t) KB.t
 
   val set_exclude_regs : t -> String.Set.t option -> unit KB.t
   val get_exclude_regs : t -> String.Set.t option KB.t

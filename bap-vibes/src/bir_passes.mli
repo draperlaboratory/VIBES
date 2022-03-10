@@ -32,6 +32,7 @@ open Bap_core_theory
     an argument to a call was assigned. *)
 type t = {
   ir : blk term list;
+  cfg : Graphs.Tid.t;
   exclude_regs : String.Set.t;
   argument_tids : Tid.Set.t;
 }
