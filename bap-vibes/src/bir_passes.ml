@@ -90,14 +90,15 @@ module Opt = struct
 
     (* Short-circuit jumps to blocks that have a single unconditional Goto. *)
     let go : t = fun blks ->
-      let module G = Graphs.Tid in
-      let rec loop cfg blks =
+      let rec loop removed blks =
+        (* Collect all blocks that contain only a single unconditional Goto.
+           These will be the candidates for short-circuit optimizations. *)
         let singles =
           List.filter_map blks ~f:(fun blk ->
               if Seq.is_empty @@ Term.enum def_t blk then
                 let jmps = Term.enum jmp_t blk |> Seq.to_list in
                 match jmps with
-                | [jmp] -> begin
+                | [jmp] when Helper.is_unconditional jmp -> begin
                     match Jmp.kind jmp with
                     | Goto (Direct tid) -> Some (Term.tid blk, tid)
                     | _ -> None
@@ -111,40 +112,35 @@ module Opt = struct
           if Set.mem visited tid then None
           else
             let visited = Set.add visited tid in
-            Tid.Table.find singles tid |>
-            Option.bind ~f:(fun tid' ->
+            Tid.Table.find singles tid |> Option.bind ~f:(fun tid' ->
                 match find_single tid' ~visited with
                 | Some _ as next -> next
                 | None -> Some tid') in
-        let cfg, blks, changed =
-          List.fold blks ~init:(cfg, [], false)
-            ~f:(fun (cfg, blks, changed) blk ->
-                let tid = Term.tid blk in
-                if not @@ Graphs.Tid.Node.mem tid cfg then (cfg, blks, true)
-                else
-                  let cfg = ref cfg in
-                  let changed = ref changed in
-                  let blk =
-                    Term.map jmp_t blk ~f:(fun jmp ->
-                        match Jmp.kind jmp with
-                        | Goto (Direct tid') when Tid.(tid <> tid') -> begin
-                            match find_single tid' with
-                            | Some tid'' when Tid.(tid' <> tid'') ->
-                              let lbl = Term.tid jmp in
-                              let edge = G.Edge.create tid tid'' lbl in
-                              cfg := G.Node.remove tid' !cfg;
-                              cfg := G.Edge.insert edge !cfg;
-                              changed := true;
-                              Jmp.create (Goto (Direct tid''))
-                                ~tid:lbl ~cond:(Jmp.cond jmp)
-                            | _ -> jmp
-                          end
-                        | _ -> jmp) in
-                  !cfg, blk :: blks, !changed) in
+        let removed, blks, changed =
+          let init = removed, [], false in
+          List.fold blks ~init ~f:(fun (removed, blks, changed) blk ->
+              let tid = Term.tid blk in
+              (* Node was marked as having been removed. *)
+              if Set.mem removed tid then (removed, blks, true)
+              else
+                let removed = ref removed in
+                let changed = ref changed in
+                let blk = Term.map jmp_t blk ~f:(fun jmp ->
+                    match Jmp.kind jmp with
+                    | Goto (Direct tid') when Tid.(tid <> tid') -> begin
+                        match find_single tid' with
+                        | Some tid'' when Tid.(tid' <> tid'') ->
+                          removed := Set.add !removed tid';
+                          changed := true;
+                          Jmp.with_kind jmp @@ Goto (Direct tid'')
+                        | _ -> jmp
+                      end
+                    | _ -> jmp) in
+                !removed, blk :: blks, !changed) in
+        (* Repeat until we reach a fixed point. *)
         let blks = List.rev blks in
-        if changed then loop cfg blks else blks in
-      let+ sub = Helper.create_sub blks in
-      loop (Sub.to_graph sub) blks
+        if changed then loop removed blks else blks in
+      KB.return @@ loop Tid.Set.empty blks
 
   end
 
@@ -183,6 +179,8 @@ module Opt = struct
                     match Jmp.kind jmp with
                     | Goto (Direct tid') when Tid.(tid <> tid') ->
                       if G.Node.degree ~dir:`In tid' cfg = 1 then
+                        (* This must run before the SSA pass, so there should
+                           not be any phi nodes in the program. *)
                         let blk' = Tid.Table.find_exn blk_table tid' in
                         let defs = Term.enum def_t blk |> Seq.to_list in
                         let defs' = Term.enum def_t blk' |> Seq.to_list in
@@ -723,7 +721,7 @@ end
 let to_linear_ssa
     (patch : Data.Patch.t)
     (sub : sub term) : blk term list KB.t =
-  Linear_ssa.transform sub ~patch:(Some patch)
+  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
 let run (patch : Data.Patch.t) : t KB.t =
   let* code = Data.Patch.get_bir patch in
@@ -752,8 +750,8 @@ let run (patch : Data.Patch.t) : t KB.t =
   (* Substitute higher vars. *)
   let* ir = Subst.substitute tgt hvars ir in
   (* Optimization. *)
-  let* ir = Opt.apply ir in
   let* ir = Shape.reorder_blks ir in
+  let* ir = Opt.apply ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
   (* Linear SSA form is needed for VIBES IR. *)
