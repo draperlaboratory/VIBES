@@ -1305,7 +1305,34 @@ let is_nop (op : Ir.operation) : bool =
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
   List.filter ops ~f:(fun o -> not (is_nop o))
 
-let peephole (ir : Ir.t) : Ir.t =
+let implicit_fallthroughs (blks : Ir.blk list) : Ir.blk list =
+  let rec interleave_pairs = function
+    | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
+    | [] | [_] -> [] in
+  let afters = Tid.Table.create () in
+  interleave_pairs blks |> List.iter ~f:(fun (x, y) ->
+      Tid.Table.set afters ~key:x.id ~data:y.id);
+  List.filter_map blks ~f:(fun blk ->
+      (* Find the last control operation. *)
+      match List.last blk.ctrl with
+      | Some o -> begin
+          (* Is it an unconditional branch? *)
+          let op = List.hd_exn o.opcodes in
+          match Ir.Opcode.name op with
+          | "b" -> begin
+              (* Is the target of the branch the immediate next block in
+                 the ordering? *)
+              match List.hd_exn o.operands, Tid.Table.find afters blk.id with
+              | Label id, Some id' when Tid.(id = id') ->
+                (* Delete the branch in favor of an implicit fallthrough. *)
+                Some {blk with ctrl = List.drop_last_exn blk.ctrl}
+              | _ -> Some blk
+            end
+          | _ -> Some blk
+        end
+      | None -> Some blk)
+
+let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
   let filter_nops blk =
     let {Ir.data; Ir.ctrl; _} = blk in
     let data = filter_nops data in
@@ -1316,4 +1343,5 @@ let peephole (ir : Ir.t) : Ir.t =
     }
   in
   let ir = Ir.map_blks ir ~f:filter_nops in
+  let ir = {ir with blks = implicit_fallthroughs ir.blks} in
   ir

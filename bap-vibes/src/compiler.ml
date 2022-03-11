@@ -27,7 +27,7 @@ let optimized
     (ir : Ir.t)
     (cfg : Graphs.Tid.t) : (Ir.t * Minizinc.sol) KB.t =
   let+ ir, sol = solver ir in
-  Arm.peephole ir, sol
+  Arm.peephole ir cfg, sol
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
 let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
