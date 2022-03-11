@@ -1309,9 +1309,10 @@ let implicit_fallthroughs (ir : Ir.t) : Ir.t =
   let rec interleave_pairs = function
     | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
     | [] | [_] -> [] in
-  let afters = Tid.Table.create () in
-  interleave_pairs ir.blks |> List.iter ~f:(fun (x, y) ->
-      Tid.Table.set afters ~key:x.id ~data:y.id);
+  let afters =
+    interleave_pairs ir.blks |>
+    List.fold ~init:Tid.Map.empty ~f:(fun afters (x, y) ->
+      Map.set afters ~key:x.id ~data:y.id) in
   Ir.map_blks ir ~f:(fun blk ->
       (* Find the last control operation. *)
       match List.last blk.ctrl with
@@ -1322,7 +1323,7 @@ let implicit_fallthroughs (ir : Ir.t) : Ir.t =
           | "b" -> begin
               (* Is the target of the branch the immediate next block in
                  the ordering? *)
-              match List.hd_exn o.operands, Tid.Table.find afters blk.id with
+              match List.hd_exn o.operands, Map.find afters blk.id with
               | Label id, Some id' when Tid.(id = id') ->
                 (* Delete the branch in favor of an implicit fallthrough. *)
                 {blk with ctrl = List.drop_last_exn blk.ctrl}
