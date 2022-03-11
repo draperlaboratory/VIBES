@@ -191,18 +191,24 @@ module Opt = struct
   module Merge = struct
 
     (* If two blocks have a single, unconditional edge in between them,
-       then they can be merged together. *)
+       then they can be merged together. This requires a particular
+       ordering for the blocks, since blocks that get merged into their
+       predecessors will get deleted. Therefore, they must be visited
+       afterwards in the ordering. *)
     let go : t = fun blks ->
       let module G = Graphs.Tid in
-      let rec loop cfg blks =
+      let rec loop blks =
+        let* sub = Helper.create_sub blks in
+        with_cfg (Sub.to_graph sub) blks
+      and with_cfg cfg blks =
         let blk_table = Tid.Table.create () in
         List.iter blks ~f:(fun blk ->
             Tid.Table.set blk_table ~key:(Term.tid blk) ~data:blk);
-        let merged = Tid.Table.create () in
+        let merged = ref Tid.Set.empty in
         let blks =
           List.filter_map blks ~f:(fun blk ->
               let tid = Term.tid blk in
-              if Tid.Table.mem merged tid then None
+              if Tid.Set.mem !merged tid then None
               else match Term.enum jmp_t blk |> Seq.to_list with
                 | [jmp] when Helper.is_unconditional jmp -> begin
                     match Jmp.kind jmp with
@@ -216,23 +222,22 @@ module Opt = struct
                         let jmps' = Term.enum jmp_t blk' |> Seq.to_list in
                         let blk = Blk.create ()
                             ~tid ~defs:(defs @ defs') ~jmps:jmps' in
-                        Tid.Table.set merged ~key:tid' ~data:tid;
+                        merged := Tid.Set.add !merged tid';
                         Some blk
                       else
-                        (* An implicit fallthrough is possible here, but we
-                           should defer that to later stages of the pipeline. *)
+                        (* An implicit fallthrough is possible here, but
+                           we should defer that until after selection,
+                           scheduling, and allocation. *)
                         Some blk
                     | _ -> Some blk
                   end
                 | _ -> Some blk) in
-        if Tid.Table.is_empty merged then KB.return blks
-        else
-          (* We merged two blocks, so recompute the CFG and run the analysis
-             again until no changes are possible. *)
-          let* sub = Helper.create_sub blks in
-          loop (Sub.to_graph sub) blks in
-      let* sub = Helper.create_sub blks in
-      loop (Sub.to_graph sub) blks 
+        (* If we changed anything, then recompute the CFG and repeat the
+           optimization. We terminate when a fixed point is reached. *)
+        if Tid.Set.is_empty !merged
+        then KB.return blks
+        else loop blks in
+    loop blks
 
   end
 
