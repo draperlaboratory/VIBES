@@ -1312,7 +1312,7 @@ let implicit_fallthroughs (ir : Ir.t) : Ir.t =
   let afters =
     interleave_pairs ir.blks |>
     List.fold ~init:Tid.Map.empty ~f:(fun afters (x, y) ->
-      Map.set afters ~key:x.id ~data:y.id) in
+        Map.set afters ~key:x.id ~data:y.id) in
   Ir.map_blks ir ~f:(fun blk ->
       (* Find the last control operation. *)
       match List.last blk.ctrl with
