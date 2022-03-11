@@ -82,19 +82,27 @@ module Helper = struct
 
 end
 
-(* Optimizations *)
+(* BIR optimizations. All of these passes assume that the blocks are ordered
+   according to `Shape.reorder_blks`, and that the program is NOT YET in SSA
+   form. *)
 module Opt = struct
 
   type t = blk term list -> blk term list KB.t
 
   module Short_circuit = struct
 
-    (* Short-circuit jumps to blocks that have a single unconditional Goto. *)
+    (* Short-circuit jumps to blocks that have a single unconditional Goto.
+
+       Also known as edge contraction:
+       https://en.wikipedia.org/wiki/Edge_contraction
+    *)
     let go : t = fun blks ->
       let module G = Graphs.Tid in
       let rec loop blks =
         (* Collect all blocks that contain only a single unconditional Goto.
-           These will be the candidates for short-circuit optimizations. *)
+           In other words, these blocks are just "middlemen" and can thus be
+           "cut out". Predecessors of these blocks can then have their
+           control flow redirected to the successors of these "middlemen". *)
         let singles =
           List.filter_map blks ~f:(fun blk ->
               if Seq.is_empty @@ Term.enum def_t blk then
