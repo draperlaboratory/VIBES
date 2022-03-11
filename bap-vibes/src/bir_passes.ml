@@ -89,15 +89,14 @@ module Opt = struct
 
   type t = blk term list -> blk term list KB.t
 
-  module Short_circuit = struct
+  module Contract = struct
 
-    (* Short-circuit jumps to blocks that have a single unconditional Goto.
-
-       Also known as edge contraction:
-       https://en.wikipedia.org/wiki/Edge_contraction
-    *)
+    (* Edge contraction: https://en.wikipedia.org/wiki/Edge_contraction *)
     let go : t = fun blks ->
       let module G = Graphs.Tid in
+      (* Since we assume the correct ordering of the blocks, the entry tid
+         should be the first in the list. *)
+      let entry_tid = Term.tid @@ List.hd_exn blks in
       let rec loop blks =
         (* Collect all blocks that contain only a single unconditional Goto.
            In other words, these blocks are just "middlemen" and can thus be
@@ -105,12 +104,16 @@ module Opt = struct
            control flow redirected to the successors of these "middlemen". *)
         let singles =
           List.filter_map blks ~f:(fun blk ->
-              if Seq.is_empty @@ Term.enum def_t blk then
+              let tid = Term.tid blk in
+              (* Note that the entry block can never be a candidate for
+                 contraction. *)
+              if Tid.(tid <> entry_tid)
+              && Seq.is_empty @@ Term.enum def_t blk then
                 let jmps = Term.enum jmp_t blk |> Seq.to_list in
                 match jmps with
                 | [jmp] when Helper.is_unconditional jmp -> begin
                     match Jmp.kind jmp with
-                    | Goto (Direct tid) -> Some (Term.tid blk, tid)
+                    | Goto (Direct tid') -> Some (tid, tid')
                     | _ -> None
                   end
                 | _ -> None
@@ -240,7 +243,7 @@ module Opt = struct
   (* Applies all the optimizations we currently perform. *)
   let apply : t = apply_list [
       Simpl.go;
-      Short_circuit.go;
+      Contract.go;
       Merge.go
     ]
 
