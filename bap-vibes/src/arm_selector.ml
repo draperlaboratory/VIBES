@@ -958,12 +958,16 @@ struct
       end
     | Var v -> begin
         match Var.typ v with
-        | Imm _ when Option.is_some branch ->
+        | Imm 1 when Option.is_some branch ->
           (* Lazy way to compute the boolean. *)
           let v = var v in
           let c = const @@ Word.zero 32 in
           let* o = sel_binop NEQ ~patch ~is_thumb ~branch in
           o v c
+        | _ when Option.is_some branch ->
+          Err.(fail @@ Other
+                 "select_exp: Ill-typed variable in the condition \
+                  of a branch")
         | Imm _ -> KB.return @@ var v
         | Mem _ -> KB.return @@ mem v
         | Unk -> Err.(fail @@ Other (

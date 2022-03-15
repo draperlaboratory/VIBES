@@ -77,7 +77,7 @@ let test_ite _ =
   assert_parse_eq
     "int cond_expr; if(cond_expr){goto l1;}else{goto l2;};"
     "{
-       if (cond_expr) {
+       if (cond_expr <> 0) {
          call(l1)
        } else {
          call(l2)
@@ -88,7 +88,9 @@ let test_fallthrough _ =
   assert_parse_eq
     "int x, y, z; if (x) { goto l; } x = z; "
     "{
-       if (x) { call(l) }
+       if (x <> 0) {
+         call(l)
+       }
        x := z
      }"
 
@@ -241,7 +243,7 @@ let test_ternary_assign _ =
      int x, c;
      x = c ? f() : 5;"
     "{
-      if (c) {
+      if (c <> 0) {
         call(f)
         x := R0
       }
@@ -255,7 +257,7 @@ let test_ternary_posincr _ =
     "int x, y, z, c;
      z = (c ? x : y)++;"
     "{
-      if (c) {
+      if (c <> 0) {
         virt := x
         x := x + 1
       }
@@ -273,7 +275,7 @@ let test_ternary_eff _ =
      (c ? f() : (void)(x = 5));
      y = x;"
     "{
-       if (c) {
+       if (c <> 0) {
          call(f)
        }
        else {
@@ -318,12 +320,12 @@ let test_and_short_circ _ =
      }"
     "{
        virt := x
-       if (virt) {
+       if (virt <> 0) {
          call(f)
          virt := R0
          virt := virt
        }
-       if (virt) {
+       if (virt <> 0) {
          y := 5
        }
      }"
@@ -337,14 +339,14 @@ let test_or_short_circ _ =
      }"
     "{
        virt := x
-       if (virt) {
+       if (virt <> 0) {
        }
        else {
          call(f)
          virt := R0
          virt := virt
        }
-       if (virt) {
+       if (virt <> 0) {
          y := 5
        }
      }"
@@ -364,7 +366,7 @@ let test_ternary_compound _ =
     "int c, x, y, z;
      z = (c ? x : y) += 5;"
     "{
-       if (c) {
+       if (c <> 0) {
          x := x + 5
          virt := x
        }
@@ -398,7 +400,7 @@ let test_ternary_deref _ =
     "int c, *x, *y;
      *(c ? x : y) = 5;"
     "{
-       if (c) {
+       if (c <> 0) {
          virt := x
        }
        else {
@@ -428,6 +430,14 @@ let test_bool_not _ =
        if (x = 0) {
          x := y
        }
+     }"
+
+let test_mixed_sorts _ =
+  assert_parse_eq
+    "int x, y;
+     x += (y == 0);"
+    "{
+       x := x + pad:32[y = 0]
      }"
 
 let suite = [
@@ -464,4 +474,5 @@ let suite = [
   "Test ternary deref" >:: test_ternary_deref;
   "Test char deref post increment" >:: test_char_deref_posincr;
   "Test bool not" >:: test_bool_not;
+  "Test mixed sorts" >:: test_mixed_sorts;
 ]
