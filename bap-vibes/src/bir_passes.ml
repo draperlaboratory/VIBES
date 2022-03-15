@@ -113,7 +113,7 @@ module Opt = struct
                 match jmps with
                 | [jmp] when Helper.is_unconditional jmp -> begin
                     match Jmp.kind jmp with
-                    | Goto (Direct tid') -> Some (tid, tid')
+                    | Goto lbl -> Some (tid, lbl)
                     | _ -> None
                   end
                 | _ -> None
@@ -127,10 +127,11 @@ module Opt = struct
           if Set.mem visited tid then None
           else
             let visited = Set.add visited tid in
-            Tid.Table.find singles tid |> Option.bind ~f:(fun tid' ->
-                match find_single_dst tid' ~visited with
-                | Some _ as next -> next
-                | None -> Some tid') in
+            Tid.Table.find singles tid |> Option.bind ~f:(function
+                | Indirect _ as ind -> Some ind
+                | Direct tid' as dir -> match find_single_dst tid' ~visited with
+                  | Some _ as next -> next
+                  | None -> Some dir) in
         let contracted, blks, changed =
           let init = Tid.Set.empty, [], false in
           List.fold blks ~init ~f:(fun (contracted, blks, changed) blk ->
@@ -147,10 +148,14 @@ module Opt = struct
                     match Jmp.kind jmp with
                     | Goto (Direct tid') when Tid.(tid <> tid') -> begin
                         match find_single_dst tid' with
-                        | Some tid'' when Tid.(tid' <> tid'') ->
+                        | Some (Direct tid'') when Tid.(tid' <> tid'') ->
                           contracted := Set.add !contracted tid';
                           changed := true;
                           Jmp.with_kind jmp @@ Goto (Direct tid'')
+                        | Some (Indirect _ as ind) ->
+                          contracted := Set.add !contracted tid';
+                          changed := true;
+                          Jmp.with_kind jmp @@ Goto ind
                         | _ -> jmp
                       end
                     | _ -> jmp) in
@@ -201,6 +206,12 @@ module Opt = struct
         let* sub = Helper.create_sub blks in
         with_cfg (Sub.to_graph sub) blks
       and with_cfg cfg blks =
+        (* We can merge with a successor block if we are its only predecessor.
+           Note that the pseudo-start node will be a predecessor of
+           "unreachable" blocks. *)
+        let can_merge tid =
+          let preds = G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+          Set.(length @@ remove preds G.start) = 1 in
         let blk_table = Tid.Table.create () in
         List.iter blks ~f:(fun blk ->
             Tid.Table.set blk_table ~key:(Term.tid blk) ~data:blk);
@@ -213,7 +224,7 @@ module Opt = struct
                 | [jmp] when Helper.is_unconditional jmp -> begin
                     match Jmp.kind jmp with
                     | Goto (Direct tid') when Tid.(tid <> tid') ->
-                      if G.Node.degree ~dir:`In tid' cfg = 1 then
+                      if can_merge tid' then
                         (* This must run before the SSA pass, so there should
                            not be any phi nodes in the program. *)
                         let blk' = Tid.Table.find_exn blk_table tid' in
@@ -248,8 +259,8 @@ module Opt = struct
   (* Applies all the optimizations we currently perform. *)
   let apply : t = apply_list [
       Simpl.go;
+      Merge.go;
       Contract.go;
-      Merge.go
     ]
 
   (* This code is taken directly from BAP's optimization passes:

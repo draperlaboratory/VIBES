@@ -436,7 +436,7 @@ let build_extra_constraints_file ~extra_constraints ~model_filepath : string =
 let run_allocation_and_scheduling
     ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
-    ~extra_constraints:(extra_constraints : string option)
+    ?(extra_constraints : string option = None)
     (tgt : Theory.target)
     (prev_sols : sol list)
     (vir : Ir.t)

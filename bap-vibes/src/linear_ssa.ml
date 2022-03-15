@@ -229,7 +229,6 @@ let transform
     (sub : sub term) : blk term list KB.t =
   let open KB.Let in
   let ins_outs_map = compute_liveness sub in
-  (* let* () = Kb_error.fail @@ Other "" in *)
   let blks, Linear.Env.{vars; _} =
     Linear.(run (go blk_t sub ~f:linearize_blk) Env.empty) in
   (* Add in live variables that persist across blocks that don't use them *)

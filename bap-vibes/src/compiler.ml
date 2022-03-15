@@ -101,7 +101,7 @@ let compile_one_vibes_ir
 type solver_with_filepath =
   ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
-  extra_constraints:string option ->
+  ?extra_constraints:string option ->
   Theory.target ->
   Minizinc.sol list ->
   Ir.t ->
@@ -166,7 +166,7 @@ let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
 type solver =
   ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
-  extra_constraints:string option ->
+  ?extra_constraints:string option ->
   Theory.target ->
   Minizinc.sol list ->
   Ir.t ->

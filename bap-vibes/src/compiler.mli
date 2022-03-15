@@ -28,7 +28,7 @@ val compile_ir : ?isel_model_filepath:string option -> Data.t -> unit KB.t
 type solver =
   ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
-  extra_constraints:string option ->
+  ?extra_constraints:string option ->
   Theory.target ->
   Minizinc.sol list ->
   Ir.t ->
