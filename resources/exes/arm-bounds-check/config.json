@@ -1,0 +1,84 @@
+{
+  "max-tries": 1,
+  "wp-params": {
+    "func": "sub_10468",
+    "postcond": "(assert
+(let ((base (bvadd init_R0_mod (bvmul init_R1_mod #x00000004))))
+  (implies
+    (and (= init_mem_orig init_mem_mod)
+         (bvugt init_R0_orig init_SP_orig)
+         (= init_R0_orig init_R0_mod)
+         (= init_R1_orig init_R1_mod))
+    (ite (or (bvslt init_R1_mod #x00000000)
+             (bvsge init_R1_mod #x00000003))
+      (= R0_mod #xffffffff)
+      (and (= R0_mod R0_orig)
+           (= R0_mod
+              (concat
+                (select init_mem_mod (bvadd base #x00000003))
+                (select init_mem_mod (bvadd base #x00000002))
+                (select init_mem_mod (bvadd base #x00000001))
+                (select init_mem_mod base))))))))"
+  },
+  "patch-space": [
+    {"offset": "0x510",
+     "size": "512"
+    }
+  ],
+  "patches": [
+    {"patch-name": "bounds-check",
+     "patch-code": "int *a, i, retval;
+                    if (i < 3 && i >= 0) {
+                      retval = a[i];
+                    } else {
+                      retval = -1;
+                    }",
+     "patch-point": "0x10474",
+     "patch-size": 28,
+     "patch-vars": [
+       {"name": "a",
+        "at-entry": {
+          "stored-in": "register",
+          "register": "R0"
+        },
+        "at-exit": {
+          "stored-in": "register",
+          "register": "R0"
+        }
+       },
+       {"name": "i",
+        "at-entry": {
+          "stored-in": "register",
+          "register": "R1"
+        },
+        "at-exit": {
+          "stored-in": "register",
+          "register": "R1"
+        }
+       },
+       {"name": "retval",
+        "at-entry": {
+          "stored-in": "register",
+          "register": "R3"
+        },
+        "at-exit": {
+          "stored-in": "register",
+          "register": "R3"
+        }
+       }
+     ],
+     "extra-constraints": "
+       % exclude callee-save registers from the solution
+       constraint exclude_reg('R4');
+       constraint exclude_reg('R5');
+       constraint exclude_reg('R6');
+       constraint exclude_reg('R7');
+       constraint exclude_reg('R8');
+       constraint exclude_reg('R9');
+       constraint exclude_reg('R10');
+       constraint exclude_reg('R11');
+       constraint exclude_reg('SP');
+     "
+    }
+  ]
+}

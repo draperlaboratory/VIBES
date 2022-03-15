@@ -329,6 +329,27 @@ test_arm_extra_constraints () {
     run_test "arm-extra-constraints" 5 3
 }
 
+test_arm_bounds_check () {
+    local TEST_DIR="${EXES_DIR}/arm-bounds-check"
+    local MAIN_EXE="${TEST_DIR}/main"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
+
+    print_header "Checking ${TEST_DIR}"
+
+    run_make "make clean -C ${TEST_DIR}" 0
+
+    # Check the precompiled executables.
+    run_make "make main -C ${TEST_DIR}" 0
+    run_make "make main.patched.reference -C ${TEST_DIR}" 0
+    run_arm_exe "${MAIN_EXE}" 12
+    run_arm_exe "${PATCH_EXE}" 255
+
+    # Check that vibes patches correctly.
+    run_make "make main.patched -C ${TEST_DIR}" 0
+    run_arm_exe "${TEST_PATCH_EXE}" 255
+}
+
 # Run all tests
 run_all () {
     test_arm_simple
@@ -346,4 +367,5 @@ run_all () {
     test_arm_stripped_loader
     test_arm_branch
     test_arm_branch_bsi
+    test_arm_bounds_check
 }
