@@ -56,10 +56,12 @@ let verify
     ~(patch_prog : Program.t * string)
     (tgt : Theory.target)
     (params : Params.t) : (next_step, Toplevel_error.t) result =
-  Events.(send @@ Header "Starting Verifier");
-  Events.(send @@ Info "Beginning weakest-precondition analysis...");
   let prog1, name1 = orig_prog in
   let prog2, name2 = patch_prog in
+  Events.(send @@ Header "Starting Verifier");
+  Events.(send @@ Info "Beginning weakest-precondition analysis...");
+  Events.(send @@ Info (sprintf "Original program: %s" name1));
+  Events.(send @@ Info (sprintf "Patched program: %s" name2));
   let input1 = Runner.{program = prog1; target = tgt; filename = name1} in
   let input2 = Runner.{program = prog2; target = tgt; filename = name2} in
   let* status =
