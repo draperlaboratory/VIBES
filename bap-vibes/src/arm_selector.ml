@@ -612,7 +612,6 @@ module ARM_ops = struct
     let tmp_flag = Ir.Void (create_temp bit_ty) in
     let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
-    let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val] in
     let sem = arg1_sem @. arg2_sem in
     match branch with
     | Some {generate; is_call} ->
@@ -624,6 +623,7 @@ module ARM_ops = struct
         | _ -> Err.fail @@ Other
             "Arm_selector.binop_cmp: encountered a branch with non-empty \
              ctrl semantics" in
+      let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val] in
       let current_data = cmp :: sem.current_data in
       let br, op_val = generate cond tmp_flag in
       let sem = {
@@ -648,15 +648,16 @@ module ARM_ops = struct
          clobber the flags (which we want to avoid). The pattern we generate 
          will assume the condition is true first, and then clear the result
          if it is false. *)
-      let then_ = Ops.mov false in
+      let then_ = Ops.mov is_thumb in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
       let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32)] in
+      let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val; Var tmp1] in
       let else_ = Ir.simple_op else_ (Var tmp2) [
           Const Word.(zero 32);
           tmp_flag;
           Var tmp1
         ] in
-      let ops = [else_; then_; cmp] in
+      let ops = [else_; cmp; then_] in
       let sem = {sem with current_data = ops @ sem.current_data} in
       KB.return @@ {op_val = Var tmp2; op_eff = sem}
 
@@ -1234,6 +1235,8 @@ module Pretty = struct
     let open Result.Monad_infix in
     (* bl may have pseudo-arguments, so ignore them. *)
     let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
+    (* cmp may have pseudo-arguments *)
+    let rhs = if String.(op = "cmp") then List.take rhs 2 else rhs in
     (* conditional move may have pseudo-arguments at the end *)
     let rhs =
       if String.is_prefix op ~prefix:"mov" &&
