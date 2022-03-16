@@ -68,7 +68,7 @@ end
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
-  val arm_ir_pretty : Ir.t -> (string list, Kb_error.t) result
+  val arm_ir_pretty : Ir.t -> is_thumb:bool -> (string list, Kb_error.t) result
 end
 
 module ARM_Gen :

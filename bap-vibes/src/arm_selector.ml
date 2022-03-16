@@ -324,10 +324,6 @@ module ARM_ops = struct
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
 
-    (* Workaround for issue with minizinc not correctly handling spaces. *)
-    let ite cnd = op ("ite_" ^ Cond.to_string cnd) 
-    let it cnd = op ("it_" ^ Cond.to_string cnd) 
-
   end
 
   let create_temp ty =
@@ -341,21 +337,19 @@ module ARM_ops = struct
        branch instruction, along with the fake destination operand.
 
        `is_call` denotes whether this is a conditional call or not.
-       We bookkeep this information because on Thumb a conditional
-       call needs to be placed inside of an IT block.
     *)
     type t = {
-      generate : Cond.t -> Ir.operation * Ir.operand;
+      generate : Cond.t -> Ir.operand -> Ir.operation * Ir.operand;
       is_call : bool;
     }
 
     let create (dst : Ir.operand) ~(is_call : bool) : t = {
-      generate = (fun cnd ->
+      generate = (fun cnd flg ->
           let cnd = Some cnd in
           let opcode =
             if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
           let tmp = Ir.Void (create_temp bit_ty) in
-          let op = Ir.simple_op opcode tmp [dst] in
+          let op = Ir.simple_op opcode tmp [dst; flg] in
           op, tmp);
       is_call;
     }
@@ -381,17 +375,11 @@ module ARM_ops = struct
     | n when n <= 0xFFFF -> Ops.movw
     | _ -> Ops.ldr 
 
-  (* Detect the movcc pattern when storing the result of a comparison. *)
-  let movcc_pattern (o1 : Ir.operation) (o2 : Ir.operation) : bool =
-    let n1 = Ir.Opcode.name @@ List.hd_exn o1.opcodes in
-    let n2 = Ir.Opcode.name @@ List.hd_exn o2.opcodes in
-    String.is_prefix n1 ~prefix:"mov" &&
-    String.is_prefix n2 ~prefix:"mov"  &&
-    let n1 = String.drop_prefix n1 3 in
-    let n2 = String.drop_prefix n2 3 in
-    match Cond.of_string n1, Cond.of_string n2 with
-    | Some _, Some _ -> true
-    | _ -> false
+  let is_movcc (o : Ir.operation) : bool =
+    let n = Ir.Opcode.name @@ List.hd_exn o.opcodes in
+    String.is_prefix n ~prefix:"mov" &&
+    let n = String.drop_prefix n 3 in
+    Option.is_some @@ Cond.of_string n
 
   (* Some cowboy type checking here, to check which kind of mov to
      use. Currently doesn't work if variables are instantiated
@@ -406,16 +394,13 @@ module ARM_ops = struct
         (* FIXME: absolute hack! if we have vars here, we can assume
            that the last operation assigned to a temporary, and we can
            just replace that temporary with the known destination, and
-           return that as the effect.
-
-           Additionally, we ignore the conditional move pattern generated
-           by `binop_cmp`. The reason is that we require both temporaries
-           to be present since we have stored information in the KB that
-           they are congruent.
-        *)
+           return that as the effect. *)
         match arg2_sem.current_data with
         | [] -> assert false (* excluded by the guard above *)
-        | o1 :: o2 :: _ when movcc_pattern o1 o2 ->
+        | o :: _ when is_movcc o ->
+          (* This optimization should ignore conditional instructions.
+             If the register allocator picks an optimal solution, then
+             the peephole optimizer can get rid of this extra `mov`. *)
           let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
           KB.return @@ instr mov arg2_sem
         | op :: ops ->
@@ -639,14 +624,8 @@ module ARM_ops = struct
         | _ -> Err.fail @@ Other
             "Arm_selector.binop_cmp: encountered a branch with non-empty \
              ctrl semantics" in
-      let current_data =
-        if is_thumb && is_call then
-          (* Thumb requires an `it` block for conditional calls. *)
-          let tmp_it = Ir.Void (create_temp bit_ty) in
-          let it = Ir.simple_op Ops.(it cond) tmp_it [tmp_flag] in
-          it :: cmp :: sem.current_data
-        else cmp :: sem.current_data in
-      let br, op_val = generate cond in
+      let current_data = cmp :: sem.current_data in
+      let br, op_val = generate cond tmp_flag in
       let sem = {
         sem with current_data; current_ctrl = br :: sem.current_ctrl
       } in
@@ -654,11 +633,6 @@ module ARM_ops = struct
       KB.return @@ {op_val; op_eff = sem}
     | None ->
       (* Store the result of the comparison in an intermediate destination. *)
-      let tmp_cmp, ite =
-        if is_thumb then
-          let tmp_ite = Ir.Void (create_temp bit_ty) in
-          tmp_ite, [Ir.simple_op Ops.(ite cond) tmp_ite [tmp_flag]]
-        else tmp_flag, [] in
       let tmp1 = create_temp word_ty in
       let tmp2 = create_temp word_ty in
       (* These temps need to be unique, but VIBES IR also needs to know
@@ -670,13 +644,22 @@ module ARM_ops = struct
           let t2 = List.hd_exn tmp2.temps in
           let* () = Data.Patch.add_congruence patch (t1, t2) in
           Data.Patch.add_congruence patch (t2, t1) in
-      let then_ = Ops.movcc @@ Some cond in
+      (* On Thumb we generate `movs` for the compact encoding, but this would
+         clobber the flags (which we want to avoid). The pattern we generate 
+         will assume the condition is true first, and then clear the result
+         if it is false. *)
+      let then_ = Ops.mov false in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
-      let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in
-      let else_ = Ir.simple_op else_ (Var tmp2) [Const Word.(zero 32); tmp_cmp] in
-      let ops = (else_ :: then_ :: ite) @ [cmp] in
+      (* let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in *)
+      let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32)] in
+      let else_ = Ir.simple_op else_ (Var tmp2) [
+          Const Word.(zero 32);
+          tmp_flag;
+          Var tmp1
+        ] in
+      let ops = [else_; then_; cmp] in
       let sem = {sem with current_data = ops @ sem.current_data} in
-      KB.return @@ {op_val = Var tmp1; op_eff = sem}
+      KB.return @@ {op_val = Var tmp2; op_eff = sem}
 
   let equals
       ~(patch : Data.Patch.t option)
@@ -1157,15 +1140,21 @@ end
 
 module Pretty = struct
 
-  let opcode_pretty i : (string, Kb_error.t) result =
+  type opc = (string, string * string) Either.t
+
+  let opcode_pretty
+      (i : Ir.opcode)
+      ~(is_thumb : bool) : (opc, Kb_error.t) result =
+    let module C = ARM_ops.Cond in
     let name = Ir.Opcode.name i in
-    let name =
-      (* Workaround for issue with minizinc not correctly handling spaces. *)
-      if String.is_prefix name ~prefix:"it_"
-      || String.is_prefix name ~prefix:"ite_"
-      then String.substr_replace_all name ~pattern:"_" ~with_:" "
-      else name in
-    Result.return name
+    let it n =
+      if is_thumb then match C.of_string @@ String.drop_prefix name n with
+        | None -> Result.return @@ First name
+        | Some cc -> Result.return @@ Second ("it " ^ C.to_string cc, name)
+      else Result.return @@ First name in
+    if String.is_prefix name ~prefix:"bl" then it 2
+    else if String.is_prefix name ~prefix:"mov" then it 3
+    else Result.return @@ First name
 
   (* We use this function when generating ARM, since the assembler
      doesn't like leading digits, % or @ in labels. *)
@@ -1259,20 +1248,33 @@ module Pretty = struct
     Result.all >>| fun all_str ->
     String.concat @@ List.intersperse all_str ~sep:", "
 
-  let arm_op_pretty (t : Ir.operation) : (string, Kb_error.t) result =
+  let arm_op_pretty
+      (t : Ir.operation)
+      ~(is_thumb : bool) : (string list, Kb_error.t) result =
     let open Result.Monad_infix in
-    List.hd_exn t.opcodes |> opcode_pretty >>= fun op ->
-    arm_operands_pretty op t.lhs t.operands >>|
-    Format.asprintf "%s %s" op
+    List.hd_exn t.opcodes |> opcode_pretty ~is_thumb >>= fun op ->
+    let o = match op with
+      | First o -> o
+      | Second (_, o) -> o in
+    arm_operands_pretty o t.lhs t.operands >>| fun ops -> match op with
+    | First op -> [Format.asprintf "%s %s" op ops]
+    | Second (o1, o2) -> [o1; Format.asprintf "%s %s" o2 ops]
 
-  let arm_blk_pretty (t : Ir.blk) : (string list, Kb_error.t) result =
+  let arm_blk_pretty
+      (t : Ir.blk)
+      ~(is_thumb : bool) : (string list, Kb_error.t) result =
     let open Result.Monad_infix in
     let all_ops = t.data @ t.ctrl in
-    List.map ~f:arm_op_pretty all_ops |> Result.all >>| fun opcodes ->
-    Format.asprintf "%s:" (tid_to_string t.id) :: opcodes
+    List.map ~f:(arm_op_pretty ~is_thumb) all_ops |>
+    Result.all >>| fun opcodes ->
+    Format.asprintf "%s:" (tid_to_string t.id) ::
+    List.concat opcodes
 
-  let arm_ir_pretty (t : Ir.t) : (string list, Kb_error.t) result =
-    List.map ~f:arm_blk_pretty t.blks |> Result.all |> Result.map ~f:List.concat
+  let arm_ir_pretty
+      (t : Ir.t)
+      ~(is_thumb : bool) : (string list, Kb_error.t) result =
+    List.map ~f:(arm_blk_pretty ~is_thumb) t.blks |>
+    Result.all |> Result.map ~f:List.concat
 
 end
 

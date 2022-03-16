@@ -220,13 +220,18 @@ let serialize_mzn_params
             Theory.Role.pp r))
   in
   let congruent_temps =
+    (* Temps which we may have established congruence for could've been
+       optimized away, so ignore them if that was the case. *)
     List.fold congruence ~init:Var.Map.empty ~f:(fun m (t1, t2) ->
-        let m = Map.update m t1 ~f:(function
-            | None -> Var.Set.singleton t2
-            | Some s -> Set.add s t2) in
-        Map.update m t2 ~f:(function
-            | None -> Var.Set.singleton t1
-            | Some s -> Set.add s t1)) in
+        if Set.mem params.temps t1
+        && Set.mem params.temps t2 then
+          let m = Map.update m t1 ~f:(function
+              | None -> Var.Set.singleton t2
+              | Some s -> Set.add s t2) in
+          Map.update m t2 ~f:(function
+              | None -> Var.Set.singleton t1
+              | Some s -> Set.add s t1)
+        else m) in
   let temps = params.temps |> Var.Set.to_list in
   let temp_names =
     List.map ~f:(fun t -> Var.to_string t) temps

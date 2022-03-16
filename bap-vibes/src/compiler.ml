@@ -30,10 +30,14 @@ let optimized
   Arm.peephole ir cfg, sol
 
 (* Converts a list of BIR statements to a list of ARM assembly strings. *)
-let create_assembly (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
-    (ir : Ir.t) (cfg : Graphs.Tid.t) : (string list * Minizinc.sol) KB.t =
+let create_assembly
+    (solver : Ir.t -> (Ir.t * Minizinc.sol) KB.t)
+    (ir : Ir.t)
+    (cfg : Graphs.Tid.t)
+    (lang : Theory.language) : (string list * Minizinc.sol) KB.t =
   optimized solver ir cfg >>= fun (ir, new_sol) ->
-  let pretty_ir = Arm.Pretty.arm_ir_pretty ir in
+  Arm.is_thumb lang >>= fun is_thumb ->
+  let pretty_ir = Arm.Pretty.arm_ir_pretty ir ~is_thumb in
   match pretty_ir with
   | Ok assembly -> KB.return (assembly, new_sol)
   | Error e -> Kb_error.fail e
@@ -49,6 +53,7 @@ let create_vibes_ir
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
+  (* let* () = Kb_error.fail @@ Other "" in *)
   let* lang = Data.Patch.get_lang patch in
   let* tgt = Data.Patch.get_target patch in
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
@@ -143,7 +148,7 @@ let compile_one_assembly
           ~regs
           ~exclude_regs
           ~congruence in
-      create_assembly s ir cfg >>= fun (assembly, new_sol) ->
+      create_assembly s ir cfg lang >>= fun (assembly, new_sol) ->
       Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
       Events.(send @@ Info "The patch has the following assembly:\n");
       Events.(send @@ Rule);
