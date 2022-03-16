@@ -650,7 +650,6 @@ module ARM_ops = struct
          if it is false. *)
       let then_ = Ops.mov false in
       let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
-      (* let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32); tmp_cmp] in *)
       let then_ = Ir.simple_op then_ (Var tmp1) [Const Word.(one 32)] in
       let else_ = Ir.simple_op else_ (Var tmp2) [
           Const Word.(zero 32);
