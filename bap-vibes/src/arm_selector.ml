@@ -390,19 +390,17 @@ module ARM_ops = struct
     let {op_val = arg2_var; op_eff = arg2_sem} = arg2 in
     match arg1, arg2_var with
     | Ir.Var _, Ir.Var _
-      when not @@ List.is_empty arg2_sem.current_data -> begin
+      when not (
+          List.is_empty arg2_sem.current_data ||
+          (* The optimization below should not be performed on conditional
+             instructions. *)
+          is_movcc @@ List.hd_exn arg2_sem.current_data) -> begin
         (* FIXME: absolute hack! if we have vars here, we can assume
            that the last operation assigned to a temporary, and we can
            just replace that temporary with the known destination, and
            return that as the effect. *)
         match arg2_sem.current_data with
         | [] -> assert false (* excluded by the guard above *)
-        | o :: _ when is_movcc o ->
-          (* This optimization should ignore conditional instructions.
-             If the register allocator picks an optimal solution, then
-             the peephole optimizer can get rid of this extra `mov`. *)
-          let mov = Ir.simple_op Ops.(mov is_thumb) arg1 [arg2_var] in
-          KB.return @@ instr mov arg2_sem
         | op :: ops ->
           let op = {op with Ir.lhs = [arg1]} in
           KB.return {arg2_sem with current_data = op :: ops}
