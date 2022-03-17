@@ -194,15 +194,19 @@ let linearize_blk (blk : blk term) : blk term linear =
   Blk.create ~phis:[] ~defs ~jmps ~tid:(Term.tid blk) ()
 
 (* Produce a linear_ssa-ified live variable map. Each variable
-   get the prefix from it's block *)
-let compute_liveness
+   get the prefix from it's block.
+
+   Also, expand the phi nodes to new defs at the corresponding
+   edges in the CFG.
+*)
+let compute_liveness_and_expand_phis
     (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) KB.t =
   let open KB.Let in
   let liveness = Live.compute sub in
   let blks = Term.enum blk_t sub |> Seq.to_list in
   (* Map each block to a list of pseudo definitions according to the
      phi nodes we discovered. *)
-  let phi_map =
+  let phi_map : (var * exp) list Tid.Map.t =
     List.fold blks ~init:Tid.Map.empty ~f:(fun init blk ->
         Term.enum phi_t blk |> Seq.fold ~init ~f:(fun init phi ->
             let lhs = Phi.lhs phi in
@@ -239,15 +243,15 @@ let compute_liveness
   KB.return (blks, Tid.Map.of_alist_exn ins_outs_map)
 
 let all_ins_outs_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
-  let inouts = Tid.Map.data ins_outs in
-  Var.Set.union_list (List.map ~f:(fun {ins ;outs} ->
-      Var.Set.union ins outs) inouts)
+  Var.Set.union_list @@
+  List.map ~f:(fun Data.{ins; outs} -> Var.Set.union ins outs) @@
+  Tid.Map.data ins_outs
 
 let transform
     ?(patch : Data.Patch.t option = None)
     (sub : sub term) : blk term list KB.t =
   let open KB.Let in
-  let* blks, ins_outs_map = compute_liveness sub in
+  let* blks, ins_outs_map = compute_liveness_and_expand_phis sub in
   let blks, Linear.Env.{vars; _} =
     Linear.(run (List.map blks ~f:linearize_blk) Env.empty) in
   (* Add in live variables that persist across blocks that don't use them *)
