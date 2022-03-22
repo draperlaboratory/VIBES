@@ -71,8 +71,9 @@ module Helper = struct
         | _ -> false)
 
   (* Returns true if there are calls in the IR. *)
-  let has_calls (blks : blk term list) : bool =
-    List.exists blks ~f:has_call
+  let call_blks (blks : blk term list) : tid list =
+    List.filter_map blks ~f:(fun blk ->
+        if has_call blk then Some (Term.tid blk) else None)
 
   (* Returns true if the jmp is unconditional. *)
   let is_unconditional (jmp : jmp term) : bool =
@@ -248,7 +249,7 @@ module Opt = struct
         if Tid.Set.is_empty !merged
         then KB.return blks
         else loop blks in
-    loop blks
+      loop blks
 
   end
 
@@ -515,6 +516,20 @@ end
 (* Change the shape of the code for the instruction selector. *)
 module Shape = struct
 
+  (* Remove unreachable blks, excluding the entry blk. *)
+  let remove_unreachable
+      (blks : blk term list)
+      (entry_blk : blk term) : blk term list KB.t =
+    let module G = Graphs.Tid in
+    let+ sub = Helper.create_sub blks in
+    let cfg = Sub.to_graph sub in
+    List.filter blks ~f:(fun blk ->
+        Blk.(blk = entry_blk) ||
+        let tid = Term.tid blk in
+        let preds =
+          G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+        not @@ Tid.Set.(is_empty @@ remove preds G.start))
+
   (* If there are exit nodes of the form `call ... with noreturn` or
      `call ... with return <indirect>`, then insert a new blk for them
      to return to. *)
@@ -645,9 +660,18 @@ module ABI = struct
   let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
       (hvars : Hvar.t list) (entry_blk : blk term)
       (blks : blk term list) : (blk term list * Higher_var.t list) KB.t =
-    if not (Helper.has_calls blks && List.length blks > 1)
+    let calls = Helper.call_blks blks in
+    if List.is_empty calls || List.length blks = 1
     then KB.return (blks, hvars)
     else
+      (* Collect the liveness information. *)
+      let* live =
+        let+ sub = Helper.create_sub blks in
+        Live.compute sub in
+      (* Returns true if the variable is live after a call. *)
+      let live_after_call v = List.exists calls ~f:(fun tid ->
+          let out = Live.outs live tid in
+          Set.exists out ~f:(fun v' -> String.(v = Var.name v'))) in
       let width = Theory.Target.bits tgt in
       let stride = Word.of_int ~width (width lsr 3) in
       (* Use predetermined stack locations. *)
@@ -665,15 +689,18 @@ module ABI = struct
         | None -> Err.(fail @@ Other (
             sprintf "No stack pointer register for target %s\n%!"
               (Theory.Target.to_string tgt))) in
+      (* Spilled and restored registers. *)
       let spilled = ref String.Set.empty
       and restored = ref String.Set.empty in
-      (* Find which hvars we need to spill. *)
-      let spill ?(restore = false) name v offset =
+      let spill ?(restore = false) name v offset hvar =
         let memory = Hvar.create_frame (Var.name sp) offset in
         let at_entry = Hvar.stored_in_memory memory in
         spilled := Set.add !spilled v;
         if restore then restored := Set.add !restored v;
-        Hvar.create_with_storage name ~at_entry ~at_exit:None in
+        if live_after_call name
+        then Hvar.create_with_storage name ~at_entry ~at_exit:None
+        else hvar in
+      (* Find which hvars we need to spill. *)
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
           match Hvar.value hvar with
@@ -683,12 +710,17 @@ module ABI = struct
               | Some (offset, _) ->
                 match at_exit with
                 | Some Hvar.(Register v') when String.(v = v') ->
-                  KB.return @@ spill name v offset ~restore:true
+                  KB.return @@ spill name v offset hvar ~restore:true
                 | Some _ ->
                   Err.(fail @@ Other (
                       sprintf "Unexpected value for `at_exit` of higher var %s"
                         name))
-                | None -> KB.return @@ spill name v offset
+                | None ->
+                  (* Don't bother to preserve the register if it's not live
+                     after a call. *)
+                  if live_after_call name
+                  then KB.return @@ spill name v offset hvar
+                  else KB.return hvar
             end
           | _ -> KB.return hvar) in
       let* exits = Helper.exit_blks blks in
@@ -786,6 +818,8 @@ let run (patch : Data.Patch.t) : t KB.t =
   let* argument_tids = ABI.collect_argument_tids ir in
   let* ir, mem_argument_tids = ABI.insert_new_mems_at_callsites tgt ir in
   let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
+  (* Remove any unreachable nodes that are not the entry block. *)
+  let* ir = Shape.remove_unreachable ir entry_blk in
   (* This is needed for inserting a common exit block, where we will
      readjust the stack if necessary. *)
   let* ir = Shape.adjust_noreturn_exits ir in
