@@ -697,6 +697,9 @@ module ABI = struct
         let at_entry = Hvar.stored_in_memory memory in
         spilled := Set.add !spilled v;
         if restore then restored := Set.add !restored v;
+        (* If it needs to be preserved/restored, but is not live after a call,
+           then we can still refer to it by register instead of by stack
+           location. *)
         if live_after_call name
         then Hvar.create_with_storage name ~at_entry ~at_exit:None
         else hvar in
@@ -723,11 +726,15 @@ module ABI = struct
                   else KB.return hvar
             end
           | _ -> KB.return hvar) in
+      (* Collect the exit blocks. *)
       let* exits = Helper.exit_blks blks in
       let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+      (* If we needed to spill or restore, then make sure that other higher
+         vars aren't using stack locations. *)
       let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
       let* () = if no_regs then KB.return ()
         else check_hvars_for_existing_stack_locations sp hvars in
+      (* Do we need to change anything? *)
       if no_regs && sp_align = 0
       then KB.return (blks, hvars')
       else
@@ -742,6 +749,7 @@ module ABI = struct
         let space = Word.of_int ~width @@
           if no_regs then sp_align else sp_align + space in
         let sp = Substituter.mark_reg sp in
+        (* Place a register into a stack location. *)
         let push v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
@@ -749,6 +757,7 @@ module ABI = struct
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
+        (* Load a register from a stack location. *)
         let pop v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
@@ -756,8 +765,10 @@ module ABI = struct
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
+        (* Create the new defs. *)
         let* pushes = Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
         let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
+        (* Insert the new defs into the entry/exit blocks accordingly. *)
         let+ blks = KB.List.map blks ~f:(fun blk ->
             let tid = Term.tid blk in
             if Tid.(tid = Term.tid entry_blk) then
