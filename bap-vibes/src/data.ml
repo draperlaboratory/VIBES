@@ -73,7 +73,7 @@ let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~equal:Unit.equal
     "unit-domain"
 
-let lab_domain : Theory.label option KB.Domain.t = KB.Domain.optional
+let label_domain : Theory.label option KB.Domain.t = KB.Domain.optional
     ~equal:Theory.Label.equal
     "label-domain"
 
@@ -164,8 +164,11 @@ module Patch = struct
   let patch_code : (patch_cls, Cabs.definition option) KB.slot =
     KB.Class.property ~package patch "patch-code" source_domain
 
+  let patch_sem : (Theory.program, Theory.Semantics.t) KB.slot =
+    KB.Class.property ~package Theory.Program.cls "patch-sem" Theory.Semantics.domain
+
   let patch_label : (patch_cls, Theory.label option) KB.slot =
-    KB.Class.property ~package patch "patch-label" lab_domain
+    KB.Class.property ~package patch "patch-label" label_domain
 
   let raw_ir : (patch_cls, Ir.t option) KB.slot =
     KB.Class.property ~package patch "patch-raw-ir" ir_domain
@@ -255,21 +258,26 @@ module Patch = struct
     | None -> Kb_error.fail Kb_error.Missing_patch_size
     | Some value -> KB.return value
 
+  (* Call [init_sem] before [set_sem] and [get_sem] to ensure that
+     a label is present in the KB prior to stashing/collecting semantics. *)
   let init_sem (obj : t) : unit KB.t =
-    KB.Object.create Theory.Program.cls >>= fun lab ->
-    KB.provide patch_label obj (Some lab)
+    KB.Object.create Theory.Program.cls >>= fun label ->
+    KB.provide patch_label obj (Some label)
 
-  let set_bir (obj : t) (sem : Insn.t) : unit KB.t =
-    KB.collect patch_label obj >>= fun olab ->
-    (* FIXME: fail more gracefully *)
-    let lab = Option.value_exn olab in
-    KB.provide Theory.Semantics.slot lab sem
+  let set_sem (obj : t) (sem : Insn.t) : unit KB.t =
+    KB.collect patch_label obj >>= fun stored_label ->
+    match stored_label with
+    | None -> Kb_error.fail Kb_error.Missing_label_for_semantics
+    | Some label -> KB.provide patch_sem label sem
 
-  let get_bir (obj : t) : Insn.t KB.t =
-    KB.collect patch_label obj >>= fun olab ->
-    (* FIXME: fail more gracefully *)
-    let lab = Option.value_exn olab in
-    KB.collect Theory.Semantics.slot lab
+  let get_sem (obj : t) : Insn.t KB.t =
+    KB.collect patch_label obj >>= fun stored_label ->
+    match stored_label with
+    | None -> Kb_error.fail Kb_error.Missing_label_for_semantics
+    | Some label -> KB.collect Theory.Semantics.slot label
+
+  let promise_sem (label : Theory.Label.t) : Theory.Semantics.t KB.t =
+    KB.collect patch_sem label
 
   let set_lang (obj : t) (data : Theory.language) : unit KB.t =
     KB.provide lang obj data
@@ -540,3 +548,5 @@ module Solver = struct
     | Some value -> KB.return value
 
 end
+
+let () = KB.promise Theory.Semantics.slot Patch.promise_sem

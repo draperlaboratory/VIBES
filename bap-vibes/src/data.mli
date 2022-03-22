@@ -10,8 +10,7 @@
 (*                                                                         *)
 (***************************************************************************)
 
-(** This module captures our KB "ontology" - the collection of classes and
-    properties that the VIBES toolchain defines and manipulates *)
+(** This module defines config/data the VIBES pipeline stores in the KB. *)
 
 open !Core_kernel
 open Bap.Std
@@ -27,7 +26,8 @@ end
 
 type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
-type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
+type ins_outs = {ins : Var.Set.t; outs: Var.Set.t}
+  [@@deriving compare, equal, sexp]
 
 type sol = {
   reg : var Var.Map.t;
@@ -37,7 +37,6 @@ type sol = {
   issue : int Int.Map.t;
 } [@@deriving sexp, compare]
 
-(** This is a module necessary for building Sets of [sol] *)
 module Sol : sig
   module S :
   sig
@@ -54,7 +53,6 @@ end
 
 type sol_set = (sol, Sol.comparator_witness) Core_kernel.Set.t
 
-(** We define "domains" for the types used in our properties. *)
 val string_domain       : string option KB.Domain.t
 val int_domain          : int option KB.Domain.t
 val int64_domain        : int64 option KB.Domain.t
@@ -67,13 +65,6 @@ val higher_vars_domain  : Hvar.t list option KB.Domain.t
 val var_pair_set_domain : var_pair_set KB.Domain.t
 val ins_outs_map_domain : ins_outs Tid.Map.t KB.Domain.t
 
-(** These are the top-level class definitions.
-
-    - type [cls] is the class of the top-level VIBES KB object that stores
-      all data related to a run in properties.
-    - type [t] is the type of objects of that class.
-    - val [cls] is the declared class.
-    - type [computed] is the type of the result computed by [KB.run]. *)
 type cls
 type t = cls KB.obj
 type computed = (cls, unit) KB.cls KB.value
@@ -88,12 +79,10 @@ val cls : (cls, unit) KB.cls
     collection of these (see {!Patched_exe.patches}). *)
 module Patch : sig
 
-  (* The KB infrastructure *)
   type patch_cls
   type t = patch_cls KB.obj
   val patch : (patch_cls, unit) KB.cls
-
-  (* equal, compare, and other things for patches *)
+  
   include Knowledge.Object.S with type t := t
 
   val patch_name : (patch_cls, string option) KB.slot
@@ -107,13 +96,9 @@ module Patch : sig
   val ins_outs_map : (patch_cls, ins_outs Tid.Map.t) KB.slot
   val assembly : (patch_cls, string list option) KB.slot
   val sp_align : (patch_cls, int option) KB.slot
-  (* The language/encoding of the assembly, typically used to
-     distinguish between ARM and Thumb. *)
-  (* TODO: add the target as well. *)
   val lang : (patch_cls, Theory.language) KB.slot
   val target : (patch_cls, Theory.target) KB.slot
   val minizinc_solutions : (patch_cls, sol_set) KB.slot
-  (* High variables for the patch *)
   val patch_vars : (patch_cls, Hvar.t list option) KB.slot
 
   val set_patch_name : t -> string option -> unit KB.t
@@ -132,12 +117,9 @@ module Patch : sig
   val get_patch_size : t -> int option KB.t
   val get_patch_size_exn : t -> int KB.t
 
-  (* This initializes the semantics slot by creating a program label
-     that will contain the semantics. This *must* be called before
-     set_bir! *)
   val init_sem : t -> unit KB.t
-  val set_bir : t -> insn -> unit KB.t
-  val get_bir : t -> insn KB.t
+  val set_sem : t -> insn -> unit KB.t
+  val get_sem : t -> insn KB.t
 
   val set_raw_ir : t -> Ir.t option -> unit KB.t
   val get_raw_ir : t -> Ir.t option KB.t

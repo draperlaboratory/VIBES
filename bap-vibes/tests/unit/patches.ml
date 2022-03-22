@@ -57,7 +57,7 @@ let names = Map.keys patches
 
 let is_patch (name : string) : bool = List.mem names name ~equal:String.equal
 
-(* [get_bir "ret-3" 32] returns the [Ret_3.bil] BIL, with 32-bit words. *)
-let get_bir (name : string) (bits : int) : Insn.t KB.t =
+(* [get_sem "ret-3" 32] returns the [Ret_3.bil] BIL, with 32-bit words. *)
+let get_sem (name : string) (bits : int) : Insn.t KB.t =
   let patch = Map.find_exn patches name in
   patch bits

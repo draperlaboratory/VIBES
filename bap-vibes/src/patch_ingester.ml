@@ -12,49 +12,50 @@
 
 (* Implements {!Patch_ingester}. *)
 
-open Bap.Std
-open Bap_knowledge
-open Knowledge.Syntax
 open Core_kernel
-open Bap_core_theory
+open Bap.Std
 
-module KB = Knowledge
+module T = Bap_core_theory.Theory
+module KB = Bap_core_theory.KB
+
 open KB.Let
 
-let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
-  Theory.instance () >>=
-  Theory.require >>= fun (module Core) ->
+(* Constructs the semantics for a single patch and stashes it in the KB. *)
+let provide_sem (tgt : T.target) (patch : Data.Patch.t) : unit KB.t =
+  let* theory = T.instance () in
+  let* (module Core) = T.require theory in
   let module CParser = Core_c.Eval(Core) in
-  Data.Patch.init_sem patch >>= fun () ->
-  Data.Patch.get_patch_name_exn patch >>= fun name ->
-  Data.Patch.get_patch_code_exn patch >>= fun code ->
+  let* () = Data.Patch.init_sem patch in
+  let* name = Data.Patch.get_patch_name_exn patch in
+  let* code = Data.Patch.get_patch_code_exn patch in
   Events.(send @@ Info (Printf.sprintf "Patch %s" name));
   let code_str = Utils.print_c Cprint.print_def code in
   Events.(send @@ Info (Printf.sprintf "%s" code_str));
 
   (* Get the patch (as BIR). *)
   let* hvars = Data.Patch.get_patch_vars_exn patch in
-  let* bir = CParser.c_patch_to_eff hvars tgt code in
+  let* insn = CParser.c_patch_to_eff hvars tgt code in
 
   Events.(send @@ Info "The patch has the following BIL:");
   Events.(send @@ Rule);
-  let bir_str = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot bir) in
-  Events.(send @@ Info bir_str);
+  let bil = Format.asprintf "%a" Bil.pp (KB.Value.get Bil.slot insn) in
+  Events.(send @@ Info bil);
   Events.(send @@ Rule);
-  Data.Patch.set_bir patch bir
+  Data.Patch.set_sem patch insn
 
 (* Ingests a single patch, populating the relevant fields of the KB,
    most notably the semantics field of the corresponding patch (and
    increments the [patch_num] counter). *)
-let ingest_one (tgt : Theory.target) (patch_num : int KB.t) (patch : Data.Patch.t)
+let ingest_one (tgt : T.target) (patch_num : int KB.t) (patch : Data.Patch.t)
     : int KB.t =
-  patch_num >>= fun patch_num ->
+  let* patch_num = patch_num in
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
-  (Data.Patch.get_assembly patch >>= fun asm ->
-  match asm with
-  | Some _asm -> KB.return () (* Assembly is user provided *)
-  | None -> provide_bir tgt patch) >>= fun () ->
-  KB.return @@ patch_num+1
+  let* asm = Data.Patch.get_assembly patch in
+  let* () = match asm with
+    | Some _asm -> KB.return () (* Assembly is user provided *)
+    | None -> provide_sem tgt patch
+  in
+  KB.return @@ patch_num + 1
 
 (* Processes the whole patch associated with [obj], populating all the
    relevant KB slots with semantic data associated with the patch
@@ -63,14 +64,15 @@ let ingest (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting patch ingester");
 
   Events.(send @@ Info "Retreiving data from KB...");
-  Data.Original_exe.get_target_exn obj >>= fun tgt ->
-  Data.Patched_exe.get_patches obj >>= fun patches ->
-  Events.(send @@ Info (Printf.sprintf "There are %d patches"
-                          (Data.Patch_set.length patches)));
+  let* tgt = Data.Original_exe.get_target_exn obj in
+  let* patches = Data.Patched_exe.get_patches obj in
+  Events.(send @@ Info 
+    (Printf.sprintf "There are %d patches" (Data.Patch_set.length patches)));
 
-  Data.Patch_set.fold patches
+  let* _ = Data.Patch_set.fold patches
     ~init:(KB.return 1)
-    ~f:(ingest_one tgt) >>= fun _ ->
+    ~f:(ingest_one tgt)
+  in
 
   Events.(send @@ Info "Patch ingest complete");
   KB.return ()

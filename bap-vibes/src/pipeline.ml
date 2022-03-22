@@ -31,7 +31,6 @@ let halt_if_too_many (count : int) (max_tries : int option)
     if count > n then Error (Toplevel_error.Max_tries n)
     else Ok ()
 
-
 (* This function parses the patch code and builds the initial patch IR. *)
 let init (config : Config.t) (proj : project) : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed:None in
@@ -127,6 +126,8 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
+  Events.(send @@
+    Info (Printf.sprintf "Temp patched exe: %s" tmp_patched_filepath));
 
   (* Temporarily use the new KB state when loading the patched binary. *)
   Toplevel.set new_state;

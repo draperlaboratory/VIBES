@@ -32,8 +32,9 @@ let dummy_solver
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
 
-  (* Skip this test for now. *)
+  (* Skip this test for now.
   H.skip_test "Doesn't work without the dummy solver";
+  *)
 
   (* Run the compiler. *)
   let computation =
@@ -41,9 +42,12 @@ let test_compile (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Solver.set_minizinc_model_filepath
       obj (Some H.minizinc_model_filepath) >>= fun () ->
-    Patches.get_bir H.patch 32 >>= fun bil ->
+    Patches.get_sem H.patch 32 >>= fun insn ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_bir patch bil >>= fun _ ->
+    Data.Patch.set_sp_align patch (Some 0) >>= fun _ ->
+    Data.Patch.set_patch_vars patch (Some []) >>= fun _ ->
+    Data.Patch.init_sem patch >>= fun _ ->
+    Data.Patch.set_sem patch insn >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
