@@ -523,9 +523,10 @@ module Shape = struct
     let module G = Graphs.Tid in
     let+ sub = Helper.create_sub blks in
     let cfg = Sub.to_graph sub in
+    let entry_tid = Term.tid entry_blk in
     List.filter blks ~f:(fun blk ->
-        Blk.(blk = entry_blk) ||
         let tid = Term.tid blk in
+        Tid.(tid = entry_tid) ||
         let preds =
           G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
         not @@ Tid.Set.(is_empty @@ remove preds G.start))
