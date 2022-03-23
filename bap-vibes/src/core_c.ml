@@ -139,6 +139,10 @@ module Eval(CT : Theory.Core) = struct
       hvars;
     }
 
+  let as_unsigned (t : Patch_c.typ) : Patch_c.typ = match t with
+    | INT (size, _) -> INT (size, UNSIGNED)
+    | _ -> t
+
   let ty_of_base_type
       (info : _ interp_info)
       (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
@@ -152,6 +156,15 @@ module Eval(CT : Theory.Core) = struct
     | FUN _ -> KB.return @@ ty_of_base_type info c_ty
     | _ -> Err.fail @@ Core_c_error
         "Core_c.ty_op_pointer_type: expected pointer type"
+
+  let is_boolean_op (op : Patch_c.binop) : bool = match op with
+    | ADD | SUB | MUL | DIV | MOD | LAND | LOR | XOR | SHL | SHR -> false
+    | EQ | NE | LT | GT | LE | GE -> true
+
+  (* Will this translate to a CT value of the bool sort? *)
+  let is_boolean_exp (e : Patch_c.exp) : bool = match e with
+    | BINARY (op, _, _, _) -> is_boolean_op op
+    | _ -> false
 
   let resort (sort : 'a T.Value.sort) (v : 'b T.value) : 'a T.value KB.t =
     let error = "Incorrect argument sort!" in
@@ -312,19 +325,32 @@ module Eval(CT : Theory.Core) = struct
       (info : _ interp_info)
       (e : Patch_c.exp) : unit pure =
     let aux = expr_to_pure info in
+    let aux_bool t e =
+      (* The semantics of C with boolean values is not compatible with
+         the strict typing discipline of Core Theory, so we need to insert
+         explicit casts where necessary. *)
+      if is_boolean_exp e then
+        let t = as_unsigned t in
+        aux @@ CAST (t, Patch_c.Exp.coerce_type e t)
+      else aux e in
     match e with
     | UNARY (ADDROF, VARIABLE (v, _), _) -> addr_of_var info @@ T.Var.name v
     | UNARY (ADDROF, UNARY (MEMOF, a, _), _) -> aux a
     | UNARY (op, a, _) ->
       let ty_a = Patch_c.Exp.typeof a in
-      let* a = aux a in
+      let* a = aux_bool ty_a a in
       let* o = unop_to_pure info op ty_a in
       o !!a
     | BINARY (op, a, b, _) ->
       let ty_a = Patch_c.Exp.typeof a in
       let ty_b = Patch_c.Exp.typeof b in
-      let* a = aux a in
-      let* b = aux b in
+      let* a, b =
+        if not @@ is_boolean_op op then
+          let* a = aux_bool ty_a a and* b = aux_bool ty_b b in
+          !!(a, b)
+        else
+          let* a = aux a and* b = aux b in
+          !!(a, b) in
       let* o = binop_to_pure info op ty_a ty_b in
       o !!a !!b
     | VARIABLE (v, _) -> CT.var v
@@ -335,12 +361,12 @@ module Eval(CT : Theory.Core) = struct
       let t' = Patch_c.Exp.typeof e in
       let sz = Patch_c.Type.size info.tgt t in
       let sz' = Patch_c.Type.size info.tgt t' in
-      let* e = aux e in
-      if sz = sz' then !!e
+      let* e' = aux e in
+      if sz = sz' && not @@ is_boolean_exp e then !!e'
       else
         let s = ty_of_base_type info t in
         let s' = ty_of_base_type info t' in
-        let e = resort s' e in
+        let e = resort s' e' in
         let+ c =
           (* No extension, just grab the lower bits. *)
           if sz < sz' then CT.low s e
@@ -458,11 +484,22 @@ module Eval(CT : Theory.Core) = struct
       let* s2 = aux s2 in
       CT.seq !!s1 !!s2
     | IF (cond, st, sf) ->
-      let* cond = expr_to_pure info cond in
-      let cond = resort T.Bool.t cond in
+      let* c = expr_to_pure info cond in
+      let* c =
+        (* The semantics of C is that a truth value can be of any bitwidth,
+           and the comparison should check if it is nonzero. Still, we would
+           like to translate to the stricter Core Theory semantics such that
+           the truth values are well-sorted. *)
+        if not @@ is_boolean_exp cond then
+          let tcond = Patch_c.Exp.typeof cond in
+          let scond = ty_of_base_type info tcond in
+          let zero = CT.int scond @@
+            Word.(to_bitvec @@ zero @@ Patch_c.Type.size info.tgt tcond) in
+          CT.neq (resort scond c) zero
+        else resort T.Bool.t c in
       let* st = aux st in
       let* sf = aux sf in
-      CT.branch cond !!st !!sf
+      CT.branch !!c !!st !!sf
     | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
       let label = String.(chop_prefix_exn ~prefix:"L_" label) in
       let dst = CT.int info.word_sort Bitvec.(!$ label) in

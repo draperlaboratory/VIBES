@@ -165,6 +165,10 @@ module Exp : sig
   (** Returns the type embedded in an expression. *)
   val typeof : t -> typ
 
+  (** Force an expression to carry a new type. This operation is
+      unsafe unless you know what you're doing! *)
+  val coerce_type : t -> typ -> t
+
 end
 
 module Stmt : sig

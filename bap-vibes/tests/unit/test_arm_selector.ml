@@ -276,7 +276,7 @@ let test_ir (_ : test_ctxt) (v : sub term) (expected : string list) : unit =
       in
       let result =
         ir |> Ir.dummy_reg_alloc
-        |> Arm.Pretty.arm_ir_pretty
+        |> Arm.Pretty.arm_ir_pretty ~is_thumb
         |> Result.ok
       in
       let cmp expected input =

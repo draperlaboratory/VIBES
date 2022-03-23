@@ -32,6 +32,7 @@ open Bap_core_theory
     an argument to a call was assigned. *)
 type t = {
   ir : blk term list;
+  cfg : Graphs.Tid.t;
   exclude_regs : String.Set.t;
   argument_tids : Tid.Set.t;
 }
@@ -40,13 +41,8 @@ module Opt : sig
 
   (** [apply ir] applies [Term]-level optimizations to [ir], which are required
       to put the patch code in good shape before instruction selection. *)
-  val apply : blk term list -> blk term list
+  val apply : blk term list -> blk term list KB.t
 
-  (** [merge_adjacent ir] attempts to merge adjacent blocks in [ir] with an
-      edge in between them. Requires the blocks to be ordered according to a
-      reverse post-order DFS traversal. *)
-  val merge_adjacent : blk term list -> blk term list
-  
 end
 
 
@@ -55,10 +51,10 @@ module Shape : sig
   (** [reorder_blks ir] reorders [ir] according to a reverse post-order DFS
       traversal. *)
   val reorder_blks : blk term list -> blk term list KB.t
-  
+
 end
 
 (** [run patch] creates the BIR from [patch], then applies a series of
     transformations to it. The resulting code is then ready to be handed
     off to the instruction selector. *)
-val run : Data.Patch.t -> merge_adjacent:bool -> t KB.t
+val run : Data.Patch.t -> t KB.t

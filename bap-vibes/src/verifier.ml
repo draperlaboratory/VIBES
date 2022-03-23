@@ -23,11 +23,10 @@ type status = Z3.Solver.status
 
 let (let*) x f = Result.bind x ~f
 
-
 type verifier =
-  Params.t
-  -> Runner.input list
-  -> (status, Bap_main.error) result
+  Params.t ->
+  Runner.input list ->
+  (status, Bap_main.error) result
 
 (* The next step the CEGIS loop should take. *)
 type next_step =
@@ -36,7 +35,7 @@ type next_step =
 
 (* A verifier that uses CBAT's WP library to verify the correctness
    property of the specified function in the original/patched executables. *)
-let wp_verifier (p : Params.t) inputs =
+let wp_verifier (p : Params.t) (inputs : Runner.input list) =
   Runner.run p inputs
 
 (** Verifies the correctness of the patched exe relative to the original exe.
@@ -48,25 +47,26 @@ let wp_verifier (p : Params.t) inputs =
     - [Done]  Indicates that the patched exe is correct
               and the CEGIS loop is done.
 
-   -  [Again] Indicates that the patched exe is not correct
-              and the CEGIS loop should try again. *)
-let verify ?verifier:(verifier=wp_verifier)
-    ~orig_prog:(orig_prog : Program.t * string)
-    ~patch_prog:(patch_prog : Program.t * string)
-    (tgt : Theory.target) (params : Params.t)
-    : (next_step, Toplevel_error.t) result =
+    - [Again] Indicates that the patched exe is not correct
+              and the CEGIS loop should try again.
+*)
+let verify
+    ?(verifier = wp_verifier)
+    ~(orig_prog : Program.t * string)
+    ~(patch_prog : Program.t * string)
+    (tgt : Theory.target)
+    (params : Params.t) : (next_step, Toplevel_error.t) result =
+  let prog1, name1 = orig_prog in
+  let prog2, name2 = patch_prog in
   Events.(send @@ Header "Starting Verifier");
-
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
-  let (prog1, name1) = orig_prog in
-  let (prog2, name2) = patch_prog in
+  Events.(send @@ Info (sprintf "Original program: %s" name1));
+  Events.(send @@ Info (sprintf "Patched program: %s" name2));
   let input1 = Runner.{program = prog1; target = tgt; filename = name1} in
   let input2 = Runner.{program = prog2; target = tgt; filename = name2} in
   let* status =
-    verifier params
-      [input1; input2]
-  |> Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e)
-  in
+    verifier params [input1; input2] |>
+    Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e) in
   match status with
   | Z3.Solver.UNSATISFIABLE ->
     Events.(send @@

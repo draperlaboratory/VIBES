@@ -49,7 +49,7 @@ val ir_of_arm_eff : arm_eff -> Ir.t KB.t
 
 (** Performs various ARM specific simplifications of a given [ir]
    program, aimed mostly to conserve space. *)
-val peephole : Ir.t -> Ir.t
+val peephole : Ir.t -> Graphs.Tid.t -> Ir.t
 
 (** Returns the set of *all* registers on ARM *)
 val regs : Theory.target -> Theory.language -> Bap.Std.Var.Set.t
@@ -68,7 +68,7 @@ end
 module Pretty :
 sig
   (** Pretty prints [Ir.t] terms in a form suitable for assembly *)
-  val arm_ir_pretty : Ir.t -> (string list, Kb_error.t) result
+  val arm_ir_pretty : Ir.t -> is_thumb:bool -> (string list, Kb_error.t) result
 end
 
 module ARM_Gen :

@@ -1,0 +1,32 @@
+{
+  "max-tries": 10,
+  "wp-params": {
+    "func": "patch_fun",
+    "precond": "(assert (= mem_orig mem_mod))",
+    "postcond": "(assert (= R0_mod #x00000000))"
+  },
+  "patches": [
+    {"patch-name": "password",
+     "patch-code": "int retval;
+                    if (0 == 0) {
+                      retval = 0;
+                    } else {
+                      retval = -1;
+                    }",
+     "patch-point": "0x10404",
+     "patch-size": 56,
+     "extra-constraints": "
+       % exclude callee-save registers from the solution
+       constraint exclude_reg('R4');
+       constraint exclude_reg('R5');
+       constraint exclude_reg('R6');
+       constraint exclude_reg('R7');
+       constraint exclude_reg('R8');
+       constraint exclude_reg('R9');
+       constraint exclude_reg('R10');
+       constraint exclude_reg('R11');
+       constraint exclude_reg('SP');
+     "
+    }
+  ]
+}

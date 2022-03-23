@@ -297,6 +297,8 @@ module Exp = struct
       INT (Size.of_int_exn w, sign)
     | VARIABLE (_, t) -> t
 
+
+
   (* Convert to a particular type. *)
   let rec with_type (e : t) (t : typ) : t = match e with
     | UNARY _ | BINARY _ | VARIABLE _ -> CAST (t, e)
@@ -322,6 +324,13 @@ module Exp = struct
           CONST_INT (i, sign')
         | _ -> CAST (t, e)
       end
+
+  let coerce_type (e : t) (t : typ) : t = match e with
+    | UNARY (u, e, _) -> UNARY (u, e, t)
+    | BINARY (b, x, y, _) -> BINARY (b, x, y, t)
+    | CAST (_, e) -> CAST (t, e)
+    | CONST_INT _ -> with_type e t
+    | VARIABLE (v, _) -> VARIABLE (v, t)
 
 end
 
