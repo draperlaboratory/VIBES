@@ -158,8 +158,8 @@ module Eval(CT : Theory.Core) = struct
         "Core_c.ty_op_pointer_type: expected pointer type"
 
   let is_boolean_op (op : Patch_c.binop) : bool = match op with
+    | ADD | SUB | MUL | DIV | MOD | LAND | LOR | XOR | SHL | SHR -> false
     | EQ | NE | LT | GT | LE | GE -> true
-    | _ -> false
 
   (* Will this translate to a CT value of the bool sort? *)
   let is_boolean_exp (e : Patch_c.exp) : bool = match e with

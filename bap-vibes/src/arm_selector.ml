@@ -333,18 +333,20 @@ module ARM_ops = struct
   (* Helper data structure for generating conditional branches. *)
   module Branch = struct
 
-    (* `generate` accepts the condition and returns the corresponding
-       branch instruction, along with the fake destination operand.
+    (* `generate` accepts the condition `cnd`, the flag pseudo-operand 
+       `flg` and returns the corresponding branch instruction, along with
+       the fake destination operand. `flg` is to mark the status flags
+       as a dependency of the branch instruction.
 
        `is_call` denotes whether this is a conditional call or not.
     *)
     type t = {
-      generate : Cond.t -> Ir.operand -> Ir.operation * Ir.operand;
+      generate : cnd:Cond.t -> flg:Ir.operand -> Ir.operation * Ir.operand;
       is_call : bool;
     }
 
     let create (dst : Ir.operand) ~(is_call : bool) : t = {
-      generate = (fun cnd flg ->
+      generate = (fun ~cnd ~flg ->
           let cnd = Some cnd in
           let opcode =
             if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
@@ -623,7 +625,7 @@ module ARM_ops = struct
              ctrl semantics" in
       let cmp = Ir.simple_op Ops.cmp tmp_flag [arg1_val; arg2_val] in
       let current_data = cmp :: sem.current_data in
-      let br, op_val = generate cond tmp_flag in
+      let br, op_val = generate ~cnd:cond ~flg:tmp_flag in
       let sem = {
         sem with current_data; current_ctrl = br :: sem.current_ctrl
       } in
@@ -1232,15 +1234,27 @@ module Pretty = struct
       (rhs : Ir.operand list) : (string, Kb_error.t) result =
     let open Result.Monad_infix in
     (* bl may have pseudo-arguments, so ignore them. *)
-    let rhs = if String.(op = "bl") then [List.hd_exn rhs] else rhs in
+    begin if String.(op = "bl") then match rhs with
+        | x :: _ -> Result.return [x]
+        | _ -> Result.fail @@ Kb_error.Other
+            "Expected at least 1 argument for the `bl` opcode."
+      else Result.return rhs
+    end >>= fun rhs ->
     (* cmp may have pseudo-arguments *)
-    let rhs = if String.(op = "cmp") then List.take rhs 2 else rhs in
+    begin if String.(op = "cmp") then match rhs with
+        | x :: y :: _ -> Result.return [x; y]
+        | _ -> Result.fail @@ Kb_error.Other
+            "Expected at least 2 arguments for the `cmp` opcode."
+      else Result.return rhs
+    end >>= fun rhs ->
     (* conditional move may have pseudo-arguments at the end *)
-    let rhs =
-      if String.is_prefix op ~prefix:"mov" &&
-         String.length op > 3
-      then [List.hd_exn rhs]
-      else rhs in
+    begin if String.is_prefix op ~prefix:"mov" &&
+             String.length op = 5 then match rhs with
+        | x :: _ -> Result.return [x]
+        | _ -> Result.fail @@ Kb_error.Other
+            "Expected at least 1 argument for the `movcc` opcode."
+      else Result.return rhs
+    end >>= fun rhs ->
     let l = rm_void_args (lhs @ rhs) in
     mk_loc_list op l >>= fun is_loc_list ->
     List.zip_exn is_loc_list l |>
@@ -1311,7 +1325,9 @@ let is_nop (op : Ir.operation) : bool =
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
   List.filter ops ~f:(fun o -> not (is_nop o))
 
-let implicit_fallthroughs (ir : Ir.t) : Ir.t =
+(* Try to replace direct, unconditional jumps with fallthroughs where
+   possible. *)
+let create_implicit_fallthroughs (ir : Ir.t) : Ir.t =
   let rec interleave_pairs = function
     | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
     | [] | [_] -> [] in
@@ -1322,21 +1338,18 @@ let implicit_fallthroughs (ir : Ir.t) : Ir.t =
   Ir.map_blks ir ~f:(fun blk ->
       (* Find the last control operation. *)
       match List.last blk.ctrl with
-      | Some o -> begin
-          (* Is it an unconditional branch? *)
-          let op = List.hd_exn o.opcodes in
-          match Ir.Opcode.name op with
-          | "b" -> begin
-              (* Is the target of the branch the immediate next block in
-                 the ordering? *)
-              match List.hd_exn o.operands, Map.find afters blk.id with
-              | Label id, Some id' when Tid.(id = id') ->
-                (* Delete the branch in favor of an implicit fallthrough. *)
-                {blk with ctrl = List.drop_last_exn blk.ctrl}
-              | _ -> blk
-            end
+      | Some o ->
+        (* Is it an unconditional branch? *)
+        if List.exists o.opcodes ~f:(fun o ->
+            String.equal "b" @@ Ir.Opcode.name o) then
+          (* Is the target of the branch the immediate next block in
+             the ordering? *)
+          match List.hd_exn o.operands, Map.find afters blk.id with
+          | Label id, Some id' when Tid.(id = id') ->
+            (* Delete the branch in favor of an implicit fallthrough. *)
+            {blk with ctrl = List.drop_last_exn blk.ctrl}
           | _ -> blk
-        end
+        else blk
       | None -> blk)
 
 let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
@@ -1350,5 +1363,5 @@ let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
     }
   in
   let ir = Ir.map_blks ir ~f:filter_nops in
-  let ir = implicit_fallthroughs ir in
+  let ir = create_implicit_fallthroughs ir in
   ir

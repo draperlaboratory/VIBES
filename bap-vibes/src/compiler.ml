@@ -53,6 +53,7 @@ let create_vibes_ir
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
       String.concat ~sep:"\n"));
   Events.(send @@ Info "\n\n");
+  (* let* () = Kb_error.fail @@ Other "" in *)
   let* lang = Data.Patch.get_lang patch in
   let* tgt = Data.Patch.get_target patch in
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
