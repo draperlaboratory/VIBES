@@ -96,7 +96,10 @@ module Opt = struct
       let module G = Graphs.Tid in
       (* Since we assume the correct ordering of the blocks, the entry tid
          should be the first in the list. *)
-      let entry_tid = Term.tid @@ List.hd_exn blks in
+      let* entry_tid = match blks with
+        | [] -> Kb_error.fail @@ Other
+            "Bir_passes.Contract: no entry block found"
+        | blk :: _ -> KB.return @@ Term.tid blk in
       let rec loop blks =
         (* Collect all blocks that contain only a single unconditional Goto.
            In other words, these blocks are just "middlemen" and can thus be
@@ -156,7 +159,7 @@ module Opt = struct
                           contracted := Set.add !contracted tid';
                           changed := true;
                           Jmp.with_kind jmp @@ Goto ind
-                        | _ -> jmp
+                        | None | Some (Direct _) -> jmp
                       end
                     | _ -> jmp) in
                 !contracted, blk :: blks, !changed) in
@@ -240,7 +243,7 @@ module Opt = struct
                            we should defer that until after selection,
                            scheduling, and allocation. *)
                         Some blk
-                    | _ -> Some blk
+                    | Goto _ | Call _ | Ret _ | Int _ -> Some blk
                   end
                 | _ -> Some blk) in
         (* If we changed anything, then recompute the CFG and repeat the
