@@ -308,13 +308,11 @@ test_arm_extra_constraints () {
 
 test_arm_bounds_check () {
     local TEST_DIR="${EXES_DIR}/arm-bounds-check"
-    local MAIN_EXE="${TEST_DIR}/main"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
 
     print_header "Checking ${TEST_DIR}"
-
-    run_make "make clean -C ${TEST_DIR}" 0
 
     # Check the precompiled executables.
     run_make "make main -C ${TEST_DIR}" 0
