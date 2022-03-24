@@ -640,7 +640,6 @@ module Shape = struct
   (* Order the blocks according to a reverse postorder DFS traversal.
      This should minimize the number of extra jumps we need to insert. *)
   let reorder_blks (blks : blk term list) : blk term list KB.t =
-    let* exits = Helper.exit_blks blks in
     let+ sub = Helper.create_sub blks in
     let cfg = Sub.to_cfg sub in
     let blks =
