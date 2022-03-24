@@ -36,6 +36,7 @@ type t =
   | Invalid_patch_code of string
   | Invalid_patch_spaces of string
   | Invalid_max_tries
+  | Invalid_perform_verification
   | Invalid_loader_data of string
   | Invalid_bsi_data of string
   | Loader_data_conflict
@@ -61,7 +62,8 @@ let pp (ppf : Format.formatter) t : unit =
     | Missing_func ->
       "config json field \"wp-params\" requires a non-empty \"func\" field"
     | Missing_wp_params ->
-      "config json field \"wp-params\" is mandatory and must be a json struct"
+      "config json field \"wp-params\" is mandatory unless \
+       perform-verification is set to false, and must be a json struct"
     | Missing_size ->
       "each patch in the config json \"patches\" list must have a "
       ^ "\"patch-size\" field containing an integer"
@@ -91,6 +93,8 @@ let pp (ppf : Format.formatter) t : unit =
       "Invalid 'patch-spaces' field: " ^ desc
     | Invalid_max_tries ->
       "optional config json field \"max-tries\" must be an integer"
+    | Invalid_perform_verification ->
+      "optional config json field \"perform-verification\" must be a bool"
     | Invalid_loader_data s ->
       "error in optional loader data field \"ogre\": " ^ s
     | Invalid_bsi_data s ->
