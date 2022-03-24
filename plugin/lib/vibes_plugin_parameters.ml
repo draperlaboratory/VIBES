@@ -267,7 +267,12 @@ let validate_patch_spaces (obj : Json.t)
 let validate_wp_params (obj : Json.t)
   : (Wp_params.t, error) Stdlib.result =
   match Json.Util.member "wp-params" obj with
-  | `Null -> Err.fail Errors.Missing_wp_params
+  | `Null -> begin
+      match Json.Util.member "perform-verification" obj with
+      | `Bool false ->
+        Err.return @@ Wp_params.default ~func:"NO_VERIFICATION_PERFORMED"
+      | _ -> Err.fail Errors.Missing_wp_params
+    end
   | p ->
     begin
       let read s = Json.Util.member s p |> Json.Util.to_string_option in
@@ -341,6 +346,14 @@ let validate_max_tries (obj : Json.t) : (int option, error) Stdlib.result =
   | `Int i -> Err.return (Some i)
   | `Null -> Err.return None
   | _ -> Err.fail Errors.Invalid_max_tries
+
+(* Extract the perform-verification value, and make sure it's a [bool] (if
+   provided). Default to true.  *)
+let validate_perform_verification (obj : Json.t) : (bool, error) Stdlib.result =
+  match Json.Util.member "perform-verification" obj with
+  | `Bool b -> Err.return b
+  | `Null -> Err.return true
+  | _ -> Err.fail Errors.Invalid_perform_verification
 
 (* Extract the minizinc model filepathi value (or use the default), and make
    sure the file really exists. *)
@@ -600,7 +613,7 @@ let validate_loader_info
   | None, Some _ -> Err.return ogre
   | Some bsi, None -> Err.return @@ Some (BSI.to_ogre_string bsi)
   | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
-    
+
 (* Construct a configuration record from the given parameters. *)
 let create
     ~exe:(exe : string)
@@ -613,6 +626,7 @@ let create
   validate_patches config_json >>= fun patches ->
   validate_wp_params config_json >>= fun wp_params ->
   validate_max_tries config_json >>= fun max_tries ->
+  validate_perform_verification config_json >>= fun perform_verification ->
   validate_loader_info bsi config_json >>= fun ogre ->
   validate_minizinc_model_filepath config_json >>=
   fun minizinc_model_filepath ->
@@ -620,7 +634,7 @@ let create
   fun minizinc_isel_filepath ->
   validate_patch_spaces config_json >>= fun patch_spaces ->
   let result = Vibes_config.create
-    ~exe ~patches ~patched_exe_filepath ~max_tries
+    ~exe ~patches ~patched_exe_filepath ~max_tries ~perform_verification
     ~minizinc_model_filepath ~ogre ~patch_spaces ~wp_params
     ~minizinc_isel_filepath in
   Ok result

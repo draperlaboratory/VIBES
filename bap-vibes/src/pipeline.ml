@@ -135,21 +135,28 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
 
   let wp_params = Config.wp_params config in
   let target = Project.target orig_proj in
-  let verif_res =
-    Verifier.verify target wp_params
-      ~orig_prog:(orig_prog, Config.exe config)
-      ~patch_prog:(patch_prog, tmp_patched_filepath)
-  in
-  match verif_res with
-  | Ok Verifier.Done -> finalize_patched_exe value
-  | Ok Verifier.Again ->
-    begin
-      let new_count = count + 1 in
-      let new_seed = Seeder.extract_seed value new_state in
-      cegis config orig_proj orig_prog state
-        ~count:new_count ~max_tries ~seed:new_seed
-    end
-  | Error e -> Error e
+  if Config.perform_verification config then
+    let verif_res =
+      Verifier.verify target wp_params
+        ~orig_prog:(orig_prog, Config.exe config)
+        ~patch_prog:(patch_prog, tmp_patched_filepath)
+    in
+    match verif_res with
+    | Ok Verifier.Done -> finalize_patched_exe value
+    | Ok Verifier.Again ->
+      begin
+        let new_count = count + 1 in
+        let new_seed = Seeder.extract_seed value new_state in
+        cegis config orig_proj orig_prog state
+          ~count:new_count ~max_tries ~seed:new_seed
+      end
+    | Error e -> Error e
+  else
+    let warning =
+      "WARNING: No verification performed. Patched binary may be incorrect."
+    in
+    Events.(send @@ Info warning);
+    finalize_patched_exe value
 
 (* This is the public function that sets up and triggers the pipeline. *)
 let run (config : Config.t) : (string, Toplevel_error.t) result =
