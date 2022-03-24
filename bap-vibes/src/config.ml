@@ -58,6 +58,7 @@ type t = {
   patches : patch list; (* The list of patches to apply. *)
   patched_exe_filepath : string option; (* Optional output location *)
   max_tries : int option; (* Optional number of CEGIS iterations to allow *)
+  perform_verification : bool; (* Whether to verify *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
   minizinc_isel_filepath : string option;
   ogre : string option;
@@ -79,6 +80,7 @@ let exe t : string = t.exe
 let patches t : patch list = t.patches
 let patched_exe_filepath t : string option = t.patched_exe_filepath
 let max_tries t : int option = t.max_tries
+let perform_verification t : bool = t.perform_verification
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
 let minizinc_isel_filepath t : string option = t.minizinc_isel_filepath
 let ogre t : string option = t.ogre
@@ -193,6 +195,7 @@ let pp (ppf : Format.formatter) t : unit =
       Printf.sprintf "Output filepath: %s"
         (Option.value t.patched_exe_filepath ~default:"<none provided>");
       Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
+      Printf.sprintf "Perform verification: %b" t.perform_verification;
       Printf.sprintf "Minizinc model: %s" t.minizinc_model_filepath;
       Printf.sprintf "Ogre file: %s"
         (Option.value t.ogre ~default:"<none provided>");
@@ -221,12 +224,13 @@ let create
     ~patches:(patches : patch list)
     ~patched_exe_filepath:(patched_exe_filepath : string option)
     ~max_tries:(max_tries : int option)
+    ~perform_verification:(perform_verification : bool)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
     ~minizinc_isel_filepath:(minizinc_isel_filepath : string option)
     ~ogre:(ogre : string option)
     ~patch_spaces:(patch_spaces : patch_space list)
     ~wp_params:(wp_params : Wp_params.t)
   : t =
-  { exe; patches; patched_exe_filepath; max_tries;
+  { exe; patches; patched_exe_filepath; max_tries; perform_verification;
     minizinc_model_filepath; ogre; patch_spaces; wp_params;
     minizinc_isel_filepath }

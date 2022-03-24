@@ -70,10 +70,14 @@ val patched_exe_filepath : t -> string option
 (** [max_tries config] returns the max allowed number of CEGIS iterations. *)
 val max_tries : t -> int option
 
+(** [perform_verification config] returs whether we should or should not
+    perform verification.  Defaults to true. *)
+val perform_verification : t -> bool
+
 (** [minizinc_model_filepath config] returns the path to the minizinc model. *)
 val minizinc_model_filepath : t -> string
 
-(** [minizinc_isel_filepath config] returns the path to the minizinc iinstruction 
+(** [minizinc_isel_filepath config] returns the path to the minizinc instruction
     selection model.*)
 val minizinc_isel_filepath : t -> string option
 
@@ -127,6 +131,7 @@ val create :
   -> patches:patch list
   -> patched_exe_filepath:string option
   -> max_tries : int option
+  -> perform_verification : bool
   -> minizinc_model_filepath:string
   -> minizinc_isel_filepath:string option
   -> ogre:string option
