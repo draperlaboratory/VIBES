@@ -19,7 +19,7 @@ open Graphlib.Std
 open KB.Let
 
 module Arm = Arm_selector
-module Subst = Substituter
+(* module Subst = Substituter *)
 module Hvar = Higher_var
 module Err = Kb_error
 
@@ -546,6 +546,20 @@ end
 (* Change the shape of the code for the instruction selector. *)
 module Shape = struct
 
+  (* Remove any unreachable blocks. *)
+  let remove_unreachable
+      (blks : blk term list)
+      (entry_tid : tid) : blk term list KB.t =
+    let module G = Graphs.Tid in
+    let+ sub = Helper.create_sub blks in
+    let cfg = Sub.to_graph sub in
+    List.filter blks ~f:(fun blk ->
+        let tid = Term.tid blk in
+        Tid.(tid = entry_tid) ||
+        let preds =
+          G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+        not @@ Tid.Set.(is_empty @@ remove preds G.start))
+
   (* We need to insert explicit exit blocks when we encounter the following
      kinds of jmps:
 
@@ -559,8 +573,7 @@ module Shape = struct
      With return <indirect>, we need to make unique exit blocks for each
      indirect target.
   *)
-  let adjust_exits
-      (blks : blk term list) : blk term list KB.t =
+  let adjust_exits (blks : blk term list) : blk term list KB.t =
     let* exit_tids =
       let+ exits = Helper.exit_blks blks in
       List.map exits ~f:Term.tid |> Tid.Set.of_list in
@@ -707,10 +720,11 @@ module ABI = struct
       ~(tgt : Theory.target)
       ~(sp_align : int)
       ~(hvars : Hvar.t list)
-      ~(entry_blk : blk term) : (blk term list * Higher_var.t list) KB.t =
+      ~(entry_blk : blk term)
+    : (blk term list * Higher_var.t list * String.Set.t) KB.t =
     let calls = Helper.call_blks blks in
     if List.is_empty calls || List.length blks = 1
-    then KB.return (blks, hvars)
+    then KB.return (blks, hvars, String.Set.empty)
     else
       (* Collect the liveness information. *)
       let* live =
@@ -737,20 +751,23 @@ module ABI = struct
         | None -> Err.(fail @@ Other (
             sprintf "No stack pointer register for target %s\n%!"
               (Theory.Target.to_string tgt))) in
-      (* Spilled and restored registers. *)
-      let spilled = ref String.Set.empty
-      and restored = ref String.Set.empty in
+      (* Preserved and restored registers. *)
+      let preserved = ref String.Set.empty in
+      let restored = ref String.Set.empty in
+      (* Spilled variables. *)
+      let spilled = ref String.Set.empty in
       let spill ?(restore = false) name v offset hvar =
         let memory = Hvar.create_frame (Var.name sp) offset in
         let at_entry = Hvar.stored_in_memory memory in
-        spilled := Set.add !spilled v;
+        preserved := Set.add !preserved v;
         if restore then restored := Set.add !restored v;
         (* If it needs to be preserved/restored, but is not live after a call,
            then we can still refer to it by register instead of by stack
            location. *)
-        if live_after_call name
-        then Hvar.create_with_storage name ~at_entry ~at_exit:None
-        else hvar in
+        if live_after_call name then begin
+          spilled := Set.add !spilled name;
+          Hvar.create_with_storage name ~at_entry ~at_exit:None
+        end else hvar in
       (* Find which hvars we need to spill. *)
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
@@ -779,13 +796,13 @@ module ABI = struct
       let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       (* If we needed to spill or restore, then make sure that other higher
          vars aren't using stack locations. *)
-      let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
+      let no_regs = Set.is_empty !preserved && Set.is_empty !restored in
       let* () =
         if no_regs then KB.return ()
         else check_hvars_for_existing_stack_locations sp hvars in
       (* Do we need to change anything? *)
       if no_regs && sp_align = 0
-      then KB.return (blks, hvars')
+      then KB.return (blks, hvars', !spilled)
       else
         let mem = Var.reify @@ Theory.Target.data tgt in
         let endian =
@@ -815,7 +832,8 @@ module ABI = struct
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
         (* Create the new defs. *)
-        let* pushes = Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
+        let* pushes =
+          Set.to_list !preserved |> List.rev |> KB.List.map ~f:push in
         let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
         (* Insert the new defs into the entry/exit blocks accordingly. *)
         let+ blks = KB.List.map blks ~f:(fun blk ->
@@ -833,7 +851,7 @@ module ABI = struct
               let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
               Term.append def_t blk adj
             else KB.return blk) in
-        blks, hvars'
+        blks, hvars', !spilled
 
   (* If we've specified that we want a higher var to remain in a callee-save
      register for the lifetime of the patch, then we need to tell minizinc
@@ -854,11 +872,304 @@ module ABI = struct
 
 end
 
+(* Substitution of higher vars. *)
+module Subst = struct
+
+  let err msg = Kb_error.fail @@ Kb_error.Higher_vars_not_substituted msg
+
+  exception Subst_err of string
+
+  module Naming = struct
+
+    (* BAP seems to prefix an underscore when it's just `$reg` so we will
+       just make it explicit. *)
+    let reg_prefix = "_$reg"
+
+    let mark_reg_name (v : string) : string = reg_prefix ^ v
+
+    let mark_reg (v : var) : var =
+      let name = Var.name v in
+      let typ = Var.typ v in
+      Var.create (mark_reg_name name) typ
+
+    (* Find a register with a given name in a target arch. *)
+    let mark_reg_exn (tgt : Theory.target) (name : string) : var =
+      Theory.Target.regs tgt |>
+      Set.find ~f:(fun v -> String.(Theory.Var.name v = name)) |>
+      function
+      | Some r -> mark_reg @@ Var.reify r
+      | None ->
+        raise
+          (Subst_err
+             (Format.sprintf "Register %s not found in target arch!" name))
+
+    let unmark_reg_name (v : string) : string option =
+      if String.is_prefix v ~prefix:reg_prefix then
+        Some (String.drop_prefix v @@ String.length reg_prefix)
+      else None
+
+    let unmark_reg (v : var) : var option =
+      let name = Var.name v in
+      let typ = Var.typ v in
+      match unmark_reg_name name with
+      | Some name -> Some (Var.create name typ)
+      | None -> None
+
+  end
+
+  let get_mem tgt =
+    let mem = Theory.Target.data tgt in
+    Var.reify mem
+
+  let size_of_typ (typ : typ) (name : string) : size =
+    match typ with
+    | Bil.Imm n -> Size.of_int n |> Or_error.ok_exn
+    | _ -> raise @@ Subst_err (
+        Format.sprintf "Unexpected type for variable: %s" name)
+
+  (* Initialize variables with their `at-entry` values. *)
+  let initialize
+      (blks : blk term list)
+      ~(typeof : string -> typ option)
+      ~(entry_tid : tid)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target)
+      ~(spilled : String.Set.t) : blk term list KB.t =
+    let endian =
+      let e = Theory.Target.endianness tgt in
+      if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
+    KB.List.map blks ~f:(fun blk ->
+        let tid = Term.tid blk in
+        if Tid.(tid = entry_tid) then
+          let+ defs =
+            KB.List.filter_map hvars ~f:(fun hvar ->
+                let name = Hvar.name hvar in
+                if Set.mem spilled name then KB.return None
+                else match Hvar.value hvar with
+                  | Hvar.Constant _ -> KB.return None
+                  | Hvar.Storage {at_entry = Register reg; _} -> begin
+                      match typeof name with
+                      | None -> KB.return None
+                      | Some typ ->
+                        let lhs = Var.create name typ in
+                        let rhs = Naming.mark_reg_exn tgt reg in
+                        let+ tid = Theory.Label.fresh in
+                        Some (Def.create ~tid lhs @@ Var rhs)
+                    end
+                  | Hvar.Storage {at_entry = Memory memory; _} -> begin
+                      match typeof name with
+                      | None -> KB.return None
+                      | Some typ ->
+                        let lhs = Var.create name typ in
+                        let mem = get_mem tgt in
+                        let size = size_of_typ typ name in
+                        let rhs = match memory with
+                          | Hvar.Global addr ->
+                            Bil.(load ~mem:(var mem) ~addr:(int addr)
+                                   endian size)
+                          | Hvar.Frame (loc, off) ->
+                            let loc = Naming.mark_reg_exn tgt loc in
+                            Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
+                                   endian size) in
+                        let+ tid = Theory.Label.fresh in
+                        Some (Def.create ~tid lhs rhs)
+                    end) in
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.prepend def_t blk def)
+        else KB.return blk)
+
+  (* Finalize variables with their `at-exit` values. *)
+  let finalize
+      (blks : blk term list)
+      ~(typeof : string -> typ option)
+      ~(exit_tids : Tid.Set.t)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : blk term list KB.t =
+    let endian =
+      let e = Theory.Target.endianness tgt in
+      if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
+    KB.List.map blks ~f:(fun blk ->
+        let tid = Term.tid blk in
+        if Set.mem exit_tids tid then
+          let+ defs =
+            KB.List.filter_map hvars ~f:(fun hvar ->
+                let name = Hvar.name hvar in
+                match Hvar.value hvar with
+                | Hvar.Constant _ -> KB.return None
+                | Hvar.Storage {at_exit = None; _} -> KB.return None
+                | Hvar.Storage {at_exit = Some (Register reg); _} -> begin
+                    match typeof name with
+                    | None -> KB.return None
+                    | Some typ ->
+                      let rhs = Bil.var @@ Var.create name typ in
+                      let lhs = Naming.mark_reg_exn tgt reg in
+                      let+ tid = Theory.Label.fresh in
+                      Some (Def.create ~tid lhs rhs)
+                  end
+                | Hvar.Storage {at_exit = Some (Memory memory); _} -> begin
+                    match typeof name with
+                    | None -> KB.return None
+                    | Some typ ->
+                      let rhs = Bil.var @@ Var.create name typ in
+                      let mem = get_mem tgt in
+                      let lhs = mem in
+                      let size = size_of_typ typ name in
+                      let rhs = match memory with
+                        | Hvar.Global addr ->
+                          Bil.(store ~mem:(var mem) ~addr:(int addr)
+                                 rhs endian size)
+                        | Hvar.Frame (loc, off) ->
+                          let loc = Naming.mark_reg_exn tgt loc in
+                          Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
+                                 rhs endian size) in
+                      let+ tid = Theory.Label.fresh in
+                      Some (Def.create ~tid lhs rhs)
+                  end) in
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.append def_t blk def)
+        else KB.return blk)
+
+  (* Substitute the name with an appropriate expression. Since we have the
+     initialization and finalization done, we only need to worry about
+     constants. *)
+  let subst_name
+      (name : string)
+      ~(typ : typ)
+      ~(hvar : Hvar.t) : exp =
+    match Hvar.value hvar with
+    | Hvar.Constant const -> Bil.int const
+    | Hvar.Storage _ -> Bil.var @@ Var.create name typ
+
+  let subst_var (v : var) ~(hvars : Hvar.t list) : exp =
+    let name = Var.name v in
+    let typ = Var.typ v in
+    match Hvar.find name hvars with
+    | Some hvar -> subst_name name ~typ ~hvar
+    | None -> Bil.var v
+
+  let subst_exp (e : exp) ~(hvars : Hvar.t list) : exp =
+    let obj = object
+      inherit Exp.mapper
+      method! map_var v = subst_var v hvars
+    end in
+    obj#map_exp e
+
+  let subst_def (def : def term) ~(hvars : Hvar.t list) : def term =
+    let lhs = Def.lhs def in
+    let name = Var.name lhs in
+    let rhs = Def.rhs def |> subst_exp ~hvars in
+    match Hvar.find name hvars with
+    | None -> Def.with_rhs def rhs
+    | Some hvar -> match Hvar.value hvar with
+      | Hvar.Storage _ -> Def.with_rhs def rhs
+      | Hvar.Constant _ -> raise @@ Subst_err (
+          sprintf "Higher var %s appeared on the LHS of a def, but is \
+                   given a constant value" name)
+
+  let subst_label
+      (label : label)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : label KB.t = match label with
+    | Indirect _ -> KB.return label
+    | Direct tid ->
+      let+ name = KB.collect Theory.Label.name tid in
+      match name with
+      | None -> label
+      | Some name -> match Hvar.find name hvars with
+        | None -> label
+        | Some hvar ->
+          let typ = Type.Imm (Theory.Target.code_addr_size tgt) in
+          Indirect (subst_name name ~typ ~hvar)
+
+  let subst_dsts
+      (jmp : jmp term)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : jmp term KB.t =
+    let tid = Term.tid jmp in
+    let cond = Jmp.cond jmp in
+    match Jmp.kind jmp with
+    | Goto label ->
+      let+ label = subst_label label ~hvars ~tgt in
+      Jmp.create_goto ~cond ~tid label
+    | Call call -> begin
+        let* target = Call.target call |> subst_label ~hvars ~tgt in
+        match Call.return call with
+        | None ->
+          let call = Call.create ~target () in
+          KB.return @@ Jmp.create_call ~cond ~tid call 
+        | Some return ->
+          let+ return = subst_label return ~hvars ~tgt in
+          let call = Call.create ~target ~return () in
+          Jmp.create_call ~cond ~tid call
+      end
+    | Ret label ->
+      let+ label = subst_label label ~hvars ~tgt in
+      Jmp.create_ret ~cond ~tid label
+    | Int _ -> KB.return jmp
+
+  let subst_jmp
+      (jmp : jmp term)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : jmp term KB.t =
+    Jmp.map_exp jmp ~f:(subst_exp ~hvars) |>
+    subst_dsts ~hvars ~tgt
+
+  let subst_blk
+      (blk : blk term)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : blk term KB.t =
+    let+ jmps =
+      Term.enum jmp_t blk |> Seq.to_list |>
+      KB.List.map ~f:(subst_jmp ~hvars ~tgt) in
+    (* This pass should be run before we convert to SSA form, so
+       just do nothing with the phi nodes. *)
+    let phis = Term.enum phi_t blk |> Seq.to_list in
+    let defs =
+      Term.enum def_t blk |> Seq.to_list |>
+      List.map ~f:(subst_def ~hvars) in
+    Blk.create () ~phis ~defs ~jmps ~tid:(Term.tid blk)
+
+  let substitute
+      ?(spilled : String.Set.t = String.Set.empty)
+      (blks : blk term list)
+      ~(entry_tid : tid)
+      ~(hvars : Hvar.t list)
+      ~(tgt : Theory.target) : blk term list KB.t =
+    try
+      let* exit_tids =
+        let+ exits = Helper.exit_blks blks in
+        List.map exits ~f:Term.tid |> Tid.Set.of_list in
+      let typeof =
+        let env = List.fold blks ~init:String.Map.empty ~f:(fun env blk ->
+            let free = Blk.free_vars blk in
+            let lhs =
+              Term.enum def_t blk |>
+              Seq.fold ~init:Var.Set.empty ~f:(fun lhs def ->
+                  Set.add lhs @@ Def.lhs def) in
+            Var.Set.union free lhs |>
+            Set.fold ~init:env ~f:(fun env v ->
+                Map.set env ~key:(Var.name v) ~data:(Var.typ v))) in
+        (* NOTE: the variable might not have been mentioned in the
+           program. *)
+        Map.find env in
+      let* blks =
+        initialize blks ~typeof ~entry_tid ~hvars ~tgt ~spilled in
+      let* blks =
+        finalize blks ~typeof ~exit_tids ~hvars ~tgt in
+      KB.List.map blks ~f:(subst_blk ~hvars ~tgt)
+    with Subst_err msg -> err msg
+
+end
+
 (* VIBES IR requires linear SSA form. *)
-let to_linear_ssa
-    (patch : Data.Patch.t)
-    (sub : sub term) : blk term list KB.t =
-  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
+module Ssa = struct
+
+  let linear
+      (patch : Data.Patch.t)
+      (sub : sub term) : blk term list KB.t =
+    sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
+
+end
 
 let run (patch : Data.Patch.t) : t KB.t =
   let* code = Data.Patch.get_bir patch in
@@ -882,18 +1193,23 @@ let run (patch : Data.Patch.t) : t KB.t =
      readjust the stack if necessary. It is also needed for blocks with
      no jumps. They must be reordered to the end of the program so that
      they don't implicitly fall through to another block. *)
+  let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
-  let* ir, hvars = ABI.spill_hvars_and_adjust_stack ir
+  let* ir, hvars, spilled = ABI.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
   let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   (* Substitute higher vars. *)
-  let* ir = Subst.substitute tgt hvars ir in
+  let* ir = Subst.substitute ir
+      ~entry_tid:(Term.tid entry_blk) ~hvars ~tgt ~spilled in
   (* Optimization. *)
   let* ir = Shape.reorder_blks ir in
   let* ir = Opt.apply ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
+  (* List.iter ir ~f:(Format.eprintf "%a\n%!" Blk.pp); *)
+  (* Format.eprintf "-----------------------------------\n%!"; *)
+  (* let* () = Kb_error.fail @@ Other "" in *)
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
-  let* ir = to_linear_ssa patch sub in
+  let* ir = Ssa.linear patch sub in
   KB.return {ir; cfg; exclude_regs; argument_tids}
