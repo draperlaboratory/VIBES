@@ -546,6 +546,20 @@ end
 (* Change the shape of the code for the instruction selector. *)
 module Shape = struct
 
+  (* Remove any unreachable blocks. *)
+  let remove_unreachable
+      (blks : blk term list)
+      (entry_tid : tid) : blk term list KB.t =
+    let module G = Graphs.Tid in
+    let+ sub = Helper.create_sub blks in
+    let cfg = Sub.to_graph sub in
+    List.filter blks ~f:(fun blk ->
+        let tid = Term.tid blk in
+        Tid.(tid = entry_tid) ||
+        let preds =
+          G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+        not @@ Tid.Set.(is_empty @@ remove preds G.start))
+
   (* We need to insert explicit exit blocks when we encounter the following
      kinds of jmps:
 
@@ -882,6 +896,7 @@ let run (patch : Data.Patch.t) : t KB.t =
      readjust the stack if necessary. It is also needed for blocks with
      no jumps. They must be reordered to the end of the program so that
      they don't implicitly fall through to another block. *)
+  let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
   let* ir, hvars = ABI.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
