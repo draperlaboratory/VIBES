@@ -561,19 +561,23 @@ module Shape = struct
   *)
   let adjust_exits
       (blks : blk term list) : blk term list KB.t =
-    let* exits = Helper.exit_blks blks in
-    let exit_tids = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+    let* exit_tids =
+      let+ exits = Helper.exit_blks blks in
+      List.map exits ~f:Term.tid |> Tid.Set.of_list in
     (* This is the block that we may insert as a continuation
        for `call ... with noreturn`, as well as blocks with no jumps
        at all. Since such blocks have no particular successor in the
        CFG, this block can be shared between them. *)
-    let extra_noret = ref None in
+    let extra = ref None in
+    let make_extra () = match !extra with
+      | Some blk -> KB.return @@ Term.tid blk
+      | None ->
+        let+ tid = Theory.Label.fresh in
+        extra := Some (Blk.create ~tid ());
+        tid in
     (* Returns to indirect targets, on the other hand, require us
        to make a unique block for each target. *)
     let extra_indirect = ref [] in
-    (* Maps jmp tids to blk tids. The blk tids refer to the new
-       return destination for the jmp. *)
-    let rewrite_tbl = Tid.Table.create () in
     (* Collect information about jmps that need to be rewrtitten. *)
     let* blks = KB.List.map blks ~f:(fun blk ->
         let tid = Term.tid blk in
@@ -584,57 +588,37 @@ module Shape = struct
                Make this explicitly jump to a new exit block at the very
                end of the program. *)
             let* jmp_tid = Theory.Label.fresh in
-            let+ tid' = match !extra_noret with
-              | Some blk' -> KB.return @@ Term.tid blk'
-              | None ->
-                let+ tid' = Theory.Label.fresh in
-                let blk' = Blk.create ~tid:tid' () in
-                extra_noret := Some blk';
-                tid' in
+            let+ tid' = make_extra () in
             let jmp = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
             let defs = Term.enum def_t blk |> Seq.to_list in
             Blk.create ~tid ~jmps:[jmp] ~defs ()
           | jmps ->
-            let+ () = KB.List.iter jmps ~f:(fun jmp ->
-                let tid = Term.tid jmp in
+            let+ jmps = KB.List.map jmps ~f:(fun jmp ->
                 match Jmp.kind jmp with
                 | Call call -> begin
                     match Call.return call with
-                    | Some (Direct _) -> KB.return ()
+                    | Some (Direct _) -> KB.return jmp
                     | Some (Indirect _ as label) ->
                       (* We need a unique exit node that has an indirect
                          `goto label`. *)
-                      let+ tid' = Theory.Label.fresh in
-                      let blk' = Blk.create ~tid:tid' ~jmps:[
-                          Jmp.create_goto label;
-                        ] () in
-                      extra_indirect := blk' :: !extra_indirect;
-                      Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
+                      let+ tid = Theory.Label.fresh in
+                      let blk =
+                        Blk.create ~tid ~jmps:[Jmp.create_goto label] () in
+                      extra_indirect := blk :: !extra_indirect;
+                      Jmp.(with_dst jmp @@ Some (resolved tid))
                     | None ->
                       (* Calls should not be noreturn. Since BAP didn't give
                          this any particular target to return to, we can
                          have it return to a common exit block. *)
-                      let+ tid' = match !extra_noret with
-                        | Some blk' -> KB.return @@ Term.tid blk'
-                        | None ->
-                          let+ tid' = Theory.Label.fresh in
-                          let blk' = Blk.create ~tid:tid' () in
-                          extra_noret := Some blk';
-                          tid' in
-                      Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
+                      let+ tid = make_extra () in
+                      Jmp.(with_dst jmp @@ Some (resolved tid))
                   end
-                | _ -> KB.return ()) in
-            blk
+                | _ -> KB.return jmp) in
+            let defs = Term.enum def_t blk |> Seq.to_list in
+            Blk.create ~tid ~defs ~jmps ()
         else KB.return blk) in
-    (* Rewrite the return destination for each call. *)
-    let blks = List.map blks ~f:(fun blk ->
-        Term.map jmp_t blk ~f:(fun jmp ->
-            let tid = Term.tid jmp in
-            match Tid.Table.find rewrite_tbl tid with
-            | Some tid' -> Jmp.(with_dst jmp @@ Some (resolved tid'))
-            | None -> jmp)) in
     (* Append the generated blocks. *)
-    let extra = Option.value_map !extra_noret ~default:[] ~f:List.return in
+    let extra = Option.value_map !extra ~default:[] ~f:List.return in
     KB.return (blks @ !extra_indirect @ extra)
 
   (* Order the blocks according to a reverse postorder DFS traversal.
