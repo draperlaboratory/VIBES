@@ -57,7 +57,7 @@ let create_vibes_ir
   let* lang = Data.Patch.get_lang patch in
   let* tgt = Data.Patch.get_target patch in
   let* is_arm = Arm.is_arm lang and* is_thumb = Arm.is_thumb lang in
-  let+ ir =
+  let* ir =
     if is_arm || is_thumb then
       let* ir = 
         match isel_model_filepath with
@@ -77,7 +77,7 @@ let create_vibes_ir
       Arm.preassign tgt ir ~is_thumb
     else Kb_error.(fail @@ Other (
         sprintf "Unsupported lang %s" (Theory.Language.to_string lang))) in
-  ir, cfg, exclude_regs
+  KB.return (ir, cfg, exclude_regs)
 
 (* Compile one patch from BIR to VIBES IR *)
 let compile_one_vibes_ir

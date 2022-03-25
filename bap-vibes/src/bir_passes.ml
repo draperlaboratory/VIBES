@@ -38,9 +38,26 @@ module Helper = struct
     let+ tid = Theory.Label.fresh in
     Sub.create ~name:"dummy-wrapper" ~blks ~tid ()
 
-  (* Find the exit nodes of the patch code. *)
+  (* Find the exit nodes of the patch code. They are classified as follows:
+
+     - no jmps:
+       this is implicitly an exit block since it has no successors
+       in the CFG.
+
+     - goto <indirect>:
+       this block is explicitly jumping out of the program
+       to somewhere else in the binary.
+
+     - call <x> with noreturn:
+       this block must implicitly return to an exit block.
+
+     - call <x> with return <indirect>:
+       this block will not be returning to the patch code.
+  *)
   let exit_blks (blks : blk term list) : blk term list KB.t =
     match blks with
+    | [] -> Kb_error.fail @@ Other
+        "Bir_passes.Helper.exit_blks: got an empty list of blks"
     | [_] -> KB.return blks
     | _ ->
       let+ sub = create_sub blks in
@@ -52,7 +69,8 @@ module Helper = struct
           then Some blk
           else
             let jmps = Term.enum jmp_t blk in
-            if Seq.exists jmps ~f:(fun jmp ->
+            if Seq.is_empty jmps then Some blk
+            else if Seq.exists jmps ~f:(fun jmp ->
                 match Jmp.kind jmp with
                 | Call call -> begin
                     match Call.return call with
@@ -71,8 +89,9 @@ module Helper = struct
         | _ -> false)
 
   (* Returns true if there are calls in the IR. *)
-  let has_calls (blks : blk term list) : bool =
-    List.exists blks ~f:has_call
+  let call_blks (blks : blk term list) : tid list =
+    List.filter_map blks ~f:(fun blk ->
+        if has_call blk then Some (Term.tid blk) else None)
 
   (* Returns true if the jmp is unconditional. *)
   let is_unconditional (jmp : jmp term) : bool =
@@ -209,15 +228,24 @@ module Opt = struct
         let* sub = Helper.create_sub blks in
         with_cfg (Sub.to_graph sub) blks
       and with_cfg cfg blks =
-        (* We can merge with a successor block if we are its only predecessor.
-           Note that the pseudo-start node will be a predecessor of
-           "unreachable" blocks. *)
-        let can_merge tid =
-          let preds = G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
-          Set.(length @@ remove preds G.start) = 1 in
+        (* Map tids to blocks. *)
         let blk_table = Tid.Table.create () in
         List.iter blks ~f:(fun blk ->
             Tid.Table.set blk_table ~key:(Term.tid blk) ~data:blk);
+        (* Get the implicit exit block. *)
+        let exit_tid = List.find_map blks ~f:(fun blk ->
+            if Seq.is_empty @@ Term.enum jmp_t blk
+            then Some (Term.tid blk)
+            else None) in
+        (* We can merge with a successor block if we are its only predecessor.
+           Note that the pseudo-start node will be a predecessor of
+           "unreachable" blocks. Furthermore, the implicit exit block cannot
+           be merged with. *)
+        let can_merge tid =
+          not (Option.exists exit_tid ~f:(Tid.equal tid)) &&
+          let preds =
+            G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+          Set.(length @@ remove preds G.start) = 1 in
         let merged = ref Tid.Set.empty in
         let blks =
           List.filter_map blks ~f:(fun blk ->
@@ -251,7 +279,7 @@ module Opt = struct
         if Tid.Set.is_empty !merged
         then KB.return blks
         else loop blks in
-    loop blks
+      loop blks
 
   end
 
@@ -518,70 +546,99 @@ end
 (* Change the shape of the code for the instruction selector. *)
 module Shape = struct
 
-  (* If there are exit nodes of the form `call ... with noreturn` or
-     `call ... with return <indirect>`, then insert a new blk for them
-     to return to. *)
-  let adjust_noreturn_exits (blks : blk term list) : blk term list KB.t =
-    let* exits = Helper.exit_blks blks in
-    let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+  (* We need to insert explicit exit blocks when we encounter the following
+     kinds of jmps:
+
+     - call <x> with noreturn
+     - call <x> with return <indirect>
+     - no jmps at all
+
+     With noreturn calls and no jmps at all, we can have them share the
+     same exit block at the very end of the program.
+
+     With return <indirect>, we need to make unique exit blocks for each
+     indirect target.
+  *)
+  let adjust_exits
+      (blks : blk term list) : blk term list KB.t =
+    let* exit_tids =
+      let+ exits = Helper.exit_blks blks in
+      List.map exits ~f:Term.tid |> Tid.Set.of_list in
     (* This is the block that we may insert as a continuation
-       for `call ... with noreturn`. Since such calls don't have any
-       specific destination for the return, we can just re-use this
-       block for that purpose. *)
-    let extra_noret = ref None in
+       for `call ... with noreturn`, as well as blocks with no jumps
+       at all. Since such blocks have no particular successor in the
+       CFG, this block can be shared between them. *)
+    let extra = ref None in
+    let make_extra () = match !extra with
+      | Some blk -> KB.return @@ Term.tid blk
+      | None ->
+        let+ tid = Theory.Label.fresh in
+        extra := Some (Blk.create ~tid ());
+        tid in
     (* Returns to indirect targets, on the other hand, require us
        to make a unique block for each target. *)
     let extra_indirect = ref [] in
-    (* Maps jmp tids to blk tids. The blk tids refer to the new
-       return destination for the jmp. *)
-    let rewrite_tbl = Tid.Table.create () in
     (* Collect information about jmps that need to be rewrtitten. *)
-    let+ () = KB.List.iter blks ~f:(fun blk ->
+    let* blks = KB.List.map blks ~f:(fun blk ->
         let tid = Term.tid blk in
-        if Set.mem exits tid then
-          Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
-              let tid = Term.tid jmp in
-              match Jmp.kind jmp with
-              | Call call -> begin
-                  match Call.return call with
-                  | Some (Direct _) -> KB.return ()
-                  | Some (Indirect _ as label) ->
-                    let+ tid' = Theory.Label.fresh in
-                    let blk' = Blk.create ~tid:tid' ~jmps:[
-                        Jmp.create_goto label;
-                      ] () in
-                    extra_indirect := blk' :: !extra_indirect;
-                    Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
-                  | None ->
-                    let+ tid' = match !extra_noret with
-                      | Some blk' -> KB.return @@ Term.tid blk'
-                      | None ->
-                        let+ tid' = Theory.Label.fresh in
-                        let blk' = Blk.create ~tid:tid' () in
-                        extra_noret := Some blk';
-                        tid' in
-                    Tid.Table.set rewrite_tbl ~key:tid ~data:tid'
-                end
-              | _ -> KB.return ())
-        else KB.return ()) in
-    (* Rewrite the return destination for each call. *)
-    let blks = List.map blks ~f:(fun blk ->
-        Term.map jmp_t blk ~f:(fun jmp ->
-            let tid = Term.tid jmp in
-            match Tid.Table.find rewrite_tbl tid with
-            | Some tid' -> Jmp.(with_dst jmp @@ Some (resolved tid'))
-            | None -> jmp)) in
+        if Set.mem exit_tids tid then
+          match Term.enum jmp_t blk |> Seq.to_list with
+          | [] ->
+            (* The block has no jumps, so it is implicitly an exit node.
+               Make this explicitly jump to a new exit block at the very
+               end of the program. *)
+            let* jmp_tid = Theory.Label.fresh in
+            let+ tid' = make_extra () in
+            let jmp = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
+            let defs = Term.enum def_t blk |> Seq.to_list in
+            Blk.create ~tid ~jmps:[jmp] ~defs ()
+          | jmps ->
+            let+ jmps = KB.List.map jmps ~f:(fun jmp ->
+                match Jmp.kind jmp with
+                | Call call -> begin
+                    match Call.return call with
+                    | Some (Direct _) -> KB.return jmp
+                    | Some (Indirect _ as label) ->
+                      (* We need a unique exit node that has an indirect
+                         `goto label`. *)
+                      let+ tid = Theory.Label.fresh in
+                      let blk =
+                        Blk.create ~tid ~jmps:[Jmp.create_goto label] () in
+                      extra_indirect := blk :: !extra_indirect;
+                      Jmp.(with_dst jmp @@ Some (resolved tid))
+                    | None ->
+                      (* Calls should not be noreturn. Since BAP didn't give
+                         this any particular target to return to, we can
+                         have it return to a common exit block. *)
+                      let+ tid = make_extra () in
+                      Jmp.(with_dst jmp @@ Some (resolved tid))
+                  end
+                | _ -> KB.return jmp) in
+            let defs = Term.enum def_t blk |> Seq.to_list in
+            Blk.create ~tid ~defs ~jmps ()
+        else KB.return blk) in
     (* Append the generated blocks. *)
-    let extra = Option.value_map !extra_noret ~default:[] ~f:List.return in
-    blks @ extra @ !extra_indirect
+    let extra = Option.value_map !extra ~default:[] ~f:List.return in
+    KB.return (blks @ !extra_indirect @ extra)
 
   (* Order the blocks according to a reverse postorder DFS traversal.
      This should minimize the number of extra jumps we need to insert. *)
   let reorder_blks (blks : blk term list) : blk term list KB.t =
     let+ sub = Helper.create_sub blks in
     let cfg = Sub.to_cfg sub in
-    Graphlib.reverse_postorder_traverse (module Graphs.Ir) cfg |>
-    Seq.to_list |> List.map ~f:Graphs.Ir.Node.label
+    let blks =
+      Graphlib.reverse_postorder_traverse (module Graphs.Ir) cfg |>
+      Seq.to_list |> List.map ~f:Graphs.Ir.Node.label in
+    (* The exit block with no jmps should be ordered at the very end of
+       the program. *)
+    match List.find blks ~f:(fun blk ->
+        Seq.is_empty @@ Term.enum jmp_t blk) with
+    | None -> blks
+    | Some blk ->
+      let tid = Term.tid blk in
+      let blks = List.filter blks ~f:(fun blk' ->
+          Tid.(tid <> Term.tid blk')) in
+      blks @ [blk]
 
 end
 
@@ -645,12 +702,24 @@ module ABI = struct
 
   (* Spill higher vars in caller-save registers if we are doing any calls
      in a multi-block patch, since the ABI says they may be clobbered. *)
-  let spill_hvars_and_adjust_stack (tgt : Theory.target) (sp_align : int)
-      (hvars : Hvar.t list) (entry_blk : blk term)
-      (blks : blk term list) : (blk term list * Higher_var.t list) KB.t =
-    if not (Helper.has_calls blks && List.length blks > 1)
+  let spill_hvars_and_adjust_stack
+      (blks : blk term list)
+      ~(tgt : Theory.target)
+      ~(sp_align : int)
+      ~(hvars : Hvar.t list)
+      ~(entry_blk : blk term) : (blk term list * Higher_var.t list) KB.t =
+    let calls = Helper.call_blks blks in
+    if List.is_empty calls || List.length blks = 1
     then KB.return (blks, hvars)
     else
+      (* Collect the liveness information. *)
+      let* live =
+        let+ sub = Helper.create_sub blks in
+        Live.compute sub in
+      (* Returns true if the variable is live after a call. *)
+      let live_after_call v = List.exists calls ~f:(fun tid ->
+          let out = Live.outs live tid in
+          Set.exists out ~f:(fun v' -> String.(v = Var.name v'))) in
       let width = Theory.Target.bits tgt in
       let stride = Word.of_int ~width (width lsr 3) in
       (* Use predetermined stack locations. *)
@@ -668,15 +737,21 @@ module ABI = struct
         | None -> Err.(fail @@ Other (
             sprintf "No stack pointer register for target %s\n%!"
               (Theory.Target.to_string tgt))) in
+      (* Spilled and restored registers. *)
       let spilled = ref String.Set.empty
       and restored = ref String.Set.empty in
-      (* Find which hvars we need to spill. *)
-      let spill ?(restore = false) name v offset =
+      let spill ?(restore = false) name v offset hvar =
         let memory = Hvar.create_frame (Var.name sp) offset in
         let at_entry = Hvar.stored_in_memory memory in
         spilled := Set.add !spilled v;
         if restore then restored := Set.add !restored v;
-        Hvar.create_with_storage name ~at_entry ~at_exit:None in
+        (* If it needs to be preserved/restored, but is not live after a call,
+           then we can still refer to it by register instead of by stack
+           location. *)
+        if live_after_call name
+        then Hvar.create_with_storage name ~at_entry ~at_exit:None
+        else hvar in
+      (* Find which hvars we need to spill. *)
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
           match Hvar.value hvar with
@@ -686,19 +761,29 @@ module ABI = struct
               | Some (offset, _) ->
                 match at_exit with
                 | Some Hvar.(Register v') when String.(v = v') ->
-                  KB.return @@ spill name v offset ~restore:true
+                  KB.return @@ spill name v offset hvar ~restore:true
                 | Some _ ->
                   Err.(fail @@ Other (
                       sprintf "Unexpected value for `at_exit` of higher var %s"
                         name))
-                | None -> KB.return @@ spill name v offset
+                | None ->
+                  (* Don't bother to preserve the register if it's not live
+                     after a call. *)
+                  if live_after_call name
+                  then KB.return @@ spill name v offset hvar
+                  else KB.return hvar
             end
           | _ -> KB.return hvar) in
+      (* Collect the exit blocks. *)
       let* exits = Helper.exit_blks blks in
       let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
+      (* If we needed to spill or restore, then make sure that other higher
+         vars aren't using stack locations. *)
       let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
-      let* () = if no_regs then KB.return ()
+      let* () =
+        if no_regs then KB.return ()
         else check_hvars_for_existing_stack_locations sp hvars in
+      (* Do we need to change anything? *)
       if no_regs && sp_align = 0
       then KB.return (blks, hvars')
       else
@@ -713,6 +798,7 @@ module ABI = struct
         let space = Word.of_int ~width @@
           if no_regs then sp_align else sp_align + space in
         let sp = Substituter.mark_reg sp in
+        (* Place a register into a stack location. *)
         let push v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
@@ -720,6 +806,7 @@ module ABI = struct
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
+        (* Load a register from a stack location. *)
         let pop v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
@@ -727,8 +814,10 @@ module ABI = struct
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
+        (* Create the new defs. *)
         let* pushes = Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
         let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
+        (* Insert the new defs into the entry/exit blocks accordingly. *)
         let+ blks = KB.List.map blks ~f:(fun blk ->
             let tid = Term.tid blk in
             if Tid.(tid = Term.tid entry_blk) then
@@ -790,10 +879,12 @@ let run (patch : Data.Patch.t) : t KB.t =
   let* ir, mem_argument_tids = ABI.insert_new_mems_at_callsites tgt ir in
   let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
   (* This is needed for inserting a common exit block, where we will
-     readjust the stack if necessary. *)
-  let* ir = Shape.adjust_noreturn_exits ir in
-  let* ir, hvars =
-    ABI.spill_hvars_and_adjust_stack tgt sp_align hvars entry_blk ir in
+     readjust the stack if necessary. It is also needed for blocks with
+     no jumps. They must be reordered to the end of the program so that
+     they don't implicitly fall through to another block. *)
+  let* ir = Shape.adjust_exits ir in
+  let* ir, hvars = ABI.spill_hvars_and_adjust_stack ir
+      ~tgt ~sp_align ~hvars ~entry_blk in
   let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   (* Substitute higher vars. *)
   let* ir = Subst.substitute tgt hvars ir in
