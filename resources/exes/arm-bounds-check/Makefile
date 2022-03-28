@@ -21,7 +21,7 @@ clean:
 patch: main main.patched main.patched.reference
 
 main.patched:
-	bap vibes main \
+	bap vibes main.reference \
 		--config=config.json \
 		-o main.patched \
 		--verbose
@@ -33,7 +33,7 @@ run-orig: main
 	@echo "  Running original program - make should say it's ignoring Error 12"
 	@echo ""
 	@echo "-----------------------------------------------------------------------"
-	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main
+	-QEMU_LD_PREFIX=/usr/arm-linux-gnueabi qemu-arm main.reference
 	@echo ""
 
 run-patched: patch

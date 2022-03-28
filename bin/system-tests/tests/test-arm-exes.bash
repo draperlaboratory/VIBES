@@ -327,7 +327,7 @@ test_arm_bounds_check () {
 
 test_arm_null_check () {
     local TEST_DIR="${EXES_DIR}/arm-null-check"
-    local MAIN_EXE="${TEST_DIR}/main"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
 
@@ -348,7 +348,7 @@ test_arm_null_check () {
 
 test_arm_password () {
     local TEST_DIR="${EXES_DIR}/arm-password"
-    local MAIN_EXE="${TEST_DIR}/main"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
     local PATCH_EXE="${TEST_DIR}/main.patched.reference"
     local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
 
