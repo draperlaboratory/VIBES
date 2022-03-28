@@ -17,14 +17,9 @@ open Bap.Std
 
 let equal_word = Bitvector.equal
 
-type stored_in =
-  | Register of string
-  | Memory of memory
-[@@deriving equal, compare]
-
 (* For a `Frame`, we have the name of the frame pointer register
    and an offset. *)
-and memory =
+type memory =
   | Frame of string * word
   | Global of word
 [@@deriving equal, compare]
@@ -37,9 +32,10 @@ type t = {
 and value =
   | Constant of word
   | Storage of {
-      at_entry: stored_in option;
-      at_exit : stored_in option;
+      at_entry: string option;
+      at_exit : string option;
     }
+  | Memory of memory
 [@@deriving equal, compare]
 
 let name t = t.name
@@ -57,11 +53,7 @@ let at_exit (v : value) = match v with
   | Storage {at_exit; _} -> at_exit
   | _ -> None
 
-let register (s : stored_in) = match s with
-  | Register r -> Some r
-  | _ -> None
-
-let memory (s : stored_in) = match s with
+let memory (v : value) = match v with
   | Memory m -> Some m
   | _ -> None
 
@@ -73,33 +65,30 @@ let global (m : memory) = match m with
   | Global addr -> Some addr
   | _ -> None
 
-let stored_in_register (reg : string) : stored_in =
-  Register reg
-
 let create_frame (fp : string) (off : word) : memory =
   Frame (fp, off)
 
 let create_global (addr : word) : memory =
   Global addr
 
-let stored_in_memory (m : memory) : stored_in =
-  Memory m
+let create_with_memory (name : string) ~(memory : memory) : t =
+  {name; value = Memory memory}
 
 let create_with_constant (name : string) ~(const : word) : t =
-  { name; value = Constant const }
+  {name; value = Constant const}
 
 let create_with_storage
     (name : string)
-    ~(at_entry : stored_in option)
-    ~(at_exit : stored_in option) : t =
-  { name; value = Storage {at_entry; at_exit} }
+    ~(at_entry : string option)
+    ~(at_exit : string option) : t =
+  {name; value = Storage {at_entry; at_exit}}
 
-let is_reg (v : stored_in) : bool =
+let is_reg (v : value) : bool =
   match v with
-  | Register _ -> true
+  | Storage _ -> true
   | _ -> false
 
-let is_mem (v : stored_in) : bool =
+let is_mem (v : value) : bool =
   match v with
   | Memory _ -> true
   | _ -> false

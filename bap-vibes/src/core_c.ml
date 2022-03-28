@@ -297,30 +297,24 @@ module Eval(CT : Theory.Core) = struct
         (sprintf "addr_of_var: missing higher var %s for ADDROF expression, \
                   storage classification is required" v)
     | Some hvar -> match Hvar.value hvar with
-      | Hvar.Storage {at_entry; _} -> begin
-          match at_entry with
-          | Some Hvar.(Memory (Frame (reg, off))) ->
-            let* reg = try KB.return @@ Naming.mark_reg_exn info.tgt reg
-              with Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
-                  (sprintf "addr_of_var: substitution failed: %s" msg) in
-            let reg =
-              T.Var.create info.word_sort @@
-              T.Var.Ident.of_string @@
-              Var.name reg in
-            let+ a =
-              CT.add (CT.var reg)
-                (CT.int info.word_sort (Word.to_bitvec off)) in
-            T.Value.forget a
-          | Some Hvar.(Memory (Global addr)) ->
-            let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
-            T.Value.forget a
-          | _ -> Err.fail @@ Err.Core_c_error
-              (sprintf "addr_of_var: higher var %s for ADDROF expression is \
-                        not stored in a memory location." v)
-        end
+      | Hvar.(Memory (Frame (reg, off))) ->
+        let* reg = try KB.return @@ Naming.mark_reg_exn info.tgt reg
+          with Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
+              (sprintf "addr_of_var: substitution failed: %s" msg) in
+        let reg =
+          T.Var.create info.word_sort @@
+          T.Var.Ident.of_string @@
+          Var.name reg in
+        let+ a =
+          CT.add (CT.var reg)
+            (CT.int info.word_sort (Word.to_bitvec off)) in
+        T.Value.forget a
+      | Hvar.(Memory (Global addr))->
+        let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
+        T.Value.forget a
       | _ -> Err.fail @@ Err.Core_c_error
-          (sprintf "addr_of_var: higher var %s for ADDROF expression has no \
-                    storage classifier." v)
+          (sprintf "addr_of_var: higher var %s for ADDROF expression is \
+                    not stored in a memory location." v)
 
   let rec expr_to_pure
       (info : _ interp_info)

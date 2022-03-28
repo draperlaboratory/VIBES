@@ -89,29 +89,30 @@ let wp_params t : Wp_params.t = t.wp_params
 
 (* For displaying a higher var. *)
 let string_of_hvar (v : Hvar.t) : string =
-  let string_of_loc (v_loc : Hvar.stored_in) : string =
-    match v_loc with
-    | Hvar.Register reg -> reg
-    | Hvar.(Memory (Frame (fp, offset))) ->
-      Format.sprintf "[%s + %s]" fp (Bap.Std.Word.to_string offset)
-    | Hvar.(Memory (Global addr)) ->
-      Format.sprintf "[%s]" (Bap.Std.Word.to_string addr) in
   let string_of_value (name : string) (v : Hvar.value) : string =
     match v with
     | Storage {at_entry = Some x; at_exit = Some y} -> 
       Format.sprintf
-        "      {\n        name: %s,\n        at-entry: %s,\n        at_exit = %s\n      }"
-        name (string_of_loc x) (string_of_loc y)
+        "      {\n        name: %s,\n        at-entry: %s,\n        at-exit = %s\n      }"
+        name x y
     | Storage {at_entry = Some x; at_exit = None} -> 
       Format.sprintf
         "      {\n        name: %s,\n        at-entry: %s\n      }"
-        name (string_of_loc x)
+        name x
     | Storage {at_entry = None; at_exit = Some y} -> 
       Format.sprintf
         "      {\n        name: %s,\n        at-exit: %s\n      }"
-        name (string_of_loc y)
+        name y
     | Storage {at_entry = None; at_exit = None} -> 
       Format.sprintf "      {\n        name: %s}" name
+    | Memory (Frame (loc, off)) ->
+      Format.sprintf
+        "      {\n        name: %s,\n        memory: [%s + %s]\n      }"
+        name loc (Bap.Std.Word.to_string off)
+    | Memory (Global addr) ->
+      Format.sprintf
+        "      {\n        name: %s,\n        memory: %s\n      }"
+        name (Bap.Std.Word.to_string addr)
     | Constant const ->
       Format.sprintf 
         "      {\n        name: %s,\n        constant: %s}"

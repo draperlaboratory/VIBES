@@ -78,9 +78,6 @@ let initialize
     ~(hvars : Hvar.t list)
     ~(tgt : Theory.target)
     ~(spilled : String.Set.t) : blk term list KB.t =
-  let endian =
-    let e = Theory.Target.endianness tgt in
-    if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
   KB.List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       if Tid.(tid = entry_tid) then
@@ -91,7 +88,7 @@ let initialize
               else match Hvar.value hvar with
                 | Hvar.Constant _ -> KB.return None
                 | Hvar.Storage {at_entry = None; _} -> KB.return None
-                | Hvar.Storage {at_entry = Some (Register reg); _} -> begin
+                | Hvar.Storage {at_entry = Some reg; _} -> begin
                     match typeof name with
                     | None -> KB.return None
                     | Some typ ->
@@ -100,26 +97,21 @@ let initialize
                       let+ tid = Theory.Label.fresh in
                       Some (Def.create ~tid lhs @@ Var rhs)
                   end
-                | Hvar.Storage {at_entry = Some (Memory memory); _} -> begin
-                    match typeof name with
-                    | None -> KB.return None
-                    | Some typ ->
-                      let lhs = Var.create name typ in
-                      let mem = get_mem tgt in
-                      let size = size_of_typ typ name in
-                      let rhs = match memory with
-                        | Hvar.Global addr ->
-                          Bil.(load ~mem:(var mem) ~addr:(int addr)
-                                 endian size)
-                        | Hvar.Frame (loc, off) ->
-                          let loc = Naming.mark_reg_exn tgt loc in
-                          Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
-                                 endian size) in
-                      let+ tid = Theory.Label.fresh in
-                      Some (Def.create ~tid lhs rhs)
-                  end) in
-        List.fold defs ~init:blk ~f:(fun blk def ->
-            Term.prepend def_t blk def)
+                | Hvar.Memory _ -> KB.return None) in
+        let after =
+          Term.enum def_t blk |>
+          Seq.to_list_rev |>
+          List.find_map ~f:(fun def ->
+              if Term.has_attr def Bir_helpers.spill_tag
+              then Some (Term.tid def)
+              else None) in
+        match after with
+        | Some after ->
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.append ~after def_t blk def)
+        | None ->
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.prepend def_t blk def)
       else KB.return blk)
 
 (* Finalize variables with their `at-exit` values. *)
@@ -129,9 +121,6 @@ let finalize
     ~(exit_tids : Tid.Set.t)
     ~(hvars : Hvar.t list)
     ~(tgt : Theory.target) : blk term list KB.t =
-  let endian =
-    let e = Theory.Target.endianness tgt in
-    if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
   KB.List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       if Set.mem exit_tids tid then
@@ -141,7 +130,7 @@ let finalize
               match Hvar.value hvar with
               | Hvar.Constant _ -> KB.return None
               | Hvar.Storage {at_exit = None; _} -> KB.return None
-              | Hvar.Storage {at_exit = Some (Register reg); _} -> begin
+              | Hvar.Storage {at_exit = Some reg; _} -> begin
                   match typeof name with
                   | None -> KB.return None
                   | Some typ ->
@@ -150,25 +139,7 @@ let finalize
                     let+ tid = Theory.Label.fresh in
                     Some (Def.create ~tid lhs rhs)
                 end
-              | Hvar.Storage {at_exit = Some (Memory memory); _} -> begin
-                  match typeof name with
-                  | None -> KB.return None
-                  | Some typ ->
-                    let rhs = Bil.var @@ Var.create name typ in
-                    let mem = get_mem tgt in
-                    let lhs = mem in
-                    let size = size_of_typ typ name in
-                    let rhs = match memory with
-                      | Hvar.Global addr ->
-                        Bil.(store ~mem:(var mem) ~addr:(int addr)
-                               rhs endian size)
-                      | Hvar.Frame (loc, off) ->
-                        let loc = Naming.mark_reg_exn tgt loc in
-                        Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
-                               rhs endian size) in
-                    let+ tid = Theory.Label.fresh in
-                    Some (Def.create ~tid lhs rhs)
-                end) in
+              | Hvar.Memory _ -> KB.return None) in
         List.fold defs ~init:blk ~f:(fun blk def ->
             Term.append def_t blk def)
       else KB.return blk)
@@ -179,32 +150,72 @@ let finalize
 let subst_name
     (name : string)
     ~(typ : typ)
-    ~(hvar : Hvar.t) : exp =
+    ~(hvar : Hvar.t)
+    ~(tgt : Theory.target) : exp =
   match Hvar.value hvar with
   | Hvar.Constant const -> Bil.int const
+  | Hvar.Memory memory -> begin
+      let mem = get_mem tgt in
+      let size = size_of_typ typ name in
+      let endian =
+        let e = Theory.Target.endianness tgt in
+        if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
+      match memory with
+      | Frame (loc, off) ->
+        let loc = Naming.mark_reg_exn tgt loc in
+        Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
+               endian size)
+      | Global addr ->
+        Bil.(load ~mem:(var mem) ~addr:(int addr) endian size)
+    end
   | Hvar.Storage _ -> Bil.var @@ Var.create name typ
 
-let subst_var (v : var) ~(hvars : Hvar.t list) : exp =
+let subst_var
+    (v : var)
+    ~(hvars : Hvar.t list)
+    ~(tgt : Theory.target) : exp =
   let name = Var.name v in
   let typ = Var.typ v in
   match Hvar.find name hvars with
-  | Some hvar -> subst_name name ~typ ~hvar
+  | Some hvar -> subst_name name ~typ ~hvar ~tgt
   | None -> Bil.var v
 
-let subst_exp (e : exp) ~(hvars : Hvar.t list) : exp =
+let subst_exp
+    (e : exp)
+    ~(hvars : Hvar.t list)
+    ~(tgt : Theory.target) : exp =
   let obj = object
     inherit Exp.mapper
-    method! map_var v = subst_var v hvars
+    method! map_var v = subst_var v ~hvars ~tgt
   end in
   obj#map_exp e
 
-let subst_def (def : def term) ~(hvars : Hvar.t list) : def term =
+let subst_def
+    (def : def term)
+    ~(hvars : Hvar.t list)
+    ~(tgt : Theory.target) : def term =
   let lhs = Def.lhs def in
+  let typ = Var.typ lhs in
   let name = Var.name lhs in
-  let rhs = Def.rhs def |> subst_exp ~hvars in
+  let rhs = Def.rhs def |> subst_exp ~hvars ~tgt in
   match Hvar.find name hvars with
   | None -> Def.with_rhs def rhs
   | Some hvar -> match Hvar.value hvar with
+    | Hvar.Memory memory ->
+      let mem = get_mem tgt in
+      let lhs = mem in
+      let size = size_of_typ typ name in
+      let endian =
+        let e = Theory.Target.endianness tgt in
+        if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
+      let rhs = match memory with
+        | Frame (loc, off) ->
+          let loc = Naming.mark_reg_exn tgt loc in
+          Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
+                 rhs endian size)
+        | Global addr ->
+          Bil.(store ~mem:(var mem) ~addr:(int addr) rhs endian size) in
+      Def.create ~tid:(Term.tid def) lhs rhs
     | Hvar.Storage _ -> Def.with_rhs def rhs
     | Hvar.Constant _ -> raise @@ Subst_err (
         sprintf "Higher var %s appeared on the LHS of a def, but is \
@@ -223,7 +234,7 @@ let subst_label
       | None -> label
       | Some hvar ->
         let typ = Type.Imm (Theory.Target.code_addr_size tgt) in
-        Indirect (subst_name name ~typ ~hvar)
+        Indirect (subst_name name ~typ ~hvar ~tgt)
 
 let subst_dsts
     (jmp : jmp term)
@@ -236,7 +247,9 @@ let subst_dsts
     let+ label = subst_label label ~hvars ~tgt in
     Jmp.create_goto ~cond ~tid label
   | Call call -> begin
-      let* target = Call.target call |> subst_label ~hvars ~tgt in
+      let* target =
+        Call.target call |>
+        subst_label ~hvars ~tgt in
       match Call.return call with
       | None ->
         let call = Call.create ~target () in
@@ -255,13 +268,14 @@ let subst_jmp
     (jmp : jmp term)
     ~(hvars : Hvar.t list)
     ~(tgt : Theory.target) : jmp term KB.t =
-  Jmp.map_exp jmp ~f:(subst_exp ~hvars) |>
+  Jmp.map_exp jmp ~f:(subst_exp ~hvars ~tgt) |>
   subst_dsts ~hvars ~tgt
 
 let subst_blk
     (blk : blk term)
     ~(hvars : Hvar.t list)
-    ~(tgt : Theory.target) : blk term KB.t =
+    ~(tgt : Theory.target)
+    ~(spilled : String.Set.t) : blk term KB.t =
   let+ jmps =
     Term.enum jmp_t blk |> Seq.to_list |>
     KB.List.map ~f:(subst_jmp ~hvars ~tgt) in
@@ -270,7 +284,7 @@ let subst_blk
   let phis = Term.enum phi_t blk |> Seq.to_list in
   let defs =
     Term.enum def_t blk |> Seq.to_list |>
-    List.map ~f:(subst_def ~hvars) in
+    List.map ~f:(subst_def ~hvars ~tgt) in
   Blk.create () ~phis ~defs ~jmps ~tid:(Term.tid blk)
 
 let substitute
@@ -300,6 +314,6 @@ let substitute
       initialize blks ~typeof ~entry_tid ~hvars ~tgt ~spilled in
     let* blks =
       finalize blks ~typeof ~exit_tids ~hvars ~tgt in
-    KB.List.map blks ~f:(subst_blk ~hvars ~tgt)
+    KB.List.map blks ~f:(subst_blk ~hvars ~tgt ~spilled)
   with Subst_err msg -> err msg
 

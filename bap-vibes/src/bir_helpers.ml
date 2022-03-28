@@ -16,6 +16,10 @@ open Bap_core_theory
 
 open KB.Let
 
+let spill_tag = Value.Tag.register (module Unit)
+    ~name:"spilled"
+    ~uuid:"af955827-635b-47a9-9fc2-28774747c4ec"
+
 (* Create a dummy subroutine from the blocks. *)
 let create_sub (blks : blk term list) : sub term KB.t =
   let+ tid = Theory.Label.fresh in

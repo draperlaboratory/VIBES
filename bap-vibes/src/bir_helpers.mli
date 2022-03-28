@@ -16,6 +16,8 @@ open Core_kernel
 open Bap.Std
 open Bap_core_theory
 
+val spill_tag : unit tag
+
 (** Create a dummy subroutine from a list of blocks. *)
 val create_sub : blk term list -> sub term KB.t
 
