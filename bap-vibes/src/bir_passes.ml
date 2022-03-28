@@ -776,6 +776,7 @@ module ABI = struct
               Term.prepend def_t blk adj
             else if Set.mem exits tid then
               let blk = List.fold pops ~init:blk ~f:(fun blk def ->
+                  let def = Term.set_attr def Helper.spill_tag () in
                   Term.append def_t blk def) in
               let+ tid = Theory.Label.fresh in
               let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in

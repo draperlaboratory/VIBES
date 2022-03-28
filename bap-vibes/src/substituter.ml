@@ -140,8 +140,19 @@ let finalize
                     Some (Def.create ~tid lhs rhs)
                 end
               | Hvar.Memory _ -> KB.return None) in
-        List.fold defs ~init:blk ~f:(fun blk def ->
-            Term.append def_t blk def)
+        let before =
+          Term.enum def_t blk |>
+          Seq.find_map ~f:(fun def ->
+              if Term.has_attr def Bir_helpers.spill_tag
+              then Some (Term.tid def)
+              else None) in
+        match before with
+        | Some before ->
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.prepend ~before def_t blk def)
+        | None ->
+          List.fold defs ~init:blk ~f:(fun blk def ->
+              Term.append def_t blk def)
       else KB.return blk)
 
 (* Substitute the name with an appropriate expression. Since we have the
