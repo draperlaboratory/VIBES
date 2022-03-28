@@ -98,20 +98,20 @@ let string_of_hvar (v : Hvar.t) : string =
       Format.sprintf "[%s]" (Bap.Std.Word.to_string addr) in
   let string_of_value (name : string) (v : Hvar.value) : string =
     match v with
-    | Storage {at_entry; at_exit} -> begin
-      let part_1 =
-        Format.sprintf
-          "      {\n        name: %s,\n        at-entry: %s\n"
-          name (string_of_loc at_entry) in
-      match at_exit with
-      | None -> part_1 ^ "\n      }"
-      | Some v_loc_2 ->
-        let part_2 =
-          Format.sprintf
-            "        at-exit: %s\n      }"
-            (string_of_loc v_loc_2) in
-        String.concat ~sep:"" [part_1; part_2]
-    end
+    | Storage {at_entry = Some x; at_exit = Some y} -> 
+      Format.sprintf
+        "      {\n        name: %s,\n        at-entry: %s,\n        at_exit = %s\n      }"
+        name (string_of_loc x) (string_of_loc y)
+    | Storage {at_entry = Some x; at_exit = None} -> 
+      Format.sprintf
+        "      {\n        name: %s,\n        at-entry: %s\n      }"
+        name (string_of_loc x)
+    | Storage {at_entry = None; at_exit = Some y} -> 
+      Format.sprintf
+        "      {\n        name: %s,\n        at-exit: %s\n      }"
+        name (string_of_loc y)
+    | Storage {at_entry = None; at_exit = None} -> 
+      Format.sprintf "      {\n        name: %s}" name
     | Constant const ->
       Format.sprintf 
         "      {\n        name: %s,\n        constant: %s}"

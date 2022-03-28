@@ -182,13 +182,19 @@ let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
     validate_h_var_constant addr >>= fun addr ->
     Err.return (Hvar.create_with_constant name ~const:addr)
   | `Null ->
-    validate_h_var_stored_in
-      obj "at-entry" Errors.Missing_higher_var_at_entry >>= fun at_entry ->
+    begin match Json.Util.member "at-entry" obj with
+      | `Null -> Err.return None
+      | _ ->
+        validate_h_var_stored_in
+          obj "at-entry" Errors.Missing_higher_var_at_entry >>|
+        Option.return
+    end >>= fun at_entry ->
     begin match Json.Util.member "at-exit" obj with
       | `Null -> Err.return None
       | _ ->
         validate_h_var_stored_in
-          obj "at-exit" Errors.Missing_higher_var_at_exit >>| Option.return
+          obj "at-exit" Errors.Missing_higher_var_at_exit >>|
+        Option.return
     end >>= fun at_exit ->
     Err.return (Hvar.create_with_storage name ~at_entry ~at_exit)
   | _ -> Err.fail Errors.Missing_higher_var_offset

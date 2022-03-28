@@ -37,7 +37,7 @@ type t = {
 and value =
   | Constant of word
   | Storage of {
-      at_entry: stored_in;
+      at_entry: stored_in option;
       at_exit : stored_in option;
     }
 [@@deriving equal, compare]
@@ -50,7 +50,7 @@ let constant (v : value) = match v with
   | _ -> None
 
 let at_entry (v : value) = match v with
-  | Storage {at_entry; _} -> Some at_entry
+  | Storage {at_entry; _} -> at_entry
   | _ -> None
     
 let at_exit (v : value) = match v with
@@ -90,7 +90,7 @@ let create_with_constant (name : string) ~(const : word) : t =
 
 let create_with_storage
     (name : string)
-    ~(at_entry : stored_in)
+    ~(at_entry : stored_in option)
     ~(at_exit : stored_in option) : t =
   { name; value = Storage {at_entry; at_exit} }
 

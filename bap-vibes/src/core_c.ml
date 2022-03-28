@@ -69,6 +69,7 @@ open KB.Let
 
 module Hvar = Higher_var
 module Err = Kb_error
+module Naming = Substituter.Naming
 
 type var_map = unit Theory.var String.Map.t
 
@@ -111,7 +112,7 @@ module Eval(CT : Theory.Core) = struct
 
   let make_reg (v : unit T.var) : unit T.var =
     let sort = T.Var.sort v in
-    let v = Substituter.mark_reg @@ Var.reify v in
+    let v = Naming.mark_reg @@ Var.reify v in
     T.Var.create sort @@ Var.ident v
 
   let mk_interp_info
@@ -298,8 +299,8 @@ module Eval(CT : Theory.Core) = struct
     | Some hvar -> match Hvar.value hvar with
       | Hvar.Storage {at_entry; _} -> begin
           match at_entry with
-          | Hvar.(Memory (Frame (reg, off))) ->
-            let* reg = try KB.return @@ Substituter.mark_reg_exn info.tgt reg
+          | Some Hvar.(Memory (Frame (reg, off))) ->
+            let* reg = try KB.return @@ Naming.mark_reg_exn info.tgt reg
               with Substituter.Subst_err msg -> Err.fail @@ Err.Core_c_error
                   (sprintf "addr_of_var: substitution failed: %s" msg) in
             let reg =
@@ -310,7 +311,7 @@ module Eval(CT : Theory.Core) = struct
               CT.add (CT.var reg)
                 (CT.int info.word_sort (Word.to_bitvec off)) in
             T.Value.forget a
-          | Hvar.(Memory (Global addr)) ->
+          | Some Hvar.(Memory (Global addr)) ->
             let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
             T.Value.forget a
           | _ -> Err.fail @@ Err.Core_c_error

@@ -46,7 +46,7 @@ type t = {
 and value =
   | Constant of word
   | Storage of {
-      at_entry: stored_in;
+      at_entry: stored_in option;
       at_exit : stored_in option;
     }
 [@@deriving equal, compare]
@@ -81,7 +81,7 @@ val create_with_constant : string -> const:word -> t
 (** [create_with_storage name ~at_entry ~at_exit] creates a new higher variable
     that aliases either a register or a location in memory. *)
 val create_with_storage :
-  string -> at_entry:stored_in -> at_exit:(stored_in option) -> t
+  string -> at_entry:stored_in option -> at_exit:stored_in option -> t
 
 (** [equal t1 t2] checks if higher var records [t1] and [t2] are equal. *)
 val equal : t -> t -> bool
