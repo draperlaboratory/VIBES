@@ -86,17 +86,16 @@ let initialize
             if Set.mem spilled name then KB.return None
             else match Hvar.value hvar with
               | Hvar.Constant _ -> KB.return None
+              | Hvar.Memory _ -> KB.return None
               | Hvar.Storage {at_entry = None; _} -> KB.return None
-              | Hvar.Storage {at_entry = Some reg; _} -> begin
-                  match typeof name with
-                  | None -> KB.return None
-                  | Some typ ->
-                    let lhs = Var.create name typ in
-                    let rhs = Naming.mark_reg_exn tgt reg in
-                    let+ tid = Theory.Label.fresh in
-                    Some (Def.create ~tid lhs @@ Var rhs)
-                end
-              | Hvar.Memory _ -> KB.return None) in
+              | Hvar.Storage {at_entry = Some reg; _} ->
+                match typeof name with
+                | None -> KB.return None
+                | Some typ ->
+                  let lhs = Var.create name typ in
+                  let rhs = Naming.mark_reg_exn tgt reg in
+                  let+ tid = Theory.Label.fresh in
+                  Some (Def.create ~tid lhs @@ Var rhs)) in
         (* Order these defs after we preserve any registers that were
            spilled. *)
         match
@@ -130,17 +129,16 @@ let finalize
             let name = Hvar.name hvar in
             match Hvar.value hvar with
             | Hvar.Constant _ -> KB.return None
+            | Hvar.Memory _ -> KB.return None
             | Hvar.Storage {at_exit = None; _} -> KB.return None
-            | Hvar.Storage {at_exit = Some reg; _} -> begin
-                match typeof name with
-                | None -> KB.return None
-                | Some typ ->
-                  let rhs = Bil.var @@ Var.create name typ in
-                  let lhs = Naming.mark_reg_exn tgt reg in
-                  let+ tid = Theory.Label.fresh in
-                  Some (Def.create ~tid lhs rhs)
-              end
-            | Hvar.Memory _ -> KB.return None) in
+            | Hvar.Storage {at_exit = Some reg; _} ->
+              match typeof name with
+              | None -> KB.return None
+              | Some typ ->
+                let rhs = Bil.var @@ Var.create name typ in
+                let lhs = Naming.mark_reg_exn tgt reg in
+                let+ tid = Theory.Label.fresh in
+                Some (Def.create ~tid lhs rhs)) in
         (* Order these defs before we restore any registers that were
            spilled. *)
         match
@@ -170,18 +168,18 @@ let subst_name
   | Hvar.Constant const -> Bil.int const
   | Hvar.Storage _ -> Bil.var @@ Var.create name typ
   | Hvar.Memory memory ->
-      let mem = get_mem tgt in
-      let size = size_of_typ typ name in
-      let endian =
-        let e = Theory.Target.endianness tgt in
-        if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
-      match memory with
-      | Frame (loc, off) ->
-        let loc = Naming.mark_reg_exn tgt loc in
-        Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
-               endian size)
-      | Global addr ->
-        Bil.(load ~mem:(var mem) ~addr:(int addr) endian size)
+    let mem = get_mem tgt in
+    let size = size_of_typ typ name in
+    let endian =
+      let e = Theory.Target.endianness tgt in
+      if Theory.Endianness.(e = le) then LittleEndian else BigEndian in
+    match memory with
+    | Frame (loc, off) ->
+      let loc = Naming.mark_reg_exn tgt loc in
+      Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
+             endian size)
+    | Global addr ->
+      Bil.(load ~mem:(var mem) ~addr:(int addr) endian size)
 
 let subst_var
     (v : var)

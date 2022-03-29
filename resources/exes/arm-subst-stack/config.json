@@ -10,25 +10,19 @@
      "patch-point" : "0x103cc",
      "patch-size" : 32,
      "patch-vars": [
-         {"name": "temp",
-	  "at-entry": {
-              "stored-in": "memory",
+       {"name": "temp",
+	    "memory": {
 	      "frame-pointer": "R11",
-              "offset": "0x4:32"
-          },
-          "at-exit": {
-              "stored-in": "register",
-	      "register": "R11"
-          }},
-         {"name": "retvar",
-	  "at-entry": {
-              "stored-in": "register",
-              "register": "R0"
-          },
-          "at-exit": {
-              "stored-in": "register",
+          "offset": "0x4:32"
+        }
+       },
+       {"name": "retvar",
+        "at-exit": {
+          "stored-in": "register",
 	      "register": "R0"
-          }}
-     ]}
+        }
+       }
+     ]
+    }
   ]
 }
