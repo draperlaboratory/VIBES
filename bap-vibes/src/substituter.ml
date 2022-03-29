@@ -168,7 +168,8 @@ let subst_name
     ~(tgt : Theory.target) : exp =
   match Hvar.value hvar with
   | Hvar.Constant const -> Bil.int const
-  | Hvar.Memory memory -> begin
+  | Hvar.Storage _ -> Bil.var @@ Var.create name typ
+  | Hvar.Memory memory ->
       let mem = get_mem tgt in
       let size = size_of_typ typ name in
       let endian =
@@ -181,8 +182,6 @@ let subst_name
                endian size)
       | Global addr ->
         Bil.(load ~mem:(var mem) ~addr:(int addr) endian size)
-    end
-  | Hvar.Storage _ -> Bil.var @@ Var.create name typ
 
 let subst_var
     (v : var)
@@ -215,6 +214,10 @@ let subst_def
   match Hvar.find name hvars with
   | None -> Def.with_rhs def rhs
   | Some hvar -> match Hvar.value hvar with
+    | Hvar.Constant _ -> raise @@ Subst_err (
+        sprintf "Higher var %s appeared on the LHS of a def, but is \
+                 given a constant value" name)
+    | Hvar.Storage _ -> Def.with_rhs def rhs
     | Hvar.Memory memory ->
       let mem = get_mem tgt in
       let lhs = mem in
@@ -230,10 +233,6 @@ let subst_def
         | Global addr ->
           Bil.(store ~mem:(var mem) ~addr:(int addr) rhs endian size) in
       Def.create ~tid:(Term.tid def) lhs rhs
-    | Hvar.Storage _ -> Def.with_rhs def rhs
-    | Hvar.Constant _ -> raise @@ Subst_err (
-        sprintf "Higher var %s appeared on the LHS of a def, but is \
-                 given a constant value" name)
 
 let subst_label
     (label : label)
