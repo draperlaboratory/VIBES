@@ -304,7 +304,6 @@ module ARM_ops = struct
     let mov set_flags = op (if set_flags then "movs" else "mov")
     let movw = op "movw"
     let add set_flags = op (if set_flags then "adds" else "add")
-    let addw = op "addw"
     let mul = op "mul"
     let sub set_flags = op (if set_flags then "subs" else "sub")
     let neg = op "neg"
@@ -481,18 +480,7 @@ module ARM_ops = struct
 
   let add (arg1 : arm_pure) (arg2 : arm_pure)
       ~(is_thumb : bool) : arm_pure KB.t =
-    let {op_val; _} = arg2 in
-    let fits_in_3 w =
-      let open Word in
-      let width = bitwidth w in
-      of_int ~width 0 <= w && w <= of_int ~width 7
-    in
-    match op_val with
-    | Const w when not (fits_in_3 w) && Word.to_int_exn w <= 0xFFF ->
-      (* addw can accept up to 12 bits for the immediate. *)
-      KB.return @@ binop Ops.addw word_ty arg1 arg2 ~is_thumb
-    | _ ->
-      KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2 ~is_thumb
+    KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2 ~is_thumb
 
   let neg (arg : arm_pure) ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ uop Ops.neg word_ty arg ~is_thumb
