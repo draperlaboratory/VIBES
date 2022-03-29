@@ -256,6 +256,11 @@ constraint forall (blk in block_t)(
 
 % anything that has a where clause that isn't just parameters makes me queasy. What is this going to do?
 
+% Issue cycles must be unique for each operation in the block.
+constraint forall(blk in block_t)(
+  alldifferent([issue[o] | o in block_operations[blk]])
+);
+
 %----------------------
 % HELPERS
 %----------------------
