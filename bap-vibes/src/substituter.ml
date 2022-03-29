@@ -81,37 +81,36 @@ let initialize
   KB.List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       if Tid.(tid = entry_tid) then
-        let+ defs =
-          KB.List.filter_map hvars ~f:(fun hvar ->
-              let name = Hvar.name hvar in
-              if Set.mem spilled name then KB.return None
-              else match Hvar.value hvar with
-                | Hvar.Constant _ -> KB.return None
-                | Hvar.Storage {at_entry = None; _} -> KB.return None
-                | Hvar.Storage {at_entry = Some reg; _} -> begin
-                    match typeof name with
-                    | None -> KB.return None
-                    | Some typ ->
-                      let lhs = Var.create name typ in
-                      let rhs = Naming.mark_reg_exn tgt reg in
-                      let+ tid = Theory.Label.fresh in
-                      Some (Def.create ~tid lhs @@ Var rhs)
-                  end
-                | Hvar.Memory _ -> KB.return None) in
-        let after =
+        let+ defs = KB.List.filter_map hvars ~f:(fun hvar ->
+            let name = Hvar.name hvar in
+            if Set.mem spilled name then KB.return None
+            else match Hvar.value hvar with
+              | Hvar.Constant _ -> KB.return None
+              | Hvar.Storage {at_entry = None; _} -> KB.return None
+              | Hvar.Storage {at_entry = Some reg; _} -> begin
+                  match typeof name with
+                  | None -> KB.return None
+                  | Some typ ->
+                    let lhs = Var.create name typ in
+                    let rhs = Naming.mark_reg_exn tgt reg in
+                    let+ tid = Theory.Label.fresh in
+                    Some (Def.create ~tid lhs @@ Var rhs)
+                end
+              | Hvar.Memory _ -> KB.return None) in
+        (* Order these defs after we preserve any registers that were
+           spilled. *)
+        match
           Term.enum def_t blk |>
           Seq.to_list_rev |>
           List.find_map ~f:(fun def ->
               if Term.has_attr def Bir_helpers.spill_tag
               then Some (Term.tid def)
-              else None) in
-        match after with
-        | Some after ->
-          List.fold defs ~init:blk ~f:(fun blk def ->
-              Term.append ~after def_t blk def)
-        | None ->
-          List.fold defs ~init:blk ~f:(fun blk def ->
-              Term.prepend def_t blk def)
+              else None)
+        with
+        | Some after -> List.fold defs ~init:blk ~f:(fun blk def ->
+            Term.append ~after def_t blk def)
+        | None -> List.fold defs ~init:blk ~f:(fun blk def ->
+            Term.prepend def_t blk def)
       else KB.return blk)
 
 (* Finalize variables with their `at-exit` values. *)
@@ -121,32 +120,36 @@ let finalize
     ~(exit_tids : Tid.Set.t)
     ~(hvars : Hvar.t list)
     ~(tgt : Theory.target) : blk term list KB.t =
+  let* exit_tids =
+    let+ blks = Bir_helpers.exit_blks blks in
+    List.map blks ~f:Term.tid |> Tid.Set.of_list in
   KB.List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       if Set.mem exit_tids tid then
-        let+ defs =
-          KB.List.filter_map hvars ~f:(fun hvar ->
-              let name = Hvar.name hvar in
-              match Hvar.value hvar with
-              | Hvar.Constant _ -> KB.return None
-              | Hvar.Storage {at_exit = None; _} -> KB.return None
-              | Hvar.Storage {at_exit = Some reg; _} -> begin
-                  match typeof name with
-                  | None -> KB.return None
-                  | Some typ ->
-                    let rhs = Bil.var @@ Var.create name typ in
-                    let lhs = Naming.mark_reg_exn tgt reg in
-                    let+ tid = Theory.Label.fresh in
-                    Some (Def.create ~tid lhs rhs)
-                end
-              | Hvar.Memory _ -> KB.return None) in
-        let before =
+        let+ defs = KB.List.filter_map hvars ~f:(fun hvar ->
+            let name = Hvar.name hvar in
+            match Hvar.value hvar with
+            | Hvar.Constant _ -> KB.return None
+            | Hvar.Storage {at_exit = None; _} -> KB.return None
+            | Hvar.Storage {at_exit = Some reg; _} -> begin
+                match typeof name with
+                | None -> KB.return None
+                | Some typ ->
+                  let rhs = Bil.var @@ Var.create name typ in
+                  let lhs = Naming.mark_reg_exn tgt reg in
+                  let+ tid = Theory.Label.fresh in
+                  Some (Def.create ~tid lhs rhs)
+              end
+            | Hvar.Memory _ -> KB.return None) in
+        (* Order these defs before we restore any registers that were
+           spilled. *)
+        match
           Term.enum def_t blk |>
           Seq.find_map ~f:(fun def ->
               if Term.has_attr def Bir_helpers.spill_tag
               then Some (Term.tid def)
-              else None) in
-        match before with
+              else None)
+        with
         | Some before ->
           List.fold defs ~init:blk ~f:(fun blk def ->
               Term.prepend ~before def_t blk def)

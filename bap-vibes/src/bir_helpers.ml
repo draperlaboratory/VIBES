@@ -25,6 +25,9 @@ let create_sub (blks : blk term list) : sub term KB.t =
   let+ tid = Theory.Label.fresh in
   Sub.create ~name:"dummy-wrapper" ~blks ~tid ()
 
+let is_implicit_exit (blk : blk term) : bool =
+  Seq.is_empty @@ Term.enum jmp_t blk
+
 (* Find the exit nodes of the patch code. They are classified as follows:
 
    - no jmps:

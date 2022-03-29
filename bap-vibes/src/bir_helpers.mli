@@ -16,10 +16,15 @@ open Core_kernel
 open Bap.Std
 open Bap_core_theory
 
+(** This attribute is set for defs that are for preserving/restoring
+    caller-save registers. *)
 val spill_tag : unit tag
 
 (** Create a dummy subroutine from a list of blocks. *)
 val create_sub : blk term list -> sub term KB.t
+
+(** Returns [true] if the block is an implicit exit (has no jumps). *)
+val is_implicit_exit : blk term -> bool
 
 (** Returns the exit nodes from the program:
 

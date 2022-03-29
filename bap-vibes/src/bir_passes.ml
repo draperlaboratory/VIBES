@@ -164,9 +164,8 @@ module Opt = struct
             Tid.Table.set blk_table ~key:(Term.tid blk) ~data:blk);
         (* Get the implicit exit block. *)
         let exit_tid = List.find_map blks ~f:(fun blk ->
-            if Seq.is_empty @@ Term.enum jmp_t blk
-            then Some (Term.tid blk)
-            else None) in
+            if Helper.is_implicit_exit blk
+            then Some (Term.tid blk) else None) in
         (* We can merge with a successor block if we are its only predecessor.
            Note that the pseudo-start node will be a predecessor of
            "unreachable" blocks. Furthermore, the implicit exit block cannot
@@ -574,8 +573,7 @@ module Shape = struct
       Seq.to_list |> List.map ~f:Graphs.Ir.Node.label in
     (* The exit block with no jmps should be ordered at the very end of
        the program. *)
-    match List.find blks ~f:(fun blk ->
-        Seq.is_empty @@ Term.enum jmp_t blk) with
+    match List.find blks ~f:Helper.is_implicit_exit with
     | None -> blks
     | Some blk ->
       let tid = Term.tid blk in
@@ -720,9 +718,6 @@ module ABI = struct
                   else KB.return hvar
             end
           | _ -> KB.return hvar) in
-      (* Collect the exit blocks. *)
-      let* exits = Helper.exit_blks blks in
-      let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       (* If we needed to spill or restore, then make sure that other higher
          vars aren't using stack locations. *)
       let no_regs = Set.is_empty !preserved && Set.is_empty !restored in
@@ -765,6 +760,9 @@ module ABI = struct
           Set.to_list !preserved |> List.rev |> KB.List.map ~f:push in
         let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
         (* Insert the new defs into the entry/exit blocks accordingly. *)
+        let* exit_tids =
+          let+ blks = Helper.exit_blks blks in
+          List.map blks ~f:Term.tid |> Tid.Set.of_list in
         let+ blks = KB.List.map blks ~f:(fun blk ->
             let tid = Term.tid blk in
             if Tid.(tid = Term.tid entry_blk) then
@@ -774,7 +772,7 @@ module ABI = struct
               let+ tid = Theory.Label.fresh in
               let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
               Term.prepend def_t blk adj
-            else if Set.mem exits tid then
+            else if Set.mem exit_tids tid then
               let blk = List.fold pops ~init:blk ~f:(fun blk def ->
                   let def = Term.set_attr def Helper.spill_tag () in
                   Term.append def_t blk def) in
