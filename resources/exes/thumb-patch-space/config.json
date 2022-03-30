@@ -30,19 +30,7 @@
           "register": "R0"
         }
        }
-     ],
-     "extra-constraints": "
-       % exclude callee-save registers from the solution
-       constraint exclude_reg('R4');
-       constraint exclude_reg('R5');
-       constraint exclude_reg('R6');
-       constraint exclude_reg('R7');
-       constraint exclude_reg('R8');
-       constraint exclude_reg('R9');
-       constraint exclude_reg('R10');
-       constraint exclude_reg('R11');
-       constraint exclude_reg('SP');
-     "
+     ]
     }
   ]
 }
