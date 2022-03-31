@@ -834,9 +834,6 @@ let run (patch : Data.Patch.t) : t KB.t =
   let* ir = Opt.apply ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
-  (* List.iter ir ~f:(Format.eprintf "%a\n%!" Blk.pp); *)
-  (* Format.eprintf "-----------------------------------\n%!"; *)
-  (* let* () = Kb_error.fail @@ Other "" in *)
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
   let* ir = Ssa.linear patch sub in
