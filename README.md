@@ -427,8 +427,7 @@ Here is a description of the above schema:
   * `"patch-size": INT` - Required. The number of bytes to replace.
   * `"patch-code": "CODE"` - Required. Code to compile and insert at the patch point. The code should be written in a subset of C.
   * `"patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
-  * `"patch-vars": [PATCH-VARS]` -
-    A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier (these classifications are mutually exclusive):
+  * `"patch-vars": [PATCH-VARS]` - A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier (these classifications are mutually exclusive):
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
@@ -444,6 +443,7 @@ Here is a description of the above schema:
         * If the variable lives relative to a base register (such as a stack location):
             * `"frame-pointer": "REGISTER"`- Required. The base register.
             * `"offset": "HEX:BITWIDTH"` - Required. The offset from the base register.
+  * `"extra-constraints": {MINIZINC}` - Optional. Provides extra constraints in the MiniZinc language to the model. This is intended for advanced users, and may produce unexpected behavior from the constraint solver.
 * `"wp-params": {WP-PARAMS}` -
   Required. A dictionary of parameters to pass to the WP verifier (for more details than what we provide here, see the [documentation](https://draperlaboratory.github.io/cbat_tools/) for [WP](https://github.com/draperlaboratory/cbat_tools/tree/master/wp)). This dictionary can have the following fields:
   * `"func": "NAME"` - Required. The name of the function you want to verify.
