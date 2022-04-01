@@ -438,23 +438,22 @@ Here is a description of the above schema:
   * `"patch-code": "CODE"` - Required. Code to compile and insert at the patch point. The code should be written in a subset of C.
   * `"patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
   * `"patch-vars": [PATCH-VARS]` -
-    A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier:
+    A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier (these classifications are mutually exclusive):
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
-    * For storage classification, the object has the following fields:
-      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`.
-      * `"at-entry": {STORAGE-CLASSIFICATION}` -
-        Required. Storage classification for the identifier at the entrance to the patch site. The value can live in a register, or in memory (on the stack).
-        * If it's stored in a register, the object has the following fields:
-          * `"stored-in": "register"` - Required.
-          * "register": "NAME" - Required. The name of a register (in uppercase, e.g., `R0`).
-        * If it's stored in memory (on the stack), the object has the following fields:
-          * `"stored-in": "memory"` - Required.
-          * `"frame-pointer": "NAME"` - Required. The name of the register (in uppercase) that holds the framepointer (e.g., `R11`).
-          * `"offset": "HEX:BITWIDTH"` - Required. The offset from the framepointer where the identifier's value lives. This should be number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
-      * `"at-exit": {STORAGE-CLASSIFICATION}` -
-        Required. Storage classification for the identifier at the exit of the patch site. This should be specified exactly as in `at-entry`.
+    * For registers, the object has the following fields:
+      * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
+      * `"at-entry": "REGISTER"` - Optional. The variable in question shall contain the value stored in the register at the entry point of the patch.
+      * `"at-exit": "REGISTER"` - Optional. The register shall contain the value held by the variable in question at all exit points of the patch.
+    * For memory, the object has the following fields:
+      * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
+      * `"memory": {MEMORY}"` Required. The `MEMORY` field can be one of two options:
+        If the variable lives at a constant memory address:
+            * `"address": "HEX:BITWIDTH"` - Required.
+        If the variable lives relative to a base register (such as a stack location):
+            * `"frame-pointer": "REGISTER"`- Required. The base register.
+            * `"offset": "HEX:BITWIDTH"` - Required. The offset from the base register.
 * `"wp-params": {WP-PARAMS}` -
   Required. A dictionary of parameters to pass to the WP verifier (for more details than what we provide here, see the [documentation](https://draperlaboratory.github.io/cbat_tools/) for [WP](https://github.com/draperlaboratory/cbat_tools/tree/master/wp)). This dictionary can have the following fields:
   * `"func": "NAME"` - Required. The name of the function you want to verify.
