@@ -449,9 +449,9 @@ Here is a description of the above schema:
     * For memory, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"memory": {MEMORY}"` Required. The `MEMORY` field can be one of two options:
-        If the variable lives at a constant memory address:
+        * If the variable lives at a constant memory address:
             * `"address": "HEX:BITWIDTH"` - Required.
-        If the variable lives relative to a base register (such as a stack location):
+        * If the variable lives relative to a base register (such as a stack location):
             * `"frame-pointer": "REGISTER"`- Required. The base register.
             * `"offset": "HEX:BITWIDTH"` - Required. The offset from the base register.
 * `"wp-params": {WP-PARAMS}` -
