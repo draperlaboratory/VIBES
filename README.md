@@ -380,28 +380,18 @@ Here is the full schema for a config file:
       "patch-vars": [ (OPTIONAL)
         {
           "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "<REGISTER NAME (IN UPPERCASE)>"
-          }
+          "at-entry": "<REGISTER NAME (IN UPPERCASE)>",
+          "at-exit": "<REGISTER NAME (IN UPPERCASE)>"
           OR
-          {
-            "stored-in": "memory",
-            "address": "<HEX-NUMBER:BITWIDTH>"
-          },
-          "at-exit": {
-            "stored-in": "register",
-            "register": "<REGISTER NAME (IN UPPERCASE)>"
-          }
+          "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
+          "memory": {"address": "<HEX-NUMBER:BITWIDTH>"}
           OR
-          {
-            "stored-in": "memory",
-            "framepointer": "<REGISTER NAME (IN UPPERCASE)>"
+          "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
+          "memory": {
+            "frame-pointer": "<REGISTER NAME (IN UPPERCASE)>",
             "offset": "<HEX-NUMBER:BITWIDTH>"
           }
-        }
-        OR
-        {
+          OR
           "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
           "constant": "<HEX-NUMBER:BITWIDTH>""
         },
