@@ -176,7 +176,7 @@ let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
           | `String reg -> Err.return @@ Some reg
           | _ -> Err.fail @@ Errors.Missing_higher_var_at_exit
         end >>= fun at_exit ->
-        Err.return (Hvar.create_with_storage name ~at_entry ~at_exit)
+        Err.return (Hvar.create_with_registers name ~at_entry ~at_exit)
       | _ -> Err.fail Errors.Missing_higher_var_offset
     end
   | _ -> Err.fail Errors.Missing_higher_var_offset
