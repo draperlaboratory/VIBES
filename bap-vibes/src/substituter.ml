@@ -87,8 +87,8 @@ let initialize
             else match Hvar.value hvar with
               | Hvar.Constant _ -> KB.return None
               | Hvar.Memory _ -> KB.return None
-              | Hvar.Storage {at_entry = None; _} -> KB.return None
-              | Hvar.Storage {at_entry = Some reg; _} ->
+              | Hvar.Registers {at_entry = None; _} -> KB.return None
+              | Hvar.Registers {at_entry = Some reg; _} ->
                 match typeof name with
                 | None -> KB.return None
                 | Some typ ->
@@ -130,8 +130,8 @@ let finalize
             match Hvar.value hvar with
             | Hvar.Constant _ -> KB.return None
             | Hvar.Memory _ -> KB.return None
-            | Hvar.Storage {at_exit = None; _} -> KB.return None
-            | Hvar.Storage {at_exit = Some reg; _} ->
+            | Hvar.Registers {at_exit = None; _} -> KB.return None
+            | Hvar.Registers {at_exit = Some reg; _} ->
               match typeof name with
               | None -> KB.return None
               | Some typ ->
@@ -166,7 +166,7 @@ let subst_name
     ~(tgt : Theory.target) : exp =
   match Hvar.value hvar with
   | Hvar.Constant const -> Bil.int const
-  | Hvar.Storage _ -> Bil.var @@ Var.create name typ
+  | Hvar.Registers _ -> Bil.var @@ Var.create name typ
   | Hvar.Memory memory ->
     let mem = get_mem tgt in
     let size = size_of_typ typ name in
@@ -215,7 +215,7 @@ let subst_def
     | Hvar.Constant _ -> raise @@ Subst_err (
         sprintf "Higher var %s appeared on the LHS of a def, but is \
                  given a constant value" name)
-    | Hvar.Storage _ -> Def.with_rhs def rhs
+    | Hvar.Registers _ -> Def.with_rhs def rhs
     | Hvar.Memory memory ->
       let mem = get_mem tgt in
       let lhs = mem in

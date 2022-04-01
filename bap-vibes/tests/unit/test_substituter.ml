@@ -108,7 +108,7 @@ let str_of_blks (code : blk term list) =
 (* Verify that a higher var stored in a register is handled correctly. *)
 let test_substitute_1 (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
-      create_with_storage "x"
+      create_with_registers "x"
         ~at_entry:None
         ~at_exit:(Some "RAX");
     ]
@@ -209,7 +209,7 @@ let test_substitute_2 (_ : test_ctxt) : unit =
 (* Verify that substitution errors are raised correctly. *)
 let test_substitute_error (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
-      create_with_storage "x"
+      create_with_registers "x"
         ~at_entry:(Some "FAKEREGISTER1")
         ~at_exit:(Some "FAKEREGISTER2");
     ]

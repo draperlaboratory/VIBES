@@ -31,7 +31,7 @@ type t = {
 
 and value =
   | Constant of word
-  | Storage of {
+  | Registers of {
       at_entry: string option;
       at_exit : string option;
     }
@@ -46,11 +46,11 @@ let constant (v : value) = match v with
   | _ -> None
 
 let at_entry (v : value) = match v with
-  | Storage {at_entry; _} -> at_entry
+  | Registers {at_entry; _} -> at_entry
   | _ -> None
     
 let at_exit (v : value) = match v with
-  | Storage {at_exit; _} -> at_exit
+  | Registers {at_exit; _} -> at_exit
   | _ -> None
 
 let memory (v : value) = match v with
@@ -77,15 +77,15 @@ let create_with_memory (name : string) ~(memory : memory) : t =
 let create_with_constant (name : string) ~(const : word) : t =
   {name; value = Constant const}
 
-let create_with_storage
+let create_with_registers
     (name : string)
     ~(at_entry : string option)
     ~(at_exit : string option) : t =
-  {name; value = Storage {at_entry; at_exit}}
+  {name; value = Registers {at_entry; at_exit}}
 
 let is_reg (v : value) : bool =
   match v with
-  | Storage _ -> true
+  | Registers _ -> true
   | _ -> false
 
 let is_mem (v : value) : bool =
@@ -110,7 +110,7 @@ let is_constant (v : value) : bool =
 
 let is_storage (v : value) : bool =
   match v with
-  | Storage _ -> true
+  | Registers _ -> true
   | _ -> false
 
 let find (name : string) (vars : t list) : t option =

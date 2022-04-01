@@ -705,7 +705,7 @@ module ABI = struct
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
           match Hvar.value hvar with
-          | Hvar.Storage {at_entry = Some v; at_exit} -> begin
+          | Hvar.Registers {at_entry = Some v; at_exit} -> begin
               match Map.find caller_save v with
               | None -> KB.return hvar
               | Some (offset, _) ->

@@ -11,31 +11,22 @@
      "patch-size" : 2,
      "patch-vars": [
        {"name": "retvar",
-        "at-entry": {
-          "stored-in": "register",
-          "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-          "register": "R0"
-        }
+        "at-entry": "R0",
+        "at-exit": "R0"
        }
-     ]},
+     ]
+    },
     {"patch-name" : "ret-100",
      "patch-code" : "int retvar; retvar = 100;",
      "patch-point" : "0x103f2",
      "patch-size" : 2,
      "patch-vars": [
        {"name": "retvar",
-        "at-entry": {
-          "stored-in": "register",
-          "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-          "register": "R0"
-        }}
-     ]}
+        "at-entry": "R0",
+        "at-exit": "R0"
+       }
+     ]
+    }
   ],
   "ogre": "loader.ogre"
 

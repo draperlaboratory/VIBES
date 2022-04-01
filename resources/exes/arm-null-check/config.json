@@ -25,14 +25,8 @@
      "patch-size": 36,
      "patch-vars": [
        {"name": "x",
-        "at-entry": {
-          "stored-in": "register",
-          "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-          "register": "R0"
-        }
+        "at-entry": "R0",
+        "at-exit": "R0"
        }
      ],
      "extra-constraints": "

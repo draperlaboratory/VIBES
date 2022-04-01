@@ -369,7 +369,7 @@ let test_ir14 ctxt =
   test_ir ctxt Prog14.prog [blk_pat ^ ":"; "bl some_function"]
 
 let test_ir15 ctxt =
-  test_ir ctxt Prog15.prog [blk_pat ^ ":"; "addw R0, R0, #42"]
+  test_ir ctxt Prog15.prog [blk_pat ^ ":"; "add R0, R0, #42"]
 
 let test_ir16 ctxt =
   test_ir ctxt Prog16.prog [blk_pat ^ ":"; "mov R0, R0"]

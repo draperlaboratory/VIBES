@@ -19,16 +19,10 @@
      "patch-size" : 4,
      "patch-vars" : [
        {"name": "input",
-        "at-entry": {
-          "stored-in": "register",
-          "register": "R0"
-        }
+        "at-entry": "R0"
        },
        {"name": "output",
-        "at-exit": {
-          "stored-in": "register",
-          "register": "R0"
-        }
+        "at-exit": "R0"
        }
      ]
     }

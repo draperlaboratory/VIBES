@@ -91,19 +91,19 @@ let wp_params t : Wp_params.t = t.wp_params
 let string_of_hvar (v : Hvar.t) : string =
   let string_of_value (name : string) (v : Hvar.value) : string =
     match v with
-    | Storage {at_entry = Some x; at_exit = Some y} -> 
+    | Registers {at_entry = Some x; at_exit = Some y} -> 
       Format.sprintf
         "      {\n        name: %s,\n        at-entry: %s,\n        at-exit = %s\n      }"
         name x y
-    | Storage {at_entry = Some x; at_exit = None} -> 
+    | Registers {at_entry = Some x; at_exit = None} -> 
       Format.sprintf
         "      {\n        name: %s,\n        at-entry: %s\n      }"
         name x
-    | Storage {at_entry = None; at_exit = Some y} -> 
+    | Registers {at_entry = None; at_exit = Some y} -> 
       Format.sprintf
         "      {\n        name: %s,\n        at-exit: %s\n      }"
         name y
-    | Storage {at_entry = None; at_exit = None} -> 
+    | Registers {at_entry = None; at_exit = None} -> 
       Format.sprintf "      {\n        name: %s}" name
     | Memory (Frame (loc, off)) ->
       Format.sprintf

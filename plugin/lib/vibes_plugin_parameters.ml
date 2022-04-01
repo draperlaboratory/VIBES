@@ -140,21 +140,6 @@ let validate_h_var_constant (addr : string)
   try Err.return @@ Word.of_string addr
   with Invalid_argument _ -> Err.fail Errors.Missing_higher_var_offset
 
-(* Extract where a higher variable is stored, or error. *)
-let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
-  : (string, error) Stdlib.result =
-  match Json.Util.member field obj with
-  | `Assoc data ->
-    begin
-      match value_of_field "stored-in" data with
-      | Some (`String "register") ->
-        validate_string_field
-          "register" data Errors.Missing_higher_var_reg >>= fun reg ->
-        Err.return reg
-      | _ -> Err.fail Errors.Missing_higher_var_stored_in
-    end
-  | _ -> Err.fail e
-
 let validate_h_var_memory
     (data : (string * Json.t) list) : (Hvar.memory, error) Stdlib.result =
   match value_of_field "address" data with
@@ -183,17 +168,13 @@ let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
       | `Null ->
         begin match Json.Util.member "at-entry" obj with
           | `Null -> Err.return None
-          | _ ->
-            validate_h_var_stored_in
-              obj "at-entry" Errors.Missing_higher_var_at_entry >>|
-            Option.return
+          | `String reg -> Err.return @@ Some reg
+          | _ -> Err.fail @@ Errors.Missing_higher_var_at_entry
         end >>= fun at_entry ->
         begin match Json.Util.member "at-exit" obj with
           | `Null -> Err.return None
-          | _ ->
-            validate_h_var_stored_in
-              obj "at-exit" Errors.Missing_higher_var_at_exit >>|
-            Option.return
+          | `String reg -> Err.return @@ Some reg
+          | _ -> Err.fail @@ Errors.Missing_higher_var_at_exit
         end >>= fun at_exit ->
         Err.return (Hvar.create_with_storage name ~at_entry ~at_exit)
       | _ -> Err.fail Errors.Missing_higher_var_offset

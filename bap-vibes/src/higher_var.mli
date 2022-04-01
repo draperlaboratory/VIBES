@@ -38,7 +38,7 @@ type t = {
 (** A value can be a constant, a set of registers, or a memory location. *)
 and value =
   | Constant of word
-  | Storage of {
+  | Registers of {
       at_entry: string option;
       at_exit : string option;
     }
@@ -65,9 +65,9 @@ val create_global : word -> memory
     aliases a constant value. *)
 val create_with_constant : string -> const:word -> t
 
-(** [create_with_storage name ~at_entry ~at_exit] creates a new higher
-    variable that aliases a register. *)
-val create_with_storage :
+(** [create_with_registers name ~at_entry ~at_exit] creates a new higher
+    variable that aliases a set of registers. *)
+val create_with_registers :
   string -> at_entry:string option -> at_exit:string option -> t
 
 (** [create_with_memory name ~memory] creates a new higher var that aliases

@@ -17,10 +17,7 @@
         }
        },
        {"name": "retvar",
-        "at-exit": {
-          "stored-in": "register",
-	      "register": "R0"
-        }
+        "at-exit": "R0"
        }
      ]
     }
