@@ -269,7 +269,7 @@ predicate set_reg(hvar_t: hvar, reg_t: r) =
  forall(t in hvars_temps[hvar])(reg[t] = r);
 
 predicate exclude_reg(reg_t: r) =
- forall(t in temp)(reg[t] != r);
+ forall(t in temp_t)(reg[t] != r);
 
 %--------------------------------
 % OBJECTIVE
