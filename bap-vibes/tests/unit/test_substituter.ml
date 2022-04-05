@@ -67,14 +67,30 @@ let eq_blk_list b1 b2 =
   in
   List.equal eq_elt b1 b2
 
-let do_subst (h_vars : Hvar.t list) (code : Bil.t)
+let to_bir (code : Bil.t) =
+  Bil_to_bir.bil_to_sub code |>
+  Term.to_sequence blk_t |>
+  Seq.to_list |> List.map ~f:(fun blk ->
+      (* Any jmps that occur after an unconditional jmp should be dropped
+         from the blk. *)
+      let jmps =
+        Term.enum jmp_t blk |> Seq.to_list |>
+        List.fold_until ~init:[] ~finish:List.rev ~f:(fun acc jmp ->
+            let acc = jmp :: acc in
+            if Bir_helpers.is_unconditional jmp
+            then Stop (List.rev acc)
+            else Continue acc) in
+      let defs = Seq.to_list @@ Term.enum def_t blk in
+      let tid = Term.tid blk in
+      Blk.create ~tid ~defs ~jmps ())
+
+let do_subst (hvars : Hvar.t list) (code : Bil.t)
   : Test_result.cls KB.obj KB.t =
-  let code = Bil_to_bir.bil_to_sub code |>
-             Term.to_sequence blk_t |>
-             Seq.to_list
-  in
+  let code = to_bir code in
   let* obj = KB.Object.create Test_result.cls in
-  let* lower_code = Substituter.substitute x86_tgt h_vars code in
+  let entry_tid = Term.tid @@ List.hd_exn code in
+  let* lower_code = Substituter.substitute
+      ~tgt:x86_tgt ~hvars ~entry_tid code in
   let* () = KB.provide Test_result.result obj lower_code in
   KB.return obj
 
@@ -88,20 +104,15 @@ let get_result (h_vars : Hvar.t list) (code : Bil.t)
     let result = KB.Value.get Test_result.result value in
     Ok result
 
-let to_bir (code : Bil.t) =
-  Bil_to_bir.bil_to_sub code |>
-  Term.to_sequence blk_t |>
-  Seq.to_list
-
 let str_of_blks (code : blk term list) =
   List.to_string ~f:Blk.to_string code
 
 (* Verify that a higher var stored in a register is handled correctly. *)
 let test_substitute_1 (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
-      create_with_storage "x"
-        ~at_entry:(stored_in_register "RAX")
-        ~at_exit:(Some (stored_in_register "RAX"));
+      create_with_registers "x"
+        ~at_entry:None
+        ~at_exit:(Some "RAX");
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
@@ -118,10 +129,11 @@ let test_substitute_1 (_ : test_ctxt) : unit =
   in
   let expected =
     Bil.[
-      rax_reg := int @@ num_3;
-      if_ (var rax_reg = int num_3)
-        [jmp (var rax_reg)]
+      x := int @@ num_3;
+      if_ (var x = int num_3)
+        [rax_reg := var x; jmp (var x)]
         [];
+      rax_reg := var x;
     ] |> to_bir
   in
 
@@ -142,11 +154,9 @@ let test_substitute_1 (_ : test_ctxt) : unit =
 (* Verify that a higher var stored on the stack is handled correctly. *)
 let test_substitute_2 (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
-      create_with_storage "x"
-        ~at_entry:(stored_in_memory
-                     (create_frame "RBP" @@
-                      Word.of_int ~width:64 0x14))
-        ~at_exit:(Some (stored_in_register "RAX"));
+      create_with_memory "x"
+        ~memory:(create_frame "RBP" @@
+                 Word.of_int ~width:64 0x14);
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in
@@ -201,9 +211,9 @@ let test_substitute_2 (_ : test_ctxt) : unit =
 (* Verify that substitution errors are raised correctly. *)
 let test_substitute_error (_ : test_ctxt) : unit =
   let h_vars = Hvar.[
-      create_with_storage "x"
-        ~at_entry:(stored_in_register "FAKEREGISTER1")
-        ~at_exit:(Some (stored_in_register "FAKEREGISTER2"));
+      create_with_registers "x"
+        ~at_entry:(Some "FAKEREGISTER1")
+        ~at_exit:(Some "FAKEREGISTER2");
     ]
   in
   let x = Var.create "x" (Bil.Imm 64) in

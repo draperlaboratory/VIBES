@@ -208,11 +208,9 @@ let test_call_args_ret_store _ =
 
 let test_call_args_addrof _ =
   let hvars = Higher_var.[
-      create_with_storage "c"
-        ~at_exit:None
-        ~at_entry:(stored_in_memory
-                     (create_frame "SP" @@
-                      Bap.Std.Word.of_int ~width:32 8));
+      create_with_memory "c"
+        ~memory:(create_frame "SP" @@
+                 Bap.Std.Word.of_int ~width:32 8);
     ] in
   assert_parse_eq ~hvars
     "int a, b, *c, d;

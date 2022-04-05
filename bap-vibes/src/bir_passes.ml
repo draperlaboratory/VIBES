@@ -641,7 +641,7 @@ module ABI = struct
       (sp : var) (hvars : Hvar.t list) : unit KB.t =
     KB.List.iter hvars ~f:(fun hvar ->
         match Hvar.value hvar with
-        | Hvar.(Storage {at_entry = Memory (Frame (reg, offset)); _}) ->
+        | Hvar.(Memory (Frame (reg, offset))) ->
           if String.(reg <> Var.name sp) then KB.return ()
           else Err.(fail @@ Other (
               sprintf "Existing stack location [%s, %s] used by hvar %s"
@@ -692,27 +692,26 @@ module ABI = struct
       (* Variables that were spilled. *)
       let spilled = ref String.Set.empty in
       let spill ?(restore = false) name v offset hvar =
-        let memory = Hvar.create_frame (Var.name sp) offset in
-        let at_entry = Hvar.stored_in_memory memory in
         preserved := Set.add !preserved v;
         if restore then restored := Set.add !restored v;
         (* If it needs to be preserved, but is not live after a call,
            then we can still refer to it by register instead of by stack
            location. *)
-        if live_after_call name then begin
+        if restore || live_after_call name then begin
+          let memory = Hvar.create_frame (Var.name sp) offset in
           spilled := Set.add !spilled name;
-          Hvar.create_with_storage name ~at_entry ~at_exit:None
+          Hvar.create_with_memory name ~memory
         end else hvar in
       (* Find which hvars we need to spill. *)
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
           match Hvar.value hvar with
-          | Hvar.Storage {at_entry = Register v; at_exit} -> begin
+          | Hvar.Registers {at_entry = Some v; at_exit} -> begin
               match Map.find caller_save v with
               | None -> KB.return hvar
               | Some (offset, _) ->
                 match at_exit with
-                | Some Hvar.(Register v') when String.(v = v') ->
+                | Some v' when String.(v = v') ->
                   KB.return @@ spill name v offset hvar ~restore:true
                 | Some _ ->
                   Err.(fail @@ Other (
@@ -790,23 +789,6 @@ module ABI = struct
             else KB.return blk) in
         blks, hvars', !spilled
 
-  (* If we've specified that we want a higher var to remain in a callee-save
-     register for the lifetime of the patch, then we need to tell minizinc
-     to never use it in a solution. *)
-  let collect_exclude_regs (tgt : Theory.target)
-      (hvars : Hvar.t list) : String.Set.t =
-    let callee_save =
-      Theory.Target.regs tgt ~roles:Theory.Role.Register.[callee_saved] |>
-      Set.to_list |>
-      List.map ~f:(fun v -> Var.name @@ Var.reify v) |>
-      String.Set.of_list in
-    List.fold hvars ~init:String.Set.empty ~f:(fun acc hvar ->
-        match Hvar.value hvar with
-        | Hvar.(Storage {at_entry = Register v; at_exit = Some (Register v')})
-          when String.(v = v') && Set.mem callee_save v ->
-          String.Set.add acc v
-        | _ -> acc)
-
 end
 
 (* VIBES IR requires linear SSA form. *)
@@ -841,9 +823,9 @@ let run (patch : Data.Patch.t) : t KB.t =
   let* ir = Shape.adjust_exits ir in
   let* ir, hvars, spilled = ABI.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
-  let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   (* Substitute higher vars. *)
-  let* ir = Subst.substitute tgt hvars ir in
+  let* ir = Subst.substitute ir ~tgt ~hvars ~spilled
+      ~entry_tid:(Term.tid entry_blk) in
   (* Optimization. *)
   let* ir = Shape.reorder_blks ir in
   let* ir = Opt.apply ir in
@@ -852,4 +834,4 @@ let run (patch : Data.Patch.t) : t KB.t =
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
   let* ir = to_linear_ssa patch sub in
-  KB.return {ir; cfg; exclude_regs; argument_tids}
+  KB.return {ir; cfg; exclude_regs = String.Set.empty; argument_tids}

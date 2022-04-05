@@ -140,57 +140,45 @@ let validate_h_var_constant (addr : string)
   try Err.return @@ Word.of_string addr
   with Invalid_argument _ -> Err.fail Errors.Missing_higher_var_offset
 
-(* Extract where a higher variable is stored, or error. *)
-let validate_h_var_stored_in (obj : Json.t) (field : string) (e : error)
-  : (Hvar.stored_in, error) Stdlib.result =
-  match Json.Util.member field obj with
-  | `Assoc data ->
-    begin
-      match value_of_field "stored-in" data with
-      | Some (`String "register") ->
-        validate_string_field
-          "register" data Errors.Missing_higher_var_reg >>= fun reg ->
-        Err.return (Hvar.stored_in_register reg)
-      | Some (`String "memory") ->
-        begin
-          match value_of_field "address" data with
-          | Some (`String addr) ->
-            begin
-              try
-                Err.return
-                  Hvar.(stored_in_memory (create_global (Word.of_string addr)))
-              with Invalid_argument _ ->
-                Err.fail Errors.Missing_higher_var_offset
-            end
-          | Some _ -> Err.fail Errors.Missing_higher_var_offset
-          | None ->
-            validate_string_field
-              "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
-            validate_word_field
-              "offset" data Errors.Missing_higher_var_offset >>= fun offset ->
-            Err.return Hvar.(stored_in_memory (create_frame fp offset))
-        end
-      | _ -> Err.fail Errors.Missing_higher_var_stored_in
-    end
-  | _ -> Err.fail e
-
+let validate_h_var_memory
+    (data : (string * Json.t) list) : (Hvar.memory, error) Stdlib.result =
+  match value_of_field "address" data with
+  | Some (`String addr) ->
+    validate_h_var_constant addr >>| Hvar.create_global
+  | Some _ -> Err.fail Errors.Missing_higher_var_offset
+  | None ->
+    validate_string_field
+      "frame-pointer" data Errors.Missing_higher_var_fp >>= fun fp ->
+    validate_word_field
+      "offset" data Errors.Missing_higher_var_offset >>| fun offset ->
+    Hvar.create_frame fp offset
+    
 (* Extract a higher variable, or error. *)
 let validate_h_var (obj : Json.t) : (Hvar.t, error) Stdlib.result =
   validate_h_var_name obj >>= fun name ->
   match Json.Util.member "constant" obj with
-  | `String addr ->
-    validate_h_var_constant addr >>= fun addr ->
-    Err.return (Hvar.create_with_constant name ~const:addr)
-  | `Null ->
-    validate_h_var_stored_in
-      obj "at-entry" Errors.Missing_higher_var_at_entry >>= fun at_entry ->
-    begin match Json.Util.member "at-exit" obj with
-      | `Null -> Err.return None
-      | _ ->
-        validate_h_var_stored_in
-          obj "at-exit" Errors.Missing_higher_var_at_exit >>| Option.return
-    end >>= fun at_exit ->
-    Err.return (Hvar.create_with_storage name ~at_entry ~at_exit)
+  | `String const ->
+    validate_h_var_constant const >>= fun const ->
+    Err.return (Hvar.create_with_constant name ~const)
+  | `Null -> begin
+      match Json.Util.member "memory" obj with
+      | `Assoc data ->
+        validate_h_var_memory data >>| fun memory ->
+        Hvar.create_with_memory name ~memory
+      | `Null ->
+        begin match Json.Util.member "at-entry" obj with
+          | `Null -> Err.return None
+          | `String reg -> Err.return @@ Some reg
+          | _ -> Err.fail @@ Errors.Missing_higher_var_at_entry
+        end >>= fun at_entry ->
+        begin match Json.Util.member "at-exit" obj with
+          | `Null -> Err.return None
+          | `String reg -> Err.return @@ Some reg
+          | _ -> Err.fail @@ Errors.Missing_higher_var_at_exit
+        end >>= fun at_exit ->
+        Err.return (Hvar.create_with_registers name ~at_entry ~at_exit)
+      | _ -> Err.fail Errors.Missing_higher_var_offset
+    end
   | _ -> Err.fail Errors.Missing_higher_var_offset
 
 (* Extract the patch vars (which may be an empty list), or error. *)
@@ -207,12 +195,14 @@ let validate_patch_sp_align (obj : Json.t)
   | `Null -> Err.return 0
   | _ -> Err.fail @@
     Errors.Invalid_sp_align "expected integer for patch-sp-align"
+
 let validate_patch_extra_constraints (obj : Json.t)
   : (string option, error) Stdlib.result =
   match Json.Util.member "extra-constraints" obj with
   | `Null -> Err.return None
   | `String constraints -> Err.return (Some constraints)
   | _ -> Err.fail Errors.Invalid_extra_constraints
+
 (* Validate a specific patch fragment within the list, or error *)
 let validate_patch (obj : Json.t)
   : (Vibes_config.patch, error) Stdlib.result =

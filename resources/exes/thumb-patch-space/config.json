@@ -17,25 +17,14 @@
                      output = x * three;",
      "patch-point" : "0x103ee",
      "patch-size" : 4,
-     "patch-vars": [
+     "patch-vars" : [
        {"name": "input",
-	      "at-entry": {
-          "stored-in": "register",
-	        "register": "R3"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	        "register": "R3"
-        }},
+        "at-entry": "R0"
+       },
        {"name": "output",
-	      "at-entry": {
-          "stored-in": "register",
-	        "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	        "register": "R0"
-        }}
-     ]}
+        "at-exit": "R0"
+       }
+     ]
+    }
   ]
 }
