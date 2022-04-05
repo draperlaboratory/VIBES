@@ -648,6 +648,16 @@ module ABI = struct
                 reg (Word.to_string offset) (Hvar.name hvar)))
         | _ -> KB.return ())
 
+  (* `blks` - The transformed patch code.
+     `hvars` - The updated higher vars info, after spilling occurred.
+     `spilled` - The set of spilled variables.
+  *)
+  type spill_result = {
+    blks : blk term list;
+    hvars : Hvar.t list;
+    spilled : String.Set.t;
+  }
+
   (* Spill higher vars in caller-save registers if we are doing any calls
      in a multi-block patch, since the ABI says they may be clobbered. *)
   let spill_hvars_and_adjust_stack
@@ -655,10 +665,10 @@ module ABI = struct
       ~(tgt : Theory.target)
       ~(sp_align : int)
       ~(hvars : Hvar.t list)
-      ~(entry_blk : blk term) : (blk term list * Higher_var.t list) KB.t =
+      ~(entry_blk : blk term) : spill_result KB.t =
     let calls = Helper.call_blks blks in
     if List.is_empty calls || List.length blks = 1
-    then KB.return (blks, hvars)
+    then KB.return {blks; hvars; spilled = String.Set.empty}
     else
       (* Collect the liveness information. *)
       let* live =
@@ -685,20 +695,23 @@ module ABI = struct
         | None -> Err.(fail @@ Other (
             sprintf "No stack pointer register for target %s\n%!"
               (Theory.Target.to_string tgt))) in
-      (* Spilled and restored registers. *)
-      let spilled = ref String.Set.empty
-      and restored = ref String.Set.empty in
+      (* Preserved and restored registers. *)
+      let preserved = ref String.Set.empty in
+      let restored = ref String.Set.empty in
+      (* Variables that were spilled. *)
+      let spilled = ref String.Set.empty in
       let spill ?(restore = false) name v offset hvar =
         let memory = Hvar.create_frame (Var.name sp) offset in
         let at_entry = Hvar.stored_in_memory memory in
-        spilled := Set.add !spilled v;
+        preserved := Set.add !preserved v;
         if restore then restored := Set.add !restored v;
-        (* If it needs to be preserved/restored, but is not live after a call,
+        (* If it needs to be preserved, but is not live after a call,
            then we can still refer to it by register instead of by stack
            location. *)
-        if live_after_call name
-        then Hvar.create_with_storage name ~at_entry ~at_exit:None
-        else hvar in
+        if live_after_call name then begin
+          spilled := Set.add !spilled name;
+          Hvar.create_with_storage name ~at_entry ~at_exit:None
+        end else hvar in
       (* Find which hvars we need to spill. *)
       let* hvars' = KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
@@ -722,18 +735,15 @@ module ABI = struct
                   else KB.return hvar
             end
           | _ -> KB.return hvar) in
-      (* Collect the exit blocks. *)
-      let* exits = Helper.exit_blks blks in
-      let exits = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       (* If we needed to spill or restore, then make sure that other higher
          vars aren't using stack locations. *)
-      let no_regs = Set.is_empty !spilled && Set.is_empty !restored in
+      let no_regs = Set.is_empty !preserved && Set.is_empty !restored in
       let* () =
         if no_regs then KB.return ()
         else check_hvars_for_existing_stack_locations sp hvars in
       (* Do we need to change anything? *)
       if no_regs && sp_align = 0
-      then KB.return (blks, hvars')
+      then KB.return {blks; hvars = hvars'; spilled = !spilled}
       else
         let mem = Var.reify @@ Theory.Target.data tgt in
         let endian =
@@ -763,25 +773,31 @@ module ABI = struct
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
         (* Create the new defs. *)
-        let* pushes = Set.to_list !spilled |> List.rev |> KB.List.map ~f:push in
+        let* pushes =
+          Set.to_list !preserved |> List.rev |> KB.List.map ~f:push in
         let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
         (* Insert the new defs into the entry/exit blocks accordingly. *)
+        let* exit_tids =
+          let+ exits = Helper.exit_blks blks in
+          List.map exits ~f:Term.tid |> Tid.Set.of_list in
         let+ blks = KB.List.map blks ~f:(fun blk ->
             let tid = Term.tid blk in
             if Tid.(tid = Term.tid entry_blk) then
               let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
+                  let def = Term.set_attr def Helper.spill_tag () in
                   Term.prepend def_t blk def) in
               let+ tid = Theory.Label.fresh in
               let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
               Term.prepend def_t blk adj
-            else if Set.mem exits tid then
+            else if Set.mem exit_tids tid then
               let blk = List.fold pops ~init:blk ~f:(fun blk def ->
+                  let def = Term.set_attr def Helper.spill_tag () in
                   Term.append def_t blk def) in
               let+ tid = Theory.Label.fresh in
               let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
               Term.append def_t blk adj
             else KB.return blk) in
-        blks, hvars'
+        {blks; hvars = hvars'; spilled = !spilled}
 
   (* If we've specified that we want a higher var to remain in a callee-save
      register for the lifetime of the patch, then we need to tell minizinc
@@ -832,7 +848,8 @@ let run (patch : Data.Patch.t) : t KB.t =
      they don't implicitly fall through to another block. *)
   let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
-  let* ir, hvars = ABI.spill_hvars_and_adjust_stack ir
+  let* ABI.{blks = ir; hvars; spilled} =
+    ABI.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
   let exclude_regs = ABI.collect_exclude_regs tgt hvars in
   (* Substitute higher vars. *)
