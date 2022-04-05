@@ -20,6 +20,7 @@ open KB.Let
 
 module Arm = Arm_selector
 module Subst = Substituter
+module Naming = Subst.Naming
 module Hvar = Higher_var
 module Err = Kb_error
 
@@ -811,12 +812,12 @@ module ABI = struct
           Int.round_up ~to_multiple_of:(Theory.Target.data_alignment tgt) in
         let space = Word.of_int ~width @@
           if no_regs then sp_align else sp_align + space in
-        let sp = Substituter.mark_reg sp in
+        let sp = Naming.mark_reg sp in
         (* Place a register into a stack location. *)
         let push v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
-          let reg = Substituter.mark_reg reg in
+          let reg = Naming.mark_reg reg in
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
@@ -824,7 +825,7 @@ module ABI = struct
         let pop v =
           let open Bil.Types in
           let off, reg = Map.find_exn caller_save v in
-          let reg = Substituter.mark_reg reg in
+          let reg = Naming.mark_reg reg in
           let addr = BinOp (PLUS, Var sp, Int off) in
           let+ tid = Theory.Label.fresh in
           Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in

@@ -16,6 +16,7 @@ open Bap_core_theory
 open KB.Let
 
 module Err = Kb_error
+module Naming = Substituter.Naming
 
 (*-------------------------------------------------------
  *
@@ -201,7 +202,7 @@ let gpr (tgt : Theory.target) (lang : Theory.language) : Var.Set.t KB.t =
 let reg_name (v : var) : string option =
   let name = Var.name v in
   let name = Option.value ~default:name (Linear_ssa.orig_name name) in
-  Substituter.unmark_reg_name name
+  Naming.unmark_reg_name name
 
 let is_stack_pointer (v : var) : bool = match reg_name v with
   | Some "SP" -> true

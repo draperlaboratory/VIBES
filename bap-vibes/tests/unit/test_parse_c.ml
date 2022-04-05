@@ -17,6 +17,8 @@ open Bap_vibes
 open Bap.Std
 open OUnit2
 
+module Naming = Substituter.Naming
+
 let fake_var = Var.create "virt" Unk
 
 let fix_bil_names sem =
@@ -24,10 +26,10 @@ let fix_bil_names sem =
     inherit Stmt.mapper
     method! map_var (v : var) : exp =
       let v = if Var.is_virtual v then fake_var else v in
-      Var (Substituter.unmark_reg v |> Option.value ~default:v)
+      Var (Naming.unmark_reg v |> Option.value ~default:v)
     method! map_move (v : var) (e : exp) : stmt list =
       let v = if Var.is_virtual v then fake_var else v in
-      let v = Substituter.unmark_reg v |> Option.value ~default:v in
+      let v = Naming.unmark_reg v |> Option.value ~default:v in
       let e = self#map_exp e in
       Bil.[v := e]
   end in
