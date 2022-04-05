@@ -648,6 +648,16 @@ module ABI = struct
                 reg (Word.to_string offset) (Hvar.name hvar)))
         | _ -> KB.return ())
 
+  (* `blks` - The transformed patch code.
+     `hvars` - The updated higher vars info, after spilling occurred.
+     `spilled` - The set of spilled variables.
+  *)
+  type spill_result = {
+    blks : blk term list;
+    hvars : Hvar.t list;
+    spilled : String.Set.t;
+  }
+
   (* Spill higher vars in caller-save registers if we are doing any calls
      in a multi-block patch, since the ABI says they may be clobbered. *)
   let spill_hvars_and_adjust_stack
@@ -655,11 +665,10 @@ module ABI = struct
       ~(tgt : Theory.target)
       ~(sp_align : int)
       ~(hvars : Hvar.t list)
-      ~(entry_blk : blk term)
-    : (blk term list * Higher_var.t list * String.Set.t) KB.t =
+      ~(entry_blk : blk term) : spill_result KB.t =
     let calls = Helper.call_blks blks in
     if List.is_empty calls || List.length blks = 1
-    then KB.return (blks, hvars, String.Set.empty)
+    then KB.return {blks; hvars; spilled = String.Set.empty}
     else
       (* Collect the liveness information. *)
       let* live =
@@ -733,7 +742,7 @@ module ABI = struct
         else check_hvars_for_existing_stack_locations sp hvars in
       (* Do we need to change anything? *)
       if no_regs && sp_align = 0
-      then KB.return (blks, hvars', !spilled)
+      then KB.return {blks; hvars = hvars'; spilled = !spilled}
       else
         let mem = Var.reify @@ Theory.Target.data tgt in
         let endian =
@@ -787,7 +796,7 @@ module ABI = struct
               let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
               Term.append def_t blk adj
             else KB.return blk) in
-        blks, hvars', !spilled
+        {blks; hvars = hvars'; spilled = !spilled}
 
 end
 
@@ -821,7 +830,8 @@ let run (patch : Data.Patch.t) : t KB.t =
      they don't implicitly fall through to another block. *)
   let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
-  let* ir, hvars, spilled = ABI.spill_hvars_and_adjust_stack ir
+  let* ABI.{blks = ir; hvars; spilled} =
+    ABI.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
   (* Substitute higher vars. *)
   let* ir = Subst.substitute ir ~tgt ~hvars ~spilled
