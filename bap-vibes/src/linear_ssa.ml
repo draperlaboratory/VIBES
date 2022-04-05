@@ -17,6 +17,8 @@ open Bap.Std
 open Bap_core_theory
 open Monads.Std
 
+module Naming = Substituter.Naming
+
 let prefix_of_tid (tid : tid) : string =
   let tid_str = Tid.to_string tid in
   String.drop_prefix tid_str 1
@@ -42,7 +44,7 @@ let orig_name (name : string) : string option =
   let (let*) x f = Option.bind x ~f in
   let name = String.drop_prefix name prefix_len in
   let name, is_reg =
-    Substituter.unmark_reg_name name |>
+    Naming.unmark_reg_name name |>
     Option.value_map ~default:(name, false) ~f:(fun name ->
         name, true) in
   let* name = match String.split name ~on:'_' with
@@ -51,7 +53,7 @@ let orig_name (name : string) : string option =
     | [name; _] -> Some name
     | _ -> None
   in
-  if is_reg then Some (Substituter.mark_reg_name name) else Some name
+  if is_reg then Some (Naming.mark_reg_name name) else Some name
 
 let same (a : var) (b : var) : bool =
   let a = Var.name a and b = Var.name b in
