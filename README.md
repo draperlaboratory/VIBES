@@ -276,14 +276,8 @@ exit of the patch site, add an entry to the `patch-vars` list like this:
       "patch-vars": [
         {
           "name": "x",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "R0"
-          },
-          "at-exit": {
-            "stored-in": "register",
-            "register": "R1"
-          }
+          "at-entry": "R0",
+          "at-exit": "R1"
         },
         ...
       ]
@@ -293,11 +287,9 @@ exit of the patch site, add an entry to the `patch-vars` list like this:
 }
 ```
 
-Alternatively, suppose you want to tell VIBES that, at the entrance to the
-patch site, `x` should be in `R2`, while at the exit of the patch site, `x`
-should live on the stack at `0x4:32` past the frame pointer (`0x4:32` is the
-number `0x4` with a bitwidth of `32`). The entry to `patch-vars` would then
-look like this:
+Alternatively, suppose you want to tell VIBES that `x` should live on the stack
+at `0x4:32` past the frame pointer (`0x4:32` is the number `0x4` with a bitwidth
+of `32`). The entry to `patch-vars` would then look like this:
 
 ```
 {
@@ -309,12 +301,7 @@ look like this:
       "patch-vars": [
         {
           "name": "x",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "R2"
-          },
-          "at-exit": {
-            "stored-in": "memory",
+          "memory": {
             "frame-pointer": "R11",
             "offset": "0x4:32"
           }
@@ -380,28 +367,18 @@ Here is the full schema for a config file:
       "patch-vars": [ (OPTIONAL)
         {
           "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "<REGISTER NAME (IN UPPERCASE)>"
-          }
+          "at-entry": "<REGISTER NAME (IN UPPERCASE)>",
+          "at-exit": "<REGISTER NAME (IN UPPERCASE)>"
           OR
-          {
-            "stored-in": "memory",
-            "address": "<HEX-NUMBER:BITWIDTH>"
-          },
-          "at-exit": {
-            "stored-in": "register",
-            "register": "<REGISTER NAME (IN UPPERCASE)>"
-          }
+          "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
+          "memory": {"address": "<HEX-NUMBER:BITWIDTH>"}
           OR
-          {
-            "stored-in": "memory",
-            "framepointer": "<REGISTER NAME (IN UPPERCASE)>"
+          "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
+          "memory": {
+            "frame-pointer": "<REGISTER NAME (IN UPPERCASE)>",
             "offset": "<HEX-NUMBER:BITWIDTH>"
           }
-        }
-        OR
-        {
+          OR
           "name": "<NAME OF IDENTIFIER MENTIONED IN patch-code>",
           "constant": "<HEX-NUMBER:BITWIDTH>""
         },
@@ -437,24 +414,23 @@ Here is a description of the above schema:
   * `"patch-size": INT` - Required. The number of bytes to replace.
   * `"patch-code": "CODE"` - Required. Code to compile and insert at the patch point. The code should be written in a subset of C.
   * `"patch-sp-align": INT` - Number of bytes needed to align the stack pointer at the start of the patch.
-  * `"patch-vars": [PATCH-VARS]` -
-    A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier:
+  * `"patch-vars": [PATCH-VARS]` - A list of zero or more objects, each of which provides storage classification for identifiers that appear in the provided `patch-code`. Each object specifies a constant, or storage classification for the identifier (these classifications are mutually exclusive):
     * For a constant, the object has the following fields:
       * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
       * `"constant": "HEX:BITWIDTH"` - Required. A number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
-    * For storage classification, the object has the following fields:
-      * `"name": "NAME"` - The name of an identifier mentioned in the provided `patch-code`.
-      * `"at-entry": {STORAGE-CLASSIFICATION}` -
-        Required. Storage classification for the identifier at the entrance to the patch site. The value can live in a register, or in memory (on the stack).
-        * If it's stored in a register, the object has the following fields:
-          * `"stored-in": "register"` - Required.
-          * "register": "NAME" - Required. The name of a register (in uppercase, e.g., `R0`).
-        * If it's stored in memory (on the stack), the object has the following fields:
-          * `"stored-in": "memory"` - Required.
-          * `"frame-pointer": "NAME"` - Required. The name of the register (in uppercase) that holds the framepointer (e.g., `R11`).
-          * `"offset": "HEX:BITWIDTH"` - Required. The offset from the framepointer where the identifier's value lives. This should be number in hex, with a specified bitwidth (e.g., `0xdeadbeef:32`).
-      * `"at-exit": {STORAGE-CLASSIFICATION}` -
-        Required. Storage classification for the identifier at the exit of the patch site. This should be specified exactly as in `at-entry`.
+    * For registers, the object has the following fields:
+      * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
+      * `"at-entry": "REGISTER"` - Optional. The variable in question shall contain the value stored in the register at the entry point of the patch.
+      * `"at-exit": "REGISTER"` - Optional. The register shall contain the value held by the variable in question at all exit points of the patch.
+    * For memory, the object has the following fields:
+      * `"name": "NAME"` - Required. The name of the identifier mentioned in the provided `patch-code`.
+      * `"memory": {MEMORY}"` Required. The `MEMORY` field can be one of two options:
+        * If the variable lives at a constant memory address:
+            * `"address": "HEX:BITWIDTH"` - Required.
+        * If the variable lives relative to a base register (such as a stack location):
+            * `"frame-pointer": "REGISTER"`- Required. The base register.
+            * `"offset": "HEX:BITWIDTH"` - Required. The offset from the base register.
+  * `"extra-constraints": {MINIZINC}` - Optional. Provides extra constraints in the MiniZinc language to the model. This is intended for advanced users, and may produce unexpected behavior from the constraint solver.
 * `"wp-params": {WP-PARAMS}` -
   Required. A dictionary of parameters to pass to the WP verifier (for more details than what we provide here, see the [documentation](https://draperlaboratory.github.io/cbat_tools/) for [WP](https://github.com/draperlaboratory/cbat_tools/tree/master/wp)). This dictionary can have the following fields:
   * `"func": "NAME"` - Required. The name of the function you want to verify.
@@ -472,4 +448,3 @@ Here is a description of the above schema:
 * `"ogre": "FILEPATH"` - The path to an ogre file. An ogre file tells VIBES which parts of a binary to lift. If you omit this field altogether, VIBES will simply lift the entire binary. For examples of ogre files, see one of our [examples](resources/exes/arm-stripped-loader/loader.ogre).
 
 Examples of config files can be found in [resources/exes](resources/exes).
-

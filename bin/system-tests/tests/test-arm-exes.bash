@@ -314,6 +314,8 @@ test_arm_bounds_check () {
 
     print_header "Checking ${TEST_DIR}"
 
+    run_make "make clean -C ${TEST_DIR}" 0
+
     # Check the precompiled executables.
     run_make "make main -C ${TEST_DIR}" 0
     run_make "make main.patched.reference -C ${TEST_DIR}" 0

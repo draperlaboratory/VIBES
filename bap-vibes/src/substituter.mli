@@ -45,7 +45,13 @@ module Naming : sig
 
 end
 
-(** [substitute tgt h_vars patch_code] replaces higher level variables [h_vars]
-    with lower-level locations in the provided [patch_code]. *)
+(** [substitute patch_code ~entry_tid ~hvars ~tgt ?spilled] replaces higher
+    level variables [hvars] with lower-level locations in the provided
+    [patch_code]. *)
 val substitute :
-  Theory.target -> Hvar.t list -> blk term list -> blk term list KB.t
+  ?spilled:String.Set.t ->
+  blk term list ->
+  entry_tid:tid ->
+  hvars:Higher_var.t list ->
+  tgt:Theory.target ->
+  blk term list KB.t

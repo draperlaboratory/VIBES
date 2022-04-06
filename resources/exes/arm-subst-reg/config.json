@@ -11,23 +11,12 @@
      "patch-size" : 32,
      "patch-vars": [
        {"name": "retvar",
-	"at-entry": {
-          "stored-in": "register",
-	  "register": "R0"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	  "register": "R0"
-        }},
+        "at-exit": "R0"
+       },
        {"name": "tmp",
-	"at-entry": {
-          "stored-in": "register",
-	  "register": "R1"
-        },
-        "at-exit": {
-          "stored-in": "register",
-	  "register": "R1"
-        }}
-       ]}
+        "at-exit": "R1"
+       }
+     ]
+    }
   ]
 }
