@@ -92,7 +92,10 @@ let initialize
               | Hvar.Registers {at_entry = None; _} -> KB.return None
               | Hvar.Registers {at_entry = Some reg; _} ->
                 match typeof name with
-                | None -> KB.return None
+                | None ->
+                  Events.send @@ Info (
+                    sprintf "Warning: unused variable %s" name);
+                  KB.return None
                 | Some typ ->
                   let lhs = Var.create name typ in
                   let rhs = Naming.mark_reg_exn tgt reg in
@@ -135,7 +138,10 @@ let finalize
             | Hvar.Registers {at_exit = None; _} -> KB.return None
             | Hvar.Registers {at_exit = Some reg; _} ->
               match typeof name with
-              | None -> KB.return None
+              | None ->
+                Events.send @@ Info (
+                  sprintf "Warning: unused variable %s" name);
+                KB.return None
               | Some typ ->
                 let rhs = Bil.var @@ Var.create name typ in
                 let lhs = Naming.mark_reg_exn tgt reg in
