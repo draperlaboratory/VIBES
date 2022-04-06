@@ -276,14 +276,8 @@ exit of the patch site, add an entry to the `patch-vars` list like this:
       "patch-vars": [
         {
           "name": "x",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "R0"
-          },
-          "at-exit": {
-            "stored-in": "register",
-            "register": "R1"
-          }
+          "at-entry": "R0",
+          "at-exit": "R1"
         },
         ...
       ]
@@ -293,11 +287,9 @@ exit of the patch site, add an entry to the `patch-vars` list like this:
 }
 ```
 
-Alternatively, suppose you want to tell VIBES that, at the entrance to the
-patch site, `x` should be in `R2`, while at the exit of the patch site, `x`
-should live on the stack at `0x4:32` past the frame pointer (`0x4:32` is the
-number `0x4` with a bitwidth of `32`). The entry to `patch-vars` would then
-look like this:
+Alternatively, suppose you want to tell VIBES that `x` should live on the stack
+at `0x4:32` past the frame pointer (`0x4:32` is the number `0x4` with a bitwidth
+of `32`). The entry to `patch-vars` would then look like this:
 
 ```
 {
@@ -309,12 +301,7 @@ look like this:
       "patch-vars": [
         {
           "name": "x",
-          "at-entry": {
-            "stored-in": "register",
-            "register": "R2"
-          },
-          "at-exit": {
-            "stored-in": "memory",
+          "memory": {
             "frame-pointer": "R11",
             "offset": "0x4:32"
           }
