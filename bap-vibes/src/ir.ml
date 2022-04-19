@@ -91,9 +91,11 @@ struct
 
 end
 
+type temp = Var.t [@@deriving compare, sexp, equal]
+
 type op_var = {
   id : Var.t;
-  temps : Var.t list;
+  temps : temp list;
   pre_assign : var option
 } [@@deriving compare, sexp]
 
@@ -227,7 +229,7 @@ let simple_blk tid ~data ~ctrl =
 
 type t = {
   blks : blk list;
-  congruent : (op_var * op_var) list
+  congruent : (temp * temp) list
 } [@@deriving compare, equal, sexp]
 
 let empty = {blks = []; congruent = []}
@@ -245,7 +247,7 @@ let dedup_list_stable l ~compare =
   loop [] (List.rev l)
 
 let union t1 t2 =
-  let comp_pair = Tuple.T2.compare ~cmp1:compare_op_var ~cmp2:compare_op_var in
+  let comp_pair = Tuple.T2.compare ~cmp1:compare_temp ~cmp2:compare_temp in
   {
     blks =
       dedup_list_stable ~compare:compare_blk (t1.blks @ t2.blks);
@@ -398,7 +400,7 @@ let map_op_vars ~f (vir : t) : t =
       operands = List.map ~f:f2 o.operands;
     }
   in
-  {
+  { vir with
     blks =
       List.map vir.blks
         ~f:(fun b ->
@@ -409,8 +411,7 @@ let map_op_vars ~f (vir : t) : t =
               ins = apply_to_op b.ins;
               outs = apply_to_op b.outs;
             }
-          );
-    congruent = List.map ~f:(Tuple2.map ~f:f) vir.congruent;
+          )
   }
 
 let all_temps (sub : t) : Var.Set.t =

@@ -50,7 +50,7 @@ type mzn_params = {
   preassign : var option Var.Map.t;
   operation_opcodes : (Ir.opcode list) Int.Map.t;
   operand_operation : Ir.operation Var.Map.t;
-  congruent : (Ir.op_var * Ir.op_var) list;
+  congruent : (Ir.temp * Ir.temp) list;
   operands : Var.Set.t;
   temps : Var.Set.t;
   class_ : (Theory.role Ir.Opcode.Map.t) Var.Map.t;
@@ -219,8 +219,7 @@ let serialize_mzn_params
             Theory.Role.pp r))
   in
   (*TODO: Congruence should be generalized from temporaries *)
-  let congruence = List.map vir.congruent ~f:(fun (opv1,opv2) ->
-      List.hd_exn opv1.temps, List.hd_exn opv2.temps) in
+  let congruence = vir.congruent in
   let congruent_temps =
     (* Temps which we may have established congruence for could've been
        optimized away, so ignore them if that was the case. *)

@@ -130,9 +130,7 @@ let compile_one_assembly
       Data.Patch.get_extra_constraints patch >>= fun extra_constraints ->
       Data.Patch.get_congruence patch >>= fun congruence ->
       let congruence = Set.to_list congruence in
-      let congruent = List.map congruence
-          ~f:(fun (v1,v2) -> (Ir.simple_var v1, Ir.simple_var v2)) in
-      let ir = {ir with congruent} in
+      let ir = {ir with congruent=congruence} in
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       let s = solver target prev_sols

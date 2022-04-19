@@ -47,6 +47,8 @@ open Bap_core_theory
 
 type opcode [@@deriving compare, equal, sexp]
 
+type temp = Var.t [@@deriving compare, sexp]
+
 module Opcode :
 sig
 
@@ -141,7 +143,7 @@ val simple_blk : tid -> data:(operation list) -> ctrl:(operation list) -> blk
     which are congruent. *)
 type t = {
   blks : blk list;
-  congruent : (op_var * op_var) list
+  congruent : (temp * temp) list
 } [@@deriving compare, equal, sexp]
 
 val empty : t
