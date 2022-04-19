@@ -103,20 +103,10 @@ let compile_one_vibes_ir
       KB.return ()
   end >>= fun () -> KB.return (n + 1)
 
-type solver_with_filepath =
-  ?congruence:(var * var) list ->
-  ?exclude_regs:String.Set.t ->
-  ?extra_constraints:string option ->
-  Theory.target ->
-  Minizinc.sol list ->
-  Ir.t ->
-  gpr:Var.Set.t ->
-  regs:Var.Set.t ->
-  (Ir.t * Minizinc.sol) KB.t
-
 (* Compile one patch from VIBES IR to assembly *)
 let compile_one_assembly
-    (solver : solver_with_filepath)
+    (model_filepath : string)
+    (solver : Minizinc.solver)
     (count : int KB.t)
     (patch : Data.Patch.t) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
@@ -140,14 +130,18 @@ let compile_one_assembly
       Data.Patch.get_extra_constraints patch >>= fun extra_constraints ->
       Data.Patch.get_congruence patch >>= fun congruence ->
       let congruence = Set.to_list congruence in
+      let congruent = List.map congruence
+          ~f:(fun (v1,v2) -> (Ir.simple_var v1, Ir.simple_var v2)) in
+      let ir = {ir with congruent} in
       let regs = Arm_selector.regs target lang in
       let prev_sols = Set.to_list prev_sols in
       let s = solver target prev_sols
+          ~log:(fun s -> Events.(send (Info s)))
+          ~filepath:model_filepath
           ~extra_constraints
           ~gpr
           ~regs
-          ~exclude_regs
-          ~congruence in
+          ~exclude_regs in
       create_assembly s ir cfg lang >>= fun (assembly, new_sol) ->
       Data.Patch.set_assembly patch (Some assembly) >>= fun () ->
       Events.(send @@ Info "The patch has the following assembly:\n");
@@ -168,21 +162,10 @@ let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
   Events.(send @@ Info "Done.");
   KB.return ()
 
-type solver =
-  ?congruence:(var * var) list ->
-  ?exclude_regs:String.Set.t ->
-  ?extra_constraints:string option ->
-  Theory.target ->
-  Minizinc.sol list ->
-  Ir.t ->
-  filepath:string ->
-  gpr:Var.Set.t ->
-  regs:Var.Set.t ->
-  (Ir.t * Minizinc.sol) KB.t
 
 (* Converts the patch (as IR) to assembly instructions. *)
 let compile_assembly
-    ?(solver : solver = Minizinc.run_allocation_and_scheduling)
+    ?(solver : Minizinc.solver = Minizinc.run_allocation_and_scheduling)
     (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting Minizinc compiler");
   Data.Solver.get_minizinc_model_filepath_exn obj >>= fun mzn_model ->
@@ -191,6 +174,6 @@ let compile_assembly
   let size : string = string_of_int (Data.Patch_set.length patches) in
   Events.(send @@ Info ("There are " ^ size ^ " patch fragments."));
   Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(compile_one_assembly (solver ~filepath:mzn_model)) >>= fun _ ->
+    ~f:(compile_one_assembly mzn_model solver) >>= fun _ ->
   Events.(send @@ Info "Done.");
   KB.return ()

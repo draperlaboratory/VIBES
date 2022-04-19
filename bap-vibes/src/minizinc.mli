@@ -51,17 +51,19 @@ type sol = Data.sol
    exclude the solutions in the [sol list] parameter.
 
 *)
-
-val run_allocation_and_scheduling :
-  ?congruence:(var * var) list ->
+type solver =
   ?exclude_regs:String.Set.t ->
   ?extra_constraints:string option ->
+  ?log:(string -> unit) ->
   Theory.target ->
   sol list ->
   Ir.t ->
   filepath:string ->
   gpr:Var.Set.t ->
-  regs:Var.Set.t -> (Ir.t * sol) KB.t
+  regs:Var.Set.t ->
+  (Ir.t * sol) KB.t
+
+val run_allocation_and_scheduling : solver
 
 type sol_set = Data.sol_set
 
@@ -111,7 +113,6 @@ type serialization_info = {
 } [@@deriving equal]
 
 val serialize_mzn_params :
-  ?congruence:(var * var) list ->
   ?exclude_regs:String.Set.t ->
   Theory.target ->
   Ir.t ->

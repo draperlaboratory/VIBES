@@ -169,7 +169,6 @@ let key_map_kb ~f:(f : 'a -> 'c KB.t)
 
 *)
 let serialize_mzn_params
-    ?(congruence : (var * var) list = [])
     ?(exclude_regs : String.Set.t = String.Set.empty)
     (tgt : Theory.target)
     (vir : Ir.t)
@@ -219,6 +218,9 @@ let serialize_mzn_params
           Format.asprintf "serialize_mzn_params: unsupported register role: %a!"
             Theory.Role.pp r))
   in
+  (*TODO: Congruence should be generalized from temporaries *)
+  let congruence = List.map vir.congruent ~f:(fun (opv1,opv2) ->
+      List.hd_exn opv1.temps, List.hd_exn opv2.temps) in
   let congruent_temps =
     (* Temps which we may have established congruence for could've been
        optimized away, so ignore them if that was the case. *)
@@ -359,11 +361,6 @@ type sol_serial = {
 } [@@deriving yojson]
 
 
-
-
-
-
-
 (* FIXME: There is an assumption that the enums are uniquely stringed from to_string
    Minizinc does throw an ertror if there is a replicated enum.
 *)
@@ -438,27 +435,39 @@ let build_extra_constraints_file ~extra_constraints ~model_filepath : string =
   Out_channel.close outc;
   wrapper_filepath
 
+type solver =
+  ?exclude_regs:String.Set.t ->
+  ?extra_constraints:string option ->
+  ?log:(string -> unit) ->
+  Theory.target ->
+  sol list ->
+  Ir.t ->
+  filepath:string ->
+  gpr:Var.Set.t ->
+  regs:Var.Set.t ->
+  (Ir.t * sol) KB.t
+
 let run_allocation_and_scheduling
-    ?(congruence : (var * var) list = [])
     ?(exclude_regs: String.Set.t = String.Set.empty)
     ?(extra_constraints : string option = None)
+    ?(log : string -> unit = fun _ -> ())
     (tgt : Theory.target)
     (prev_sols : sol list)
     (vir : Ir.t)
     ~filepath:(model_filepath : string)
     ~(gpr : Var.Set.t)
     ~(regs : Var.Set.t) : (Ir.t * sol) KB.t =
-  Events.(send @@ Info (sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols)));
-  Events.(send @@ Info (sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir)));
+  log @@ sprintf "Number of Excluded Solutions: %d\n" (List.length prev_sols);
+  log @@ sprintf "Orig Ir: %s\n" (Ir.pretty_ir vir);
   let vir_clean = delete_empty_blocks vir in
   let model_filepath = match extra_constraints with
   | None -> model_filepath
   | Some extra_constraints -> build_extra_constraints_file ~extra_constraints ~model_filepath
   in
-  Events.(send @@ Info (sprintf "Minizinc Model Filepath: %s\n" model_filepath));
+  log @@ sprintf "Minizinc Model Filepath: %s\n" model_filepath;
   let* params, name_maps =
     serialize_mzn_params tgt vir_clean prev_sols
-      ~gpr ~regs ~congruence ~exclude_regs in
+      ~gpr ~regs ~exclude_regs in
   (run_minizinc ~model_filepath (mzn_params_serial_to_yojson params)) >>= fun sol_json ->
   let sol_serial = sol_serial_of_yojson sol_json in
   let sol = match sol_serial with
@@ -466,5 +475,5 @@ let run_allocation_and_scheduling
     | Error msg -> Kb_error.fail (Kb_error.Minizinc_deserialization msg) in
   sol >>= fun sol ->
   let vir' = apply_sol vir sol in
-  Events.(send @@ Info (sprintf "Solved Ir: %s\n" (Ir.pretty_ir vir')));
+  log @@ sprintf "Solved Ir: %s\n" (Ir.pretty_ir vir');
   KB.return (vir', sol)

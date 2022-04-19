@@ -21,11 +21,10 @@ module H = Helpers
 
 
 let dummy_solver
-    ?(congruence = [])
     ?(exclude_regs = String.Set.empty)
     ?(extra_constraints = None)
+    ?(log = fun _ -> ())
     _ _ vir ~filepath:_ ~gpr:_ ~regs:_ =
-  ignore congruence;
   ignore exclude_regs;
   ignore extra_constraints;
   KB.return (vir, Test_minizinc.dummy_sol)
