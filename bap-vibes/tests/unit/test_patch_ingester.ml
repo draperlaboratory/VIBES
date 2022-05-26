@@ -39,11 +39,11 @@ let test_ingest (_ : test_ctxt) : unit =
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
     | (p :: []) ->
-      Data.Patch.get_bir p >>= fun bir ->
+      Data.Patch.get_sem p >>= fun sem ->
       Patches.Ret_3.prog 32 >>= fun expected ->
       let open Bap.Std in
       let expected = KB.Value.get Bil.slot expected in
-      let bil = KB.Value.get Bil.slot bir in
+      let bil = KB.Value.get Bil.slot sem in
       let err =
         Format.asprintf "Expected %a but got %a"
           Bil.pp expected

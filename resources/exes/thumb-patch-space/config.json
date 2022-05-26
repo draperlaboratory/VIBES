@@ -4,6 +4,7 @@
     "func": "main",
     "postcond" : "(assert true)"
   },
+  "ogre": "loader.ogre",
   "patch-space" : [
     {"offset" : "0x3c8",
      "size" : "24"}

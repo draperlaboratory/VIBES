@@ -1,6 +1,7 @@
 {
   "max-tries": 3,
   "perform-verification" : false,
+  "ogre": "loader.ogre",
   "patches" : [
     {"patch-name" : "ret-3",
      "patch-code" : "int retvar; retvar = 3;",

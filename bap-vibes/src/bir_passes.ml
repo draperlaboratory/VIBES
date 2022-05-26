@@ -807,7 +807,7 @@ let to_linear_ssa
   sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
 let run (patch : Data.Patch.t) : t KB.t =
-  let* code = Data.Patch.get_bir patch in
+  let* code = Data.Patch.get_sem patch in
   let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
   Events.(send @@ Info info_str);
   let* tgt = Data.Patch.get_target patch in

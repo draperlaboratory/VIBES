@@ -34,7 +34,7 @@ let dummy_solver
 let test_compile (_ : test_ctxt) : unit =
 
   (* Skip this test for now. *)
-  H.skip_test "Doesn't work without the dummy solver";
+  (* H.skip_test "Doesn't work without the dummy solver"; *)
 
   (* Run the compiler. *)
   let computation =
@@ -42,15 +42,20 @@ let test_compile (_ : test_ctxt) : unit =
     H.obj () >>= fun obj ->
     Data.Solver.set_minizinc_model_filepath
       obj (Some H.minizinc_model_filepath) >>= fun () ->
-    Patches.get_bir H.patch 32 >>= fun bil ->
+    Patches.get_sem H.patch 32 >>= fun sem ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
-    Data.Patch.set_bir patch bil >>= fun _ ->
+    Data.Patch.init_sem patch >>= fun () ->
+    Data.Patch.set_target patch (H.the_target ()) >>= fun () ->
+    Data.Patch.set_lang patch (H.the_lang ()) >>= fun () ->
+    Data.Patch.set_sem patch sem >>= fun () ->
+    Data.Patch.set_sp_align patch (Some 0) >>= fun () ->
+    Data.Patch.set_patch_vars patch (Some []) >>= fun () ->
     Data.Patched_exe.set_patches obj
-      (Data.Patch_set.singleton patch) >>= fun _ ->
+      (Data.Patch_set.singleton patch) >>= fun () ->
 
     (* Now run the compiler. *)
     Compiler.compile_ir obj >>= fun _ ->
-    Compiler.compile_assembly ~solver:dummy_solver obj >>= fun _ ->
+    Compiler.compile_assembly ~solver:dummy_solver obj >>= fun () ->
     Data.Patched_exe.get_patches obj >>= fun patches ->
     match Data.Patch_set.to_list patches with
     | [] -> assert_failure "Result patch missing."
@@ -61,8 +66,12 @@ let test_compile (_ : test_ctxt) : unit =
   (* The complier should stash the assembly it produces in the KB. *)
   let patch_value = KB.run Data.Patch.patch computation KB.empty in
   let expected = Some H.assembly in
+  let pat = Str.regexp "blk.*:" in
+  let s_equal expected actual =
+    Str.string_match pat actual 0 ||
+    String.equal expected actual in
   H.assert_property
-    ~cmp:(Option.equal (List.equal String.equal))
+    ~cmp:(Option.equal (List.equal s_equal))
     ~p_res:H.print_string_list_opt ~p_expected:H.print_string_list_opt
     Data.Patch.assembly expected patch_value
 

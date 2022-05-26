@@ -1,5 +1,6 @@
 {
   "max-tries": 15,
+  "ogre": "loader.ogre",
   "wp-params": {
     "func": "main",
     "postcond" : "(assert true)"
