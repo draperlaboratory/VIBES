@@ -32,10 +32,6 @@ let dummy_solver
 
 (* Test that [Compiler.compile] works as expected. *)
 let test_compile (_ : test_ctxt) : unit =
-
-  (* Skip this test for now. *)
-  (* H.skip_test "Doesn't work without the dummy solver"; *)
-
   (* Run the compiler. *)
   let computation =
     (* Set up the KB. *)

@@ -21,7 +21,7 @@ open Bap_core_theory
 module KB = Knowledge
 open KB.Let
 
-let provide_bir (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
+let provide_sem (tgt : Theory.target) (patch : Data.Patch.t) : unit KB.t =
   Theory.instance () >>= Theory.require >>= fun (module Core) ->
   let module CParser = Core_c.Eval(Core) in
   Data.Patch.init_sem patch >>= fun () ->
@@ -51,7 +51,7 @@ let ingest_one (tgt : Theory.target) (patch_num : int KB.t) (patch : Data.Patch.
   Events.(send @@ Info (Printf.sprintf "\nIngesting patch %d." patch_num));
   begin Data.Patch.get_assembly patch >>= function
     | Some _ -> KB.return () (* Assembly is user provided *)
-    | None -> provide_bir tgt patch
+    | None -> provide_sem tgt patch
   end >>= fun () -> KB.return (patch_num + 1)
 
 (* Processes the whole patch associated with [obj], populating all the
