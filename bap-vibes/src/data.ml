@@ -73,7 +73,7 @@ let unit_domain : unit KB.Domain.t = KB.Domain.flat
     ~equal:Unit.equal
     "unit-domain"
 
-let lab_domain : Theory.label option KB.Domain.t = KB.Domain.optional
+let label_domain : Theory.label option KB.Domain.t = KB.Domain.optional
     ~equal:Theory.Label.equal
     "label-domain"
 
@@ -167,7 +167,11 @@ module Patch = struct
     KB.Class.property ~package patch "patch-code" source_domain
 
   let patch_label : (patch_cls, Theory.label option) KB.slot =
-    KB.Class.property ~package patch "patch-label" lab_domain
+    KB.Class.property ~package patch "patch-label" label_domain
+
+  let patch_sem : (Theory.program, Theory.Semantics.t) KB.slot =
+    KB.Class.property ~package Theory.Program.cls "patch-sem"
+      Theory.Semantics.domain
 
   let raw_ir : (patch_cls, (Ir.t * Graphs.Tid.t) option) KB.slot =
     KB.Class.property ~package patch "patch-raw-ir" ir_domain
@@ -261,17 +265,15 @@ module Patch = struct
     KB.Object.create Theory.Program.cls >>= fun lab ->
     KB.provide patch_label obj (Some lab)
 
-  let set_bir (obj : t) (sem : Insn.t) : unit KB.t =
-    KB.collect patch_label obj >>= fun olab ->
-    (* FIXME: fail more gracefully *)
-    let lab = Option.value_exn olab in
-    KB.provide Theory.Semantics.slot lab sem
+  let set_sem (obj : t) (sem : insn) : unit KB.t =
+    KB.collect patch_label obj >>= function
+    | None -> Kb_error.fail Missing_label_for_semantics
+    | Some lab -> KB.provide patch_sem lab sem
 
-  let get_bir (obj : t) : Insn.t KB.t =
-    KB.collect patch_label obj >>= fun olab ->
-    (* FIXME: fail more gracefully *)
-    let lab = Option.value_exn olab in
-    KB.collect Theory.Semantics.slot lab
+  let get_sem (obj : t) : Insn.t KB.t =
+    KB.collect patch_label obj >>= function
+    | None -> Kb_error.fail Missing_label_for_semantics
+    | Some lab -> KB.collect Theory.Semantics.slot lab
 
   let set_lang (obj : t) (data : Theory.language) : unit KB.t =
     KB.provide lang obj data
@@ -542,3 +544,11 @@ module Solver = struct
     | Some value -> KB.return value
 
 end
+
+(* For labels that we create to hold the patch programs, the `patch_sem`
+   property should hold a non-empty semantics object. Thus, this is the
+   semantics we promise to provide. If it is empty, then we still avoid
+   a conflict as the empty semantics can be refined to any other
+   semantics. *)
+let () = KB.promise Theory.Semantics.slot @@ fun l ->
+  KB.collect Patch.patch_sem l

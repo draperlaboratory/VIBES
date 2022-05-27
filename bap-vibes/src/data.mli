@@ -134,10 +134,10 @@ module Patch : sig
 
   (* This initializes the semantics slot by creating a program label
      that will contain the semantics. This *must* be called before
-     set_bir! *)
+     set_sem! *)
   val init_sem : t -> unit KB.t
-  val set_bir : t -> insn -> unit KB.t
-  val get_bir : t -> insn KB.t
+  val set_sem : t -> insn -> unit KB.t
+  val get_sem : t -> insn KB.t
 
   val set_raw_ir : t -> (Ir.t * Graphs.Tid.t) option -> unit KB.t
   val get_raw_ir : t -> (Ir.t * Graphs.Tid.t) option KB.t

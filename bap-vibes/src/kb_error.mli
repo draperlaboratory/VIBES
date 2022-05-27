@@ -40,6 +40,7 @@ type t =
   | Missing_func
   | Missing_property
   | Missing_raw_ir
+  | Missing_label_for_semantics
   | Missing_semantics of string
   | Command_not_found of string
   | Patch_code_not_parsed of string

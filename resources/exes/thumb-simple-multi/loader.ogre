@@ -1,0 +1,46 @@
+(declare arch (name str))
+(declare bits (size int))
+(declare base-address (addr int))
+(declare entry-point (addr int))
+(declare is-little-endian (flag bool))
+(declare mapped (addr int) (size int) (off int))
+(declare code-region (addr int) (size int) (off int))
+(declare named-region (addr int) (size int) (name str))
+(declare segment (addr int) (size int) (r bool) (w bool) (x bool))
+(declare section (addr int) (size int))
+(declare code-start (addr int))
+(declare named-symbol (addr int) (name str))
+(declare symbol-chunk (addr int) (size int) (root int))
+
+(arch thumb)
+(bits 32)
+(is-little-endian true)
+
+(base-address (addr 0x10000))
+(entry-point (addr 0x102d8))
+
+(mapped (addr 0x103e0) (size 0x2a) (off 0x3e0))
+(mapped (addr 0x103c8) (size 0xc) (off 0x3c8))
+(mapped (addr 0x103d4) (size 0xc) (off 0x3d4))
+
+(named-region (addr 0x103e0) (size 0x2a) (name main))
+(named-region (addr 0x103c8) (size 0xc) (name f1))
+(named-region (addr 0x103d4) (size 0xc) (name f2))
+
+(code-start (addr 0x103e0))
+(named-symbol (addr 0x103e0) (name main))
+
+(code-start (addr 0x103c8))
+(named-symbol (addr 0x103c8) (name f1))
+
+(code-start (addr 0x103d4))
+(named-symbol (addr 0x103d4) (name f2))
+
+(code-region (addr 0x103e0) (size 0x2a) (off 0x3e0))
+(symbol-chunk (addr 0x103e0) (size 0x2a) (root 0x103e0))
+
+(code-region (addr 0x103c8) (size 0xc) (off 0x3c8))
+(symbol-chunk (addr 0x103c8) (size 0xc) (root 0x103c8))
+
+(code-region (addr 0x103d4) (size 0xc) (off 0x3d4))
+(symbol-chunk (addr 0x103d4) (size 0xc) (root 0x103d4))

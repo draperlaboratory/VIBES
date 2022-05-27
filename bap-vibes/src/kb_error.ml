@@ -38,6 +38,7 @@ type t =
   | Missing_func
   | Missing_property
   | Missing_raw_ir
+  | Missing_label_for_semantics
   | Missing_semantics of string
   | Command_not_found of string
   | Patch_code_not_parsed of string
@@ -81,6 +82,8 @@ let pp ppf (e : t) =
     | Missing_func -> "No function name to verify was stashed in KB"
     | Missing_property -> "No correctness property was stashed in KB"
     | Missing_raw_ir -> "Raw Ir compiled from core_theory not found in KB"
+    | Missing_label_for_semantics ->
+      "No label for patch semantics was stashed in KB"
     | Missing_semantics s -> Format.sprintf "Semantics for %s not found in KB" s
     | Command_not_found s -> s
     | Patch_code_not_parsed s -> "Failed to parse patch code: " ^ s

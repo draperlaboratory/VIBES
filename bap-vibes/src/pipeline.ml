@@ -127,6 +127,8 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   let+ value, new_state = run_KB_computation computation state in
 
   let+ tmp_patched_filepath = get_tmp_patched_exe_filepath value in
+  Events.send @@ Info (
+    Printf.sprintf "Temp patched exe: %s" tmp_patched_filepath);
 
   (* Temporarily use the new KB state when loading the patched binary. *)
   Toplevel.set new_state;

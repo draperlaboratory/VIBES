@@ -121,8 +121,8 @@ let test_minizinc_ex1 (ctxt : test_ctxt) : unit =
     KB.Object.create Data.cls >>= fun obj ->
     KB.Object.create Data.Patch.patch >>= fun patch ->
     Data.Patch.init_sem patch >>= fun () ->
-    Patches.get_bir "ret-3" 32 >>= fun bil ->
-    Data.Patch.set_bir patch bil >>= fun () ->
+    Patches.get_sem "ret-3" 32 >>= fun bil ->
+    Data.Patch.set_sem patch bil >>= fun () ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun () ->
     Arm_selector.gpr arm_tgt arm_lang >>= fun gpr ->
