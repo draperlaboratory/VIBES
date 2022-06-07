@@ -222,7 +222,6 @@ module Prog22 = struct
   let (!!) i = Bil.int (Word.of_int ~width:32 i)
 
   let prog =
-    (* equivalent to `v1 := 0x1FFFF` *)
     let bil = Bil.[v1 := !!0x1FFFF] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
@@ -256,6 +255,16 @@ module Prog25 = struct
 
   let prog =
     let bil = Bil.[if_ (var v1 > !!42) [v1 := !!3] [v1 := !!4]] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+module Prog26 = struct
+
+  let (!!) i = Bil.int (Word.of_int ~width:32 i)
+
+  let prog =
+    let bil = Bil.[if_ (lnot (var v)) [v1 := !!3] [v1 := !!4]] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end
@@ -418,8 +427,7 @@ let test_ir23 ctxt =
 let test_ir24 ctxt =
   test_ir ctxt Prog24.prog [
     blk_pat ^ ":";
-    "mov R0, #1";
-    "lsl R0, R0, #3";
+    "mov R0, #8";
     "mov R0, #1";
     "lsl R0, R0, R0";
     "mov R0, #6";
@@ -432,6 +440,25 @@ let test_ir25 ctxt =
       blk_pat ^ ":";
       "cmp R0, #42";
       "bhi " ^ blk_pat;
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #4";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+      "mov R0, #3";
+      "b " ^ blk_pat;
+
+      blk_pat ^ ":";
+    ]
+
+let test_ir26 ctxt =
+  test_ir ctxt Prog26.prog
+    [
+      blk_pat ^ ":";
+      "cmp R0, #0";
+      "beq " ^ blk_pat;
       "b " ^ blk_pat;
 
       blk_pat ^ ":";
@@ -470,4 +497,5 @@ let suite =
     "Test Arm.ir 23" >:: test_ir23;
     "Test Arm.ir 24" >:: test_ir24;
     "Test Arm.ir 25" >:: test_ir25;
+    "Test Arm.ir 26" >:: test_ir26;
   ]

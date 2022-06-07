@@ -132,7 +132,7 @@ let test_call_hex _ =
     "int temp;
      if (temp == 0) { ((void (*)())0x3ec)(); }"
     "{
-       if (temp = 0) {
+       if (~temp) {
          jmp 0x3EC
        }
      }"
@@ -427,7 +427,7 @@ let test_bool_not _ =
        x = y;
      }"
     "{
-       if (x = 0) {
+       if (~x) {
          x := y
        }
      }"
@@ -437,7 +437,7 @@ let test_mixed_sorts _ =
     "int x, y;
      x += (y == 0);"
     "{
-       x := x + pad:32[y = 0]
+       x := x + pad:32[~y]
      }"
 
 let suite = [
