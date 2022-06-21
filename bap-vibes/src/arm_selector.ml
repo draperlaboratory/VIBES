@@ -914,19 +914,22 @@ struct
       let* o = sel_binop o ~patch ~is_thumb ~branch in
       o a b
     | UnOp (o, a) -> begin
+        let default () =
+          let* a = exp a in
+          let* o = sel_unop o ~is_thumb in
+          o a in
         match o, Type.infer a with
         | _ , Error e ->
           Err.fail @@ Other
             (sprintf "Arm_selector.select_exp: Type.infer failed: %s"
                (Type.Error.to_string e))
-        | NOT, Ok (Imm 1) ->
-          (* Lazy way to compute the negation of that boolean. *)
-          let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
-          select_exp identity ~patch ~branch ~is_thumb ~lhs:None
-        | _ ->
-          let* a = exp a in
-          let* o = sel_unop o ~is_thumb in
-          o a
+        | NOT, Ok (Imm n) ->
+          if n = 1 || Option.is_some branch then
+            (* Lazy way to compute the negation of that boolean. *)
+            let identity = Bil.(BinOp (EQ, a, Int (Word.zero 32))) in
+            select_exp identity ~patch ~branch ~is_thumb ~lhs:None
+          else default ()
+        | _ -> default ()
       end
     | Var v -> begin
         match Var.typ v with
