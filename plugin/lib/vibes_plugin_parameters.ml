@@ -312,6 +312,12 @@ let validate_wp_params (obj : Json.t)
         Option.value_map ~default:false
           ~f:(fun s -> Bool.of_string s)
       in
+      begin match read "init-mem" with
+        | None -> Err.return false
+        | Some "true" -> Err.return true
+        | Some "false" -> Err.return false
+        | _ -> Err.fail Errors.Invalid_init_mem
+      end >>= fun init_mem ->
       if String.equal func "" then
         Err.fail Errors.Missing_func
       else
@@ -327,6 +333,7 @@ let validate_wp_params (obj : Json.t)
             fun_specs;
             ext_solver_path;
             use_fun_input_regs;
+            init_mem;
           }
     end
 
@@ -385,10 +392,11 @@ let validate_minizinc_isel_filepath (obj : Json.t)
     end
   | _ -> Ok None
 let validate_ogre (obj : Json.t)
-  : (string option, error) Stdlib.result =
+  : ((string * string) option, error) Stdlib.result =
   match Json.Util.member "ogre" obj with
   | `Null -> Err.return None
-  | `String filename -> Err.return (Some (In_channel.read_all filename))
+  | `String filename ->
+    Err.return @@ Some (In_channel.read_all filename, "./" ^ filename)
   | _ -> Err.fail (Errors.Invalid_loader_data "must be a string.")
 
 (* Parse the user-provided JSON config file into a Yojson.Safe.t *)
@@ -596,12 +604,18 @@ let parse_bsi_metadata (exe : string) (config_json : Json.t)
 let validate_loader_info
     (bsi : BSI.t option)
     (config_json : Json.t)
-  : (string option, error) Stdlib.result =
+  : ((string * string) option, error) Stdlib.result =
   validate_ogre config_json >>= fun ogre ->
   match bsi, ogre with
   | None, None -> Err.return None
-  | None, Some _ -> Err.return ogre
-  | Some bsi, None -> Err.return @@ Some (BSI.to_ogre_string bsi)
+  | None, Some ogre -> Err.return @@ Some ogre
+  | Some bsi, None ->
+    let str = BSI.to_ogre_string bsi in
+    let filename, chan = Stdlib.Filename.open_temp_file "bsi" ".ogre" in
+    Out_channel.fprintf chan "%s" str;
+    Out_channel.flush chan;
+    Out_channel.close chan;
+    Err.return @@ Some (str, filename)
   | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
 
 (* Construct a configuration record from the given parameters. *)
@@ -618,6 +632,11 @@ let create
   validate_max_tries config_json >>= fun max_tries ->
   validate_perform_verification config_json >>= fun perform_verification ->
   validate_loader_info bsi config_json >>= fun ogre ->
+  (* Hand off the ogre filepath to WP if one was provided/generated. *)
+  let wp_params, ogre = match ogre with
+    | None -> wp_params, None
+    | Some (ogre, filename) ->
+      {wp_params with ogre = Some filename}, Some ogre in
   validate_minizinc_model_filepath config_json >>=
   fun minizinc_model_filepath ->
   validate_minizinc_isel_filepath config_json >>=

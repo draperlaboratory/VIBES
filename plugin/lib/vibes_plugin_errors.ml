@@ -39,6 +39,7 @@ type t =
   | Invalid_perform_verification
   | Invalid_loader_data of string
   | Invalid_bsi_data of string
+  | Invalid_init_mem
   | Loader_data_conflict
   | Invalid_minizinc_isel_filepath
   | Invalid_extra_constraints
@@ -99,6 +100,9 @@ let pp (ppf : Format.formatter) t : unit =
       "error in optional loader data field \"ogre\": " ^ s
     | Invalid_bsi_data s ->
       "error in optional field \"bsi-metadata\": " ^ s
+    | Invalid_init_mem ->
+      "invalid optional `init-mem` field for `wp-params`: must be \
+       `true` or `false`"
     | Loader_data_conflict ->
       "optional fields \"bsi-metadata\" and \"ogre\" were specified, \
        cannot use both"

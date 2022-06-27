@@ -42,6 +42,7 @@ type t =
   | Invalid_perform_verification
   | Invalid_loader_data of string
   | Invalid_bsi_data of string
+  | Invalid_init_mem
   | Loader_data_conflict
   | Invalid_minizinc_isel_filepath
   | Invalid_extra_constraints
