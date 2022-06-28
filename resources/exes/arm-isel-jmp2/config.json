@@ -1,5 +1,5 @@
 {
-  "max-tries": 1,
+  "max-tries": 10,
   "wp-params": {
     "func": "main",
     "postcond": "(assert (= R0_mod #x00000006))"
@@ -21,7 +21,6 @@
      "patch-size" : 128,
      "patch-vars": [
        {"name": "retvar",
-	    "at-entry": "R0",
         "at-exit": "R0"
        }
      ]
