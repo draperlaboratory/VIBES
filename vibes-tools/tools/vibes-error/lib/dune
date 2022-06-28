@@ -1,0 +1,3 @@
+(library
+  (name vibes_error_lib)
+  (libraries core_kernel))

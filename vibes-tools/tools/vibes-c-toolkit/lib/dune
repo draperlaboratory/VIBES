@@ -1,0 +1,10 @@
+(library
+  (name vibes_c_toolkit_lib)
+  (libraries
+    findlib.dynload
+    bap
+    bap-arm
+    FrontC
+    vibes_log_lib
+    vibes_error_lib)
+  (preprocess (pps ppx_jane)))
