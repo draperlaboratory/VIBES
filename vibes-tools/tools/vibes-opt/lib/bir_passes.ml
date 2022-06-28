@@ -787,10 +787,8 @@ module ABI = struct
 end
 
 (* VIBES IR requires linear SSA form. *)
-let to_linear_ssa
-    (patch : Data.Patch.t)
-    (sub : sub term) : blk term list KB.t =
-  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
+let to_linear_ssa (sub : sub term) =
+  sub |> Sub.ssa |> Linear_ssa.transform
 
 let run ir tgt sp_align hvars =
   (* BAP will give us the blks in such an order that the first one is the
@@ -822,5 +820,5 @@ let run ir tgt sp_align hvars =
   let sub = Opt.Bap_opt.run sub in
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
-  let ir, _, _ = to_linear_ssa patch sub in
+  let ir, _, _ = to_linear_ssa sub in
   {ir; cfg; exclude_regs = String.Set.empty; argument_tids}

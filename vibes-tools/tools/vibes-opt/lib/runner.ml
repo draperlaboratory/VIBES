@@ -53,9 +53,11 @@ let run (target : string) (filepath : string) (outfile : string)
   in
   List.iter birs ~f:log_bir;
 
+  (*
   let sp_align = 0 in
   let hvars = [] in
   let _ : Bir_passes.t = Bir_passes.run birs target sp_align hvars in
+  *)
 
   print_endline "TODO: run the optimizer...";
 

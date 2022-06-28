@@ -1,15 +1,27 @@
 open Core_kernel
 open Bap.Std
-open Bap_core_theory
 open Monads.Std
 
 module Naming = Vibes_c_toolkit_lib.Substituter.Naming
 
 module Data = struct
 
-  type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
+  type ins_outs =
+    {ins : Var.Set.t; outs: Var.Set.t}
+    [@@deriving compare, equal, sexp]
 
 end
+
+module Var_pair = struct
+  module T = struct
+    type t = var * var [@@deriving compare, sexp]
+  end
+
+  include T
+  include Comparator.Make(T)
+end
+
+type var_pair_set = (Var_pair.t, Var_pair.comparator_witness) Set.t
 
 let prefix_of_tid (tid : tid) : string =
   let tid_str = Tid.to_string tid in
@@ -195,7 +207,6 @@ let linearize_blk (blk : blk term) : blk term linear =
 *)
 let compute_liveness_and_expand_phis
     (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) =
-  let open KB.Let in
   let liveness = Live.compute sub in
   let blks = Term.enum blk_t sub |> Seq.to_list in
   (* Map each block to a list of pseudo definitions according to the
@@ -219,11 +230,13 @@ let compute_liveness_and_expand_phis
               ~copy_jmps:true in
           let () =
             List.iter defs ~f:(fun (lhs, e) ->
-                let tid = Tid.create () in (* TODO: Used to be Theory.Label.fresh *)
-                let def = Def.create ~tid lhs e in
-                Blk.Builder.add_def builder def) in
-          let blk = Blk.Builder.result builder in
-          blk) in
+              (* TODO: Used to be Theory.Label.fresh *)
+              let tid = Tid.create () in 
+              let def = Def.create ~tid lhs e in
+              Blk.Builder.add_def builder def) in
+            let blk = Blk.Builder.result builder in
+            blk) 
+          in
   (* Get the linearized ins and outs. *)
   let ins_outs_map = List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
@@ -241,15 +254,6 @@ let all_ins_outs_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
   List.map ~f:(fun Data.{ins; outs} -> Var.Set.union ins outs) @@
   Tid.Map.data ins_outs
 
-module Var_pair = struct
-  module T = struct
-    type t = var * var [@@deriving compare, sexp]
-  end
-
-  include T
-  include Comparator.Make(T)
-end
-
 let transform (sub : sub term) =
   let blks, ins_outs_map = compute_liveness_and_expand_phis sub in
   let blks, Linear.Env.{vars; _} =
@@ -257,12 +261,11 @@ let transform (sub : sub term) =
   (* Add in live variables that persist across blocks that don't use them *)
   let vars = Var.Set.union vars (all_ins_outs_vars ins_outs_map) in
   let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
-  let congruences = 
-    Var.Set.to_list vars |> 
-    List.map ~f:(fun v1 ->
-      let vars = Set.filter vars ~f:(cong v1) in
-      Set.to_list vars |> 
-      List.map ~f:(fun v2 -> (v1, v2)))
+  let congruences =
+    let congs_set : var_pair_set = Set.empty (module Var_pair) in
+    Var.Set.fold vars ~init:congs_set ~f:(fun acc v1 ->
+      let congruent_vars = Set.filter vars ~f:(cong v1) in
+      Var.Set.fold congruent_vars ~init:acc ~f:(fun acc' v2 ->
+        Set.add acc' (v1, v2)))
   in
-  let congruences = Var_pair.Set.of_list congruences in
   (blks, ins_outs_map, congruences)
