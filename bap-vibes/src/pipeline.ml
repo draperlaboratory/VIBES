@@ -116,7 +116,7 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
    If its correct, it returns the filepath. If not, it runs again. *)
 let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
     ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
-    (orig_prog : Program.t) (state : KB.state)
+    (orig_prog : Program.t) (orig_code : Addr.Set.t) (state : KB.state)
     : (string, Toplevel_error.t) result =
   Events.(send @@ Header "Starting CEGIS iteration");
   Events.(send @@ Info (Printf.sprintf "Iteration: %d" count));
@@ -132,27 +132,29 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
 
   (* Temporarily use the new KB state when loading the patched binary. *)
   Toplevel.set new_state;
-  let+ _, patch_prog = Utils.load_exe tmp_patched_filepath in
+  let+ patch_proj, patch_prog = Utils.load_exe tmp_patched_filepath in
+  let patch_code =
+    if (Config.wp_params config).init_mem then
+      Project.state patch_proj |>
+      Bap_wp.Utils.collect_code_addrs
+    else Addr.Set.empty in
   Toplevel.set state;
 
   let wp_params = Config.wp_params config in
   let target = Project.target orig_proj in
   if Config.perform_verification config then
-    let verif_res =
-      Verifier.verify target wp_params
-        ~orig_prog:(orig_prog, Config.exe config)
-        ~patch_prog:(patch_prog, tmp_patched_filepath)
-    in
+    (* let orig_code, patch_code = Addr.Set.empty, Addr.Set.empty in *)
+    let verif_res = Verifier.verify target wp_params
+        ~orig_prog:(orig_prog, Config.exe config, orig_code)
+        ~patch_prog:(patch_prog, tmp_patched_filepath, patch_code) in
     match verif_res with
+    | Error _ as err -> err
     | Ok Verifier.Done -> finalize_patched_exe value
     | Ok Verifier.Again ->
-      begin
-        let new_count = count + 1 in
-        let new_seed = Seeder.extract_seed value new_state in
-        cegis config orig_proj orig_prog state
-          ~count:new_count ~max_tries ~seed:new_seed
-      end
-    | Error e -> Error e
+      let new_count = count + 1 in
+      let new_seed = Seeder.extract_seed value new_state in
+      cegis config orig_proj orig_prog orig_code state
+        ~count:new_count ~max_tries ~seed:new_seed
   else
     let warning =
       "WARNING: No verification performed. Patched binary may be incorrect."
@@ -173,6 +175,11 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   let filepath = Config.exe config in
   Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
   let+ orig_proj, orig_prog = Utils.load_exe filepath in
+  let orig_code =
+    if (Config.wp_params config).init_mem then
+      Project.state orig_proj |>
+      Bap_wp.Utils.collect_code_addrs
+    else Addr.Set.empty in
 
   let state = Toplevel.current () in
   let computation = init config orig_proj in
@@ -180,4 +187,4 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   let seed = Seeder.extract_seed obj new_state in
 
   let max_tries = Config.max_tries config in
-  cegis config orig_proj orig_prog new_state ~max_tries ~seed
+  cegis config orig_proj orig_prog orig_code new_state ~max_tries ~seed

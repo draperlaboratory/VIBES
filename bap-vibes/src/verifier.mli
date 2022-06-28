@@ -45,8 +45,8 @@ type next_step = Done | Again
     verifier's results. *)
 val verify :
   ?verifier:(verifier) ->
-  orig_prog:(Program.t * string) ->
-  patch_prog:(Program.t * string) ->
+  orig_prog:(Program.t * string * Addr.Set.t) ->
+  patch_prog:(Program.t * string * Addr.Set.t) ->
   Theory.target ->
   Run_parameters.t ->
   (next_step, Toplevel_error.t) result
