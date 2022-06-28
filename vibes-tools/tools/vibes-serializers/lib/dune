@@ -1,0 +1,6 @@
+(library
+  (name vibes_serializers_lib)
+  (libraries
+    findlib.dynload
+    bap
+    vibes_error_lib))

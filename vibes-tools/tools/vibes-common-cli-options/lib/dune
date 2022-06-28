@@ -1,0 +1,5 @@
+(library
+  (name vibes_common_cli_options_lib)
+  (libraries
+    cmdliner
+    vibes_log_lib))
