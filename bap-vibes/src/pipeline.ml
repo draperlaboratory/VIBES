@@ -114,10 +114,10 @@ let run_KB_computation (f : Data.cls KB.obj KB.t) (state : KB.state)
 
 (* This is the main CEGIS loop. It constructs a patched exe and verifies it.
    If its correct, it returns the filepath. If not, it runs again. *)
-let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
-    ~seed:(seed : Seeder.t) (config : Config.t) (orig_proj : project)
-    (orig_prog : Program.t) (orig_code : Addr.Set.t) (state : KB.state)
-    : (string, Toplevel_error.t) result =
+let rec cegis ?(count : int = 1) ?(max_tries : int option = None)
+    ~(seed : Seeder.t) (config : Config.t) (orig_proj : project)
+    (orig_prog : Program.t) (orig_code : Bap_wp.Utils.Code_addrs.t)
+    (state : KB.state) : (string, Toplevel_error.t) result =
   Events.(send @@ Header "Starting CEGIS iteration");
   Events.(send @@ Info (Printf.sprintf "Iteration: %d" count));
 
@@ -134,10 +134,10 @@ let rec cegis ?count:(count=1) ?max_tries:(max_tries=None)
   Toplevel.set new_state;
   let+ patch_proj, patch_prog = Utils.load_exe tmp_patched_filepath in
   let patch_code =
-    if (Config.wp_params config).init_mem then
-      Project.state patch_proj |>
-      Bap_wp.Utils.collect_code_addrs
-    else Addr.Set.empty in
+    let open Bap_wp.Utils.Code_addrs in
+    if (Config.wp_params config).init_mem
+    then collect patch_proj
+    else empty in
   Toplevel.set state;
 
   let wp_params = Config.wp_params config in
@@ -176,10 +176,10 @@ let run (config : Config.t) : (string, Toplevel_error.t) result =
   Events.(send @@ Info (Format.sprintf "Loading into BAP: %s..." filepath));
   let+ orig_proj, orig_prog = Utils.load_exe filepath in
   let orig_code =
-    if (Config.wp_params config).init_mem then
-      Project.state orig_proj |>
-      Bap_wp.Utils.collect_code_addrs
-    else Addr.Set.empty in
+    let open Bap_wp.Utils.Code_addrs in
+    if (Config.wp_params config).init_mem
+    then collect orig_proj
+    else empty in
 
   let state = Toplevel.current () in
   let computation = init config orig_proj in

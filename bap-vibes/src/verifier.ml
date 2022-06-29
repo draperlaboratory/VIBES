@@ -52,8 +52,8 @@ let wp_verifier (p : Params.t) (inputs : Runner.input list) =
 *)
 let verify
     ?(verifier = wp_verifier)
-    ~(orig_prog : Program.t * string * Addr.Set.t)
-    ~(patch_prog : Program.t * string * Addr.Set.t)
+    ~(orig_prog : Program.t * string * Bap_wp.Utils.Code_addrs.t)
+    ~(patch_prog : Program.t * string * Bap_wp.Utils.Code_addrs.t)
     (tgt : Theory.target)
     (params : Params.t) : (next_step, Toplevel_error.t) result =
   let prog1, name1, code1 = orig_prog in
