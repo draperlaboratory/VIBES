@@ -541,6 +541,15 @@ module Shape = struct
               let jmp = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
               let defs = Term.enum def_t blk |> Seq.to_list in
               Blk.create ~tid ~jmps:[jmp] ~defs ()
+            | [jmp] when not @@ Helper.is_unconditional jmp ->
+              (* The block has a single conditional jump, so it is implicitly
+                 an exit node. Make this explicitly jump to a new exit block
+                 at the very end of the program. *)
+              let* jmp_tid = Theory.Label.fresh in
+              let+ tid' = make_extra () in
+              let jmp' = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
+              let defs = Term.enum def_t blk |> Seq.to_list in
+              Blk.create ~tid ~jmps:[jmp; jmp'] ~defs ()
             | jmps ->
               let+ jmps = KB.List.map jmps ~f:(fun jmp ->
                   match Jmp.kind jmp with
@@ -587,6 +596,90 @@ module Shape = struct
       let blks = List.filter blks ~f:(fun blk' ->
           Tid.(tid <> Term.tid blk')) in
       blks @ [blk]
+
+  (* On some targets such as ARM and Thumb, the allowed range of conditional
+     branches is limited. We make a conservative estimate of how far these
+     jumps are going to be, and if they are over a certain limit (dictated
+     by the instruction set manual), then we need to break apart the jump
+     into several blocks. *)
+  let relax_branches
+      (patch : Data.Patch.t)
+      (blks : blk term list)
+      ~(patch_spaces : Data.Patch_space_set.t) : blk term list KB.t =
+    if Set.is_empty patch_spaces then KB.return blks
+    else
+      let* tgt = Data.Patch.get_target patch in
+      let width = Theory.Target.code_addr_size tgt in
+      let* patch_spaces =
+        (* Since we don't know how large the patch will be, we will assume
+           that it will be the maximum size (minus 4). *)
+        Set.to_list patch_spaces |>
+        KB.List.filter_map ~f:(fun space ->
+            let* offset = Data.Patch_space.get_offset space in
+            let+ size = Data.Patch_space.get_size space in
+            match offset, size with
+            | Some offset, Some size ->
+              let maximum = Word.of_int64 ~width Int64.((offset + size) - 4L) in
+              Some maximum
+            | _ -> None) in
+      let limit = Word.of_int ~width 0xFFFFE in
+      let inserted = ref [] in
+      let table = Addr.Table.create () in
+      let can_fit addr = List.exists patch_spaces ~f:(fun maximum ->
+          if Word.(maximum > addr) then
+            Word.((maximum - addr) <= limit)
+          else if Word.(addr > maximum) then
+            Word.((addr - maximum) <= limit)
+          else true) in
+      let+ blks = KB.List.map blks ~f:(fun blk ->
+          let+ jmps =
+            Term.enum jmp_t blk |> Seq.to_list |>
+            KB.List.map ~f:(fun jmp ->
+                if Helper.is_unconditional jmp then KB.return jmp
+                else match Jmp.kind jmp with
+                  | Goto (Indirect (Int addr)) as kind -> begin
+                      match Addr.Table.find table addr with
+                      | Some tid ->
+                        KB.return @@ Jmp.with_kind jmp @@ Goto (Direct tid)
+                      | None when can_fit addr -> KB.return jmp
+                      | None ->
+                        let* blk_tid = Theory.Label.fresh in
+                        let+ jmp_tid = Theory.Label.fresh in
+                        let new_jmp = Jmp.create kind ~tid:jmp_tid in
+                        let new_blk = Blk.create () ~jmps:[new_jmp] ~tid:blk_tid in
+                        inserted := new_blk :: !inserted;
+                        Addr.Table.set table ~key:addr ~data:blk_tid;
+                        Jmp.with_kind jmp @@ Goto (Direct blk_tid)
+                    end
+                  | _ -> KB.return jmp) in
+          let defs = Term.enum def_t blk |> Seq.to_list in
+          let tid = Term.tid blk in
+          Blk.create () ~tid ~defs ~jmps) in
+      blks @ !inserted
+
+  let split_on_conditional (blks : blk term list) : blk term list KB.t =
+    let rec go ?(split = Tid.Set.empty) acc = function
+      | [] -> KB.return @@ List.rev acc
+      | b :: bs ->
+        let* b, bs, split =
+          if Set.mem split @@ Term.tid b then
+            KB.return (b, bs, split)
+          else
+            let jmps = Term.enum jmp_t b |> Seq.to_list in
+            if List.exists jmps ~f:(Fn.non Bir_helpers.is_unconditional) then
+              let* jmp_tid = Theory.Label.fresh in
+              let+ blk_tid = Theory.Label.fresh in
+              let jmp = Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid) in
+              let b = Blk.create ()
+                  ~tid:(Term.tid b)
+                  ~jmps:[jmp]
+                  ~defs:(Term.enum def_t b |> Seq.to_list)
+                  ~phis:(Term.enum phi_t b |> Seq.to_list) in
+              let b' = Blk.create () ~tid:blk_tid ~jmps in
+              b, b' :: bs, Set.add split blk_tid
+            else KB.return (b, bs, split) in
+        go (b :: acc) bs ~split in
+    go [] blks
 
 end
 
@@ -806,7 +899,9 @@ let to_linear_ssa
     (sub : sub term) : blk term list KB.t =
   sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
 
-let run (patch : Data.Patch.t) : t KB.t =
+let run
+    (patch : Data.Patch.t)
+    ~(patch_spaces : Data.Patch_space_set.t) : t KB.t =
   let* code = Data.Patch.get_sem patch in
   let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
   Events.(send @@ Info info_str);
@@ -839,6 +934,9 @@ let run (patch : Data.Patch.t) : t KB.t =
   (* Optimization. *)
   let* ir = Shape.reorder_blks ir in
   let* ir = Opt.apply ir in
+  let* ir = Shape.relax_branches patch ir ~patch_spaces in
+  let* ir = Shape.split_on_conditional ir in
+  let* ir = Shape.reorder_blks ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
   let cfg = Sub.to_graph sub in

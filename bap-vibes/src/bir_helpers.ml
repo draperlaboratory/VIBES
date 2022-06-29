@@ -28,6 +28,12 @@ let create_sub (blks : blk term list) : sub term KB.t =
 let is_implicit_exit (blk : blk term) : bool =
   Seq.is_empty @@ Term.enum jmp_t blk
 
+(* Returns true if the jmp is unconditional. *)
+let is_unconditional (jmp : jmp term) : bool =
+  match Jmp.cond jmp with
+  | Int w -> Word.(w = b1)
+  | _ -> false
+
 (* Find the exit nodes of the patch code. They are classified as follows:
    - no jmps:
      this is implicitly an exit block since it has no successors
@@ -53,19 +59,20 @@ let exit_blks (blks : blk term list) : blk term list KB.t =
         let blk = Graphs.Ir.Node.label node in
         if Graphs.Ir.Node.degree node cfg ~dir:`Out = 0
         then Some blk
-        else
-          let jmps = Term.enum jmp_t blk in
-          if Seq.is_empty jmps then Some blk
-          else if Seq.exists jmps ~f:(fun jmp ->
-              match Jmp.kind jmp with
-              | Call call -> begin
-                  match Call.return call with
-                  | None | Some (Indirect _) -> true
-                  | _ -> false
-                end
-              | _ -> false)
-          then Some blk
-          else None)
+        else match Term.enum jmp_t blk |> Seq.to_list with
+          | [] -> Some blk
+          | [jmp] when not @@ is_unconditional jmp -> Some blk
+          | jmps ->
+            if List.exists jmps ~f:(fun jmp ->
+                match Jmp.kind jmp with
+                | Call call -> begin
+                    match Call.return call with
+                    | None | Some (Indirect _) -> true
+                    | _ -> false
+                  end
+                | _ -> false)
+            then Some blk
+            else None)
 
 (* Returns true if the block contains a call to a subroutine. *)
 let has_call (blk : blk term) : bool =
@@ -78,9 +85,3 @@ let has_call (blk : blk term) : bool =
 let call_blks (blks : blk term list) : tid list =
   List.filter_map blks ~f:(fun blk ->
       if has_call blk then Some (Term.tid blk) else None)
-
-(* Returns true if the jmp is unconditional. *)
-let is_unconditional (jmp : jmp term) : bool =
-  match Jmp.cond jmp with
-  | Int w -> Word.(w = b1)
-  | _ -> false
