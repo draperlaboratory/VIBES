@@ -35,7 +35,7 @@ module Test_result = struct
   let result = KB.Class.property ~package cls "test-result" domain
 end
 
-let x86_tgt = Theory.Target.get ~package:"bap" "amd64"
+let x86_tgt = Theory.Target.get ~package:"bap" "x86_64"
 
 (* Very lax equality to avoid tid comparison failures *)
 let eq_elt e1 e2 =
