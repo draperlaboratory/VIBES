@@ -478,6 +478,17 @@ module ARM_ops = struct
     let sem = {sem with current_data = op::sem.current_data} in
     {op_val = Ir.Var res; op_eff = sem}
 
+  let quadop o ty arg1 arg2 arg3 arg4 =
+    let res = create_temp ty in
+    let {op_val = arg1_val; op_eff = arg1_sem} = arg1 in
+    let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
+    let {op_val = arg3_val; op_eff = arg3_sem} = arg3 in
+    let {op_val = arg4_val; op_eff = arg4_sem} = arg4 in
+    let op = Ir.simple_op o (Ir.Var res) [arg1_val; arg2_val; arg3_val; arg4_val] in
+    let sem = arg1_sem @. arg2_sem @. arg3_sem @. arg4_sem in
+    let sem = {sem with current_data = op::sem.current_data} in
+    {op_val = Ir.Var res; op_eff = sem}
+
   let add (arg1 : arm_pure) (arg2 : arm_pure)
       ~(is_thumb : bool) : arm_pure KB.t =
     KB.return @@ binop Ops.(add is_thumb) word_ty arg1 arg2 ~is_thumb
@@ -822,6 +833,19 @@ struct
     let exp = select_exp ~patch ~is_thumb ~branch:None ~lhs:None in
     let exp_binop_integer = select_exp_binop_integer ~patch ~is_thumb in
     match e with
+    | Load (mem, BinOp (PLUS, a, BinOp (TIMES, Int s, b)), _, size)
+      when Int.is_pow2 @@ Word.to_int_exn s ->
+      let* mem = exp mem in
+      let* ldr = ldr_op @@ Size.in_bits size in
+      let* a = exp a in
+      let+ b = exp b in
+      let width = Word.bitwidth s in
+      let s =
+        const @@
+        Word.of_int ~width @@
+        Int.ctz @@
+        Word.to_int_exn s in
+      quadop ldr word_ty mem a b s
     | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
       let* mem = exp mem in
       let* ldr = ldr_op @@ Size.in_bits size in
@@ -1157,7 +1181,7 @@ module Pretty = struct
 
   type bracket = Open | Close | Neither | Both
 
-  let arm_operand_pretty (op : string) (o : Ir.operand)
+  let arm_operand_pretty (op : string) (o : Ir.operand) (i : int)
       ~(is_loc : bracket) : (string, Kb_error.t) result =
     let pretty_aux =
       match o with
@@ -1171,11 +1195,12 @@ module Pretty = struct
         let prefix = match op with
           | "ldr" -> begin
               match is_loc with
-              | Neither -> '='
-              | _ -> '#'
+              | Neither -> "="
+              | Close when i = 3 -> "lsl #"
+              | _ -> "#"
             end
-          | _ -> '#' in
-        Result.return @@ Format.asprintf "%c%a" prefix Word.pp_dec w
+          | _ -> "#" in
+        Result.return @@ Format.asprintf "%s%a" prefix Word.pp_dec w
       | Label l -> Result.return @@ tid_to_string l
       | Void _ -> Result.fail @@ Kb_error.Other "Tried printing a Void operand!"
       | Offset c ->
@@ -1215,6 +1240,7 @@ module Pretty = struct
     | "ldr" | "ldrh" | "ldrb" | "str" ->
       if len = 2 then Result.return [Neither; Both]
       else if len = 3 then Result.return [Neither; Open; Close]
+      else if len = 4 then Result.return [Neither; Open; Neither; Close]
       else Result.fail @@ Kb_error.Other (
           sprintf "mk_loc_list: expected to receive 2 or 3 arguments, \
                    got %d (op = %s)" len op)
@@ -1250,7 +1276,7 @@ module Pretty = struct
     let l = rm_void_args (lhs @ rhs) in
     mk_loc_list op l >>= fun is_loc_list ->
     List.zip_exn is_loc_list l |>
-    List.map ~f:(fun (is_loc, o) -> arm_operand_pretty op o ~is_loc) |>
+    List.mapi ~f:(fun i (is_loc, o) -> arm_operand_pretty op o i ~is_loc) |>
     Result.all >>| fun all_str ->
     String.concat @@ List.intersperse all_str ~sep:", "
 

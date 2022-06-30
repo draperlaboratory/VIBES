@@ -184,6 +184,7 @@ let wp_params_to_string (wp_params : Wp_params.t) : string =
         "user-fun-specs-orig: %s" (triple_list wp_params.user_func_specs_orig);
       Printf.sprintf
         "user-fun-specs-mod: %s" (triple_list wp_params.user_func_specs_mod);
+      Printf.sprintf "init-mem: %b" wp_params.init_mem;
     ]
   in
   String.concat ~sep:"\n" params

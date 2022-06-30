@@ -37,30 +37,15 @@
      "patch-size": 28,
      "patch-vars": [
        {"name": "a",
-        "at-entry": "R0",
-        "at-exit": "R0"
+        "at-entry": "R0"
        },
        {"name": "i",
-        "at-entry": "R1",
-        "at-exit": "R1"
+        "at-entry": "R1"
        },
        {"name": "retval",
-        "at-entry": "R3",
         "at-exit": "R3"
        }
-     ],
-     "extra-constraints": "
-       % exclude callee-save registers from the solution
-       constraint exclude_reg('R4');
-       constraint exclude_reg('R5');
-       constraint exclude_reg('R6');
-       constraint exclude_reg('R7');
-       constraint exclude_reg('R8');
-       constraint exclude_reg('R9');
-       constraint exclude_reg('R10');
-       constraint exclude_reg('R11');
-       constraint exclude_reg('SP');
-     "
+     ]
     }
   ]
 }

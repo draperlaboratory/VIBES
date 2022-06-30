@@ -46,8 +46,10 @@ let create_assembly
 let create_vibes_ir
     (patch : Data.Patch.t)
     (isel_model_filepath : string option)
+    ~(patch_spaces : Data.Patch_space_set.t)
   : (Ir.t * Graphs.Tid.t * String.Set.t) KB.t =
-  let* {ir; cfg; exclude_regs; argument_tids} = Bir_passes.run patch in
+  let* {ir; cfg; exclude_regs; argument_tids} =
+    Bir_passes.run patch ~patch_spaces in
   Events.(send @@ Info "Transformed BIR\n");
   Events.(send @@ Info (
       List.map ir ~f:(fun blk -> Format.asprintf "    %a" Blk.pp blk) |>
@@ -83,7 +85,8 @@ let create_vibes_ir
 let compile_one_vibes_ir
     (isel_model_filepath : string option) 
     (count : int KB.t)
-    (patch : Data.Patch.t) : int KB.t =
+    (patch : Data.Patch.t)
+    ~(patch_spaces : Data.Patch_space_set.t) : int KB.t =
   count >>= fun n -> Data.Patch.get_assembly patch >>= begin function
     | Some _asm ->
       Events.(send @@ Info "The patch has no IR to translate.\n");
@@ -92,7 +95,7 @@ let compile_one_vibes_ir
       let info_str =
         Format.sprintf "Translating patch %d BIR to VIBES IR..." n in
       Events.(send @@ Info info_str);
-      create_vibes_ir patch isel_model_filepath
+      create_vibes_ir patch isel_model_filepath ~patch_spaces
       >>= fun (ir, cfg, exclude_regs) ->
       Data.Patch.set_raw_ir patch (Some (ir, cfg)) >>= fun () ->
       Data.Patch.set_exclude_regs patch (Some exclude_regs) >>= fun () ->
@@ -161,10 +164,11 @@ let compile_one_assembly
 let compile_ir ?(isel_model_filepath = None) (obj : Data.t) : unit KB.t =
   Events.(send @@ Header "Starting IR compiler");
   Data.Patched_exe.get_patches obj >>= fun patches ->
+  Data.Original_exe.get_patch_spaces obj >>= fun patch_spaces ->
   let size : string = string_of_int (Data.Patch_set.length patches) in
   Events.(send @@ Info ("There are " ^ size ^ " patch fragments."));
   Data.Patch_set.fold patches ~init:(KB.return 1)
-    ~f:(compile_one_vibes_ir isel_model_filepath) >>= fun _ ->
+    ~f:(compile_one_vibes_ir isel_model_filepath ~patch_spaces) >>= fun _ ->
   Events.(send @@ Info "Done.");
   KB.return ()
 

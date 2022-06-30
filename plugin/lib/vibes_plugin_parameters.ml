@@ -312,10 +312,9 @@ let validate_wp_params (obj : Json.t)
         Option.value_map ~default:false
           ~f:(fun s -> Bool.of_string s)
       in
-      begin match read "init-mem" with
-        | None -> Err.return false
-        | Some "true" -> Err.return true
-        | Some "false" -> Err.return false
+      begin match Json.Util.member "init-mem" p with
+        | `Null -> Err.return false
+        | `Bool b -> Err.return b
         | _ -> Err.fail Errors.Invalid_init_mem
       end >>= fun init_mem ->
       if String.equal func "" then

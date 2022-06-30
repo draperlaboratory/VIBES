@@ -124,8 +124,11 @@ let finalize
     ~(exit_tids : Tid.Set.t)
     ~(hvars : Hvar.t list)
     ~(tgt : Theory.target) : blk term list KB.t =
-  let* exit_tids =
-    let+ blks = Bir_helpers.exit_blks blks in
+  let exit_tids =
+    (* The implicit exit block will have the finalizations. All other
+       exit blocks are assumed to go somewhere else in the program
+       where the storage information is not needed. *)
+    let blks = List.filter blks ~f:Bir_helpers.is_implicit_exit in
     List.map blks ~f:Term.tid |> Tid.Set.of_list in
   KB.List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in

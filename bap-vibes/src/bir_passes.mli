@@ -57,4 +57,4 @@ end
 (** [run patch] creates the BIR from [patch], then applies a series of
     transformations to it. The resulting code is then ready to be handed
     off to the instruction selector. *)
-val run : Data.Patch.t -> t KB.t
+val run : Data.Patch.t -> patch_spaces:Data.Patch_space_set.t -> t KB.t
