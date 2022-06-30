@@ -59,9 +59,9 @@ let dummy_code : Cabs.definition =
 
 (* Get an empty program that can be used in tests. *)
 let prog_exn (proj : (Project.t * string, Error.t) result)
-    : Program.t * string =
+    : Program.t * string * Bap_wp.Utils.Code_addrs.t =
   let p, s = proj_exn proj in
-  (Project.program p, s)
+  (Project.program p, s, Bap_wp.Utils.Code_addrs.empty)
 
 (* Some dummy values that can be used in tests. *)
 let the_target () = Theory.Target.read ~package:"bap" "armv7+le"

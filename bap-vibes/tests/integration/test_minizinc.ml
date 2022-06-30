@@ -110,7 +110,7 @@ let ex1 : Ir.t = {
   blks = [blk1]
 }
 
-let arm_tgt = Arm_target.LE.v7
+let arm_tgt = Arm_target.LE.v7a
 let arm_lang = Arm_target.llvm_a32
 
 (* Ensure minizinc produces the expected output on our sample IR block. *)
