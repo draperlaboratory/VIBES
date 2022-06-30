@@ -601,7 +601,23 @@ module Shape = struct
      branches is limited. We make a conservative estimate of how far these
      jumps are going to be, and if they are over a certain limit (dictated
      by the instruction set manual), then we need to break apart the jump
-     into several blocks. *)
+     into several blocks.
+
+     Before (assume 0x123456 is too far away):
+
+     bcc 0x123456
+     b continue
+
+     After:
+
+     bcc relax
+     b continue
+     relax:
+     b 0x123456
+
+     It's important to run this after the edge contraction optimization,
+     since it will undo any kind of branch relaxation at the BIR level.
+  *)
   let relax_branches
       (patch : Data.Patch.t)
       (blks : blk term list)
@@ -657,6 +673,52 @@ module Shape = struct
           Blk.create () ~tid ~defs ~jmps) in
       blks @ !inserted
 
+  (* This is only meant for when we generate Thumb code.
+
+     Example:
+
+     x := a + 1
+     y := z
+     when x < z goto %00001234
+
+     Gets compiled to:
+
+     movs x, a
+     adds x, 1
+     movs y, z
+     cmp x, z
+     bls blk00001234
+
+     Many simple instructions (data transfer, arithmetic) on Thumb will
+     set the flags if they have a two-byte encoding. Unfortunately, we
+     don't currently model these effects on the flags in the instruction
+     selector (or our Minizinc model), so the scheduler might actually
+     come up with this arrangement:
+
+     movs x, a
+     adds x, 1
+     cmp x, y
+     movs y, z
+     bls blk00001234
+
+     The `movs y, z` has now clobbered the flags and will change the
+     result of the branch taken. This pass will transform the code to:
+
+     movs x, a
+     adds x, 1
+     movs y, z
+     b split
+     split:
+     cmp x, z
+     bls blk00001234
+
+     Here, the block `split` exists only to evaluate the condition and
+     then perform the branch. Later we can remove the `b split` instruction
+     in the peephole optimizer since we can replace it with a fallthrough.
+
+     By making this control transfer explicit we prevent our Minizinc model
+     from changing the ordering of the comparison instruction.
+  *)
   let split_on_conditional (blks : blk term list) : blk term list KB.t =
     let rec go ?(split = Tid.Set.empty) acc = function
       | [] -> KB.return @@ List.rev acc
@@ -741,58 +803,37 @@ module ABI = struct
                 reg (Word.to_string offset) (Hvar.name hvar)))
         | _ -> KB.return ())
 
-  (* `blks` - The transformed patch code.
-     `hvars` - The updated higher vars info, after spilling occurred.
-     `spilled` - The set of spilled variables.
-  *)
-  type spill_result = {
-    blks : blk term list;
-    hvars : Hvar.t list;
-    spilled : String.Set.t;
-  }
+  module Spill = struct
+    (* `blks` - The transformed patch code.
+       `hvars` - The updated higher vars info, after spilling occurred.
+       `spilled` - The set of spilled variables.
+    *)
+    type t = {
+      blks : blk term list;
+      hvars : Hvar.t list;
+      spilled : String.Set.t;
+    }
 
-  (* Spill higher vars in caller-save registers if we are doing any calls
-     in a multi-block patch, since the ABI says they may be clobbered. *)
-  let spill_hvars_and_adjust_stack
-      (blks : blk term list)
-      ~(tgt : Theory.target)
-      ~(sp_align : int)
-      ~(hvars : Hvar.t list)
-      ~(entry_blk : blk term) : spill_result KB.t =
-    let calls = Helper.call_blks blks in
-    if List.is_empty calls || List.length blks = 1
-    then KB.return {blks; hvars; spilled = String.Set.empty}
-    else
-      (* Collect the liveness information. *)
-      let* live =
-        let+ sub = Helper.create_sub blks in
-        Live.compute sub in
-      (* Returns true if the variable is live after a call. *)
-      let live_after_call v = List.exists calls ~f:(fun tid ->
-          let out = Live.outs live tid in
-          Set.exists out ~f:(fun v' -> String.(v = Var.name v'))) in
-      let width = Theory.Target.bits tgt in
-      let stride = Word.of_int ~width (width lsr 3) in
+    let collect_caller_save (tgt : Theory.target)
+        ~(width : int) ~(stride : word) : (word * var) String.Map.t =
       (* Use predetermined stack locations. *)
-      let caller_save =
-        Theory.Target.regs tgt ~roles:Theory.Role.Register.[caller_saved] |>
-        Set.to_list |> List.mapi ~f:(fun i v ->
-            let idx = Word.of_int ~width i in
-            let v = Var.reify v in
-            let name = Var.name v in
-            name, (Word.(stride * idx), v)) |>
-        String.Map.of_alist_exn in
-      let* sp =
-        match Theory.Target.reg tgt Theory.Role.Register.stack_pointer with
-        | Some v -> KB.return @@ Var.reify v
-        | None -> Err.(fail @@ Other (
-            sprintf "No stack pointer register for target %s\n%!"
-              (Theory.Target.to_string tgt))) in
-      (* Preserved and restored registers. *)
-      let preserved = ref String.Set.empty in
-      let restored = ref String.Set.empty in
-      (* Variables that were spilled. *)
-      let spilled = ref String.Set.empty in
+      Theory.Target.regs tgt ~roles:Theory.Role.Register.[caller_saved] |>
+      Set.to_list |> List.mapi ~f:(fun i v ->
+          let idx = Word.of_int ~width i in
+          let v = Var.reify v in
+          let name = Var.name v in
+          name, (Word.(stride * idx), v)) |>
+      String.Map.of_alist_exn
+
+    (* Find out which higher vars we need to spill. *)
+    let spill_hvars
+        (hvars : Hvar.t list)
+        ~(preserved : String.Set.t ref)
+        ~(restored : String.Set.t ref)
+        ~(spilled : String.Set.t ref)
+        ~(live_after_call : string -> bool)
+        ~(caller_save : (word * var) String.Map.t)
+        ~(sp : var) : Hvar.t list KB.t =
       let spill ?(restore = false) name v offset hvar =
         preserved := Set.add !preserved v;
         if restore then restored := Set.add !restored v;
@@ -804,8 +845,7 @@ module ABI = struct
           spilled := Set.add !spilled name;
           Hvar.create_with_memory name ~memory
         end else hvar in
-      (* Find which hvars we need to spill. *)
-      let* hvars' = KB.List.map hvars ~f:(fun hvar ->
+      KB.List.map hvars ~f:(fun hvar ->
           let name = Hvar.name hvar in
           match Hvar.value hvar with
           | Hvar.Registers {at_entry = Some v; at_exit} -> begin
@@ -826,70 +866,128 @@ module ABI = struct
                   then KB.return @@ spill name v offset hvar
                   else KB.return hvar
             end
-          | _ -> KB.return hvar) in
-      (* If we needed to spill or restore, then make sure that other higher
-         vars aren't using stack locations. *)
-      let no_regs = Set.is_empty !preserved && Set.is_empty !restored in
-      let* () =
-        if no_regs then KB.return ()
-        else check_hvars_for_existing_stack_locations sp hvars in
-      (* Do we need to change anything? *)
-      if no_regs && sp_align = 0
-      then KB.return {blks; hvars = hvars'; spilled = !spilled}
+          | _ -> KB.return hvar)
+
+    (* Transform the code to create a stack frame based on the higher vars that
+       were spilled. *)
+    let create_activation_record
+        (blks : blk term list)
+        (hvars : Hvar.t list)
+        ~(preserved : String.Set.t)
+        ~(restored : String.Set.t)
+        ~(spilled : String.Set.t)
+        ~(caller_save : (word * var) String.Map.t)
+        ~(sp : var)
+        ~(mem : var)
+        ~(endian : endian)
+        ~(entry_blk : blk term)
+        ~(space : word) : t KB.t =
+      (* Place a register into a stack location. *)
+      let push v =
+        let open Bil.Types in
+        let off, reg = Map.find_exn caller_save v in
+        let reg = Naming.mark_reg reg in
+        let addr = BinOp (PLUS, Var sp, Int off) in
+        let+ tid = Theory.Label.fresh in
+        Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
+      (* Load a register from a stack location. *)
+      let pop v =
+        let open Bil.Types in
+        let off, reg = Map.find_exn caller_save v in
+        let reg = Naming.mark_reg reg in
+        let addr = BinOp (PLUS, Var sp, Int off) in
+        let+ tid = Theory.Label.fresh in
+        Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
+      (* Create the new defs. *)
+      let* pushes =
+        Set.to_list preserved |> List.rev |> KB.List.map ~f:push in
+      let* pops = Set.to_list restored |> List.rev |> KB.List.map ~f:pop in
+      (* Insert the new defs into the entry/exit blocks accordingly. *)
+      let* exit_tids =
+        let+ exits = Helper.exit_blks blks in
+        List.map exits ~f:Term.tid |> Tid.Set.of_list in
+      let+ blks = KB.List.map blks ~f:(fun blk ->
+          let tid = Term.tid blk in
+          if Tid.(tid = Term.tid entry_blk) then
+            let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
+                let def = Term.set_attr def Helper.spill_tag () in
+                Term.prepend def_t blk def) in
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
+            Term.prepend def_t blk adj
+          else if Set.mem exit_tids tid then
+            let blk = List.fold pops ~init:blk ~f:(fun blk def ->
+                let def = Term.set_attr def Helper.spill_tag () in
+                Term.append def_t blk def) in
+            let+ tid = Theory.Label.fresh in
+            let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
+            Term.append def_t blk adj
+          else KB.return blk) in
+      {blks; hvars; spilled}
+
+    (* Spill higher vars in caller-save registers if we are doing any calls
+       in a multi-block patch, since the ABI says they may be clobbered. *)
+    let spill_hvars_and_adjust_stack
+        (blks : blk term list)
+        ~(tgt : Theory.target)
+        ~(sp_align : int)
+        ~(hvars : Hvar.t list)
+        ~(entry_blk : blk term) : t KB.t =
+      let calls = Helper.call_blks blks in
+      if List.is_empty calls || List.length blks = 1
+      then KB.return {blks; hvars; spilled = String.Set.empty}
       else
-        let mem = Var.reify @@ Theory.Target.data tgt in
-        let endian =
-          if Theory.(Endianness.(Target.endianness tgt = eb))
-          then BigEndian else LittleEndian in
-        (* Predetermined amount of space to allocate on the stack. *)
-        let space =
-          Map.length caller_save * (width lsr 3) |>
-          Int.round_up ~to_multiple_of:(Theory.Target.data_alignment tgt) in
-        let space = Word.of_int ~width @@
-          if no_regs then sp_align else sp_align + space in
-        let sp = Naming.mark_reg sp in
-        (* Place a register into a stack location. *)
-        let push v =
-          let open Bil.Types in
-          let off, reg = Map.find_exn caller_save v in
-          let reg = Naming.mark_reg reg in
-          let addr = BinOp (PLUS, Var sp, Int off) in
-          let+ tid = Theory.Label.fresh in
-          Def.create ~tid mem @@ Store (Var mem, addr, Var reg, endian, `r32) in
-        (* Load a register from a stack location. *)
-        let pop v =
-          let open Bil.Types in
-          let off, reg = Map.find_exn caller_save v in
-          let reg = Naming.mark_reg reg in
-          let addr = BinOp (PLUS, Var sp, Int off) in
-          let+ tid = Theory.Label.fresh in
-          Def.create ~tid reg @@ Load (Var mem, addr, endian, `r32) in
-        (* Create the new defs. *)
-        let* pushes =
-          Set.to_list !preserved |> List.rev |> KB.List.map ~f:push in
-        let* pops = Set.to_list !restored |> List.rev |> KB.List.map ~f:pop in
-        (* Insert the new defs into the entry/exit blocks accordingly. *)
-        let* exit_tids =
-          let+ exits = Helper.exit_blks blks in
-          List.map exits ~f:Term.tid |> Tid.Set.of_list in
-        let+ blks = KB.List.map blks ~f:(fun blk ->
-            let tid = Term.tid blk in
-            if Tid.(tid = Term.tid entry_blk) then
-              let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
-                  let def = Term.set_attr def Helper.spill_tag () in
-                  Term.prepend def_t blk def) in
-              let+ tid = Theory.Label.fresh in
-              let adj = Def.create ~tid sp @@ BinOp (MINUS, Var sp, Int space) in
-              Term.prepend def_t blk adj
-            else if Set.mem exit_tids tid then
-              let blk = List.fold pops ~init:blk ~f:(fun blk def ->
-                  let def = Term.set_attr def Helper.spill_tag () in
-                  Term.append def_t blk def) in
-              let+ tid = Theory.Label.fresh in
-              let adj = Def.create ~tid sp @@ BinOp (PLUS, Var sp, Int space) in
-              Term.append def_t blk adj
-            else KB.return blk) in
-        {blks; hvars = hvars'; spilled = !spilled}
+        (* Collect the liveness information. *)
+        let* live =
+          let+ sub = Helper.create_sub blks in
+          Live.compute sub in
+        (* Returns true if the variable is live after a call. *)
+        let live_after_call v = List.exists calls ~f:(fun tid ->
+            let out = Live.outs live tid in
+            Set.exists out ~f:(fun v' -> String.(v = Var.name v'))) in
+        let width = Theory.Target.bits tgt in
+        let stride = Word.of_int ~width (width lsr 3) in
+        let caller_save = collect_caller_save tgt ~width ~stride in
+        let* sp =
+          match Theory.Target.reg tgt Theory.Role.Register.stack_pointer with
+          | Some v -> KB.return @@ Var.reify v
+          | None -> Err.(fail @@ Other (
+              sprintf "No stack pointer register for target %s\n%!"
+                (Theory.Target.to_string tgt))) in
+        (* Preserved and restored registers. *)
+        let preserved = ref String.Set.empty in
+        let restored = ref String.Set.empty in
+        (* Variables that were spilled. *)
+        let spilled = ref String.Set.empty in
+        (* Find which higher vars to spill. *)
+        let* hvars' = spill_hvars hvars
+            ~preserved ~restored ~spilled
+            ~live_after_call ~caller_save ~sp in
+        (* If we needed to spill or restore, then make sure that other higher
+           vars aren't using stack locations. *)
+        let no_regs = Set.is_empty !preserved && Set.is_empty !restored in
+        let* () =
+          if no_regs then KB.return ()
+          else check_hvars_for_existing_stack_locations sp hvars in
+        (* Do we need to change anything? *)
+        if no_regs && sp_align = 0
+        then KB.return {blks; hvars = hvars'; spilled = !spilled}
+        else
+          let mem = Var.reify @@ Theory.Target.data tgt in
+          let endian =
+            if Theory.(Endianness.(Target.endianness tgt = eb))
+            then BigEndian else LittleEndian in
+          (* Predetermined amount of space to allocate on the stack. *)
+          let space =
+            Map.length caller_save * (width lsr 3) |>
+            Int.round_up ~to_multiple_of:(Theory.Target.data_alignment tgt) in
+          let space = Word.of_int ~width @@
+            if no_regs then sp_align else sp_align + space in
+          let sp = Naming.mark_reg sp in
+          create_activation_record blks hvars'
+            ~preserved:!preserved ~restored:!restored ~spilled:!spilled
+            ~caller_save ~sp ~mem ~endian ~entry_blk ~space
+  end
 
 end
 
@@ -906,6 +1004,10 @@ let run
   let info_str = Format.asprintf "\nPatch: %a\n\n%!" KB.Value.pp code in
   Events.(send @@ Info info_str);
   let* tgt = Data.Patch.get_target patch in
+  let* lang = Data.Patch.get_lang patch in
+  let is_thumb = 
+    String.is_substring ~substring:"thumb" @@
+    Theory.Language.to_string lang in
   let* sp_align = Data.Patch.get_sp_align_exn patch in
   let* hvars = Data.Patch.get_patch_vars_exn patch in
   (* BAP will give us the blks in such an order that the first one is the
@@ -925,8 +1027,8 @@ let run
      they don't implicitly fall through to another block. *)
   let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
-  let* ABI.{blks = ir; hvars; spilled} =
-    ABI.spill_hvars_and_adjust_stack ir
+  let* ABI.Spill.{blks = ir; hvars; spilled} =
+    ABI.Spill.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
   (* Substitute higher vars. *)
   let* ir = Subst.substitute ir ~tgt ~hvars ~spilled
@@ -934,11 +1036,17 @@ let run
   (* Optimization. *)
   let* ir = Shape.reorder_blks ir in
   let* ir = Opt.apply ir in
-  let* ir = Shape.relax_branches patch ir ~patch_spaces in
-  let* ir = Shape.split_on_conditional ir in
-  let* ir = Shape.reorder_blks ir in
   let* sub = Helper.create_sub ir in
   let sub = Opt.Bap_opt.run sub in
+  let ir = Term.enum blk_t sub |> Seq.to_list in
+  (* More shape adjustments. *)
+  let* ir = Shape.relax_branches patch ir ~patch_spaces in
+  let* ir =
+    if is_thumb then Shape.split_on_conditional ir
+    else KB.return ir in
+  let* ir = Shape.reorder_blks ir in
+  (* Get the final CFG. *)
+  let* sub = Helper.create_sub ir in
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
   let* ir = to_linear_ssa patch sub in

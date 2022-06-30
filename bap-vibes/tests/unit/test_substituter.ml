@@ -131,7 +131,7 @@ let test_substitute_1 (_ : test_ctxt) : unit =
     Bil.[
       x := int @@ num_3;
       if_ (var x = int num_3)
-        [rax_reg := var x; jmp (var x)]
+        [jmp (var x)]
         [];
       rax_reg := var x;
     ] |> to_bir

@@ -20,7 +20,6 @@
      "patch-size" : 128,
      "patch-vars": [
        {"name": "retvar",
-	    "at-entry": "R0",
         "at-exit": "R0"
        }
      ]
