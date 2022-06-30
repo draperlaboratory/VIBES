@@ -597,11 +597,31 @@ module Shape = struct
           Tid.(tid <> Term.tid blk')) in
       blks @ [blk]
 
-  (* On some targets such as ARM and Thumb, the allowed range of conditional
-     branches is limited. We make a conservative estimate of how far these
-     jumps are going to be, and if they are over a certain limit (dictated
-     by the instruction set manual), then we need to break apart the jump
-     into several blocks.
+  (* Get the maximum address of each patch site. *)
+  let collect_conservative_patch_points (patch : Data.Patch.t)
+      ~(patch_spaces : Data.Patch_space_set.t)
+      ~(width : int) : word list KB.t =
+    let+ patch_spaces =
+      if Set.is_empty patch_spaces then
+        (* Fall back to the default patch point. *)
+        let* patch_point = Data.Patch.get_patch_point_exn patch in
+        let+ patch_size = Data.Patch.get_patch_size_exn patch in
+        [Bitvec.to_int64 patch_point, Int64.of_int patch_size]
+      else
+        Set.to_list patch_spaces |>
+        KB.List.map ~f:(fun space ->
+            let* offset = Data.Patch_space.get_offset_exn space in
+            let+ size = Data.Patch_space.get_size_exn space in
+            offset, size) in
+    List.map patch_spaces ~f:(fun (offset, size) ->
+        Word.of_int64 ~width Int64.((offset + size) - 4L))
+
+  (* This is only meant for when we generate Thumb code, where the allowed
+     range of conditional branches is limited (it is quite wide on ARM).
+
+     We make a conservative estimate of how far these jumps are going to be,
+     and if they are over a certain limit (dictated by the instruction set
+     manual), then we need to break apart the jump into several blocks.
 
      Before (assume 0x123456 is too far away):
 
@@ -622,56 +642,45 @@ module Shape = struct
       (patch : Data.Patch.t)
       (blks : blk term list)
       ~(patch_spaces : Data.Patch_space_set.t) : blk term list KB.t =
-    if Set.is_empty patch_spaces then KB.return blks
-    else
-      let* tgt = Data.Patch.get_target patch in
-      let width = Theory.Target.code_addr_size tgt in
-      let* patch_spaces =
-        (* Since we don't know how large the patch will be, we will assume
-           that it will be the maximum size (minus 4). *)
-        Set.to_list patch_spaces |>
-        KB.List.filter_map ~f:(fun space ->
-            let* offset = Data.Patch_space.get_offset space in
-            let+ size = Data.Patch_space.get_size space in
-            match offset, size with
-            | Some offset, Some size ->
-              let maximum = Word.of_int64 ~width Int64.((offset + size) - 4L) in
-              Some maximum
-            | _ -> None) in
-      let limit = Word.of_int ~width 0xFFFFE in
-      let inserted = ref [] in
-      let table = Addr.Table.create () in
-      let can_fit addr = List.exists patch_spaces ~f:(fun maximum ->
-          if Word.(maximum > addr) then
-            Word.((maximum - addr) <= limit)
-          else if Word.(addr > maximum) then
-            Word.((addr - maximum) <= limit)
-          else true) in
-      let+ blks = KB.List.map blks ~f:(fun blk ->
-          let+ jmps =
-            Term.enum jmp_t blk |> Seq.to_list |>
-            KB.List.map ~f:(fun jmp ->
-                if Helper.is_unconditional jmp then KB.return jmp
-                else match Jmp.kind jmp with
-                  | Goto (Indirect (Int addr)) as kind -> begin
-                      match Addr.Table.find table addr with
-                      | Some tid ->
-                        KB.return @@ Jmp.with_kind jmp @@ Goto (Direct tid)
-                      | None when can_fit addr -> KB.return jmp
-                      | None ->
-                        let* blk_tid = Theory.Label.fresh in
-                        let+ jmp_tid = Theory.Label.fresh in
-                        let new_jmp = Jmp.create kind ~tid:jmp_tid in
-                        let new_blk = Blk.create () ~jmps:[new_jmp] ~tid:blk_tid in
-                        inserted := new_blk :: !inserted;
-                        Addr.Table.set table ~key:addr ~data:blk_tid;
-                        Jmp.with_kind jmp @@ Goto (Direct blk_tid)
-                    end
-                  | _ -> KB.return jmp) in
-          let defs = Term.enum def_t blk |> Seq.to_list in
-          let tid = Term.tid blk in
-          Blk.create () ~tid ~defs ~jmps) in
-      blks @ !inserted
+    let* tgt = Data.Patch.get_target patch in
+    let width = Theory.Target.code_addr_size tgt in
+    let* patch_points =
+      collect_conservative_patch_points patch ~patch_spaces ~width in
+    let fwd_limit = Word.of_int ~width 0xFFFFE in
+    let bwd_limit = Word.of_int ~width 0x100000 in
+    let inserted = ref [] in
+    let table = Addr.Table.create () in
+    let can_fit addr = List.exists patch_points ~f:(fun maximum ->
+        if Word.(maximum > addr) then
+          Word.((maximum - addr) <= bwd_limit)
+        else if Word.(addr > maximum) then
+          Word.((addr - maximum) <= fwd_limit)
+        else true) in
+    let+ blks = KB.List.map blks ~f:(fun blk ->
+        let+ jmps =
+          Term.enum jmp_t blk |> Seq.to_list |>
+          KB.List.map ~f:(fun jmp ->
+              if Helper.is_unconditional jmp then KB.return jmp
+              else match Jmp.kind jmp with
+                | Goto (Indirect (Int addr)) as kind -> begin
+                    match Addr.Table.find table addr with
+                    | Some tid ->
+                      KB.return @@ Jmp.with_kind jmp @@ Goto (Direct tid)
+                    | None when can_fit addr -> KB.return jmp
+                    | None ->
+                      let* blk_tid = Theory.Label.fresh in
+                      let+ jmp_tid = Theory.Label.fresh in
+                      let new_jmp = Jmp.create kind ~tid:jmp_tid in
+                      let new_blk = Blk.create () ~jmps:[new_jmp] ~tid:blk_tid in
+                      inserted := new_blk :: !inserted;
+                      Addr.Table.set table ~key:addr ~data:blk_tid;
+                      Jmp.with_kind jmp @@ Goto (Direct blk_tid)
+                  end
+                | _ -> KB.return jmp) in
+        let defs = Term.enum def_t blk |> Seq.to_list in
+        let tid = Term.tid blk in
+        Blk.create () ~tid ~defs ~jmps) in
+    blks @ !inserted
 
   (* This is only meant for when we generate Thumb code.
 
@@ -1040,7 +1049,9 @@ let run
   let sub = Opt.Bap_opt.run sub in
   let ir = Term.enum blk_t sub |> Seq.to_list in
   (* More shape adjustments. *)
-  let* ir = Shape.relax_branches patch ir ~patch_spaces in
+  let* ir =
+    if is_thumb then Shape.relax_branches patch ir ~patch_spaces
+    else KB.return ir in
   let* ir =
     if is_thumb then Shape.split_on_conditional ir
     else KB.return ir in
