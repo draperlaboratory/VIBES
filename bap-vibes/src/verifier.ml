@@ -52,18 +52,28 @@ let wp_verifier (p : Params.t) (inputs : Runner.input list) =
 *)
 let verify
     ?(verifier = wp_verifier)
-    ~(orig_prog : Program.t * string)
-    ~(patch_prog : Program.t * string)
+    ~(orig_prog : Program.t * string * Bap_wp.Utils.Code_addrs.t)
+    ~(patch_prog : Program.t * string * Bap_wp.Utils.Code_addrs.t)
     (tgt : Theory.target)
     (params : Params.t) : (next_step, Toplevel_error.t) result =
-  let prog1, name1 = orig_prog in
-  let prog2, name2 = patch_prog in
+  let prog1, name1, code1 = orig_prog in
+  let prog2, name2, code2 = patch_prog in
   Events.(send @@ Header "Starting Verifier");
   Events.(send @@ Info "Beginning weakest-precondition analysis...");
   Events.(send @@ Info (sprintf "Original program: %s" name1));
   Events.(send @@ Info (sprintf "Patched program: %s" name2));
-  let input1 = Runner.{program = prog1; target = tgt; filename = name1} in
-  let input2 = Runner.{program = prog2; target = tgt; filename = name2} in
+  let input1 = Runner.{
+      program = prog1;
+      target = tgt;
+      filename = name1;
+      code_addrs = code1;
+    } in
+  let input2 = Runner.{
+      program = prog2;
+      target = tgt;
+      filename = name2;
+      code_addrs = code2;
+    } in
   let* status =
     verifier params [input1; input2] |>
     Result.map_error ~f:(fun e -> Toplevel_error.WP_failure e) in

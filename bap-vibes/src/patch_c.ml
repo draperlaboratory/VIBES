@@ -1633,7 +1633,7 @@ let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
     Err.fail @@ Patch_c_error (
       Format.asprintf "Unsupported target %a"
         Theory.Target.pp target) in
-  if Theory.Target.matches target "arm" then
+  if Theory.Target.matches target "arm-family" then
     if Theory.Target.bits target = 32
     then KB.return Data_model.{sizes = `ILP32; schar = false}
     else fail ()
