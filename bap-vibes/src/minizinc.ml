@@ -236,7 +236,8 @@ let serialize_mzn_params
   let temp_names =
     List.map ~f:(fun t -> Var.to_string t) temps
   in
-  let hvars = List.filter_map temps ~f:(fun temp -> Linear_ssa.orig_name (Var.to_string temp)) in
+  let hvars = List.filter_map temps ~f:(fun temp ->
+      Linear_ssa.orig_name (Var.to_string temp)) in
   let hvars = String.Set.to_list @@ String.Set.of_list hvars in
   let* class_t =
     key_map_kb operands params.class_

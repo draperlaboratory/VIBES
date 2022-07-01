@@ -50,8 +50,9 @@ let orig_name (name : string) : string option =
   let* name = match String.split name ~on:'_' with
     | [] -> Some name
     | [name] when not @@ String.is_empty name -> Some name
-    | [name; _] -> Some name
-    | _ -> None
+    | l ->
+      let* l = List.drop_last l in
+      Some (String.concat l ~sep:"_")
   in
   if is_reg then Some (Naming.mark_reg_name name) else Some name
 
