@@ -21,6 +21,7 @@ module In = Core_kernel.In_channel
 module Out = Core_kernel.Out_channel
 
 type patch = {
+  name : string;
   assembly : string list;
   orig_loc : int64;
   orig_size : int64;
@@ -323,6 +324,9 @@ let place_patches
   let process_patch (acc, patch_sites) patch =
     let patch_size, literal =
       patch_size lang patch |> Result.ok |> Option.value_exn in
+    Events.send @@ Info (
+      sprintf "Patch %s, size = %Ld\n%!"
+        patch.name Int64.(literal + patch_size));
     let has_literal = literal <> 0L in
     let org_offset =
       (* If we have a literal pool in the patch, then objcopy may insert extra
@@ -426,6 +430,7 @@ let reify_patch
     ~exe_unit:(exe_unit)
     (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
+  let* name = Data.Patch.get_patch_name_exn patch in
   let* patch_point = Data.Patch.get_patch_point_exn patch in
   let* addr = Theory.Label.for_addr patch_point in
   let* unit = KB.collect Theory.Label.unit addr in
@@ -445,9 +450,12 @@ let reify_patch
   let patch_file_offset = Int64.(patch_point - region_addr + region_offset) in
   let* patch_size = Data.Patch.get_patch_size_exn patch in
   let* assembly = Data.Patch.get_assembly_exn patch in
-  KB.return { assembly = assembly;
-              orig_loc = patch_file_offset;
-              orig_size = Int64.of_int patch_size}
+  KB.return {
+    name;
+    assembly;
+    orig_loc = patch_file_offset;
+    orig_size = Int64.of_int patch_size;
+  }
 
 (* Turn a KB patch space into a patch site (the type used by this module to
    represent the same information *)

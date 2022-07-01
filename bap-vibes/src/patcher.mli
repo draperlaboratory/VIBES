@@ -23,6 +23,7 @@ open Bap_core_theory
 module KB = Knowledge
 
 type patch = {
+  name : string;
   assembly : string list;
   orig_loc : int64;
   orig_size : int64;
