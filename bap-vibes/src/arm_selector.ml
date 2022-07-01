@@ -783,24 +783,31 @@ struct
     | None -> Ir.Label tid
     | Some addr -> Ir.Offset (Bitvec.to_int addr |> Word.of_int ~width:32)
 
-  let get_dst (jmp : jmp term) : Ir.operand option KB.t =
+  type dsts = {
+    dst : Ir.operand;
+    ret : Ir.operand option;
+  }
+
+  let get_dsts (jmp : jmp term) : dsts option KB.t =
     let open KB.Syntax in
+    let aux dst = match Jmp.resolve dst with
+      | First dst -> get_label dst >>| Option.return
+      | Second c -> KB.return @@ Option.map
+          ~f:(fun w -> Ir.Offset w) (get_const c) in
     match Jmp.dst jmp, Jmp.alt jmp with
     | Some dst, None ->
-      begin
-        match Jmp.resolve dst with
-        | First dst -> get_label dst >>| Option.return
-        | Second c -> KB.return @@ Option.map
-            ~f:(fun w -> Ir.Offset w) (get_const c)
+      aux dst >>| begin function
+        | Some dst -> Some {dst; ret = None}
+        | None -> None
       end
-    | Some _, Some dst ->
-      begin
-        match Jmp.resolve dst with
-        | First dst -> get_label dst >>| Option.return
-        | Second c -> KB.return @@ Option.map
-            ~f:(fun w -> Ir.Offset w) (get_const c)
+    | Some dst, Some alt -> begin
+        aux dst >>= function
+        | None -> KB.return None
+        | Some ret ->  aux alt >>| function
+          | Some dst -> Some {dst; ret = Some ret}
+          | None -> None
       end
-    | _ -> KB.return @@ None
+    | _ -> KB.return None
 
   let sel_unop (o : unop)
       ~(is_thumb : bool) : (arm_pure -> arm_pure KB.t) KB.t =
@@ -1035,17 +1042,25 @@ struct
       let open KB.Syntax in
       let cond = Jmp.cond jmp in
       let is_call = is_call jmp in
-      get_dst jmp >>= begin function
+      get_dsts jmp >>= begin function
         | None -> Err.(fail @@ Other (
             Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
-        (* NOTE: branches if cond is zero *)
-        | Some dst -> match cond with
-          | Int w when Word.(w <> b0) ->
-            KB.return @@ goto dst call_params ~is_call
-          | _ ->
-            let+ {op_eff = eff; _} =
-              exp cond ~branch:(Some (Branch.create dst ~is_call)) in
-            eff
+        | Some {dst; ret} ->
+          let+ eff = match cond with
+            | Int w when Word.(w <> b0) ->
+              (* Unconditional branch. If cond is zero, this should
+                 have been optimized away. *)
+              KB.return @@ goto dst call_params ~is_call
+            | _ ->
+              (* Conditional branch. *)
+              let branch = Some (Branch.create dst ~is_call) in
+              let+ {op_eff; _} = exp cond ~branch in
+              op_eff in
+          (* If this was a call, then insert the destination we
+             should return to. This often will get optimized away
+             if we're returning to the immediate next block. *)
+          Option.value_map ret ~default:eff ~f:(fun ret ->
+              goto ret [] @. eff)
       end
     | `Phi _ -> KB.return empty_eff
 
