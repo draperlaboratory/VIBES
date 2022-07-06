@@ -32,7 +32,7 @@ type t =
   | Missing_patch_size
   | Missing_lower_patch_code
   | Missing_patch_vars
-  | Missing_patch_space_offset
+  | Missing_patch_space_address
   | Missing_patch_space_size
   | Missing_sp_align
   | Missing_func
@@ -76,7 +76,7 @@ let pp ppf (e : t) =
     | Missing_patch_size -> "No patch size was stashed in KB"
     | Missing_lower_patch_code -> "No lower patch code was stashed in KB"
     | Missing_patch_vars -> "No patch vars were stashed in KB"
-    | Missing_patch_space_offset -> "No patch space offset was stashed in KB"
+    | Missing_patch_space_address -> "No patch space address was stashed in KB"
     | Missing_patch_space_size -> "No patch space size was stashed in KB"
     | Missing_sp_align -> "No SP alignment was provided in KB"
     | Missing_func -> "No function name to verify was stashed in KB"

@@ -157,5 +157,5 @@ let print_c (pp : 'a -> unit) (data : 'a) : string =
     |> String.concat ~sep:"\n"
   in
   Cprint.out := old_chan;
-  Sys.remove tmp_file;
+  Stdlib.Sys.remove tmp_file;
   res

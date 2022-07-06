@@ -195,12 +195,12 @@ module Patch_space : sig
   (* equal, compare, and other things for patch spaces *)
   include Knowledge.Object.S with type t := t
 
-  val offset : (patch_space_cls, int64 option) KB.slot
+  val address : (patch_space_cls, int64 option) KB.slot
   val size : (patch_space_cls, int64 option) KB.slot
 
-  val set_offset : t -> int64 option -> unit KB.t
-  val get_offset : t -> int64 option KB.t
-  val get_offset_exn : t -> int64 KB.t
+  val set_address : t -> int64 option -> unit KB.t
+  val get_address : t -> int64 option KB.t
+  val get_address_exn : t -> int64 KB.t
 
   val set_size : t -> int64 option -> unit KB.t
   val get_size : t -> int64 option KB.t

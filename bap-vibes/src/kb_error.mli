@@ -34,7 +34,7 @@ type t =
   | Missing_patch_size
   | Missing_lower_patch_code
   | Missing_patch_vars
-  | Missing_patch_space_offset
+  | Missing_patch_space_address
   | Missing_patch_space_size
   | Missing_sp_align
   | Missing_func

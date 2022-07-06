@@ -6,7 +6,7 @@
   },
   "ogre": "loader.ogre",
   "patch-space" : [
-    {"offset" : "0x3c8",
+    {"address" : "0x103c8",
      "size" : "24"}
   ],
   "patches" : [

@@ -21,7 +21,7 @@
                 (select init_mem_mod base))))))))"
   },
   "patch-space": [
-    {"offset": "0x510",
+    {"address": "0x10510",
      "size": "512"
     }
   ],

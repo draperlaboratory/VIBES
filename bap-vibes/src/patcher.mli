@@ -65,17 +65,19 @@ type patch_region = {
   region_offset : int64
 }
 
-(** [patch ~patcher obj] uses the [patcher] function to patch the original
+(** [patch ~patcher obj spec] uses the [patcher] function to patch the original
     executable associated with the provided [obj]. *)
 val patch :
-  ?compute_region:(loc:int64 -> Ogre.doc -> patch_region Or_error.t) ->
-  ?patcher:(Theory.language -> filename:string -> placed_patch list -> string) ->
+  ?compute_region:(Ogre.doc -> loc:int64 -> patch_region Or_error.t) ->
+  ?patcher:(Theory.language -> filename:string -> placed_patch list -> int64 -> string) ->
   Data.t ->
+  Ogre.doc ->
   unit KB.t
 
 val place_patches :
   Theory.target ->
   Theory.language ->
+  int64 ->
   patch list ->
   patch_site list ->
   placed_patch list

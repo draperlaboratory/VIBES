@@ -29,7 +29,7 @@ type patch_code = CCode of Cabs.definition | ASMCode of string
 
 (** A type to represent known regions that may be overwritten with patch code *)
 type patch_space = {
-    space_offset : int64;
+    space_address : int64;
     space_size : int64
   }
 

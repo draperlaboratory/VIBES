@@ -610,9 +610,9 @@ module Shape = struct
       else
         Set.to_list patch_spaces |>
         KB.List.map ~f:(fun space ->
-            let* offset = Data.Patch_space.get_offset_exn space in
+            let* address = Data.Patch_space.get_address_exn space in
             let+ size = Data.Patch_space.get_size_exn space in
-            offset, size) in
+            address, size) in
     List.map patch_spaces ~f:(fun (offset, size) ->
         Word.of_int64 ~width Int64.((offset + size) - 4L))
 
