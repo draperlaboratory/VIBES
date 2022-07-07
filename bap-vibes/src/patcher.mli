@@ -62,14 +62,23 @@ type placed_patch = {
    patch *region* within a binary *)
 type patch_region = {
   region_addr : int64;
-  region_offset : int64
+  region_offset : int64;
 }
+
+type compute_region = Ogre.doc -> loc:int64 -> patch_region Or_error.t
+
+type patcher =
+  Theory.language ->
+  filename:string ->
+  placed_patch list ->
+  int64 ->
+  string
 
 (** [patch ~patcher obj spec] uses the [patcher] function to patch the original
     executable associated with the provided [obj]. *)
 val patch :
-  ?compute_region:(Ogre.doc -> loc:int64 -> patch_region Or_error.t) ->
-  ?patcher:(Theory.language -> filename:string -> placed_patch list -> int64 -> string) ->
+  ?compute_region:compute_region ->
+  ?patcher:patcher ->
   Data.t ->
   Ogre.doc ->
   unit KB.t

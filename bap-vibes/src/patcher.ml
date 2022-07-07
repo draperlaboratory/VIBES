@@ -83,8 +83,8 @@ let size_of_literal_pool (l : Theory.language) (filename : string) : int64 =
       Int64.(thumb_padding + consts)
 
 (* Check if a literal pool was inserted at the end of our patch. *)
-let check_for_literal_pool (l : Theory.language) (assembly : string list)
-  : (int64 * string, Kb_error.t) result =
+let check_for_literal_pool (l : Theory.language)
+    (assembly : string list) : (int64 * string, Kb_error.t) result =
   let (let*) x f = Result.bind x ~f in
   (* Write assembly to temporary file *)
   let asm_filename = Stdlib.Filename.temp_file "vibes-assembly" ".asm" in
@@ -103,11 +103,11 @@ let check_for_literal_pool (l : Theory.language) (assembly : string list)
   let info_str = Format.asprintf "Calling %s %s..."
       assembler @@ String.concat ~sep:" " args in
   Events.(send @@ Info info_str);
-  let* _ = Utils.run_process assembler args in
+  let* () = Utils.run_process assembler args in
   let literal = size_of_literal_pool l with_elf_filename in
   Result.return (literal, with_elf_filename)
 
-(** [binary_of_elf] uses external programs to convert assembly code to binary *)
+(* Uses objcopy to convert assembly code to binary *)
 let binary_of_elf (with_elf_filename : string) : (string, Kb_error.t) Result.t =
   let (let*) x f = Result.bind x ~f in
   (* strip elf data *)
@@ -123,18 +123,17 @@ let binary_of_elf (with_elf_filename : string) : (string, Kb_error.t) Result.t =
   let patch_exe = In.read_all raw_bin_filename in
   Ok patch_exe
 
-(**
+(* The implicit size in bytes of the code for an unconditional branch
+   instruction We may need to generalize this number at some point for
+   different architectures and different kinds of jumps.
 
-   [jmp_instr_size] is the implicit size in bytes of the code for an
-   unconditional branch instruction We may need to generalize this
-   number at some point for different architectures and different
-   kinds of jumps.
-
+   Right now, this covers ARM and Thumb encodings. Note that Thumb
+   unconditional branches may be 2 bytes long, but we assume the upper
+   bound.
 *)
 let jmp_instr_size : int64 = 4L
 
-
-(** [build_patch] returns the binary of a patch with the appropriate jumps *)
+(* Returns the binary of a patch with the appropriate jumps *)
 let build_patch
     (l : Theory.language)
     (patch : placed_patch)
@@ -145,12 +144,10 @@ let build_patch
     Printf.sprintf "b (%s + (%Ld))" Constants.patch_start_label abs_addr in
   let patch_relative = Printf.sprintf ".equiv %s, %Ld\n"
       Constants.relative_patch_placement
-      Int64.(patch.patch_loc - patch.orig_loc)
-  in
+      Int64.(patch.patch_loc - patch.orig_loc) in
   let patch_jmp = match patch.jmp with
-    | None -> ""
     | Some j -> abs_jmp Int64.(j - patch.patch_loc)
-  in
+    | None -> "" in
   let patch_loc = Printf.sprintf ".equiv %s, %Ld\n"
       Constants.patch_location Int64.(patch.patch_loc + base_address) in
   let patch_start = Printf.sprintf "%s:" Constants.patch_start_label in
@@ -168,6 +165,10 @@ let build_patch
   let* bin = binary_of_elf objfile in
   Result.return (literal, bin)
 
+(* Returns a lower bound of how many bytes the patch will occupy in memory.
+   Note that the assembler may perform branch relaxation when the patch is
+   later placed at a concrete location, thus increasing the size of the
+   patch. *)
 let patch_size (l : Theory.language) (patch : patch)
     (base_address : int64) : (int64 * int64, Kb_error.t) Result.t =
   let placed_patch = {
@@ -182,8 +183,8 @@ let patch_size (l : Theory.language) (patch : patch)
   Result.map ~f:(fun (literal, b) ->
       String.length b |> Int64.of_int, literal)
 
-(** [patch_file] takes a filename and a list of patch binaries and
-    locations and returns the filename of a patched file *)
+(* Takes a filename and a list of patch binaries and locations and returns
+   the filename of a patched file *)
 let patch_file (lang : Theory.language)
     ~filename:(original_exe_filename : string)
     (patches : placed_patch list)
@@ -191,46 +192,42 @@ let patch_file (lang : Theory.language)
   let tmp_patched_exe_filename =
     Stdlib.Filename.temp_file "vibes-assembly" ".patched" in
   let orig_exe = In.read_all original_exe_filename in
-  Out.with_file tmp_patched_exe_filename
-    ~f:(fun file ->
-        Out.output_string file orig_exe;
-        Core_kernel.List.iter patches
-          ~f:(fun patch ->
-              Out.seek file patch.patch_loc;
-              let patch_binary =
-                build_patch lang patch base_address |>
-                Result.map_error ~f:(Format.asprintf "%a" Kb_error.pp) |>
-                Result.ok_or_failwith |> snd in 
-              (* Shave off the extra bytes at the beginning if we shifted
-                 the patch origin. *)
-              Option.value_map patch.org_offset ~default:patch_binary
-                ~f:(String.drop_prefix patch_binary) |>
-              Out.output_string file
-            ));
+  Out.with_file tmp_patched_exe_filename ~f:(fun file ->
+      Out.output_string file orig_exe;
+      Base.List.iter patches ~f:(fun patch ->
+          Out.seek file patch.patch_loc;
+          let patch_binary =
+            build_patch lang patch base_address |>
+            Result.map_error ~f:(Format.asprintf "%a" Kb_error.pp) |>
+            Result.ok_or_failwith |> snd in
+          (* Shave off the extra bytes at the beginning if we shifted
+             the patch origin. *)
+          Option.value_map patch.org_offset ~default:patch_binary
+            ~f:(String.drop_prefix patch_binary) |>
+          Out.output_string file));
   tmp_patched_exe_filename
 
+(* Finds a region called "vibes_dummy" and returns a patch site associated
+   with it.
 
-(** [naive_find_patch_sites] finds a region called "vibes_dummy" and
-    returns a [patch_site] associated with it.
-
-    TODO: Extend to other named regions, and use the Bap knowledge
-    base. *)
+   TODO: Extend to other named regions, and use the Knowledge Base.
+*)
 let naive_find_patch_sites (filename : string) : patch_site list =
   (* TODO: Surely there must be a better way *)
-  let command =
-    Printf.sprintf
-      "objdump %s -dF 2>&1 | grep vibes_dummy | grep -oP \"(?<=File Offset: 0x)([0-9a-fA-F]+)\""
-      filename
-  in
+  let command = Printf.sprintf
+      "objdump %s -dF 2>&1 | \
+       grep vibes_dummy | \
+       grep -oP \"(?<=File Offset: 0x)([0-9a-fA-F]+)\""
+      filename in
   let in_channel = Caml_unix.open_process_in command in
   match In_channel.input_line in_channel with
   | None -> []
-  | Some addr_string ->
-    let location = Scanf.sscanf addr_string "%Lx" (fun i -> i) in
-    [{location; size = 128L}]
+  | Some addr_string -> [{
+      location = Scanf.sscanf addr_string "%Lx" (fun i -> i);
+      size = 128L;
+    }]
 
-(** [exact_fit_patch] builds a placed_patch that fits exactly in the
-    old location *)
+(* Builds a placed_patch that fits exactly in the old location *)
 let exact_fit_patch ?(org_offset : int option = None)
     (patch : patch) : placed_patch = {
   assembly = patch.assembly;
@@ -241,10 +238,9 @@ let exact_fit_patch ?(org_offset : int option = None)
   org_offset;
 }
 
-(** [loose_fit_patch] builds a placed_patch that fits loosely in the
-    old location and hence needs an extra jump placed. This also
-    returns the remainder of the space as a [patch_site] for possible
-    further patch placement *)
+(* Builds a placed_patch that fits loosely in the old location and
+   hence needs an extra jump placed. This also returns the remainder
+   of the space as a [patch_site] for possible further patch placement *)
 let loose_fit_patch ?(org_offset : int option = None)
     (patch : patch) (patch_size : int64) : placed_patch * patch_site =
   let open Int64 in
@@ -258,10 +254,12 @@ let loose_fit_patch ?(org_offset : int option = None)
   } in
   (placed_patch, patch_site)
 
-(** [external_patch_site] places a patch at an external [patch_loc]
-    location. This function returns two [placed_patch]. The first is
-    the jump to the patch that goes where the original code was.  The
-    second is the patch itself. *)
+(* Places a patch at an external patch location. This function returns
+   two placed patches:
+
+   1. A jump to the patch code that is placed at the original patch site.
+   2. The patch code itself.
+*)
 let external_patch_site
     ?(org_offset : int option = None)
     (patch : patch)
@@ -271,7 +269,7 @@ let external_patch_site
   let jmp_to_patch = {
     placed_patch with
     assembly = [];
-    jmp = Some patch_loc
+    jmp = Some patch_loc;
   } in
   let placed_patch = {
     placed_patch with
@@ -279,31 +277,27 @@ let external_patch_site
     jmp = Some (patch.orig_size + patch.orig_loc);
     org_offset;
   } in
-  (jmp_to_patch, placed_patch)
+  jmp_to_patch, placed_patch
 
-(** [find_site_greedy] goes through a [patch_site] list and finds the
-    first one in which a patch of size [patch_size] can fit. It then
-    returns the address of this site and a modified [patch_site] list
-    with those locations removed.*)
-let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
-  : int64 * patch_site list =
+(* Goes through a patch site list and finds the first one in which a patch
+   of the requested size can fit. It then returns the address of this site
+   and a modified patch site list with those locations removed. *)
+let find_site_greedy (patch_sites : patch_site list)
+    (patch_size : int64) : int64 * patch_site list =
   let open Int64 in
-  let rec find_site_aux patch_sites =
-    match patch_sites with
+  let rec find_site_aux = function
     (* FIXME: fail more gracefully here *)
     | [] -> failwith @@
       sprintf "Couldn't fit patch anywhere (%Ld bytes long)" patch_size
-    | p :: ps -> if p.size >= patch_size
-      then
-        let new_patch_site = {
-          location = p.location + patch_size;
-          size = p.size - patch_size
-        } in
-        (p.location, new_patch_site :: ps)
-      else
-        let (loc, ps) = find_site_aux ps in
-        (loc, p :: ps)
-  in
+    | p :: ps when p.size >= patch_size ->
+      let new_patch_site = {
+        location = p.location + patch_size;
+        size = p.size - patch_size;
+      } in
+      p.location, new_patch_site :: ps
+    | p :: ps ->
+      let loc, ps = find_site_aux ps in
+      loc, p :: ps in
   find_site_aux patch_sites
 
 (* If we have a literal pool in the patch, then objcopy may insert extra
@@ -334,7 +328,8 @@ let find_site_greedy (patch_sites : patch_site list) (patch_size : int64)
       starting position of 0, so objcopy won't insert padding behind our
       backs, and thus our PC-relative offsets remain consistent.
 *)
-let calc_org_offset (has_literal : bool) (loc : int64) (align : int64) =
+let calc_org_offset (has_literal : bool) (loc : int64)
+    (align : int64) : int option =
   let open Int64 in
   if has_literal then
     (* Is the patch location aligned? *)
@@ -342,9 +337,8 @@ let calc_org_offset (has_literal : bool) (loc : int64) (align : int64) =
     if align_loc <> 0L then Some (to_int_exn align_loc) else None
   else None
 
-(** [place_patches] given patches and patch_sites, find a way to split and
-    pack patches. At the moment it is just greedy.
-*)
+(* Given a list of patches and a list of patch sites, find a way to split and
+   pack the patches into the binary. At the moment it is just greedy. *)
 let place_patches
     (tgt : Theory.target)
     (lang : Theory.language)
@@ -414,39 +408,33 @@ let place_patches
          patch_sites here. *)
       (jmp_to_patch :: placed_patch  :: acc , patch_sites)
     end in
-  fst @@ List.fold patches
-    ~init:([], patch_sites)
-    ~f:process_patch
+  fst @@ List.fold patches ~init:([], patch_sites) ~f:process_patch
 
 (* A datatype that encodes the code region that shall contain the placed patch.
    Usually computed by an invocation to ogre on the [Image.Scheme.code_region]
    associated to the code unit.
 *)
-type patch_region = { region_addr : int64; region_offset : int64 }
+type patch_region = {
+  region_addr : int64;
+  region_offset : int64;
+}
 
 let ogre_compute_region (spec : Ogre.doc)
-    ~loc:(patch_point : int64) : patch_region Or_error.t =
-  let code_region =
-    Ogre.eval
-      (Ogre.require
-         ~that:Int64.(fun (addr,size,_) ->
-             addr <= patch_point && patch_point <= addr + size)
-         Image.Scheme.code_region) spec
-  in
-  Or_error.map code_region
-    ~f:(fun (addr, _size, offset) ->
-        { region_addr = addr; region_offset = offset })
+    ~(loc : int64) : patch_region Or_error.t =
+  let query = Ogre.require ~that:(fun (addr, size, _) ->
+      Int64.(addr <= loc && loc <= addr + size))
+      Image.Scheme.code_region in
+  let code_region = Ogre.eval query spec in
+  Or_error.map code_region ~f:(fun (addr, _, offset) -> {
+        region_addr = addr;
+        region_offset = offset
+      })
 
-
-(** [reify_patch] gets out of the knowledge base all the information to fill the
-    [patch] data type. It performs some translation of address space numbers to
-    file offsets.
-    See https://gitter.im/BinaryAnalysisPlatform/vibes?at=6011cca5aa6a6f319de9381d
-    for more discussion of this.
-*)
+(* Extracts from the Knowledge Base all the information to fill the patch
+   data type. It performs some translation of address space numbers to file
+   offsets. *)
 let reify_patch
-    ~compute_region:(compute_region)
-    ~exe_unit:(exe_unit)
+    ~(compute_region : loc:int64 -> patch_region Or_error.t)
     (patch : Data.Patch.t) : patch KB.t =
   let open KB.Let in
   let* name = Data.Patch.get_patch_name patch in
@@ -454,10 +442,9 @@ let reify_patch
   let* patch_point = Data.Patch.get_patch_point_exn patch in
   let patch_point = Bitvec.to_int64 patch_point in
   let patch_region = compute_region ~loc:patch_point in
-  let* {region_addr; region_offset} = match patch_region with
-    | Error s -> Kb_error.fail @@ Other (Core_kernel.Error.to_string_hum s)
-    | Ok c -> KB.return c
-  in
+  let* {region_addr; region_offset; _} = match patch_region with
+    | Error s -> Kb_error.fail @@ Other (Base.Error.to_string_hum s)
+    | Ok c -> KB.return c in
   (* The distance of patch address from region start address is calculated
      and then added to the region file offset to get the patch file offset *)
   let patch_file_offset = Int64.(patch_point - region_addr + region_offset) in
@@ -485,19 +472,23 @@ let reify_patch_site (obj : Data.Patch_space.t)
 let reify_patch_sites (obj : Data.t)
     (base_address : int64) : patch_site list KB.t =
   let open KB.Let in
-  let* patch_space_set : Data.Patch_space_set.t =
-    Data.Original_exe.get_patch_spaces obj
-  in
-  let patch_spaces : Data.Patch_space.t list =
-    Data.Patch_space_set.to_list patch_space_set
-  in
-  KB.List.map patch_spaces ~f:(fun o ->
+  let* patch_space_set = Data.Original_exe.get_patch_spaces obj in
+  Set.to_list patch_space_set |> KB.List.map ~f:(fun o ->
       reify_patch_site o base_address)
+
+type compute_region = Ogre.doc -> loc:int64 -> patch_region Or_error.t
+
+type patcher =
+  Theory.language ->
+  filename:string ->
+  placed_patch list ->
+  int64 ->
+  string
 
 (* Patches the original exe, to produce a patched exe. *)
 let patch
-    ?compute_region:(compute_region=ogre_compute_region)
-    ?patcher:(patcher=patch_file)
+    ?(compute_region : compute_region = ogre_compute_region)
+    ?(patcher : patcher = patch_file)
     (obj : Data.t)
     (spec : Ogre.doc) : unit KB.t =
   let open KB.Let in
@@ -514,7 +505,7 @@ let patch
   let* patches = Data.Patched_exe.get_patches obj in
   let patch_list = Data.Patch_set.to_list patches in
   let compute_region = compute_region spec in
-  let reify_patch = reify_patch ~compute_region ~exe_unit:original_exe_unit in
+  let reify_patch = reify_patch ~compute_region in
   let* patch_list = KB.List.map ~f:reify_patch patch_list in
   let naive_patch_sites = naive_find_patch_sites original_exe_filename in
   let* provided_patch_sites = reify_patch_sites obj base_address in
