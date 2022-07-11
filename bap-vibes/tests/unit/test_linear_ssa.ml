@@ -96,7 +96,7 @@ let test_transform (_ : test_ctxt) : unit =
   let computation =
     let open KB.Syntax in
     KB.Object.create Dummy_kb.cls >>= fun obj ->
-    Linear_ssa.transform sub >>= fun blks ->
+    Linear_ssa.transform [] sub >>= fun blks ->
     KB.provide Dummy_kb.blks obj (Some blks) >>= fun () ->
     KB.return obj in
   let result =  match KB.run Dummy_kb.cls computation KB.empty with

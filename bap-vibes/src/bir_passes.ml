@@ -1003,8 +1003,9 @@ end
 (* VIBES IR requires linear SSA form. *)
 let to_linear_ssa
     (patch : Data.Patch.t)
+    (hvars : Higher_var.t list)
     (sub : sub term) : blk term list KB.t =
-  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
+  sub |> Sub.ssa |> Linear_ssa.transform hvars ~patch:(Some patch)
 
 let run
     (patch : Data.Patch.t)
@@ -1060,5 +1061,5 @@ let run
   let* sub = Helper.create_sub ir in
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
-  let* ir = to_linear_ssa patch sub in
+  let* ir = to_linear_ssa patch hvars sub in
   KB.return {ir; cfg; exclude_regs = String.Set.empty; argument_tids}
