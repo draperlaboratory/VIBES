@@ -610,9 +610,9 @@ module Shape = struct
       else
         Set.to_list patch_spaces |>
         KB.List.map ~f:(fun space ->
-            let* offset = Data.Patch_space.get_offset_exn space in
+            let* address = Data.Patch_space.get_address_exn space in
             let+ size = Data.Patch_space.get_size_exn space in
-            offset, size) in
+            address, size) in
     List.map patch_spaces ~f:(fun (offset, size) ->
         Word.of_int64 ~width Int64.((offset + size) - 4L))
 
@@ -751,6 +751,45 @@ module Shape = struct
             else KB.return (b, bs, split) in
         go (b :: acc) bs ~split in
     go [] blks
+
+  (* If BAP gave us a block with a call of the form:
+
+     `when cond call x with return y`
+
+     Then we need to turn this into:
+
+     `when cond goto z`
+
+     Where `z` contains:
+
+     `call x with return y`
+  *)
+  let split_conditional_calls (blks : blk term list) : blk term list KB.t =
+    let inserted = ref [] in
+    let rec go acc = function
+      | [] -> KB.return @@ List.rev acc
+      | b :: bs ->
+        let* b =
+          let+ jmps =
+            Term.enum jmp_t b |> Seq.to_list |>
+            KB.List.map ~f:(fun jmp -> match Jmp.kind jmp with
+                | Call call when not @@ Bir_helpers.is_unconditional jmp ->
+                  let tid = Term.tid jmp in
+                  let* blk_tid = Theory.Label.fresh in
+                  let+ jmp_tid = Theory.Label.fresh in
+                  let cond = Jmp.cond jmp in
+                  let new_jmp = Jmp.create_call ~tid:jmp_tid call in
+                  let new_blk = Blk.create () ~tid:blk_tid ~jmps:[new_jmp] in
+                  inserted := new_blk :: !inserted;
+                  Jmp.create_goto ~tid ~cond @@ Direct blk_tid
+                | _ -> KB.return jmp) in
+          Blk.create () ~jmps
+            ~tid:(Term.tid b)
+            ~defs:(Term.enum def_t b |> Seq.to_list)
+            ~phis:(Term.enum phi_t b |> Seq.to_list) in
+        go (b :: acc) bs in
+    let+ blks = go [] blks in
+    blks @ !inserted
 
 end
 
@@ -1003,8 +1042,9 @@ end
 (* VIBES IR requires linear SSA form. *)
 let to_linear_ssa
     (patch : Data.Patch.t)
+    (hvars : Higher_var.t list)
     (sub : sub term) : blk term list KB.t =
-  sub |> Sub.ssa |> Linear_ssa.transform ~patch:(Some patch)
+  sub |> Sub.ssa |> Linear_ssa.transform hvars ~patch:(Some patch)
 
 let run
     (patch : Data.Patch.t)
@@ -1036,6 +1076,7 @@ let run
      they don't implicitly fall through to another block. *)
   let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
+  let* ir = Shape.split_conditional_calls ir in
   let* ABI.Spill.{blks = ir; hvars; spilled} =
     ABI.Spill.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
@@ -1060,5 +1101,5 @@ let run
   let* sub = Helper.create_sub ir in
   let cfg = Sub.to_graph sub in
   (* Linear SSA form is needed for VIBES IR. *)
-  let* ir = to_linear_ssa patch sub in
+  let* ir = to_linear_ssa patch hvars sub in
   KB.return {ir; cfg; exclude_regs = String.Set.empty; argument_tids}

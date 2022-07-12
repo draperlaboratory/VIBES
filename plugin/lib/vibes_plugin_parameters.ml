@@ -230,18 +230,20 @@ let validate_patch_space (obj : Json.t)
   let top_level_err = Errors.Invalid_patch_spaces
     "Each item in the patch-space list must be a JSON object."
   in
-  let offset_err = Errors.Invalid_patch_spaces
-    "Error parsing `offset` field, which must be a bitvector string."
+  let address_err = Errors.Invalid_patch_spaces
+    "Error parsing `address` field, which must be a bitvector string."
   in
   let size_err = Errors.Invalid_patch_spaces
     "Error parsing `size` field, which must be an integer string."
   in
   match obj with
   | `Assoc data ->
-     validate_int64_field "offset" data offset_err >>= fun offset ->
+     validate_int64_field "address" data address_err >>= fun address ->
      validate_int64_field "size" data size_err >>= fun size ->
-     Err.return { Vibes_config.space_offset = offset ;
-                  Vibes_config.space_size = size }
+     Err.return Vibes_config.{
+       space_address = address;
+       space_size = size;
+     }
   | _ -> Err.fail top_level_err
 
 (* Extract and validate the patch_space list, or error. *)

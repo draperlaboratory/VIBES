@@ -45,7 +45,8 @@ let create_patched_exe ~seed:(seed : Seeder.t) (config : Config.t)
     (proj : project) : Data.t KB.t =
   let* obj = Seeder.init_KB config proj ~seed:(Some seed) in
   let* () = Compiler.compile_assembly obj in
-  let* () = Patcher.patch obj in
+  let spec = Project.specification proj in
+  let* () = Patcher.patch obj spec in
   KB.return obj
 
 (* Each time we produce a patch, we give it a tmp filepath. This function

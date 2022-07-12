@@ -23,6 +23,7 @@ open Bap_core_theory
 module KB = Knowledge
 
 type patch = {
+  name : string;
   assembly : string list;
   orig_loc : int64;
   orig_size : int64;
@@ -61,20 +62,31 @@ type placed_patch = {
    patch *region* within a binary *)
 type patch_region = {
   region_addr : int64;
-  region_offset : int64
+  region_offset : int64;
 }
 
-(** [patch ~patcher obj] uses the [patcher] function to patch the original
+type compute_region = Ogre.doc -> loc:int64 -> patch_region Or_error.t
+
+type patcher =
+  Theory.language ->
+  filename:string ->
+  placed_patch list ->
+  int64 ->
+  string
+
+(** [patch ~patcher obj spec] uses the [patcher] function to patch the original
     executable associated with the provided [obj]. *)
 val patch :
-  ?compute_region:(loc:int64 -> Ogre.doc -> patch_region Or_error.t) ->
-  ?patcher:(Theory.language -> filename:string -> placed_patch list -> string) ->
+  ?compute_region:compute_region ->
+  ?patcher:patcher ->
   Data.t ->
+  Ogre.doc ->
   unit KB.t
 
 val place_patches :
   Theory.target ->
   Theory.language ->
+  int64 ->
   patch list ->
   patch_site list ->
   placed_patch list

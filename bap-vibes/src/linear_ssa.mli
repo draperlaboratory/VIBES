@@ -52,4 +52,8 @@ val congruent : Var.t -> Var.t -> bool
 
 (** [tranform s] takes the subroutine [s] and converts it into the linear
     SSA form described above, returning the blocks only. *)
-val transform : ?patch:Data.Patch.t option -> Sub.t -> Blk.t list KB.t
+val transform :
+  ?patch:Data.Patch.t option ->
+  Higher_var.t list ->
+  Sub.t ->
+  Blk.t list KB.t

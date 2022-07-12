@@ -50,8 +50,9 @@ let orig_name (name : string) : string option =
   let* name = match String.split name ~on:'_' with
     | [] -> Some name
     | [name] when not @@ String.is_empty name -> Some name
-    | [name; _] -> Some name
-    | _ -> None
+    | l ->
+      let* l = List.drop_last l in
+      Some (String.concat l ~sep:"_")
   in
   if is_reg then Some (Naming.mark_reg_name name) else Some name
 
@@ -202,6 +203,7 @@ let linearize_blk (blk : blk term) : blk term linear =
    edges in the CFG.
 *)
 let compute_liveness_and_expand_phis
+    (hvars : Higher_var.t list)
     (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) KB.t =
   let open KB.Let in
   let liveness = Live.compute sub in
@@ -215,27 +217,46 @@ let compute_liveness_and_expand_phis
             Phi.values phi |> Seq.fold ~init ~f:(fun m (tid, e) ->
                 Map.add_multi m ~key:tid ~data:(lhs, e)))) in
   (* Insert these pseudo-definitions. *)
-  let* blks =
-    KB.List.map blks ~f:(fun blk ->
-        match Map.find phi_map @@ Term.tid blk with
-        | None -> KB.return blk
-        | Some defs ->
-          let builder = Blk.Builder.init blk
-              ~same_tid:true
-              ~copy_phis:true
-              ~copy_defs:true
-              ~copy_jmps:true in
-          let* () =
-            KB.List.iter defs ~f:(fun (lhs, e) ->
-                let+ tid = Theory.Label.fresh in
-                let def = Def.create ~tid lhs e in
-                Blk.Builder.add_def builder def) in
-          let blk = Blk.Builder.result builder in
-          KB.return blk) in
+  let* blks = KB.List.map blks ~f:(fun blk ->
+      match Map.find phi_map @@ Term.tid blk with
+      | None -> KB.return blk
+      | Some defs ->
+        let builder = Blk.Builder.init blk
+            ~same_tid:true  ~copy_phis:true
+            ~copy_defs:true ~copy_jmps:true in
+        let* () = KB.List.iter defs ~f:(fun (lhs, e) ->
+            let+ tid = Theory.Label.fresh in
+            let def = Def.create ~tid lhs e in
+            Blk.Builder.add_def builder def) in
+        KB.return @@ Blk.Builder.result builder) in
   (* Get the linearized ins and outs. *)
   let ins_outs_map = List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       let outs = Live.outs liveness tid in
+      let outs =
+        (* Implicit exit blocks will have the `at-exit` finalizers,
+           if they exist. *)
+        if Bir_helpers.is_implicit_exit blk then
+          (* Get all of the finalizers, which are assignments to
+             preassigned registers. *)
+          let vars =
+            Term.enum def_t blk |> Seq.map ~f:Def.lhs |>
+            Seq.filter ~f:(fun v -> Option.is_some @@ Naming.unmark_reg v) in
+          (* Compare the higher var storage information with the
+             existing var. We need the SSA'd name of this var. *)
+          let same reg v =
+            String.equal (Naming.mark_reg_name reg) @@
+            Var.name @@ Var.base v in
+          (* For each higher var we intended to finalize, add them
+             to the set of live outs for this block. *)
+          List.fold hvars ~init:outs ~f:(fun outs -> function
+              | {value = Registers ({at_exit = Some reg; _}); _} -> begin
+                  match Seq.find vars ~f:(same reg) with
+                  | Some v -> Set.add outs v
+                  | None -> outs
+                end
+              | _ -> outs)
+        else outs in
       let ins = Live.ins liveness tid in
       let prefix = prefix_from blk in
       let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
@@ -251,9 +272,10 @@ let all_ins_outs_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
 
 let transform
     ?(patch : Data.Patch.t option = None)
+    (hvars : Higher_var.t list)
     (sub : sub term) : blk term list KB.t =
   let open KB.Let in
-  let* blks, ins_outs_map = compute_liveness_and_expand_phis sub in
+  let* blks, ins_outs_map = compute_liveness_and_expand_phis hvars sub in
   let blks, Linear.Env.{vars; _} =
     Linear.(run (List.map blks ~f:linearize_blk) Env.empty) in
   (* Add in live variables that persist across blocks that don't use them *)

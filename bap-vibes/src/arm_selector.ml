@@ -324,6 +324,10 @@ module ARM_ops = struct
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
 
+    (* These are only available on Thumb. *)
+    let cbz = op "cbz"
+    let cbnz = op "cbnz"
+
   end
 
   let create_temp ty =
@@ -333,28 +337,16 @@ module ARM_ops = struct
   (* Helper data structure for generating conditional branches. *)
   module Branch = struct
 
-    (* `generate` accepts the condition `cnd`, the flag pseudo-operand 
+    (* A thunk that accepts the condition `cnd`, the flag pseudo-operand
        `flg` and returns the corresponding branch instruction, along with
        the fake destination operand. `flg` is to mark the status flags
-       as a dependency of the branch instruction.
+       as a dependency of the branch instruction. *)
+    type t = cnd:Cond.t -> flg:Ir.operand -> Ir.operation * Ir.operand
 
-       `is_call` denotes whether this is a conditional call or not.
-    *)
-    type t = {
-      generate : cnd:Cond.t -> flg:Ir.operand -> Ir.operation * Ir.operand;
-      is_call : bool;
-    }
-
-    let create (dst : Ir.operand) ~(is_call : bool) : t = {
-      generate = (fun ~cnd ~flg ->
-          let cnd = Some cnd in
-          let opcode =
-            if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
-          let tmp = Ir.Void (create_temp bit_ty) in
-          let op = Ir.simple_op opcode tmp [dst; flg] in
-          op, tmp);
-      is_call;
-    }
+    let create (dst : Ir.operand) : t = fun ~cnd ~flg ->
+      let tmp = Ir.Void (create_temp bit_ty) in
+      let op = Ir.simple_op (Ops.b () ~cnd:(Some cnd)) tmp [dst; flg] in
+      op, tmp
 
   end
 
@@ -614,7 +606,7 @@ module ARM_ops = struct
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
     let sem = arg1_sem @. arg2_sem in
     match branch with
-    | Some {generate; is_call} ->
+    | Some generate ->
       (* The comparison is used by a branch instruction, so use the
          `generate` function to add it to the ctrl semantics. It should
          be the only one in the current block. *)
@@ -783,24 +775,31 @@ struct
     | None -> Ir.Label tid
     | Some addr -> Ir.Offset (Bitvec.to_int addr |> Word.of_int ~width:32)
 
-  let get_dst (jmp : jmp term) : Ir.operand option KB.t =
+  type dsts = {
+    dst : Ir.operand;
+    ret : Ir.operand option;
+  }
+
+  let get_dsts (jmp : jmp term) : dsts option KB.t =
     let open KB.Syntax in
+    let aux dst = match Jmp.resolve dst with
+      | First dst -> get_label dst >>| Option.return
+      | Second c -> KB.return @@ Option.map
+          ~f:(fun w -> Ir.Offset w) (get_const c) in
     match Jmp.dst jmp, Jmp.alt jmp with
     | Some dst, None ->
-      begin
-        match Jmp.resolve dst with
-        | First dst -> get_label dst >>| Option.return
-        | Second c -> KB.return @@ Option.map
-            ~f:(fun w -> Ir.Offset w) (get_const c)
+      aux dst >>| begin function
+        | Some dst -> Some {dst; ret = None}
+        | None -> None
       end
-    | Some _, Some dst ->
-      begin
-        match Jmp.resolve dst with
-        | First dst -> get_label dst >>| Option.return
-        | Second c -> KB.return @@ Option.map
-            ~f:(fun w -> Ir.Offset w) (get_const c)
+    | Some dst, Some alt -> begin
+        aux dst >>= function
+        | None -> KB.return None
+        | Some ret ->  aux alt >>| function
+          | Some dst -> Some {dst; ret = Some ret}
+          | None -> None
       end
-    | _ -> KB.return @@ None
+    | _ -> KB.return None
 
   let sel_unop (o : unop)
       ~(is_thumb : bool) : (arm_pure -> arm_pure KB.t) KB.t =
@@ -1008,45 +1007,83 @@ struct
     let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
     if swap then o rhs lhs else o lhs rhs
 
+  and select_def
+      (def : def term)
+      ~(patch : Data.Patch.t option)
+      ~(is_thumb : bool) : arm_eff KB.t =
+    let exp = select_exp ~patch ~is_thumb in
+    let lhs = Def.lhs def in
+    let rhs = Def.rhs def in
+    let mov = arm_mov ~is_thumb in
+    match Var.typ lhs with
+    | Imm _ | Unk ->
+      let* rhs = exp rhs ~lhs:(Some lhs) in
+      let lhs = Ir.Var (Ir.simple_var lhs) in
+      mov lhs rhs
+    | Mem _ ->
+      let lhs_mem = Ir.Void (Ir.simple_var lhs) in
+      (* We don't need to pass the lhs for mem assign, since
+         none of the patterns we match against will apply here. *)
+      let* rhs = exp rhs in
+      mov lhs_mem rhs
+
+  and select_jmp
+      (jmp : jmp term)
+      (call_params : Ir.operand list)
+      ~(patch : Data.Patch.t option)
+      ~(is_thumb : bool) : arm_eff KB.t =
+    let open KB.Syntax in
+    let exp = select_exp ~patch ~is_thumb in
+    let cond = Jmp.cond jmp in
+    let is_call = is_call jmp in
+    get_dsts jmp >>= function
+    | None -> Err.fail @@ Other (
+        Format.asprintf "Unexpected branch: %a" Jmp.pp jmp)
+    | Some {dst; ret} ->
+      (* On Thumb we can match a comparison with zero and generate
+         `cbz` or `cbnz` without having to test the flags. *)
+      let is_cbz w = is_thumb && not is_call && Word.is_zero w in
+      let cbz ?(neg = false) e =
+        let+ {op_val; op_eff} = exp e in
+        let tmp = create_temp bit_ty in
+        let params = [op_val; dst] in
+        let op = if neg then Ops.cbnz else Ops.cbz in
+        let ctrl = control (Ir.simple_op op (Void tmp) params) empty_eff in
+        ctrl @. op_eff in
+      let+ eff = match cond with
+        | Int w when Word.(w <> b0) ->
+          (* Unconditional branch. If cond is zero, this should
+             have been optimized away. *)
+          KB.return @@ goto dst call_params ~is_call
+        | BinOp (EQ, e, Int w)  when is_cbz w -> cbz e
+        | BinOp (EQ, Int w, e)  when is_cbz w -> cbz e
+        | BinOp (NEQ, e, Int w) when is_cbz w -> cbz e ~neg:true
+        | BinOp (NEQ, Int w, e) when is_cbz w -> cbz e ~neg:true
+        | _ ->
+          (* Conditional branch. *)
+          let* () =
+            if is_call then
+              Err.fail @@ Other (
+                Format.asprintf "Unsupported conditional call: %a"
+                  Jmp.pp jmp)
+            else KB.return () in
+          let branch = Some (Branch.create dst) in
+          let+ {op_eff; _} = exp cond ~branch in
+          op_eff in
+      (* If this was a call, then insert the destination we
+         should return to. This often will get optimized away
+         if we're returning to the immediate next block. *)
+      Option.value_map ret ~default:eff ~f:(fun ret ->
+          goto ret [] @. eff)
+
   and select_stmt
       (call_params : Ir.operand list)
       (s : Blk.elt)
       ~(patch : Data.Patch.t option)
       ~(is_thumb : bool) : arm_eff KB.t =
-    let exp = select_exp ~patch ~is_thumb in
     match s with
-    | `Def t -> begin
-        let lhs = Def.lhs t in
-        let rhs = Def.rhs t in
-        let mov = arm_mov ~is_thumb in
-        match Var.typ lhs with
-        | Imm _ | Unk ->
-          let* rhs = exp rhs ~lhs:(Some lhs) in
-          let lhs = Ir.Var (Ir.simple_var lhs) in
-          mov lhs rhs
-        | Mem _ ->
-          let lhs_mem = Ir.Void (Ir.simple_var lhs) in
-          (* We don't need to pass the lhs for mem assign, since
-             none of the patterns we match against will apply here. *)
-          let* rhs = exp rhs in
-          mov lhs_mem rhs
-      end
-    | `Jmp jmp ->
-      let open KB.Syntax in
-      let cond = Jmp.cond jmp in
-      let is_call = is_call jmp in
-      get_dst jmp >>= begin function
-        | None -> Err.(fail @@ Other (
-            Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
-        (* NOTE: branches if cond is zero *)
-        | Some dst -> match cond with
-          | Int w when Word.(w <> b0) ->
-            KB.return @@ goto dst call_params ~is_call
-          | _ ->
-            let+ {op_eff = eff; _} =
-              exp cond ~branch:(Some (Branch.create dst ~is_call)) in
-            eff
-      end
+    | `Def def -> select_def def ~patch ~is_thumb
+    | `Jmp jmp -> select_jmp jmp call_params ~patch ~is_thumb
     | `Phi _ -> KB.return empty_eff
 
   and select_elts
@@ -1062,61 +1099,58 @@ struct
       let+ ss = select_elts call_params ss ~patch ~is_thumb in
       ss @. s
 
+  (* `argument_tids` contains the set of def tids where we assign
+     parameter registers before a call. These are guaranteed to be
+     present in the same block of their corresponding call (see the
+     implementation in Core_c).
+
+     The same applies to the spurious memory assignment before the call.
+     This is a signpost for Minizinc, so that it knows that the call
+     depends on the current state of the memory. This way, the scheduler
+     won't reorder loads and stores in a way that breaks the generated
+     code.
+  *)
+  and blk_call_params
+      (b : blk term)
+      ~(argument_tids : Tid.Set.t) : (Ir.operand list * Tid.Set.t) KB.t =
+    let init = [], Tid.Set.empty in
+    Term.enum def_t b |> KB.Seq.fold ~init ~f:(fun (acc, ignored) def ->
+        let lhs = Def.lhs def in
+        let tid = Term.tid def in
+        if Tid.Set.mem argument_tids tid then
+          match Var.typ lhs, Def.rhs def with
+          | Imm _, _ | Unk, _ ->
+            KB.return (Ir.Var (Ir.simple_var lhs) :: acc, ignored)
+          | Mem _, Var m ->
+            (* We do not want to actually generate code for this.
+               It is just a signpost for the selector to collect the
+               most recent version of the memory so we can pass it as
+               a dependency of the call. *)
+            KB.return (
+              Ir.Void (Ir.simple_var m) :: acc,
+              Tid.Set.add ignored tid)
+          | Mem _, _ -> Err.fail @@ Other
+              (sprintf "Arm_selector.select_blk: unexpected RHS for call \
+                        param mem %s at tid %s"
+                 (Var.to_string lhs) (Tid.to_string tid))
+        else KB.return (acc, ignored))
+
   and select_blk
       (b : blk term)
       ~(patch : Data.Patch.t option)
       ~(is_thumb : bool)
       ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
-    (* NOTE: `argument_tids` contains the set of def tids where we
-       assign parameter registers before a call. These are guaranteed to
-       be present in the same block of their corresponding call (see the
-       implementation in Core_c).
-
-       The same applies to the spurious memory assignment before the call.
-       This is a signpost for Minizinc, so that it knows that the call
-       depends on the current state of the memory. This way, the scheduler
-       won't reorder loads and stores in a way that breaks the generated
-       code.
-    *)
-    let* call_params, ignored =
-      Term.enum def_t b |> KB.Seq.fold ~init:([], Tid.Set.empty)
-        ~f:(fun (acc, ignored) def ->
-            let lhs = Def.lhs def in
-            let tid = Term.tid def in
-            if Tid.Set.mem argument_tids tid then
-              match Var.typ lhs, Def.rhs def with
-              | Imm _, _ | Unk, _ ->
-                KB.return (Ir.Var (Ir.simple_var lhs) :: acc, ignored)
-              | Mem _, Var m ->
-                (* We do not want to actually generate code for this.
-                   It is just a signpost for the selector to collect the most
-                   recent version of the memory so we can pass it as a
-                   dependency of the call. *)
-                KB.return (
-                  Ir.Void (Ir.simple_var m) :: acc,
-                  Tid.Set.add ignored tid)
-              | Mem _, _ -> Err.fail @@ Other
-                  (sprintf "Arm_selector.select_blk: unexpected RHS for call \
-                            param mem %s at tid %s"
-                     (Var.to_string lhs) (Tid.to_string tid))
-            else KB.return (acc, ignored)) in
+    let* call_params, ignored = blk_call_params b ~argument_tids in
     let+ b_eff = Blk.elts b |> Seq.to_list |> List.filter ~f:(function
         | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
         | _ -> true) |> select_elts call_params ~patch ~is_thumb in
     let {current_data; current_ctrl; other_blks} = b_eff in
     let new_blk =
-      Ir.simple_blk (Term.tid b)
-        (* data instructions are emitted in reverse chronological
-           order *)
+      Term.tid b |> Ir.simple_blk
         ~data:(List.rev current_data)
-        ~ctrl:(List.rev current_ctrl)
-    in
+        ~ctrl:(List.rev current_ctrl) in
     let all_blks = Ir.add new_blk other_blks in
-    {
-      current_data = [];
-      current_ctrl = [];
-      other_blks = all_blks
-    }
+    {current_data = []; current_ctrl = []; other_blks = all_blks}
 
   and select_blks
       (bs : blk term list)
@@ -1168,8 +1202,7 @@ module Pretty = struct
         | None -> Result.return @@ First name
         | Some cc -> Result.return @@ Second ("it " ^ C.to_string cc, name)
       else Result.return @@ First name in
-    if String.is_prefix name ~prefix:"bl" then it 2
-    else if String.is_prefix name ~prefix:"mov" then it 3
+    if String.is_prefix name ~prefix:"mov" then it 3
     else Result.return @@ First name
 
   (* We use this function when generating ARM, since the assembler
@@ -1313,8 +1346,7 @@ end
 (* Returns [true] if an instruction has no effect on data or
    control, is an overaproximation, of course. *)
 let is_nop (op : Ir.operation) : bool =
-  let open Ir in
-  let { opcodes; lhs; operands; _ } = op in
+  let Ir.{opcodes; lhs; operands; _} = op in
   let opcode = List.hd_exn opcodes in
   match Ir.Opcode.name opcode with
   | "mov" | "movs" -> begin
@@ -1372,14 +1404,10 @@ let create_implicit_fallthroughs (ir : Ir.t) : Ir.t =
 
 let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
   let filter_nops blk =
-    let {Ir.data; Ir.ctrl; _} = blk in
+    let Ir.{data; ctrl; _} = blk in
     let data = filter_nops data in
     let ctrl = filter_nops ctrl in
-    { blk with
-      data = data;
-      ctrl = ctrl;
-    }
-  in
+    {blk with data; ctrl} in
   let ir = Ir.map_blks ir ~f:filter_nops in
   let ir = create_implicit_fallthroughs ir in
   ir

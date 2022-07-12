@@ -389,22 +389,22 @@ module Patch_space = struct
   (* This provides equality / comparisons for objects of this class *)
   include (val KB.Object.derive patch_space)
 
-  let offset : (patch_space_cls, int64 option) KB.slot =
-    KB.Class.property ~package patch_space "patch-space-offset" int64_domain
+  let address : (patch_space_cls, int64 option) KB.slot =
+    KB.Class.property ~package patch_space "patch-space-address" int64_domain
 
   let size : (patch_space_cls, int64 option) KB.slot =
     KB.Class.property ~package patch_space "patch-space-size" int64_domain
 
-  let set_offset (obj : t) (data : int64 option) : unit KB.t =
-    KB.provide offset obj data
+  let set_address (obj : t) (data : int64 option) : unit KB.t =
+    KB.provide address obj data
 
-  let get_offset (obj : t) : int64 option KB.t =
-    KB.collect offset obj
+  let get_address (obj : t) : int64 option KB.t =
+    KB.collect address obj
 
-  let get_offset_exn (obj : t) : int64 KB.t =
-    get_offset obj >>= fun result ->
+  let get_address_exn (obj : t) : int64 KB.t =
+    get_address obj >>= fun result ->
     match result with
-    | None -> Kb_error.fail Kb_error.Missing_patch_space_offset
+    | None -> Kb_error.fail Kb_error.Missing_patch_space_address
     | Some value -> KB.return value
 
   let set_size (obj : t) (data : int64 option) : unit KB.t =

@@ -117,7 +117,7 @@ let create_patch_spaces (patch_spaces : Config.patch_space list)
   let create_patch_space (ps : Config.patch_space) =
     let* obj = KB.Object.create Data.Patch_space.patch_space in
     let* () =
-      Data.Patch_space.set_offset obj (Some (Config.(ps.space_offset)))
+      Data.Patch_space.set_address obj (Some (Config.(ps.space_address)))
     in
     let* () =
       Data.Patch_space.set_size obj (Some (Config.(ps.space_size)))

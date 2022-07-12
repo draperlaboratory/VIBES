@@ -48,7 +48,7 @@ type patch =
 
 (** A type to represent known regions that may be overwritten with patch code *)
 type patch_space = {
-    space_offset : int64;
+    space_address : int64;
     space_size : int64
   }
 
@@ -147,7 +147,7 @@ let patches_to_string (ps : patch list) : string =
 let patch_space_to_string (p : patch_space) : string =
   String.concat ~sep:";\n" [
       Printf.sprintf "  {";
-      Printf.sprintf "    Space_offset: %s" (Int64.to_string p.space_offset);
+      Printf.sprintf "    Space_address: %s" (Int64.to_string p.space_address);
       Printf.sprintf "    Space_size: %s" (Int64.to_string p.space_size);
       Printf.sprintf "  }";
     ]

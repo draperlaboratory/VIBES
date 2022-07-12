@@ -14,7 +14,7 @@
     {"patch-name" : "ret-3",
      "patch-code" : "int temp;
                      if (temp == 0)
-                        { goto L_0x3ec; }",
+                        { goto L_0x103ec; }",
      "patch-point" : "0x103dc",
      "patch-size" : 8}
   ]

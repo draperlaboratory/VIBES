@@ -350,7 +350,8 @@ module Eval(CT : Theory.Core) = struct
       o !!a !!b
     | VARIABLE (v, _) -> CT.var v
     | CONST_INT (w, _) ->
-      let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
+      let s = T.Bitv.define @@ Word.bitwidth w in
+      let+ i = CT.int s @@ Word.to_bitvec w in
       T.Value.forget i
     | CAST (t, e) ->
       let t' = Patch_c.Exp.typeof e in

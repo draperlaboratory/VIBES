@@ -22,16 +22,17 @@ module H = Helpers
 
 
 let dummy_patch n m : Patcher.patch = {
+  name = "dummy-patch";
   assembly = [
     Printf.sprintf ".rept %Ld" n;
     "nop";
     ".endr"
   ];
   orig_loc = 0L;
-  orig_size = m
+  orig_size = m;
 }
 
-let dummy_compute_region ~loc:_ _ =
+let dummy_compute_region _ ~loc:_ =
   Or_error.return Patcher.{ region_addr = 0L; region_offset = 0L }
 
 let test_patch_placer_exact_fit _ =
@@ -39,7 +40,9 @@ let test_patch_placer_exact_fit _ =
   let lang = Arm_target.llvm_a32 in
   let patch = dummy_patch 2L 8L in
   let patch_sites = [] in
-  let placed_patch = Patcher.place_patches tgt lang [patch] patch_sites |> List.hd_exn in
+  let placed_patch =
+    Patcher.place_patches tgt lang 0L [patch] patch_sites |>
+    List.hd_exn in
   assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
   assert_equal placed_patch.jmp None
 
@@ -51,7 +54,9 @@ let test_patch_placer_loose_fit _ =
       location = 100L;
       size = 128L
     }] in
-  let placed_patch = Patcher.place_patches tgt lang [patch] patch_sites |> List.hd_exn in
+  let placed_patch =
+    Patcher.place_patches tgt lang 0L [patch] patch_sites |>
+    List.hd_exn in
   assert_equal ~printer:Int64.to_string placed_patch.patch_loc 0L;
   assert_equal ~printer:Int64.to_string 8L (Option.value_exn placed_patch.jmp)
 
@@ -63,7 +68,7 @@ let test_patch_placer_no_fit _ =
       location = 100L;
       size = 128L
     }] in
-  match Patcher.place_patches tgt lang [patch] patch_sites with
+  match Patcher.place_patches tgt lang 0L [patch] patch_sites with
   | [orig_jmp; placed_patch] ->
     assert_equal ~printer:Int64.to_string placed_patch.patch_loc 100L;
     assert_equal ~printer:Int64.to_string 4L (Option.value_exn placed_patch.jmp);
@@ -72,7 +77,7 @@ let test_patch_placer_no_fit _ =
   | _ -> assert_failure "List is wrong size"
 
 (* A dummy patcher, that returns a fixed filename. *)
-let patcher _ ~filename:_ _ = H.patched_exe
+let patcher _ ~filename:_ _ _ = H.patched_exe
 
 (* Test that [Patcher.patch] works as expected. *)
 let test_patch (_ : test_ctxt) : unit =
@@ -90,12 +95,13 @@ let test_patch (_ : test_ctxt) : unit =
     Data.Patch.set_assembly patch (Some H.assembly) >>= fun _ ->
     Theory.Label.for_addr H.patch_point >>= fun patch_tid ->
     H.unit >>= fun unit ->
+    KB.collect Bap.Std.Image.Spec.slot unit >>= fun spec ->
     KB.provide Theory.Label.unit patch_tid (Some unit) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
-    Patcher.patch obj
+    Patcher.patch obj spec
       ~patcher:patcher
       ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
@@ -116,7 +122,9 @@ let test_patch_with_no_original_exe (_ : test_ctxt) : unit =
   let computation =
     (* The KB starts with no filepath for the original_exe stashed in it. *)
     H.obj () >>= fun obj ->
-    Patcher.patch obj
+    H.unit >>= fun unit ->
+    KB.collect Bap.Std.Image.Spec.slot unit >>= fun spec ->
+    Patcher.patch obj spec
       ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
   in
@@ -141,8 +149,10 @@ let test_patch_with_no_patch_point (_ : test_ctxt) : unit =
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
+    H.unit >>= fun unit ->
+    KB.collect Bap.Std.Image.Spec.slot unit >>= fun spec ->
     (* Now run the patcher. *)
-    Patcher.patch obj ~compute_region:dummy_compute_region >>= fun _ ->
+    Patcher.patch obj spec ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
 
   in
@@ -167,12 +177,13 @@ let test_patch_with_no_assembly (_ : test_ctxt) : unit =
     Data.Patch.set_patch_size patch (Some 1024) >>= fun _ ->
     Theory.Label.for_addr H.patch_point >>= fun patch_tid ->
     H.unit >>= fun unit ->
+    KB.collect Bap.Std.Image.Spec.slot unit >>= fun spec ->
     KB.provide Theory.Label.unit patch_tid (Some unit) >>= fun _ ->
     Data.Patched_exe.set_patches obj
       (Data.Patch_set.singleton patch) >>= fun _ ->
 
     (* Now run the patcher. *)
-    Patcher.patch obj ~compute_region:dummy_compute_region >>= fun _ ->
+    Patcher.patch obj spec ~compute_region:dummy_compute_region >>= fun _ ->
     KB.return obj
 
   in
