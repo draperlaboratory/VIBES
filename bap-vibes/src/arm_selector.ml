@@ -324,6 +324,10 @@ module ARM_ops = struct
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
 
+    (* These are only available on Thumb. *)
+    let cbz = op "cbz"
+    let cbnz = op "cbnz"
+
   end
 
   let create_temp ty =
@@ -1046,11 +1050,25 @@ struct
         | None -> Err.(fail @@ Other (
             Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
         | Some {dst; ret} ->
+          (* On Thumb we can match a comparison with zero and generate
+             `cbz` or `cbnz` without having to test the flags. *)
+          let is_cbz w = is_thumb && not is_call && Word.is_zero w in
+          let cbz ?(neg = false) e =
+            let+ {op_val; op_eff} = exp e in
+            let tmp = create_temp bit_ty in
+            let params = [op_val; dst] in
+            let op = if neg then Ops.cbnz else Ops.cbz in
+            let ctrl = control (Ir.simple_op op (Void tmp) params) empty_eff in
+            ctrl @. op_eff in
           let+ eff = match cond with
             | Int w when Word.(w <> b0) ->
               (* Unconditional branch. If cond is zero, this should
                  have been optimized away. *)
               KB.return @@ goto dst call_params ~is_call
+            | BinOp (EQ, e, Int w)  when is_cbz w -> cbz e
+            | BinOp (EQ, Int w, e)  when is_cbz w -> cbz e
+            | BinOp (NEQ, e, Int w) when is_cbz w -> cbz e ~neg:true
+            | BinOp (NEQ, Int w, e) when is_cbz w -> cbz e ~neg:true
             | _ ->
               (* Conditional branch. *)
               let branch = Some (Branch.create dst ~is_call) in
@@ -1077,61 +1095,57 @@ struct
       let+ ss = select_elts call_params ss ~patch ~is_thumb in
       ss @. s
 
+  (* `argument_tids` contains the set of def tids where we assign
+     parameter registers before a call. These are guaranteed to be
+     present in the same block of their corresponding call (see the
+     implementation in Core_c).
+
+     The same applies to the spurious memory assignment before the call.
+     This is a signpost for Minizinc, so that it knows that the call
+     depends on the current state of the memory. This way, the scheduler
+     won't reorder loads and stores in a way that breaks the generated
+     code.
+  *)
+  and blk_call_params
+      (b : blk term)
+      ~(argument_tids : Tid.Set.t) : (Ir.operand list * Tid.Set.t) KB.t =
+    let init = [], Tid.Set.empty in
+    Term.enum def_t b |> KB.Seq.fold ~init ~f:(fun (acc, ignored) def ->
+        let lhs = Def.lhs def in
+        let tid = Term.tid def in
+        if Tid.Set.mem argument_tids tid then
+          match Var.typ lhs, Def.rhs def with
+          | Imm _, _ | Unk, _ ->
+            KB.return (Ir.Var (Ir.simple_var lhs) :: acc, ignored)
+          | Mem _, Var m ->
+            (* We do not want to actually generate code for this.
+               It is just a signpost for the selector to collect the
+               most recent version of the memory so we can pass it as
+               a dependency of the call. *)
+            KB.return (
+              Ir.Void (Ir.simple_var m) :: acc,
+              Tid.Set.add ignored tid)
+          | Mem _, _ -> Err.fail @@ Other
+              (sprintf "Arm_selector.select_blk: unexpected RHS for call \
+                        param mem %s at tid %s"
+                 (Var.to_string lhs) (Tid.to_string tid))
+        else KB.return (acc, ignored))
+
   and select_blk
       (b : blk term)
       ~(patch : Data.Patch.t option)
       ~(is_thumb : bool)
       ~(argument_tids : Tid.Set.t) : arm_eff KB.t =
-    (* NOTE: `argument_tids` contains the set of def tids where we
-       assign parameter registers before a call. These are guaranteed to
-       be present in the same block of their corresponding call (see the
-       implementation in Core_c).
-
-       The same applies to the spurious memory assignment before the call.
-       This is a signpost for Minizinc, so that it knows that the call
-       depends on the current state of the memory. This way, the scheduler
-       won't reorder loads and stores in a way that breaks the generated
-       code.
-    *)
-    let* call_params, ignored =
-      Term.enum def_t b |> KB.Seq.fold ~init:([], Tid.Set.empty)
-        ~f:(fun (acc, ignored) def ->
-            let lhs = Def.lhs def in
-            let tid = Term.tid def in
-            if Tid.Set.mem argument_tids tid then
-              match Var.typ lhs, Def.rhs def with
-              | Imm _, _ | Unk, _ ->
-                KB.return (Ir.Var (Ir.simple_var lhs) :: acc, ignored)
-              | Mem _, Var m ->
-                (* We do not want to actually generate code for this.
-                   It is just a signpost for the selector to collect the most
-                   recent version of the memory so we can pass it as a
-                   dependency of the call. *)
-                KB.return (
-                  Ir.Void (Ir.simple_var m) :: acc,
-                  Tid.Set.add ignored tid)
-              | Mem _, _ -> Err.fail @@ Other
-                  (sprintf "Arm_selector.select_blk: unexpected RHS for call \
-                            param mem %s at tid %s"
-                     (Var.to_string lhs) (Tid.to_string tid))
-            else KB.return (acc, ignored)) in
+    let* call_params, ignored = blk_call_params b ~argument_tids in
     let+ b_eff = Blk.elts b |> Seq.to_list |> List.filter ~f:(function
         | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
         | _ -> true) |> select_elts call_params ~patch ~is_thumb in
     let {current_data; current_ctrl; other_blks} = b_eff in
-    let new_blk =
-      Ir.simple_blk (Term.tid b)
-        (* data instructions are emitted in reverse chronological
-           order *)
-        ~data:(List.rev current_data)
-        ~ctrl:(List.rev current_ctrl)
-    in
+    let new_blk = Term.tid b |> Ir.simple_blk
+                    ~data:(List.rev current_data)
+                    ~ctrl:(List.rev current_ctrl) in
     let all_blks = Ir.add new_blk other_blks in
-    {
-      current_data = [];
-      current_ctrl = [];
-      other_blks = all_blks
-    }
+    {current_data = []; current_ctrl = []; other_blks = all_blks}
 
   and select_blks
       (bs : blk term list)
@@ -1328,8 +1342,7 @@ end
 (* Returns [true] if an instruction has no effect on data or
    control, is an overaproximation, of course. *)
 let is_nop (op : Ir.operation) : bool =
-  let open Ir in
-  let { opcodes; lhs; operands; _ } = op in
+  let Ir.{opcodes; lhs; operands; _} = op in
   let opcode = List.hd_exn opcodes in
   match Ir.Opcode.name opcode with
   | "mov" | "movs" -> begin
@@ -1357,6 +1370,17 @@ let is_nop (op : Ir.operation) : bool =
 (* Removes spurious data operations *)
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
   List.filter ops ~f:(fun o -> not (is_nop o))
+
+(* We might end with multiple unconditional jumps in the block,
+   so we should only keep the one that occurs first. *)
+let remove_excess_jumps (blk : Ir.blk) : Ir.blk =
+  let ctrl =
+    List.fold_until blk.ctrl ~init:[] ~finish:List.rev ~f:(fun acc o ->
+        if List.exists o.opcodes ~f:(fun o ->
+            String.equal "b" @@ Ir.Opcode.name o) then
+          Stop (List.rev (o :: acc))
+        else Continue (o :: acc)) in
+  {blk with ctrl}
 
 (* Try to replace direct, unconditional jumps with fallthroughs where
    possible. *)
@@ -1387,14 +1411,11 @@ let create_implicit_fallthroughs (ir : Ir.t) : Ir.t =
 
 let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
   let filter_nops blk =
-    let {Ir.data; Ir.ctrl; _} = blk in
+    let Ir.{data; ctrl; _} = blk in
     let data = filter_nops data in
     let ctrl = filter_nops ctrl in
-    { blk with
-      data = data;
-      ctrl = ctrl;
-    }
-  in
+    {blk with data; ctrl} in
   let ir = Ir.map_blks ir ~f:filter_nops in
+  let ir = Ir.map_blks ir ~f:remove_excess_jumps in
   let ir = create_implicit_fallthroughs ir in
   ir
