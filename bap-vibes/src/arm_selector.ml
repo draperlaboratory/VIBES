@@ -1141,9 +1141,10 @@ struct
         | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
         | _ -> true) |> select_elts call_params ~patch ~is_thumb in
     let {current_data; current_ctrl; other_blks} = b_eff in
-    let new_blk = Term.tid b |> Ir.simple_blk
-                    ~data:(List.rev current_data)
-                    ~ctrl:(List.rev current_ctrl) in
+    let new_blk =
+      Term.tid b |> Ir.simple_blk
+        ~data:(List.rev current_data)
+        ~ctrl:(List.rev current_ctrl) in
     let all_blks = Ir.add new_blk other_blks in
     {current_data = []; current_ctrl = []; other_blks = all_blks}
 
