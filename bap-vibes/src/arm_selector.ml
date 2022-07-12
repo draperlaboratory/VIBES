@@ -1202,8 +1202,7 @@ module Pretty = struct
         | None -> Result.return @@ First name
         | Some cc -> Result.return @@ Second ("it " ^ C.to_string cc, name)
       else Result.return @@ First name in
-    if String.is_prefix name ~prefix:"bl" then it 2
-    else if String.is_prefix name ~prefix:"mov" then it 3
+    if String.is_prefix name ~prefix:"mov" then it 3
     else Result.return @@ First name
 
   (* We use this function when generating ARM, since the assembler
