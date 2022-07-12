@@ -499,7 +499,10 @@ let patch
   let base_address =
     match Ogre.eval (Ogre.require Image.Scheme.base_address) spec with
     | Ok addr -> addr
-    | Error _ -> 0L in
+    | Error _ ->
+      Events.send @@ Info
+        "Warning: base-address was not found in the OGRE specification";
+      0L in
   let* original_exe_filename = Data.Original_exe.get_filepath_exn obj in
   let* original_exe_unit = Theory.Unit.for_file original_exe_filename in
   let* patches = Data.Patched_exe.get_patches obj in
