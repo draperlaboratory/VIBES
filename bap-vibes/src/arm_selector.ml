@@ -337,28 +337,16 @@ module ARM_ops = struct
   (* Helper data structure for generating conditional branches. *)
   module Branch = struct
 
-    (* `generate` accepts the condition `cnd`, the flag pseudo-operand 
+    (* A thunk that accepts the condition `cnd`, the flag pseudo-operand
        `flg` and returns the corresponding branch instruction, along with
        the fake destination operand. `flg` is to mark the status flags
-       as a dependency of the branch instruction.
+       as a dependency of the branch instruction. *)
+    type t = cnd:Cond.t -> flg:Ir.operand -> Ir.operation * Ir.operand
 
-       `is_call` denotes whether this is a conditional call or not.
-    *)
-    type t = {
-      generate : cnd:Cond.t -> flg:Ir.operand -> Ir.operation * Ir.operand;
-      is_call : bool;
-    }
-
-    let create (dst : Ir.operand) ~(is_call : bool) : t = {
-      generate = (fun ~cnd ~flg ->
-          let cnd = Some cnd in
-          let opcode =
-            if is_call then Ops.(bl () ~cnd) else Ops.(b () ~cnd) in
-          let tmp = Ir.Void (create_temp bit_ty) in
-          let op = Ir.simple_op opcode tmp [dst; flg] in
-          op, tmp);
-      is_call;
-    }
+    let create (dst : Ir.operand) : t = fun ~cnd ~flg ->
+      let tmp = Ir.Void (create_temp bit_ty) in
+      let op = Ir.simple_op (Ops.b () ~cnd:(Some cnd)) tmp [dst; flg] in
+      op, tmp
 
   end
 
@@ -618,7 +606,7 @@ module ARM_ops = struct
     let {op_val = arg2_val; op_eff = arg2_sem} = arg2 in
     let sem = arg1_sem @. arg2_sem in
     match branch with
-    | Some {generate; is_call} ->
+    | Some generate ->
       (* The comparison is used by a branch instruction, so use the
          `generate` function to add it to the ctrl semantics. It should
          be the only one in the current block. *)
@@ -1019,67 +1007,83 @@ struct
     let lhs = {op_val = tmp; op_eff = instr op empty_eff} in
     if swap then o rhs lhs else o lhs rhs
 
+  and select_def
+      (def : def term)
+      ~(patch : Data.Patch.t option)
+      ~(is_thumb : bool) : arm_eff KB.t =
+    let exp = select_exp ~patch ~is_thumb in
+    let lhs = Def.lhs def in
+    let rhs = Def.rhs def in
+    let mov = arm_mov ~is_thumb in
+    match Var.typ lhs with
+    | Imm _ | Unk ->
+      let* rhs = exp rhs ~lhs:(Some lhs) in
+      let lhs = Ir.Var (Ir.simple_var lhs) in
+      mov lhs rhs
+    | Mem _ ->
+      let lhs_mem = Ir.Void (Ir.simple_var lhs) in
+      (* We don't need to pass the lhs for mem assign, since
+         none of the patterns we match against will apply here. *)
+      let* rhs = exp rhs in
+      mov lhs_mem rhs
+
+  and select_jmp
+      (jmp : jmp term)
+      (call_params : Ir.operand list)
+      ~(patch : Data.Patch.t option)
+      ~(is_thumb : bool) : arm_eff KB.t =
+    let open KB.Syntax in
+    let exp = select_exp ~patch ~is_thumb in
+    let cond = Jmp.cond jmp in
+    let is_call = is_call jmp in
+    get_dsts jmp >>= function
+    | None -> Err.fail @@ Other (
+        Format.asprintf "Unexpected branch: %a" Jmp.pp jmp)
+    | Some {dst; ret} ->
+      (* On Thumb we can match a comparison with zero and generate
+         `cbz` or `cbnz` without having to test the flags. *)
+      let is_cbz w = is_thumb && not is_call && Word.is_zero w in
+      let cbz ?(neg = false) e =
+        let+ {op_val; op_eff} = exp e in
+        let tmp = create_temp bit_ty in
+        let params = [op_val; dst] in
+        let op = if neg then Ops.cbnz else Ops.cbz in
+        let ctrl = control (Ir.simple_op op (Void tmp) params) empty_eff in
+        ctrl @. op_eff in
+      let+ eff = match cond with
+        | Int w when Word.(w <> b0) ->
+          (* Unconditional branch. If cond is zero, this should
+             have been optimized away. *)
+          KB.return @@ goto dst call_params ~is_call
+        | BinOp (EQ, e, Int w)  when is_cbz w -> cbz e
+        | BinOp (EQ, Int w, e)  when is_cbz w -> cbz e
+        | BinOp (NEQ, e, Int w) when is_cbz w -> cbz e ~neg:true
+        | BinOp (NEQ, Int w, e) when is_cbz w -> cbz e ~neg:true
+        | _ ->
+          (* Conditional branch. *)
+          let* () =
+            if is_call then
+              Err.fail @@ Other (
+                Format.asprintf "Unsupported conditional call: %a"
+                  Jmp.pp jmp)
+            else KB.return () in
+          let branch = Some (Branch.create dst) in
+          let+ {op_eff; _} = exp cond ~branch in
+          op_eff in
+      (* If this was a call, then insert the destination we
+         should return to. This often will get optimized away
+         if we're returning to the immediate next block. *)
+      Option.value_map ret ~default:eff ~f:(fun ret ->
+          goto ret [] @. eff)
+
   and select_stmt
       (call_params : Ir.operand list)
       (s : Blk.elt)
       ~(patch : Data.Patch.t option)
       ~(is_thumb : bool) : arm_eff KB.t =
-    let exp = select_exp ~patch ~is_thumb in
     match s with
-    | `Def t -> begin
-        let lhs = Def.lhs t in
-        let rhs = Def.rhs t in
-        let mov = arm_mov ~is_thumb in
-        match Var.typ lhs with
-        | Imm _ | Unk ->
-          let* rhs = exp rhs ~lhs:(Some lhs) in
-          let lhs = Ir.Var (Ir.simple_var lhs) in
-          mov lhs rhs
-        | Mem _ ->
-          let lhs_mem = Ir.Void (Ir.simple_var lhs) in
-          (* We don't need to pass the lhs for mem assign, since
-             none of the patterns we match against will apply here. *)
-          let* rhs = exp rhs in
-          mov lhs_mem rhs
-      end
-    | `Jmp jmp ->
-      let open KB.Syntax in
-      let cond = Jmp.cond jmp in
-      let is_call = is_call jmp in
-      get_dsts jmp >>= begin function
-        | None -> Err.(fail @@ Other (
-            Format.asprintf "Unexpected branch: %a" Jmp.pp jmp))
-        | Some {dst; ret} ->
-          (* On Thumb we can match a comparison with zero and generate
-             `cbz` or `cbnz` without having to test the flags. *)
-          let is_cbz w = is_thumb && not is_call && Word.is_zero w in
-          let cbz ?(neg = false) e =
-            let+ {op_val; op_eff} = exp e in
-            let tmp = create_temp bit_ty in
-            let params = [op_val; dst] in
-            let op = if neg then Ops.cbnz else Ops.cbz in
-            let ctrl = control (Ir.simple_op op (Void tmp) params) empty_eff in
-            ctrl @. op_eff in
-          let+ eff = match cond with
-            | Int w when Word.(w <> b0) ->
-              (* Unconditional branch. If cond is zero, this should
-                 have been optimized away. *)
-              KB.return @@ goto dst call_params ~is_call
-            | BinOp (EQ, e, Int w)  when is_cbz w -> cbz e
-            | BinOp (EQ, Int w, e)  when is_cbz w -> cbz e
-            | BinOp (NEQ, e, Int w) when is_cbz w -> cbz e ~neg:true
-            | BinOp (NEQ, Int w, e) when is_cbz w -> cbz e ~neg:true
-            | _ ->
-              (* Conditional branch. *)
-              let branch = Some (Branch.create dst ~is_call) in
-              let+ {op_eff; _} = exp cond ~branch in
-              op_eff in
-          (* If this was a call, then insert the destination we
-             should return to. This often will get optimized away
-             if we're returning to the immediate next block. *)
-          Option.value_map ret ~default:eff ~f:(fun ret ->
-              goto ret [] @. eff)
-      end
+    | `Def def -> select_def def ~patch ~is_thumb
+    | `Jmp jmp -> select_jmp jmp call_params ~patch ~is_thumb
     | `Phi _ -> KB.return empty_eff
 
   and select_elts
@@ -1372,17 +1376,6 @@ let is_nop (op : Ir.operation) : bool =
 let filter_nops (ops : Ir.operation list) : Ir.operation list =
   List.filter ops ~f:(fun o -> not (is_nop o))
 
-(* We might end with multiple unconditional jumps in the block,
-   so we should only keep the one that occurs first. *)
-let remove_excess_jumps (blk : Ir.blk) : Ir.blk =
-  let ctrl =
-    List.fold_until blk.ctrl ~init:[] ~finish:List.rev ~f:(fun acc o ->
-        if List.exists o.opcodes ~f:(fun o ->
-            String.equal "b" @@ Ir.Opcode.name o) then
-          Stop (List.rev (o :: acc))
-        else Continue (o :: acc)) in
-  {blk with ctrl}
-
 (* Try to replace direct, unconditional jumps with fallthroughs where
    possible. *)
 let create_implicit_fallthroughs (ir : Ir.t) : Ir.t =
@@ -1417,6 +1410,5 @@ let peephole (ir : Ir.t) (_cfg : Graphs.Tid.t) : Ir.t =
     let ctrl = filter_nops ctrl in
     {blk with data; ctrl} in
   let ir = Ir.map_blks ir ~f:filter_nops in
-  let ir = Ir.map_blks ir ~f:remove_excess_jumps in
   let ir = create_implicit_fallthroughs ir in
   ir

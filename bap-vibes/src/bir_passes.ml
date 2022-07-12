@@ -752,6 +752,45 @@ module Shape = struct
         go (b :: acc) bs ~split in
     go [] blks
 
+  (* If BAP gave us a block with a call of the form:
+
+     `when cond call x with return y`
+
+     Then we need to turn this into:
+
+     `when cond goto z`
+
+     Where `z` contains:
+
+     `call x with return y`
+  *)
+  let split_conditional_calls (blks : blk term list) : blk term list KB.t =
+    let inserted = ref [] in
+    let rec go acc = function
+      | [] -> KB.return @@ List.rev acc
+      | b :: bs ->
+        let* b =
+          let+ jmps =
+            Term.enum jmp_t b |> Seq.to_list |>
+            KB.List.map ~f:(fun jmp -> match Jmp.kind jmp with
+                | Call call when not @@ Bir_helpers.is_unconditional jmp ->
+                  let tid = Term.tid jmp in
+                  let* blk_tid = Theory.Label.fresh in
+                  let+ jmp_tid = Theory.Label.fresh in
+                  let cond = Jmp.cond jmp in
+                  let new_jmp = Jmp.create_call ~tid:jmp_tid call in
+                  let new_blk = Blk.create () ~tid:blk_tid ~jmps:[new_jmp] in
+                  inserted := new_blk :: !inserted;
+                  Jmp.create_goto ~tid ~cond @@ Direct blk_tid
+                | _ -> KB.return jmp) in
+          Blk.create () ~jmps
+            ~tid:(Term.tid b)
+            ~defs:(Term.enum def_t b |> Seq.to_list)
+            ~phis:(Term.enum phi_t b |> Seq.to_list) in
+        go (b :: acc) bs in
+    let+ blks = go [] blks in
+    blks @ !inserted
+
 end
 
 (* Handle storage classification in the presence of ABI information. *)
@@ -1037,6 +1076,7 @@ let run
      they don't implicitly fall through to another block. *)
   let* ir = Shape.remove_unreachable ir @@ Term.tid entry_blk in
   let* ir = Shape.adjust_exits ir in
+  let* ir = Shape.split_conditional_calls ir in
   let* ABI.Spill.{blks = ir; hvars; spilled} =
     ABI.Spill.spill_hvars_and_adjust_stack ir
       ~tgt ~sp_align ~hvars ~entry_blk in
