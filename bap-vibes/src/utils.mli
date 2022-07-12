@@ -51,3 +51,7 @@ val get_target : addr:Bitvec.t -> Theory.target KB.t
     first argument on the second, and returns whatever string is in the
     [Cprint.out] channel.  *)
 val print_c : ('a -> unit) -> 'a -> string
+
+(** [dedup_list_stable l ~compare] removes all duplicates from [l] according
+    to [compare] while preserving the original order in [l]. *)
+val dedup_list_stable : 'a list -> compare:('a -> 'a -> int) -> 'a list

@@ -232,25 +232,13 @@ type t = {
 
 let empty = {blks = []; congruent = []}
 
-(* Preserve the ordering when deduping. This is much slower than `dedup_and_sort`. *)
-let dedup_list_stable l ~compare =
-  let equal x x' = compare x x' = 0 in
-  let rec loop res = function
-    | [] -> res
-    | x :: xs ->
-      let dups = List.find_all_dups (x :: xs) ~compare in
-      let res = if List.mem dups x ~equal then res else x :: res in
-      loop res xs
-  in
-  loop [] (List.rev l)
-
 let union t1 t2 =
   let comp_pair = Tuple.T2.compare ~cmp1:compare_op_var ~cmp2:compare_op_var in
   {
     blks =
-      dedup_list_stable ~compare:compare_blk (t1.blks @ t2.blks);
+      Utils.dedup_list_stable ~compare:compare_blk (t1.blks @ t2.blks);
     congruent =
-      dedup_list_stable ~compare:comp_pair (t1.congruent @ t2.congruent)
+      Utils.dedup_list_stable ~compare:comp_pair (t1.congruent @ t2.congruent)
   }
 
 let add blk t =
