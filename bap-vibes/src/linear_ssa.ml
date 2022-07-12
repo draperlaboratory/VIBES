@@ -253,7 +253,7 @@ let compute_liveness_and_expand_phis
             String.equal (Naming.mark_reg_name reg) @@
             Var.name @@ Var.base v in
           (* For each higher var we intended to finalize, add them
-             to the set out live outs for this block. *)
+             to the set of live outs for this block. *)
           List.fold hvars ~init:outs ~f:(fun outs -> function
               | {value = Registers ({at_exit = Some reg; _}); _} -> begin
                   match Seq.find vars ~f:(same reg) with
