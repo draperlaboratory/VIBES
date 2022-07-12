@@ -217,23 +217,18 @@ let compute_liveness_and_expand_phis
             Phi.values phi |> Seq.fold ~init ~f:(fun m (tid, e) ->
                 Map.add_multi m ~key:tid ~data:(lhs, e)))) in
   (* Insert these pseudo-definitions. *)
-  let* blks =
-    KB.List.map blks ~f:(fun blk ->
-        match Map.find phi_map @@ Term.tid blk with
-        | None -> KB.return blk
-        | Some defs ->
-          let builder = Blk.Builder.init blk
-              ~same_tid:true
-              ~copy_phis:true
-              ~copy_defs:true
-              ~copy_jmps:true in
-          let* () =
-            KB.List.iter defs ~f:(fun (lhs, e) ->
-                let+ tid = Theory.Label.fresh in
-                let def = Def.create ~tid lhs e in
-                Blk.Builder.add_def builder def) in
-          let blk = Blk.Builder.result builder in
-          KB.return blk) in
+  let* blks = KB.List.map blks ~f:(fun blk ->
+      match Map.find phi_map @@ Term.tid blk with
+      | None -> KB.return blk
+      | Some defs ->
+        let builder = Blk.Builder.init blk
+            ~same_tid:true  ~copy_phis:true
+            ~copy_defs:true ~copy_jmps:true in
+        let* () = KB.List.iter defs ~f:(fun (lhs, e) ->
+            let+ tid = Theory.Label.fresh in
+            let def = Def.create ~tid lhs e in
+            Blk.Builder.add_def builder def) in
+        KB.return @@ Blk.Builder.result builder) in
   (* Get the linearized ins and outs. *)
   let ins_outs_map = List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
