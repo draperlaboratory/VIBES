@@ -1,4 +1,4 @@
-open Core_kernel
+open Core
 open Bap.Std
 open Vibes_error_lib.Let
 

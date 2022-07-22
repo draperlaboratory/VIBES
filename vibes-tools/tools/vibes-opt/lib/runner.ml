@@ -1,64 +1,72 @@
-open Core_kernel
+open Core
 
 module T = Bap_core_theory.Theory
 module Log = Vibes_log_lib.Stream
 module Err = Vibes_error_lib.Std
 module Utils = Vibes_utils_lib
 module Serializers = Vibes_serializers_lib
+module Patch_info = Vibes_patch_info_lib.Types
+module Func_info = Vibes_c_toolkit_lib.Types.Func_info
+
 open Vibes_error_lib.Let
 
-let get_target (name : string) : (T.Target.t, Err.t) result =
-  match T.Target.lookup name with
-  | None ->
-     let msg = Format.sprintf "Unknown target: '%s'" name in
-     Error (Types.Unknown_target msg)
-  | Some target -> Ok target
+let log_bir bir =
+  Log.send (Format.asprintf "BIR:\n%a" Bap.Std.Blk.pp bir)
 
-let load_from_file (filepath : string) : (string, Err.t) result =
-  let- lines = Utils.Files.get_lines_or_error filepath in
-  let raw_code = String.concat lines ~sep:"\n" in
-  if String.is_empty raw_code then
-    let msg = Format.sprintf "No code in file '%s'" filepath in
-    Error (Types.No_bir msg)
-  else
-    Ok raw_code
+let log_func_info func_info =
+  Log.send (Format.sprintf "Func_info: %s" (Func_info.to_string func_info))
 
-let to_sexp (data : string) : (Sexp.t list, Err.t) result =
-  let lexbuf = Stdlib.Lexing.from_string data in
-  try Ok (Sexp.scan_sexps lexbuf)
-  with Failure s ->
-    let msg = Format.sprintf "Invalid bir S-exp: %s" s in
-    Error (Types.Invalid_bir msg)
-
-let run (target : string) (filepath : string) (outfile : string)
-    : (unit, Err.t) result =
+let run (target : string) (language : string) (patch_info_filepath : string)
+    (bir_filepath : string) (func_info_filepath : string)
+    (outfile : string) : (unit, Err.t) result =
   let msg = Format.sprintf
-    "Vibes_opt_lib.Runner.run '%s' '%s'"
-    filepath
-    outfile
+    "Vibes_opt_lib.Runner.run '%s' '%s' '%s' '%s' '%s' '%s'"
+    target language patch_info_filepath
+    bir_filepath func_info_filepath outfile
   in
   Log.send msg;
 
-  let- target = get_target target in
-  let- raw_code = load_from_file filepath in
-  let- sexps = to_sexp raw_code in
+  Log.send "Loading patch-info";
+  let- patch_info = Patch_info.json_of patch_info_filepath in
+  let sp_align = Patch_info.sp_align patch_info in
+  let hvars = Patch_info.patch_vars patch_info in
 
-  let- birs =
-    Result.all
-      (List.map sexps
-         ~f:(fun sexp -> Serializers.Bir.deserialize sexp ~target))
+  let- target = Utils.Core_theory.get_target target in
+  let- language = Utils.Core_theory.get_language language in
+
+  let error s =
+    Types.No_bir (Format.sprintf "No serialized BIR in file '%s'" s) in
+  let- raw_bir_code = Utils.Files.get_file_contents bir_filepath ~error in
+
+  let error s =
+    Types.Invalid_bir (Format.sprintf "Invalid BIR S-exp: %s" s) in
+  let- bir_sexps = Utils.Sexp.to_sexp raw_bir_code ~error in
+
+  let- blks = Result.all (List.map bir_sexps
+    ~f:(fun sexp -> Serializers.Bir.deserialize sexp ~target))
   in
-  let log_bir bir =
-    Log.send (Format.asprintf "BIR:\n%a" Bap.Std.Blk.pp bir)
+  List.iter blks ~f:log_bir;
+
+  let- raw_func_info = Utils.Files.get_file_contents' func_info_filepath in
+  let- func_infos =
+    if String.is_empty raw_func_info then Ok []
+    else
+      let error s =
+        Types.Invalid_func_infos
+          (Format.sprintf "Invalid func infos S-exp: %s" s) in
+      let- func_info_sexps = Utils.Sexp.to_sexp raw_func_info ~error in
+      let- func_infos = Result.all (List.map func_info_sexps
+        ~f:(fun sexp -> Serializers.Func_info.deserialize sexp ~target)) in
+      Ok func_infos in
+  List.iter func_infos ~f:log_func_info;
+
+  let- _ (* {bir; cfg; exclude_regs; argument_tids} *) =
+    Bir_passes.run blks 
+      ~target ~language ~patch_info ~func_infos ~hvars ~sp_align
   in
-  List.iter birs ~f:log_bir;
 
-  let sp_align = 0 in
-  let hvars = [] in
-  let _ : Bir_passes.t = Bir_passes.run birs target sp_align hvars in
-
-  print_endline "TODO: run the optimizer...";
-
-  (* let- () = Utils.Files.write_or_error data outfile in *)
+  (* TODO:
+     Write new bir to file, and also cfg, exclude_regs, and argument_tids?
+     Look to vibes-parse/lib/runner.ml as a model for how to write files... *)
 
   Ok ()

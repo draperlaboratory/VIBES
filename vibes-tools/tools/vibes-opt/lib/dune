@@ -5,6 +5,6 @@
     vibes_log_lib
     vibes_error_lib
     vibes_utils_lib
+    vibes_patch_info_lib
     vibes_serializers_lib
-    vibes_c_toolkit_lib)
-  (preprocess (pps ppx_jane)))
+    vibes_c_toolkit_lib))

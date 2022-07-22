@@ -1,6 +1,9 @@
 (library
   (name vibes_utils_lib)
   (libraries
-    core_kernel
+    findlib.dynload
+    bap
+    core
+    yojson
     vibes_log_lib
     vibes_error_lib))

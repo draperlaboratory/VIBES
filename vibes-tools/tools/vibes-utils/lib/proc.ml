@@ -6,14 +6,14 @@ type stderr_data = string list
 type cmd_result = (stdout_data * stderr_data, Err.t) result
 
 let run (command : string) (args : string list) : cmd_result =
-  let env = Core_kernel.Array.init 0 ~f:(fun _ -> "") in
-  let cmd = Core_kernel.String.concat (command :: args) ~sep:" " in
+  let env = Core.Array.init 0 ~f:(fun _ -> "") in
+  let cmd = Core.String.concat (command :: args) ~sep:" " in
   Log.send (Format.sprintf "Running cmd: '%s'" cmd);
   let (std_out, std_in, std_err) = Unix.open_process_full cmd env in
-  let output = Core_kernel.In_channel.input_lines std_out in
-  Log.send (Format.sprintf "STDOUT:\n%s" (Core_kernel.String.concat output ~sep:"\n"));
-  let error = Core_kernel.In_channel.input_lines std_err in
-  Log.send (Format.sprintf "STDERR:\n%s" (Core_kernel.String.concat error ~sep:"\n"));
+  let output = Core.In_channel.input_lines std_out in
+  Log.send (Format.sprintf "STDOUT:\n%s" (Core.String.concat output ~sep:"\n"));
+  let error = Core.In_channel.input_lines std_err in
+  Log.send (Format.sprintf "STDERR:\n%s" (Core.String.concat error ~sep:"\n"));
   Log.send ("Closing process channels");
   let status = Unix.close_process_full (std_out, std_in, std_err) in
   match status with
@@ -30,8 +30,8 @@ let run (command : string) (args : string list) : cmd_result =
     Error (Types.Bad_exit_code msg)
   | _ ->
     Log.send "Unknown exit status";
-    let out_lines = Core_kernel.String.concat output ~sep:"\n" in
-    let err_lines = Core_kernel.String.concat error ~sep:"\n" in
+    let out_lines = Core.String.concat output ~sep:"\n" in
+    let err_lines = Core.String.concat error ~sep:"\n" in
     let msg =
       Format.sprintf 
         "Command exited with unknown status.\n \

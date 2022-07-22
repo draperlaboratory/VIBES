@@ -6,4 +6,6 @@
     vibes_constants_lib
     vibes_utils_lib
     vibes_serializers_lib
-    vibes_c_toolkit_lib))
+    vibes_c_toolkit_lib
+    vibes_patch_info_lib
+    vibes_higher_vars_lib))

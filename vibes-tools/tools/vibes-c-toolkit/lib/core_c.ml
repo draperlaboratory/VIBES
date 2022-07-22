@@ -1,15 +1,3 @@
-(***************************************************************************)
-(*                                                                         *)
-(*  Copyright (C) 2022/2023 The Charles Stark Draper Laboratory, Inc.      *)
-(*                                                                         *)
-(*  This file is provided under the license found in the LICENSE file in   *)
-(*  the top-level directory of this project.                               *)
-(*                                                                         *)
-(*  This research was developed with funding from the Defense Advanced     *)
-(*  Research Projects Agency (DARPA).                                      *)
-(*                                                                         *)
-(***************************************************************************)
-
 (*******************************************************************
  * This module implements a [Theory.Core] interpretation for [FrontC]
  * function bodies.
@@ -62,26 +50,30 @@
  *   to provide this information in the higher vars.
  ***********************************************************************)
 
-open Core_kernel
+open Core
 open Bap_core_theory
 open Bap.Std
 open KB.Let
 
-module Hvar = Higher_var
-module Err = Kb_error
+module Hvar = Vibes_higher_vars_lib.Higher_var
+module Substituter = Vibes_higher_vars_lib.Substituter
 module Naming = Substituter.Naming
+module Func_info = Types.Func_info
+module Err = Kb_error
 
 type var_map = unit Theory.var String.Map.t
 
 let arg_vars = KB.Class.property Theory.Program.cls "arg-vars" @@
   KB.Domain.optional "arg-vars-domain" ~equal:(List.equal Var.equal)
 
+(* Writing this info to a file for now...
 let provide_args (e : Theory.label) (args : var list) : unit KB.t =
   KB.provide arg_vars e (Some args)
 
 let collect_args (e : Theory.label) : var list KB.t =
   let+ args = KB.collect arg_vars e in
   Option.value ~default:[] args
+*)
 
 (* We need to mark calls as such in the KB, so that the instruction selector
    knows to lower to a call instead of a normal jump. *)
@@ -431,38 +423,45 @@ module Eval(CT : Theory.Core) = struct
   let ctrl c = CT.blk T.Label.null !!empty_data !!c
 
   let rec stmt_to_eff
-      (info : _ interp_info)
-      (s : Patch_c.stmt) : unit eff =
-    let aux = stmt_to_eff info in
+      ~(info : _ interp_info)
+      ~(func_infos : Func_info.t list)
+      (s : Patch_c.stmt) : (unit eff * Func_info.t list) KB.t =
     match s with
-    | NOP -> empty_blk
-    | BLOCK (_, s) -> aux s
+    | NOP -> !!(empty_blk, func_infos)
+    | BLOCK (_, s) -> stmt_to_eff s ~info ~func_infos
     | ASSIGN ((v, t), e) ->
       let s = ty_of_base_type info t in
       let v = T.Var.resort v s in
       let* e = expr_to_pure info e in
       let e = resort s e in
       let* assn = CT.set v e in
-      data assn
+      let term = data assn in
+      !!(term, func_infos)
     | CALL (f, args) ->
       let* args = KB.List.map args ~f:(expr_to_pure info) in
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
-      let* () = provide_args dst args in
+      let func_info = Func_info.create dst args in
+      let func_infos = List.append func_infos [func_info] in
+      (* let* () = provide_args dst args in *)
       let* () = declare_call dst in
       let* call = CT.goto dst in
-      CT.blk T.Label.null CT.(seq setargs !!setf) !!call
+      let term = CT.blk T.Label.null CT.(seq setargs !!setf) !!call in
+      !!(term, func_infos)
     | CALLASSIGN ((v, _), f, args) ->
       let* args = KB.List.map args ~f:(expr_to_pure info) in
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
-      let* () = provide_args dst args in
+      let func_info = Func_info.create dst args in
+      let func_infos = List.append func_infos [func_info] in
+      (* let* () = provide_args dst args in *)
       let* () = declare_call dst in
       let* call = CT.goto dst in
       let* call_blk = CT.blk T.Label.null CT.(seq setargs !!setf) !!call in
       let* retval = CT.set v @@ CT.var info.ret_var in
       let* post_blk = data retval in
-      CT.seq !!call_blk !!post_blk
+      let term = CT.seq !!call_blk !!post_blk in
+      !!(term, func_infos)
     | STORE (l, r) ->
       let* l = expr_to_pure info l in
       let l = resort info.word_sort l in
@@ -473,11 +472,15 @@ module Eval(CT : Theory.Core) = struct
         CT.(set info.mem_var
               (storew !!(info.endian)
                  (var info.mem_var) l r)) in
-      data st
+      let term = data st in
+      !!(term, func_infos)
     | SEQUENCE (s1, s2) ->
-      let* s1 = aux s1 in
-      let* s2 = aux s2 in
-      CT.seq !!s1 !!s2
+      let* (s1, func_infos) = stmt_to_eff s1 ~info ~func_infos in
+      let* (s2, func_infos) = stmt_to_eff s2 ~info ~func_infos in
+      let* s1 = s1 in
+      let* s2 = s2 in
+      let term = CT.seq !!s1 !!s2 in
+      !!(term, func_infos)
     | IF (cond, st, sf) ->
       let* c = expr_to_pure info cond in
       let* c =
@@ -492,25 +495,30 @@ module Eval(CT : Theory.Core) = struct
             Word.(to_bitvec @@ zero @@ Patch_c.Type.size info.tgt tcond) in
           CT.neq (resort scond c) zero
         else resort T.Bool.t c in
-      let* st = aux st in
-      let* sf = aux sf in
-      CT.branch !!c !!st !!sf
+      let* (st, func_infos) = stmt_to_eff st ~info ~func_infos in
+      let* (sf, func_infos) = stmt_to_eff sf ~info ~func_infos in
+      let* st = st in
+      let* sf = sf in
+      let term = CT.branch !!c !!st !!sf in
+      !!(term, func_infos)
     | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
       let label = String.(chop_prefix_exn ~prefix:"L_" label) in
       let dst = CT.int info.word_sort Bitvec.(!$ label) in
       let* jmp = CT.jmp dst in
-      ctrl jmp
+      let term = ctrl jmp in
+      !!(term, func_infos)
     | GOTO label ->
       let label = T.Label.for_name label in
       let* goto = KB.(label >>= CT.goto) in
-      ctrl goto
+      let term = ctrl goto in
+      !!(term, func_infos)
 
-  and body_to_eff info (prog : Patch_c.t) : unit eff =
+  and body_to_eff info (prog : Patch_c.t) : (unit eff * Func_info.t list) KB.t =
     let _, stmt = prog.body in
-    stmt_to_eff info stmt
+    stmt_to_eff stmt ~info ~func_infos:[]
 
   let parse (hvars : Hvar.t list) (tgt : T.target)
-      (patch : Cabs.definition) : unit eff =
+      (patch : Cabs.definition) : (unit eff * Func_info.t list) KB.t =
     let* body = Patch_c.translate patch ~target:tgt in
     let* info = mk_interp_info hvars tgt in
     body_to_eff info body

@@ -3,4 +3,5 @@
   (libraries
     findlib.dynload
     bap
-    vibes_error_lib))
+    vibes_error_lib
+    vibes_c_toolkit_lib))
