@@ -324,10 +324,6 @@ module ARM_ops = struct
     let b ?(cnd = None) () = op "b" ~cnd
     let bl ?(cnd = None) () = op "bl" ~cnd
 
-    (* These are only available on Thumb. *)
-    let cbz = op "cbz"
-    let cbnz = op "cbnz"
-
   end
 
   let create_temp ty =
@@ -1040,25 +1036,11 @@ struct
     | None -> Err.fail @@ Other (
         Format.asprintf "Unexpected branch: %a" Jmp.pp jmp)
     | Some {dst; ret} ->
-      (* On Thumb we can match a comparison with zero and generate
-         `cbz` or `cbnz` without having to test the flags. *)
-      let is_cbz w = is_thumb && not is_call && Word.is_zero w in
-      let cbz ?(neg = false) e =
-        let+ {op_val; op_eff} = exp e in
-        let tmp = create_temp bit_ty in
-        let params = [op_val; dst] in
-        let op = if neg then Ops.cbnz else Ops.cbz in
-        let ctrl = control (Ir.simple_op op (Void tmp) params) empty_eff in
-        ctrl @. op_eff in
       let+ eff = match cond with
         | Int w when Word.(w <> b0) ->
           (* Unconditional branch. If cond is zero, this should
              have been optimized away. *)
           KB.return @@ goto dst call_params ~is_call
-        | BinOp (EQ, e, Int w)  when is_cbz w -> cbz e
-        | BinOp (EQ, Int w, e)  when is_cbz w -> cbz e
-        | BinOp (NEQ, e, Int w) when is_cbz w -> cbz e ~neg:true
-        | BinOp (NEQ, Int w, e) when is_cbz w -> cbz e ~neg:true
         | _ ->
           (* Conditional branch. *)
           let* () =
