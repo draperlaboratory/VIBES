@@ -22,8 +22,8 @@ module Cli = struct
     C.Arg.required arg
 
   let func_info_filepath : string C.Term.t =
-    let info = C.Arg.info ["i"; "func-info-filepath"]
-      ~docv:"FUNC_INFO_FILEPATH"
+    let info = C.Arg.info ["i"; "function-info-filepath"]
+      ~docv:"FUNCTION_INFO_FILEPATH"
       ~doc:"Path to file containing patch function info"
     in
     let parser = C.Arg.some' C.Arg.string in
@@ -31,9 +31,9 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let outfile : string C.Term.t =
-    let info = C.Arg.info ["o"; "outfile"]
-      ~docv:"OUTFILE"
+  let bir_outfile : string C.Term.t =
+    let info = C.Arg.info ["o"; "bir-outfile"]
+      ~docv:"BIR_OUTFILE"
       ~doc:"Path/name of output file"
     in
     let parser = C.Arg.some' C.Arg.string in
@@ -49,7 +49,7 @@ module Cli = struct
       (patch_info_filepath : string)
       (bir_filepath : string)
       (func_info_filepath : string)
-      (outfile : string)
+      (bir_outfile : string)
       : (unit, string) result =
     let () = Cli_opts.Verbosity.setup is_verbose is_no_color in
     Log.send "Running 'vibes-opt'";
@@ -60,7 +60,7 @@ module Cli = struct
         patch_info_filepath
         bir_filepath
         func_info_filepath
-        outfile
+        bir_outfile
     in
     match result with
     | Ok () -> Ok ()
@@ -74,7 +74,7 @@ module Cli = struct
     $ Cli_opts.Patch_info.filepath
     $ bir_filepath
     $ func_info_filepath
-    $ outfile)
+    $ bir_outfile)
 
   let cmd = C.Cmd.v info runner
 

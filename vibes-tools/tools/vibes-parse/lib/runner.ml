@@ -7,7 +7,7 @@ module Err = Vibes_error_lib.Std
 module Utils = Vibes_utils_lib
 module Serializers = Vibes_serializers_lib
 module C_toolkit = Vibes_c_toolkit_lib
-module Func_info = C_toolkit.Types.Func_info
+module Function_info = Vibes_function_info_lib.Types
 module Patch_info = Vibes_patch_info_lib.Types
 module Hvar = Vibes_higher_vars_lib.Higher_var
 module Parsed_c_code = Types.Parsed_c_code
@@ -17,9 +17,6 @@ open Vibes_error_lib.Let
 
 let log_blk (blk : Bap.Std.Blk.t) : unit =
   Log.send (Format.asprintf "BIR block:\n%a" Bap.Std.Blk.pp blk)
-
-let log_func_info (info : Func_info.t) : unit =
-  Log.send (Format.sprintf "Func info: %s" (Func_info.to_string info))
 
 let parse_C_code (raw_code : string) : (Types.ast, Err.t) result =
   Log.send "Parsing C code";
@@ -45,23 +42,26 @@ let to_core (ast : Types.ast) (target : T.Target.t) (hvars : Hvar.t list)
   let* theory = T.instance () in
   let* (module Core) = T.require theory in
   let module C_parser = C_toolkit.Core_c.Eval(Core) in
-  let* (sem, func_infos) = C_parser.parse hvars target ast in
+  let* (sem, func_info) = C_parser.parse hvars target ast in
   let* sem = sem in
   let* () = Parsed_c_code.set label sem in
-  let* () = Parsed_c_code.stash_func_infos label func_infos in
+  let* () = Parsed_c_code.stash_function_info label func_info in
   KB.return label
 
 let compute (ast : Types.ast) (target : T.Target.t) (hvars : Hvar.t list)
-    : (T.Semantics.t * Func_info.t list, Err.t) result =
+    : (T.Semantics.t * Function_info.t, Err.t) result =
   let result = KB.run T.Program.cls (to_core ast target hvars) KB.empty in
   match result with
   | Ok (snapshot, _) ->
      Log.send (Format.asprintf "Snapshot:\n%a" KB.Value.pp snapshot);
      let sem = KB.Value.get T.Semantics.slot snapshot in
      Log.send (Format.asprintf "Promised semantics:\n%a" KB.Value.pp sem);
-     let func_infos = KB.Value.get Parsed_c_code.func_infos_slot snapshot in
-     List.iter func_infos ~f:log_func_info;
-     Ok (sem, func_infos)
+     let func_info = KB.Value.get Parsed_c_code.function_info_slot snapshot in
+     let msg = 
+       Format.asprintf "Promised function info:\n%a"
+         Function_info.pp func_info in
+     Log.send msg;
+     Ok (sem, func_info)
   | Error e ->
      let msg = Format.asprintf
        "Error computing semantics: %a\n%!"
@@ -79,7 +79,7 @@ let run (target : string) (patch_info_filepath : string)
   Log.send msg;
 
   Log.send "Loading patch-info";
-  let- patch_info = Patch_info.json_of patch_info_filepath in
+  let- patch_info = Patch_info.from_file patch_info_filepath in
   let hvars = Patch_info.patch_vars patch_info in
 
   let- target = Utils.Core_theory.get_target target in
@@ -89,7 +89,11 @@ let run (target : string) (patch_info_filepath : string)
   let- raw_code = Utils.Files.get_file_contents patch_filepath ~error in
 
   let- ast = parse_C_code raw_code in
-  let- (semantics, func_infos) = compute ast target hvars in
+  let- (semantics, func_info) = compute ast target hvars in
+
+  let finalized_func_info = Function_info.to_string func_info in
+  Log.send
+    (Format.sprintf "Finalized function info:\n%s" finalized_func_info);
 
   let bir = Bap.Std.Blk.from_insns [semantics] in
   List.iter bir ~f:log_blk;
@@ -98,16 +102,10 @@ let run (target : string) (patch_info_filepath : string)
   let bir_strings = List.map bir_sexps ~f:Sexp.to_string in
   let bir_data = String.concat bir_strings ~sep:"\n" in
   Log.send (Format.sprintf "Serialized BIR:\n%s" bir_data);
-  let finalized_bir_data = Format.sprintf "%s\n" bir_data in
-
-  let func_infos_sexps = List.map func_infos ~f:Func_info.to_sexp in
-  let func_infos_strings = List.map func_infos_sexps ~f:Sexp.to_string in
-  let func_infos_data = String.concat func_infos_strings ~sep:"\n" in
-  Log.send (Format.sprintf "Serialized func infos:\n%s" func_infos_data);
-  let finalized_func_infos_data = Format.sprintf "%s\n" func_infos_data in
+  let finalized_bir = Format.sprintf "%s\n" bir_data in
 
   Log.send "Writing serialized BIR";
-  let- () = Utils.Files.write_or_error finalized_bir_data bir_outfile in
-
-  Log.send "Writing serialized func info";
-  Utils.Files.write_or_error finalized_func_infos_data func_info_outfile 
+  let- () = Utils.Files.write_or_error finalized_bir bir_outfile in
+  
+  Log.send "Writing serialized function info";
+  Utils.Files.write_or_error finalized_func_info func_info_outfile 

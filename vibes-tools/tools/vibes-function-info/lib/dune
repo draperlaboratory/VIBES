@@ -1,0 +1,7 @@
+(library
+  (name vibes_function_info_lib)
+  (libraries
+    findlib.dynload
+    bap
+    vibes_utils_lib)
+  (preprocess (pps ppx_jane ppx_yojson_conv)))

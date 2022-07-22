@@ -5,7 +5,7 @@ module T = Bap_core_theory.Theory
 module Log = Vibes_log_lib.Stream
 module Err = Vibes_error_lib.Std
 module Utils = Vibes_utils_lib
-module Func_info = Vibes_c_toolkit_lib.Types.Func_info
+module Function_info = Vibes_function_info_lib.Types
 module Hvar = Vibes_higher_vars_lib.Higher_var
 module Subst = Vibes_higher_vars_lib.Substituter
 module Patch_info = Vibes_patch_info_lib.Types
@@ -17,7 +17,7 @@ let log_bir bir =
   Log.send (Format.asprintf "New BIR:\n%a" Bap.Std.Blk.pp bir)
 
 let run ~(target : T.Target.t) ~(language : T.Language.t) 
-    ~(patch_info : Patch_info.t) ~(func_infos : Func_info.t list)
+    ~(patch_info : Patch_info.t) ~(func_info : Function_info.t)
     ~(hvars : Hvar.t list) ~(sp_align : int) (bir : blk term list)
     : (Types.t, Err.t) result =
   Log.send "Running BIR passes";
@@ -32,7 +32,7 @@ let run ~(target : T.Target.t) ~(language : T.Language.t)
   in
 
   Log.send "Inserting new mems at callsites";
-  let argument_tids = Abi.collect_argument_tids bir ~func_infos in
+  let argument_tids = Abi.collect_argument_tids bir ~target ~func_info in
   let bir, mem_argument_tids = Abi.insert_new_mems_at_callsites target bir in
   List.iter bir ~f:log_bir;
 

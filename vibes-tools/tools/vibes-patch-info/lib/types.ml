@@ -38,4 +38,4 @@ let patch_vars t : Hvar.t list =
   | None -> []
 
 let pp = Utils.Json.pp ~yojson_of_t
-let json_of = Utils.Json.json_of ~yojson_of_t ~t_of_yojson
+let from_file = Utils.Json.from_file ~yojson_of_t ~t_of_yojson

@@ -6,15 +6,12 @@ module Err = Vibes_error_lib.Std
 module Utils = Vibes_utils_lib
 module Serializers = Vibes_serializers_lib
 module Patch_info = Vibes_patch_info_lib.Types
-module Func_info = Vibes_c_toolkit_lib.Types.Func_info
+module Function_info = Vibes_function_info_lib.Types
 
 open Vibes_error_lib.Let
 
 let log_bir bir =
   Log.send (Format.asprintf "BIR:\n%a" Bap.Std.Blk.pp bir)
-
-let log_func_info func_info =
-  Log.send (Format.sprintf "Func_info: %s" (Func_info.to_string func_info))
 
 let run (target : string) (language : string) (patch_info_filepath : string)
     (bir_filepath : string) (func_info_filepath : string)
@@ -27,7 +24,7 @@ let run (target : string) (language : string) (patch_info_filepath : string)
   Log.send msg;
 
   Log.send "Loading patch-info";
-  let- patch_info = Patch_info.json_of patch_info_filepath in
+  let- patch_info = Patch_info.from_file patch_info_filepath in
   let sp_align = Patch_info.sp_align patch_info in
   let hvars = Patch_info.patch_vars patch_info in
 
@@ -47,22 +44,12 @@ let run (target : string) (language : string) (patch_info_filepath : string)
   in
   List.iter blks ~f:log_bir;
 
-  let- raw_func_info = Utils.Files.get_file_contents' func_info_filepath in
-  let- func_infos =
-    if String.is_empty raw_func_info then Ok []
-    else
-      let error s =
-        Types.Invalid_func_infos
-          (Format.sprintf "Invalid func infos S-exp: %s" s) in
-      let- func_info_sexps = Utils.Sexp.to_sexp raw_func_info ~error in
-      let- func_infos = Result.all (List.map func_info_sexps
-        ~f:(fun sexp -> Serializers.Func_info.deserialize sexp ~target)) in
-      Ok func_infos in
-  List.iter func_infos ~f:log_func_info;
+  let- func_info = Function_info.from_file func_info_filepath in
+  Log.send (Format.asprintf "Function info:\n%a" Function_info.pp func_info);
 
   let- _ (* {bir; cfg; exclude_regs; argument_tids} *) =
     Bir_passes.run blks 
-      ~target ~language ~patch_info ~func_infos ~hvars ~sp_align
+      ~target ~language ~patch_info ~func_info ~hvars ~sp_align
   in
 
   (* TODO:

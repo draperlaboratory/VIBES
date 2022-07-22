@@ -3,7 +3,7 @@ open Bap.Std
 
 module T = Bap_core_theory.Theory
 module Err = Vibes_error_lib.Std
-module Func_info = Vibes_c_toolkit_lib.Types.Func_info
+module Function_info = Vibes_function_info_lib.Types
 module Hvar = Vibes_higher_vars_lib.Higher_var
 module Naming = Vibes_higher_vars_lib.Substituter.Naming
 module Bir_helpers = Vibes_bir_lib.Helpers
@@ -11,7 +11,8 @@ module Bir_helpers = Vibes_bir_lib.Helpers
 open Vibes_error_lib.Let
 
 (* Collect the args to the call, if any. *)
-let collect_args ~(func_infos : Func_info.t list)
+let collect_args ~(target : T.Target.t) 
+    ~(func_info : Function_info.t)
     (blk : blk term) : var list option =
   let jmps = Term.enum jmp_t blk in
   let match_jmp jmp =
@@ -22,15 +23,22 @@ let collect_args ~(func_infos : Func_info.t list)
        begin
          (* The resolved dst is either a tid or a bitv. *)
          match Jmp.resolve dst with
-         | First tid -> Func_info.find tid func_infos
+         | First tid ->
+           begin
+             match Function_info.find func_info ~tid with
+             | Some arg_names ->
+               Some (Function_info.vars_of_args arg_names ~target)
+             | None -> None
+           end
          | Second _ -> None (* We don't handle indirect calls *)
        end
   in
   Seq.find_map jmps ~f:match_jmp
 
 (* Collect the tids where the arguments to calls are defined. *)
-let collect_argument_tids ~(func_infos : Func_info.t list)
-      (blks : blk term list) : Tid.Set.t =
+let collect_argument_tids ~(target : T.Target.t)
+    ~(func_info : Function_info.t)
+    (blks : blk term list) : Tid.Set.t =
   let collect_func_args def (remaining, acc) =
     let lhs = Def.lhs def in
     if Var.Set.mem remaining lhs then
@@ -47,15 +55,15 @@ let collect_argument_tids ~(func_infos : Func_info.t list)
     in
     snd partitioned_vars
   in
-  let aux ~func_infos acc blk =
-    let args = collect_args blk ~func_infos in
+  let aux ~func_info acc blk =
+    let args = collect_args blk ~target ~func_info in
     Option.value_map args
       ~default:acc
       ~f:(fun args -> get_func_args acc args blk)
   in
   List.fold blks
     ~init:Tid.Set.empty
-    ~f:(fun acc blk -> aux acc blk ~func_infos)
+    ~f:(fun acc blk -> aux acc blk ~func_info)
 
 (* Create a fake memory assignment which is a signpost to the selector
    that the most recently assigned memory is a dependency (or "argument")

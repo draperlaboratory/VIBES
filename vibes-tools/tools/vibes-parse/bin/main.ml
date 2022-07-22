@@ -33,7 +33,7 @@ module Cli = struct
     C.Arg.required arg
 
   let func_info_outfile : string C.Term.t =
-    let info = C.Arg.info ["i"; "func-info-outfile"]
+    let info = C.Arg.info ["i"; "function-info-outfile"]
       ~docv:"FUNC_INFO_OUTFILE"
       ~doc:"Path/name of file to output function info to"
     in

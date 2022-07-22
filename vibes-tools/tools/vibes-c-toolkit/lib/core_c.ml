@@ -58,7 +58,8 @@ open KB.Let
 module Hvar = Vibes_higher_vars_lib.Higher_var
 module Substituter = Vibes_higher_vars_lib.Substituter
 module Naming = Substituter.Naming
-module Func_info = Types.Func_info
+module Function_info = Vibes_function_info_lib.Types
+module Utils = Vibes_utils_lib
 module Err = Kb_error
 
 type var_map = unit Theory.var String.Map.t
@@ -424,8 +425,9 @@ module Eval(CT : Theory.Core) = struct
 
   let rec stmt_to_eff
       ~(info : _ interp_info)
-      ~(func_infos : Func_info.t list)
-      (s : Patch_c.stmt) : (unit eff * Func_info.t list) KB.t =
+      ~(func_infos : Function_info.t)
+      (s : Patch_c.stmt)
+      : (unit eff * Function_info.t) KB.t =
     match s with
     | NOP -> !!(empty_blk, func_infos)
     | BLOCK (_, s) -> stmt_to_eff s ~info ~func_infos
@@ -441,9 +443,9 @@ module Eval(CT : Theory.Core) = struct
       let* args = KB.List.map args ~f:(expr_to_pure info) in
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
-      let func_info = Func_info.create dst args in
-      let func_infos = List.append func_infos [func_info] in
-      (* let* () = provide_args dst args in *)
+      let arg_names = List.map args ~f:Var.name in
+      let func_info = Function_info.create_func dst arg_names in
+      let func_infos = Function_info.append func_infos ~func_info in
       let* () = declare_call dst in
       let* call = CT.goto dst in
       let term = CT.blk T.Label.null CT.(seq setargs !!setf) !!call in
@@ -452,9 +454,9 @@ module Eval(CT : Theory.Core) = struct
       let* args = KB.List.map args ~f:(expr_to_pure info) in
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
-      let func_info = Func_info.create dst args in
-      let func_infos = List.append func_infos [func_info] in
-      (* let* () = provide_args dst args in *)
+      let arg_names = List.map args ~f:Var.name in
+      let func_info = Function_info.create_func dst arg_names in
+      let func_infos = Function_info.append func_infos ~func_info in
       let* () = declare_call dst in
       let* call = CT.goto dst in
       let* call_blk = CT.blk T.Label.null CT.(seq setargs !!setf) !!call in
@@ -513,12 +515,13 @@ module Eval(CT : Theory.Core) = struct
       let term = ctrl goto in
       !!(term, func_infos)
 
-  and body_to_eff info (prog : Patch_c.t) : (unit eff * Func_info.t list) KB.t =
+  and body_to_eff info (prog : Patch_c.t)
+      : (unit eff * Function_info.t) KB.t =
     let _, stmt = prog.body in
-    stmt_to_eff stmt ~info ~func_infos:[]
+    stmt_to_eff stmt ~info ~func_infos:Function_info.empty
 
   let parse (hvars : Hvar.t list) (tgt : T.target)
-      (patch : Cabs.definition) : (unit eff * Func_info.t list) KB.t =
+      (patch : Cabs.definition) : (unit eff * Function_info.t) KB.t =
     let* body = Patch_c.translate patch ~target:tgt in
     let* info = mk_interp_info hvars tgt in
     body_to_eff info body

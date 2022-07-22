@@ -1,3 +1,4 @@
+module T = Bap_core_theory.Theory
 module Json = Yojson.Safe
 module Log = Vibes_log_lib.Stream
 module Err = Vibes_error_lib.Std
@@ -10,7 +11,6 @@ module Bitvector = struct
   module Word = Bap.Std.Word
 
   type t = Word.t
-
   let equal = Word.equal
   let compare = Word.compare
 
@@ -23,11 +23,33 @@ module Bitvector = struct
 
 end
 
+module Label = struct
+
+  include Yojson.Safe
+
+  type t = T.Label.t
+  let equal = Bap.Std.Tid.equal
+  let compare = Bap.Std.Tid.compare
+
+  let t_of_yojson json =
+    match json with
+    | `String s ->
+      begin
+        match Bap.Std.Tid.from_string s with
+        | Ok s -> s
+        | Error _ -> failwith (Format.sprintf "No such label '%s'" s)
+      end
+    | _ -> failwith "Invalid label string"
+
+  let yojson_of_t t = `String (Bap.Std.Tid.to_string t)
+
+end
+
 let pp ~yojson_of_t fmt t =
   let json = yojson_of_t t in
   Json.pretty_print fmt json
 
-let json_of ~yojson_of_t ~t_of_yojson filepath =
+let from_file ~yojson_of_t ~t_of_yojson filepath =
   let- json =
     try Ok (Json.from_file filepath)
     with _ ->
