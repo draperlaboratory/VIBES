@@ -52,6 +52,8 @@ type patch_space = {
     space_size : int64
   }
 
+type ogre_spec = (string, string option * string option) Either.t
+
 (* The configuration for a run of the VIBES pipeline. *)
 type t = {
   exe : string; (* The filename (path) of the executable to patch. *)
@@ -61,7 +63,7 @@ type t = {
   perform_verification : bool; (* Whether to verify *)
   minizinc_model_filepath : string; (* Path to a minizinc model file *)
   minizinc_isel_filepath : string option;
-  ogre : string option;
+  ogre : ogre_spec option;
   patch_spaces : patch_space list;
   wp_params : Wp_params.t;
 }
@@ -83,7 +85,7 @@ let max_tries t : int option = t.max_tries
 let perform_verification t : bool = t.perform_verification
 let minizinc_model_filepath t : string = t.minizinc_model_filepath
 let minizinc_isel_filepath t : string option = t.minizinc_isel_filepath
-let ogre t : string option = t.ogre
+let ogre t : ogre_spec option = t.ogre
 let patch_spaces t : patch_space list = t.patch_spaces
 let wp_params t : Wp_params.t = t.wp_params
 
@@ -199,8 +201,16 @@ let pp (ppf : Format.formatter) t : unit =
       Printf.sprintf "Max tries: %d" (Option.value t.max_tries ~default:0);
       Printf.sprintf "Perform verification: %b" t.perform_verification;
       Printf.sprintf "Minizinc model: %s" t.minizinc_model_filepath;
-      Printf.sprintf "Ogre file: %s"
-        (Option.value t.ogre ~default:"<none provided>");
+      Printf.sprintf "Ogre file: %s" @@
+      Option.value_map t.ogre ~default:"<none provided>" ~f:(function
+          | First s -> s
+          | Second (None, None) -> "<none provided>"
+          | Second (Some orig, None) ->
+            Printf.sprintf "orig=%s" orig
+          | Second (None, Some mod_) ->
+            Printf.sprintf "mod=%s" mod_
+          | Second (Some orig, Some mod_) ->
+            Printf.sprintf "orig=%s, mod=%s" orig mod_);
       Printf.sprintf "Patch spaces: %s"
         (patch_spaces_to_string t.patch_spaces);
       Printf.sprintf "WP-params: %s" (wp_params_to_string t.wp_params);
@@ -229,7 +239,7 @@ let create
     ~perform_verification:(perform_verification : bool)
     ~minizinc_model_filepath:(minizinc_model_filepath : string)
     ~minizinc_isel_filepath:(minizinc_isel_filepath : string option)
-    ~ogre:(ogre : string option)
+    ~ogre:(ogre : ogre_spec option)
     ~patch_spaces:(patch_spaces : patch_space list)
     ~wp_params:(wp_params : Wp_params.t)
   : t =

@@ -29,7 +29,7 @@ val run_process : string -> string list -> (unit, Kb_error.t) result
 val lift_kb_result : ('a, Kb_error.t) result -> 'a KB.t
 
 (** [load_exe "/path/to/exe"] loads /path/to/exe into BAP. *)
-val load_exe : string -> (project * Program.t, Toplevel_error.t) result
+val load_exe : ?orig:bool -> string -> (project * Program.t, Toplevel_error.t) result
 
 (** [get_sub prog "main"] returns the function ["main"] in [prog], if present. *)
 val get_func : Program.t -> string -> Sub.t option

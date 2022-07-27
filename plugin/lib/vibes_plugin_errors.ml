@@ -41,6 +41,7 @@ type t =
   | Invalid_bsi_data of string
   | Invalid_init_mem
   | Loader_data_conflict
+  | Ogre_field_conflict
   | Invalid_minizinc_isel_filepath
   | Invalid_extra_constraints
   | No_such_file of string
@@ -106,6 +107,8 @@ let pp (ppf : Format.formatter) t : unit =
     | Loader_data_conflict ->
       "optional fields \"bsi-metadata\" and \"ogre\" were specified, \
        cannot use both"
+    | Ogre_field_conflict ->
+      "ogre cannot be combined with ogre-orig/ogre-mod"
     | Invalid_minizinc_isel_filepath ->
       "minizinc_isel_filepath does not point to valid file"
     | Invalid_extra_constraints ->

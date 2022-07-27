@@ -133,7 +133,7 @@ let rec cegis ?(count : int = 1) ?(max_tries : int option = None)
 
   (* Temporarily use the new KB state when loading the patched binary. *)
   Toplevel.set new_state;
-  let+ patch_proj, patch_prog = Utils.load_exe tmp_patched_filepath in
+  let+ patch_proj, patch_prog = Utils.load_exe tmp_patched_filepath ~orig:false in
   let patch_code =
     let open Bap_wp.Utils.Code_addrs in
     if (Config.wp_params config).init_mem

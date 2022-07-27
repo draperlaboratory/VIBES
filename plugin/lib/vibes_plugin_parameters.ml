@@ -392,13 +392,30 @@ let validate_minizinc_isel_filepath (obj : Json.t)
       else Err.fail (Errors.Invalid_minizinc_isel_filepath)
     end
   | _ -> Ok None
-let validate_ogre (obj : Json.t)
+
+let load_ogre (filename : string) : string * string =
+  In_channel.read_all filename, "./" ^ filename
+
+let validate_one_ogre (obj : Json.t)
   : ((string * string) option, error) Stdlib.result =
   match Json.Util.member "ogre" obj with
   | `Null -> Err.return None
-  | `String filename ->
-    Err.return @@ Some (In_channel.read_all filename, "./" ^ filename)
-  | _ -> Err.fail (Errors.Invalid_loader_data "must be a string.")
+  | `String filename -> Err.return @@ Some (load_ogre filename)
+  | _ -> Err.fail @@ Invalid_loader_data "must be a string."
+
+let validate_two_ogre (obj : Json.t)
+  : ((string * string) option * (string * string) option, error) Stdlib.result =
+  begin match Json.Util.member "ogre-orig" obj with
+    | `Null -> Err.return None
+    | `String filename -> Err.return @@ Some (load_ogre filename)
+    | _ -> Err.fail @@ Invalid_loader_data "must be a string (ogre-orig)."
+  end >>= fun orig ->
+  begin match Json.Util.member "ogre-mod" obj with
+    | `Null -> Err.return None
+    | `String filename -> Err.return @@ Some (load_ogre filename)
+    | _ -> Err.fail @@ Invalid_loader_data "must be a string (ogre-mod)."
+  end >>| fun mod_ ->
+  orig, mod_
 
 (* Parse the user-provided JSON config file into a Yojson.Safe.t *)
 let parse_json (config_filepath : string) : (Json.t, error) Stdlib.result =
@@ -602,11 +619,27 @@ let parse_bsi_metadata (exe : string) (config_json : Json.t)
   | _ -> Err.fail @@ Errors.Invalid_bsi_data
       "`bsi-metadata` field must be a string"
 
+type ogre = (
+  string * string,
+  (string * string) option * (string * string) option
+) Either.t
+
 let validate_loader_info
     (bsi : BSI.t option)
     (config_json : Json.t)
-  : ((string * string) option, error) Stdlib.result =
-  validate_ogre config_json >>= fun ogre ->
+  : (ogre option, error) Stdlib.result =
+  validate_one_ogre config_json >>= fun ogre ->
+  validate_two_ogre config_json >>= fun (orig, mod_) ->
+  begin match ogre, orig, mod_ with
+  | Some _, Some _, _ | Some _, _, Some _ ->
+    Err.fail Errors.Ogre_field_conflict
+  | Some ogre, None, None -> Err.return @@ Some (First ogre)
+  | None, Some orig, None -> Err.return @@ Some (Second (Some orig, None))
+  | None, None, Some mod_ -> Err.return @@ Some (Second (None, Some mod_))
+  | None, Some orig, Some mod_ ->
+    Err.return @@ Some (Second (Some orig, Some mod_))
+  | None, None, None -> Err.return None
+  end >>= fun ogre ->
   match bsi, ogre with
   | None, None -> Err.return None
   | None, Some ogre -> Err.return @@ Some ogre
@@ -616,7 +649,7 @@ let validate_loader_info
     Out_channel.fprintf chan "%s" str;
     Out_channel.flush chan;
     Out_channel.close chan;
-    Err.return @@ Some (str, filename)
+    Err.return @@ Some (First (str, filename))
   | Some _, Some _ -> Err.fail Errors.Loader_data_conflict
 
 (* Construct a configuration record from the given parameters. *)
@@ -636,8 +669,21 @@ let create
   (* Hand off the ogre filepath to WP if one was provided/generated. *)
   let wp_params, ogre = match ogre with
     | None -> wp_params, None
-    | Some (ogre, filename) ->
-      {wp_params with ogre = Some filename}, Some ogre in
+    | Some (First (ogre, filename)) ->
+      {wp_params with ogre = Some filename},
+      Some (First ogre)
+    | Some (Second (Some (orig, filename), None)) ->
+      {wp_params with ogre_orig = Some filename},
+      Some (Second (Some orig, None))
+    | Some (Second (None, Some (mod_, filename))) ->
+      {wp_params with ogre_mod = Some filename},
+      Some (Second (None, Some mod_))
+    | Some (Second (Some (orig, filename_orig),
+                    Some (mod_, filename_mod))) ->
+      {wp_params with ogre_orig = Some filename_orig;
+                      ogre_mod = Some filename_mod},
+      Some (Second (Some orig, Some mod_))
+    | Some (Second (None, None)) -> wp_params, None in
   validate_minizinc_model_filepath config_json >>=
   fun minizinc_model_filepath ->
   validate_minizinc_isel_filepath config_json >>=

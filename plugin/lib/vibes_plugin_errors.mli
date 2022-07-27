@@ -44,6 +44,7 @@ type t =
   | Invalid_bsi_data of string
   | Invalid_init_mem
   | Loader_data_conflict
+  | Ogre_field_conflict
   | Invalid_minizinc_isel_filepath
   | Invalid_extra_constraints
   | No_such_file of string

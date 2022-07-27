@@ -11,16 +11,16 @@
 (***************************************************************************)
 
 (***********************************************************************
-*
-*   This module provides a custom "lightweight" loader for binaries,
-*   configured by user-input.
-*
-*   An almost verbatim copy of the "raw" loader for BAP: this allows us
-*   fine-grained control of the loading process, effectively allowing
-*   us to disassemble only small chunks of a large binary.
-*
-*
-**********************************************************************)
+ *
+ *   This module provides a custom "lightweight" loader for binaries,
+ *   configured by user-input.
+ *
+ *   An almost verbatim copy of the "raw" loader for BAP: this allows us
+ *   fine-grained control of the loading process, effectively allowing
+ *   us to disassemble only small chunks of a large binary.
+ *
+ *
+ **********************************************************************)
 
 
 let _doc = {|
@@ -38,12 +38,21 @@ open Core_kernel
 let register_loader conf =
   match Config.ogre conf with
   | None -> false
-  | Some o ->
-    begin
-      Image.register_loader ~name:"vibes-raw" (module struct
-        let from_file _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string o)
-        let from_data _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string o)
-      end);
-      true
-    end
-
+  | Some (First o) ->
+    Image.register_loader ~name:"vibes-raw" (module struct
+      let from_file _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string o)
+      let from_data _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string o)
+    end);
+    true
+  | Some (Second (orig, mod_)) ->
+    Option.iter orig ~f:(fun orig ->
+        Image.register_loader ~name:"vibes-raw-orig" (module struct
+          let from_file _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string orig)
+          let from_data _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string orig)
+        end));
+    Option.iter mod_ ~f:(fun mod_ ->
+        Image.register_loader ~name:"vibes-raw-mod" (module struct
+          let from_file _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string mod_)
+          let from_data _ = Or_error.map ~f:Option.some (Ogre.Doc.from_string mod_)
+        end));
+    true

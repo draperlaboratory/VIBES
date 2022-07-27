@@ -67,15 +67,19 @@ let run_process (command : string) (args : string list)
       Error (Kb_error.Unexpected_exit msg)
     end
 
-let load_exe (filename : string)
-  : (project * Program.t, Toplevel_error.t) result =
+let load_exe ?(orig = true)
+    (filename : string) : (project * Program.t, Toplevel_error.t) result =
   let loader =
     let loaders = Project.Input.available_loaders () in
-    if Core_kernel.List.mem ~equal:String.equal loaders "vibes-raw" then
-      "vibes-raw"
+    let mem = Base.List.mem loaders ~equal:String.equal in
+    if orig then
+      if mem "vibes-raw-orig" then "vibes-raw-orig"
+      else if mem "vibes-raw" then "vibes-raw"
+      else "llvm"
     else
-      "llvm"
-  in
+      if mem "vibes-raw-mod" then "vibes-raw-mod"
+      else if mem "vibes-raw" then "vibes-raw"
+      else "llvm" in
   let input = Project.Input.file ~loader ~filename in
   match Project.create input ~package:filename with
   | Ok proj ->
