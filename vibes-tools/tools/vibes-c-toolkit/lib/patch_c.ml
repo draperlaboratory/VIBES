@@ -1,25 +1,13 @@
-(***************************************************************************)
-(*                                                                         *)
-(*  Copyright (C) 2022/2023 The Charles Stark Draper Laboratory, Inc.      *)
-(*                                                                         *)
-(*  This file is provided under the license found in the LICENSE file in   *)
-(*  the top-level directory of this project.                               *)
-(*                                                                         *)
-(*  This research was developed with funding from the Defense Advanced     *)
-(*  Research Projects Agency (DARPA).                                      *)
-(*                                                                         *)
-(***************************************************************************)
-
-open Core_kernel
+open Core
 open Bap.Std
 open Bap_c.Std
 open Monads.Std
 open Bap_core_theory
 
 module Err = Kb_error
-module Hvar = Higher_var
 module Utils = C_utils
 module Log = Vibes_log_lib.Stream
+module Hvar = Vibes_higher_vars_lib.Higher_var
 
 (* Describes the data model used by the target.
 
@@ -691,7 +679,7 @@ module Main = struct
       let+ t = go_type t ~msg in
       PTR t
     | Cabs.PROTO (_, _, true) ->
-      let s = Utils.print_c (Cprint.print_type ident) t in
+      let s = Utils.print_c (Cprint.print_type Fn.id) t in
       fail (
         sprintf "Patch_c.go_type: %sVariadic functions are \
                  unsupported:\n\n%s\n" msg s)
@@ -702,7 +690,7 @@ module Main = struct
             go_type t ~msg) in
       FUN (ret, args)
     | _ ->
-      let s = Utils.print_c (Cprint.print_type ident) t in
+      let s = Utils.print_c (Cprint.print_type Fn.id) t in
       fail (
         sprintf "Patch_c.go_type: %sunsupported type:\n\n%s" msg s)
 

@@ -1,4 +1,4 @@
-open Core_kernel
+open Core
 
 type event = string
 type observer = event -> unit

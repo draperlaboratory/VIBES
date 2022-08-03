@@ -3,6 +3,7 @@ module Log = Vibes_log_lib.Stream
 module Err = Vibes_error_lib.Std
 module Versions = Vibes_constants_lib.Versions
 module Cli_opts = Vibes_common_cli_options_lib
+module Runner = Vibes_parse_lib.Runner
 
 module Cli = struct
 
@@ -11,20 +12,30 @@ module Cli = struct
   let version = Versions.vibes_parse
   let info = C.Cmd.info name ~doc ~version
 
-  let filepath : string C.Term.t =
-    let info = C.Arg.info ["f"; "filepath"]
-      ~docv:"FILEPATH"
-      ~doc:"Path to file containing a patch (in a subset of C)"
+  let patch_filepath : string C.Term.t =
+    let info = C.Arg.info ["f"; "patch-filepath"]
+      ~docv:"PATCH_FILEPATH"
+      ~doc:"Path to file containing patch code (in a subset of C)"
     in
     let parser = C.Arg.some' C.Arg.file in
     let default = None in
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let outfile : string C.Term.t =
-    let info = C.Arg.info ["o"; "outfile"]
-      ~docv:"OUTFILE"
-      ~doc:"Path/name of output file"
+  let bir_outfile : string C.Term.t =
+    let info = C.Arg.info ["o"; "bir-outfile"]
+      ~docv:"BIR-OUTFILE"
+      ~doc:"Path/name of file to output BIR to"
+    in
+    let parser = C.Arg.some' C.Arg.string in
+    let default = None in
+    let arg = C.Arg.opt parser default info in
+    C.Arg.required arg
+
+  let func_info_outfile : string C.Term.t =
+    let info = C.Arg.info ["i"; "function-info-outfile"]
+      ~docv:"FUNC_INFO_OUTFILE"
+      ~doc:"Path/name of file to output function info to"
     in
     let parser = C.Arg.some' C.Arg.string in
     let default = None in
@@ -35,12 +46,22 @@ module Cli = struct
       (is_verbose : bool)
       (is_no_color : bool)
       (target : string)
-      (filepath : string)
-      (outfile : string)
+      (patch_info_filepath : string)
+      (patch_filepath : string)
+      (bir_outfile : string)
+      (func_info_outfile : string)
       : (unit, string) result =
     let () = Cli_opts.Verbosity.setup is_verbose is_no_color in
     Log.send "Running 'vibes-parse'";
-    match Vibes_parse_lib.Runner.run target filepath outfile with
+    let result =
+      Runner.run
+        target
+        patch_info_filepath
+        patch_filepath
+        bir_outfile
+        func_info_outfile
+    in
+    match result with
     | Ok () -> Ok ()
     | Error e -> Error (Err.to_string e)
 
@@ -48,8 +69,10 @@ module Cli = struct
     $ Cli_opts.Verbosity.is_verbose
     $ Cli_opts.Verbosity.is_no_color
     $ Cli_opts.Target.target
-    $ filepath
-    $ outfile)
+    $ Cli_opts.Patch_info.filepath
+    $ patch_filepath
+    $ bir_outfile
+    $ func_info_outfile)
 
   let cmd = C.Cmd.v info runner
 

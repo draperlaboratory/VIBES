@@ -4,12 +4,12 @@ let print_c (pp : 'a -> unit) (data : 'a) : string =
   Cprint.out := chan;
   pp data;
   Cprint.flush ();
-  let open Core_kernel in
+  let open Core in
   Out_channel.close chan;
   let res =
     In_channel.read_lines tmp_file
     |> String.concat ~sep:"\n"
   in
   Cprint.out := old_chan;
-  Sys.remove tmp_file;
+  Sys_unix.remove tmp_file;
   res

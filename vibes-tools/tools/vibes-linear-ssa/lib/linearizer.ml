@@ -1,99 +1,15 @@
-open Core_kernel
+open Core
 open Bap.Std
-open Bap_core_theory
-open Monads.Std
 
-module Naming = Vibes_c_toolkit_lib.Substituter.Naming
-
-module Data = struct
-
-  type ins_outs = {ins : Var.Set.t; outs: Var.Set.t} [@@deriving compare, equal, sexp]
-
-end
-
-let prefix_of_tid (tid : tid) : string =
-  let tid_str = Tid.to_string tid in
-  String.drop_prefix tid_str 1
-
-(* Use the tid of the blk as the prefix, dropping the '%' at
-   the beginning. *)
-let prefix_from (blk : blk term) : string =
-  prefix_of_tid @@ Term.tid blk
-
-let linearize ~(prefix : string) (var : var) : var =
-  let name = Var.name var in
-  let typ = Var.typ var in
-  let new_name = prefix ^ "_" ^ name in
-  let escaped_name =
-    String.substr_replace_all new_name ~pattern:"." ~with_:"_" in
-  Var.create escaped_name typ
-
-(* The prefix consists of an underscore (1 char), followed by the
-   tid string (8 chars), ending with another underscore (1 char). *)
-let prefix_len = 10
-
-let orig_name (name : string) : string option =
-  let (let*) x f = Option.bind x ~f in
-  let name = String.drop_prefix name prefix_len in
-  let name, is_reg =
-    Naming.unmark_reg_name name |>
-    Option.value_map ~default:(name, false) ~f:(fun name ->
-        name, true) in
-  let* name = match String.split name ~on:'_' with
-    | [] -> Some name
-    | [name] when not @@ String.is_empty name -> Some name
-    | [name; _] -> Some name
-    | _ -> None
-  in
-  if is_reg then Some (Naming.mark_reg_name name) else Some name
-
-let same (a : var) (b : var) : bool =
-  let a = Var.name a and b = Var.name b in
-  String.equal a b ||
-  match (orig_name a), (orig_name b) with
-  | Some a, Some b -> String.equal a b
-  | _ ->  false
-
-let congruent (a : var) (b : var) : bool =
-  let name_1 = String.drop_prefix (Var.name a) prefix_len in
-  let name_2 = String.drop_prefix (Var.name b) prefix_len in
-  (* We have to be careful feeding in vars which don't fit our naming
-     convention for linear SSA. In particular, the instruction selector
-     may generate additional temporary variables, which happens after
-     we've run the linear SSA pass. *)
-  if String.is_empty name_1 && String.is_empty name_2 then false
-  else String.equal name_1 name_2
-
-module Linear = struct
-
-  module Env = struct
-
-    type t = {
-      vars : Var.Set.t;
-      prefix : string;
-    }
-
-    let empty = {
-      vars = Var.Set.empty;
-      prefix = "";
-    }
-
-    let add_var v env = {env with vars = Set.add env.vars v}
-    let with_prefix prefix env = {env with prefix}
-
-  end
-
-  include Monad.State.T1(Env)(Monad.Ident)
-  include Monad.State.Make(Env)(Monad.Ident)
-
-end
+module Hvar = Vibes_higher_vars_lib.Higher_var
+module Linear = Types.Linear
 
 open Linear.Let
 
 type 'a linear = 'a Linear.t
 
 let linearize_var (v : var) : var linear =
-  Linear.gets @@ fun {prefix; _} -> linearize v ~prefix
+  Linear.gets @@ fun {prefix; _} -> Types.linearize v ~prefix
 
 let rec linearize_exp (exp : exp) : exp linear = match exp with
   | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
@@ -189,12 +105,11 @@ let linearize_blk (blk : blk term) : blk term linear =
 
 (* Produce a linear_ssa-ified live variable map. Each variable
    get the prefix from it's block.
-
    Also, expand the phi nodes to new defs at the corresponding
-   edges in the CFG.
-*)
+   edges in the CFG. *)
 let compute_liveness_and_expand_phis
-    (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) =
+    (hvars : Hvar.t list)
+    (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) KB.t =
   let open KB.Let in
   let liveness = Live.compute sub in
   let blks = Term.enum blk_t sub |> Seq.to_list in
@@ -207,62 +122,76 @@ let compute_liveness_and_expand_phis
             Phi.values phi |> Seq.fold ~init ~f:(fun m (tid, e) ->
                 Map.add_multi m ~key:tid ~data:(lhs, e)))) in
   (* Insert these pseudo-definitions. *)
-  let blks =
-    List.map blks ~f:(fun blk ->
-        match Map.find phi_map @@ Term.tid blk with
-        | None -> blk
-        | Some defs ->
-          let builder = Blk.Builder.init blk
-              ~same_tid:true
-              ~copy_phis:true
-              ~copy_defs:true
-              ~copy_jmps:true in
-          let () =
-            List.iter defs ~f:(fun (lhs, e) ->
-                let tid = Tid.create () in (* TODO: Used to be Theory.Label.fresh *)
-                let def = Def.create ~tid lhs e in
-                Blk.Builder.add_def builder def) in
-          let blk = Blk.Builder.result builder in
-          blk) in
+  let* blks = KB.List.map blks ~f:(fun blk ->
+      match Map.find phi_map @@ Term.tid blk with
+      | None -> KB.return blk
+      | Some defs ->
+        let builder = Blk.Builder.init blk
+            ~same_tid:true  ~copy_phis:true
+            ~copy_defs:true ~copy_jmps:true in
+        let* () = KB.List.iter defs ~f:(fun (lhs, e) ->
+            let+ tid = Theory.Label.fresh in
+            let def = Def.create ~tid lhs e in
+            Blk.Builder.add_def builder def) in
+        KB.return @@ Blk.Builder.result builder) in
   (* Get the linearized ins and outs. *)
   let ins_outs_map = List.map blks ~f:(fun blk ->
       let tid = Term.tid blk in
       let outs = Live.outs liveness tid in
+      let outs =
+        (* Implicit exit blocks will have the `at-exit` finalizers,
+           if they exist. *)
+        if Bir_helpers.is_implicit_exit blk then
+          (* Get all of the finalizers, which are assignments to
+             preassigned registers. *)
+          let vars =
+            Term.enum def_t blk |> Seq.map ~f:Def.lhs |>
+            Seq.filter ~f:(fun v -> Option.is_some @@ Naming.unmark_reg v) in
+          (* Compare the higher var storage information with the
+             existing var. We need the SSA'd name of this var. *)
+          let same reg v =
+            String.equal (Naming.mark_reg_name reg) @@
+            Var.name @@ Var.base v in
+          (* For each higher var we intended to finalize, add them
+             to the set of live outs for this block. *)
+          List.fold hvars ~init:outs ~f:(fun outs -> function
+              | {value = Registers ({at_exit = Some reg; _}); _} -> begin
+                  match Seq.find vars ~f:(same reg) with
+                  | Some v -> Set.add outs v
+                  | None -> outs
+                end
+              | _ -> outs)
+        else outs in
       let ins = Live.ins liveness tid in
       let prefix = prefix_from blk in
       let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
       let ins = Var.Set.map ins ~f:(fun var -> linearize ~prefix var) in
       let ins_outs : Data.ins_outs = {ins; outs} in
       tid, ins_outs) in
-  (blks, Tid.Map.of_alist_exn ins_outs_map)
+  KB.return (blks, Tid.Map.of_alist_exn ins_outs_map)
 
 let all_ins_outs_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
   Var.Set.union_list @@
   List.map ~f:(fun Data.{ins; outs} -> Var.Set.union ins outs) @@
   Tid.Map.data ins_outs
 
-module Var_pair = struct
-  module T = struct
-    type t = var * var [@@deriving compare, sexp]
-  end
-
-  include T
-  include Comparator.Make(T)
-end
-
-let transform (sub : sub term) =
-  let blks, ins_outs_map = compute_liveness_and_expand_phis sub in
+let transform
+    ?(patch : Data.Patch.t option = None)
+    (hvars : Higher_var.t list)
+    (sub : sub term) : blk term list KB.t =
+  let open KB.Let in
+  let* blks, ins_outs_map = compute_liveness_and_expand_phis hvars sub in
   let blks, Linear.Env.{vars; _} =
     Linear.(run (List.map blks ~f:linearize_blk) Env.empty) in
   (* Add in live variables that persist across blocks that don't use them *)
   let vars = Var.Set.union vars (all_ins_outs_vars ins_outs_map) in
-  let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
-  let congruences = 
-    Var.Set.to_list vars |> 
-    List.map ~f:(fun v1 ->
-      let vars = Set.filter vars ~f:(cong v1) in
-      Set.to_list vars |> 
-      List.map ~f:(fun v2 -> (v1, v2)))
-  in
-  let congruences = Var_pair.Set.of_list congruences in
-  (blks, ins_outs_map, congruences)
+  let* () = match patch with
+    | None -> KB.return ()
+    | Some patch ->
+      let* () = Data.Patch.set_ins_outs_map patch ins_outs_map in
+      let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
+      Var.Set.to_list vars |> KB.List.iter ~f:(fun v1 ->
+          let vars = Set.filter vars ~f:(cong v1) in
+          Set.to_list vars |> KB.List.iter ~f:(fun v2 ->
+              Data.Patch.add_congruence patch (v1, v2))) in
+  KB.return blks

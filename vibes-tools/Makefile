@@ -21,25 +21,13 @@ all:
 	$(MAKE) $(VIBES_OPT)
 
 .PHONY: clean
-clean:
-	$(MAKE) clean.$(VIBES_PLAYGROUND)
-	$(MAKE) clean.$(VIBES_PARSE)
-	$(MAKE) clean.$(VIBES_OPT)
+clean: clean.$(VIBES_PLAYGROUND) clean.$(VIBES_PARSE) clean.$(VIBES_OPT)
 
-build:
-	$(MAKE) build.$(VIBES_PLAYGROUND)
-	$(MAKE) build.$(VIBES_PARSE)
-	$(MAKE) build.$(VIBES_OPT)
+build: build.$(VIBES_PLAYGROUND) build.$(VIBES_PARSE) build.$(VIBES_OPT)
 
-install:
-	$(MAKE) install.$(VIBES_PLAYGROUND)
-	$(MAKE) install.$(VIBES_PARSE)
-	$(MAKE) install.$(VIBES_OPT)
+install: install.$(VIBES_PLAYGROUND) install.$(VIBES_PARSE) install.$(VIBES_OPT)
 
-uninstall:
-	$(MAKE) uninstall.$(VIBES_PLAYGROUND)
-	$(MAKE) uninstall.$(VIBES_PARSE)
-	$(MAKE) uninstall.$(VIBES_OPT)
+uninstall: uninstall.$(VIBES_PLAYGROUND) uninstall.$(VIBES_PARSE) uninstall.$(VIBES_OPT)
 
 
 ###################################

@@ -1,0 +1,9 @@
+(library
+  (name vibes_linear_ssa_lib)
+  (libraries
+    findlib.dynload
+    bap
+    core
+    vibes_log_lib
+    vibes_error_lib
+    vibes_higher_vars_lib))

@@ -1,4 +1,4 @@
-open Core_kernel
+open Core
 
 (* Parses a string into a Cabs.file *)
 let parse_c_file (input : string) : (Cabs.file, string) result =
