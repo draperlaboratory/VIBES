@@ -52,9 +52,7 @@ let run
       ~target ~sp_align ~hvars ~entry_blk in
   log_sub sub;
   Log.send "Substituting hvars";
-  let* sub =
-    liftr @@ Subst.substitute sub
-      ~tgt:target ~hvars ~spilled ~entry_tid in
+  let* sub = Subst.substitute sub ~target ~hvars ~spilled ~entry_tid in
   log_sub sub;
   Log.send "Re-ordering blocks";
   let sub = Shape.reorder_blks sub in
