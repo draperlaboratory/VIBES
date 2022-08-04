@@ -52,6 +52,18 @@ let provide_function_info
                     KB.provide T.Label.is_subroutine tid @@ Some true
                   end else !!())))
 
+let thumb_specific
+    (sub : sub term)
+    ~(target : T.target)
+    ~(patch_info : Patch_info.t) : sub term KB.t =
+  Log.send "Relaxing branches";
+  let* sub = Shape.relax_branches sub ~target ~patch_info in
+  log_sub sub;
+  Log.send "Splitting conditional jumps";
+  let+ sub = Shape.split_on_conditional sub in
+  log_sub sub;
+  sub
+
 let run
     (sub : sub term)
     ~(target : T.Target.t)
@@ -64,8 +76,9 @@ let run
   let is_thumb = Utils.Core_theory.is_thumb language in
   let* entry_tid = liftr @@ Bir_helpers.entry_tid sub in
   let* () = provide_function_info sub ~func_info in
-  Log.send "Inserting new mems at callsites";
+  Log.send "Collecting arguments at callsites";
   let* argument_tids = Abi.collect_argument_tids sub ~target ~func_info in
+  Log.send "Inserting new mems at callsites";
   let* sub, mem_argument_tids =
     Abi.insert_new_mems_at_callsites sub ~target in
   log_sub sub;
@@ -75,6 +88,9 @@ let run
   log_sub sub;
   Log.send "Adjusting exits";
   let* sub = Shape.adjust_exits sub in
+  log_sub sub;
+  Log.send "Splitting conditional calls";
+  let* sub = Shape.split_conditional_calls sub in
   log_sub sub;
   Log.send "Spilling hvars and adjusting stack";
   let* Abi.Spill.{sub; hvars; spilled} =
@@ -95,10 +111,9 @@ let run
   log_sub sub;
   let* sub =
     if is_thumb then begin
-      Log.send "Relaxing branches for the Thumb target";
-      let+ sub = Shape.relax_branches sub ~target ~patch_info in
-      log_sub sub; sub
-    end else !!sub  in
+      Log.send "%a target detected" T.Language.pp language;
+      thumb_specific sub ~target ~patch_info
+    end else !!sub in
   Log.send "Re-ordering blocks again";
   let sub = Shape.reorder_blks sub in
   log_sub sub;

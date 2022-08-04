@@ -269,6 +269,36 @@ let split_on_conditional (sub : sub term) : sub term KB.t =
             let cont = Blk.create () ~tid:blk_tid ~jmps:[jmp] in
             Tid.Table.set after ~key:(Term.tid blk) ~data:cont;
             Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid))) in
-  Tid.Table.to_alist after |>
-  List.fold ~init:sub ~f:(fun sub (after, blk) ->
-      Term.append blk_t sub blk ~after)
+  Tid.Table.fold after ~init:sub
+    ~f:(fun ~key:after ~data:blk sub ->
+        Term.append blk_t sub blk ~after)
+
+(* If BAP gave us a block with a call of the form:
+
+   `when cond call x with return y`
+
+   Then we need to turn this into:
+
+   `when cond goto z`
+
+   Where `z` contains:
+
+   `call x with return y`
+*)
+let split_conditional_calls (sub : sub term) : sub term KB.t =
+  let after = Tid.Table.create () in
+  let+ sub = Term.KB.map blk_t sub ~f:(fun blk ->
+      Term.KB.map jmp_t blk ~f:(fun jmp -> match Jmp.kind jmp with
+          | Call call when not @@ Bir_helpers.is_unconditional jmp ->
+            let* blk_tid = T.Label.fresh in
+            let+ jmp_tid = T.Label.fresh in
+            let new_jmp = Jmp.create_call ~tid:jmp_tid call in
+            let new_blk = Blk.create () ~tid:blk_tid ~jmps:[new_jmp] in
+            Tid.Table.set after ~key:(Term.tid blk) ~data:new_blk;
+            Jmp.create_goto (Direct blk_tid)
+              ~cond:(Jmp.cond jmp)
+              ~tid:(Term.tid jmp)
+          | _ -> !!jmp)) in
+  Tid.Table.fold after ~init:sub
+    ~f:(fun ~key:after ~data:blk sub ->
+        Term.append blk_t sub blk ~after)
