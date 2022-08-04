@@ -111,7 +111,6 @@ The tool suite is then contained in the [tools/](tools/) subdirectory, where eac
         |-- "vibes-parse/" (folder containing the vibes-parse tool)
         |-- "vibes-opt/" (folder containing the vibes-opt tool)
         |-- "vibes-log/" (folder containing a shared logging library)
-        |-- "vibes-error/" (folder containing a shared error handling library)
         |-- ...
 ```
 
