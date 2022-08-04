@@ -163,7 +163,7 @@ module Spill = struct
       ~(sp : var)
       ~(mem : var)
       ~(endian : endian)
-      ~(entry_blk : blk term)
+      ~(entry_tid : tid)
       ~(space : word) : t KB.t =
     (* Place a register into a stack location. *)
     let push v =
@@ -194,7 +194,7 @@ module Spill = struct
       let exit_tids = List.map exits ~f:Term.tid |> Tid.Set.of_list in
       let+ sub = Term.KB.map blk_t sub ~f:(fun blk ->
           let tid = Term.tid blk in
-          if Tid.(tid = Term.tid entry_blk) then
+          if Tid.(tid = entry_tid) then
             let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
                 let def = Term.set_attr def Bir_helpers.spill_tag () in
                 Term.prepend def_t blk def) in
@@ -220,7 +220,7 @@ module Spill = struct
       ~(target : T.target)
       ~(sp_align : int)
       ~(hvars : Hvar.t list)
-      ~(entry_blk : blk term) : t KB.t =
+      ~(entry_tid : tid) : t KB.t =
     let calls = Bir_helpers.call_blks sub in
     if List.is_empty calls || Term.length blk_t sub = 1
     then !!{sub; hvars; spilled = String.Set.empty}
@@ -252,9 +252,14 @@ module Spill = struct
               ~preserved ~restored ~spilled
               ~live_after_call ~caller_save ~sp with
       | Error err -> KB.fail err
-      | Ok hvars' ->
+      | Ok new_hvars ->
         (* If we needed to spill or restore, then make sure that other
-           higher vars aren't using stack locations. *)
+           higher vars aren't using stack locations.
+
+           TODO: Maybe instead of failing when this happens, we could
+           change the offset to match how much we're going to be
+           subtracting from the stack pointer.
+        *)
         let no_regs =
           Set.is_empty !preserved &&
           Set.is_empty !restored in
@@ -266,7 +271,7 @@ module Spill = struct
           else !!() in
         (* Do we need to change anything? *)
         if no_regs && sp_align = 0
-        then !!{sub; hvars = hvars'; spilled = !spilled}
+        then !!{sub; hvars = new_hvars; spilled = !spilled}
         else
           let mem = Var.reify @@ T.Target.data target in
           let endian =
@@ -279,8 +284,15 @@ module Spill = struct
           let space = Word.of_int ~width @@
             if no_regs then sp_align else sp_align + space in
           let sp = Naming.mark_reg sp in
-          create_activation_record sub hvars'
-            ~preserved:!preserved ~restored:!restored ~spilled:!spilled
-            ~caller_save ~sp ~mem ~endian ~entry_blk ~space
+          create_activation_record sub new_hvars
+            ~preserved:!preserved
+            ~restored:!restored
+            ~spilled:!spilled
+            ~caller_save
+            ~sp
+            ~mem
+            ~endian
+            ~entry_tid
+            ~space
 
 end

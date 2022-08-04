@@ -1,6 +1,6 @@
 (library
-  (name vibes_bir_lib)
-  (libraries
-    findlib.dynload
-    bap
-    vibes_log_lib))
+ (name vibes_bir_lib)
+ (libraries
+   findlib.dynload
+   bap
+   vibes_log_lib))

@@ -65,3 +65,6 @@ val call_blks : sub term -> blk term list
 (** Returns the entry block of the subroutine, or an error if there
     are no blocks. *)
 val entry_blk : sub term -> (blk term, KB.Conflict.t) result
+
+(** Equivalent to [Result.map (entry_blk sub) ~f:Term.tid]. *)
+val entry_tid : sub term -> (tid, KB.Conflict.t) result

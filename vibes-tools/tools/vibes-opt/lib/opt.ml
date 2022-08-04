@@ -98,7 +98,7 @@ module Contract = struct
 
   (* Edge contraction: https://en.wikipedia.org/wiki/Edge_contraction *)
   let go : t = fun sub ->
-    let+ entry_tid = Helper.entry_blk sub |> Result.map ~f:Term.tid in
+    let+ entry_tid = Helper.entry_tid sub in
     loop sub entry_tid
 
 end

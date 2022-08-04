@@ -1,7 +1,10 @@
 (* This code is taken directly from BAP's optimization passes:
+
    https://github.com/BinaryAnalysisPlatform/bap/tree/master/plugins/optimization
+
    Since this is a plugin and not a library, it's not exposed for
    programmatic use.
+
    For our purposes, we will use an optimization level of 1, so
    only virtual variables will be touched.
 *)

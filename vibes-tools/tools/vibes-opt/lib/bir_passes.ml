@@ -62,8 +62,7 @@ let run
   let sp_align = Patch_info.sp_align patch_info in
   Log.send "Running BIR passes";
   let is_thumb = Utils.Core_theory.is_thumb language in
-  let* entry_blk = liftr @@ Bir_helpers.entry_blk sub in
-  let entry_tid = Term.tid entry_blk in
+  let* entry_tid = liftr @@ Bir_helpers.entry_tid sub in
   let* () = provide_function_info sub ~func_info in
   Log.send "Inserting new mems at callsites";
   let* argument_tids = Abi.collect_argument_tids sub ~target ~func_info in
@@ -72,7 +71,7 @@ let run
   log_sub sub;
   Log.send "Removing unreachable BIR";
   let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
-  let sub = Shape.remove_unreachable sub @@ Term.tid entry_blk in
+  let sub = Shape.remove_unreachable sub entry_tid in
   log_sub sub;
   Log.send "Adjusting exits";
   let* sub = Shape.adjust_exits sub in
@@ -80,7 +79,7 @@ let run
   Log.send "Spilling hvars and adjusting stack";
   let* Abi.Spill.{sub; hvars; spilled} =
     Abi.Spill.spill_hvars_and_adjust_stack sub
-      ~target ~sp_align ~hvars ~entry_blk in
+      ~target ~sp_align ~hvars ~entry_tid in
   log_sub sub;
   Log.send "Substituting hvars";
   let* sub = Subst.substitute sub ~target ~hvars ~spilled ~entry_tid in

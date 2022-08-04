@@ -69,3 +69,6 @@ let entry_blk : sub term -> (blk term, KB.Conflict.t) result =
   let error =
     Errors.No_blks "Vibes_bir.Helpers.entry_blk: got an empty list of blks" in
   fun sub -> Term.first blk_t sub |> Result.of_option ~error
+
+let entry_tid (sub : sub term) : (tid, KB.Conflict.t) result =
+  entry_blk sub |> Result.map ~f:Term.tid
