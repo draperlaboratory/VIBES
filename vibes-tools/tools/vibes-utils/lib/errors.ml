@@ -1,4 +1,6 @@
-type Vibes_error_lib.Std.t +=
+open Bap_core_theory
+
+type KB.Conflict.t +=
    | Not_on_path of string
    | Bad_exit_code of string
    | Unknown_exit of string
@@ -9,7 +11,7 @@ type Vibes_error_lib.Std.t +=
    | Unknown_target of string
    | Unknown_language of string
 
-let printer (e : Vibes_error_lib.Std.t) : string option =
+let printer (e : KB.Conflict.t) : string option =
   match e with
   | Not_on_path s -> Some s
   | Bad_exit_code s -> Some s
@@ -22,4 +24,4 @@ let printer (e : Vibes_error_lib.Std.t) : string option =
   | Unknown_language s -> Some s
   | _ -> None
 
-let () = Vibes_error_lib.Std.register_printer printer
+let () = KB.Conflict.register_printer printer

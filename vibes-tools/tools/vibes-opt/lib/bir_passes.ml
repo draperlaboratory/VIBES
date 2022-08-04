@@ -1,9 +1,9 @@
 open Core
 open Bap.Std
+open Bap_core_theory
 
-module T = Bap_core_theory.Theory
+module T = Theory
 module Log = Vibes_log_lib.Stream
-module Err = Vibes_error_lib.Std
 module Utils = Vibes_utils_lib
 module Function_info = Vibes_function_info_lib.Types
 module Hvar = Vibes_higher_vars_lib.Higher_var
@@ -11,92 +11,68 @@ module Subst = Vibes_higher_vars_lib.Substituter
 module Patch_info = Vibes_patch_info_lib.Types
 module Bir_helpers = Vibes_bir_lib.Helpers
 
-open Vibes_error_lib.Let
+open KB.Syntax
 
-let log_bir bir =
-  Log.send (Format.asprintf "New BIR:\n%a" Bap.Std.Blk.pp bir)
+let log_sub (sub : sub term) : unit =
+  Log.send "New BIR:\n%a" Sub.pp sub
 
-let run ~(target : T.Target.t) ~(language : T.Language.t) 
-    ~(patch_info : Patch_info.t) ~(func_info : Function_info.t)
-    ~(hvars : Hvar.t list) ~(sp_align : int) (bir : blk term list)
-    : (Types.t, Err.t) result =
+let liftr (r : ('a, KB.Conflict.t) result) : 'a KB.t = match r with
+  | Error err -> KB.fail err
+  | Ok r -> !!r
+
+let run
+    (sub : sub term)
+    ~(target : T.Target.t)
+    ~(language : T.Language.t)
+    ~(patch_info : Patch_info.t)
+    ~(func_info : Function_info.t) : Types.t KB.t =
+  let hvars = Patch_info.patch_vars patch_info in
+  let sp_align = Patch_info.sp_align patch_info in
   Log.send "Running BIR passes";
-
   let is_thumb = Utils.Core_theory.is_thumb language in
-
-  let- entry_blk = match bir with
-    | blk :: _ -> Ok blk
-    | [] ->
-       let msg = "Bir_passes: Blk.from_insns returned an empty list of blks" in
-       Error (Types.No_blks msg)
-  in
-
+  let* entry_blk = liftr @@ Bir_helpers.entry_blk sub in
+  let entry_tid = Term.tid entry_blk in
+  Log.send "Providing function info";
+  let* () = Abi.provide_function_info sub ~func_info in
   Log.send "Inserting new mems at callsites";
-  let argument_tids = Abi.collect_argument_tids bir ~target ~func_info in
-  let bir, mem_argument_tids = Abi.insert_new_mems_at_callsites target bir in
-  List.iter bir ~f:log_bir;
-
+  let* argument_tids = Abi.collect_argument_tids sub ~target ~func_info in
+  let* sub, mem_argument_tids =
+    Abi.insert_new_mems_at_callsites sub ~target in
+  log_sub sub;
   Log.send "Removing unreachable BIR";
   let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
-  let bir = Shape.remove_unreachable bir @@ Term.tid entry_blk in
-  List.iter bir ~f:log_bir;
-
+  let sub = Shape.remove_unreachable sub @@ Term.tid entry_blk in
+  log_sub sub;
   Log.send "Adjusting exits";
-  let- bir = Shape.adjust_exits bir in
-  List.iter bir ~f:log_bir;
-
+  let* sub = Shape.adjust_exits sub in
+  log_sub sub;
   Log.send "Spilling hvars and adjusting stack";
-  let- Abi.Spill.{blks; hvars; spilled} =
-    Abi.Spill.spill_hvars_and_adjust_stack bir
+  let* Abi.Spill.{sub; hvars; spilled} =
+    Abi.Spill.spill_hvars_and_adjust_stack sub
       ~target ~sp_align ~hvars ~entry_blk in
-  List.iter blks ~f:log_bir;
-
+  log_sub sub;
   Log.send "Substituting hvars";
-  let- bir = Subst.substitute blks ~tgt:target ~hvars ~spilled
-    ~entry_tid:(Term.tid entry_blk) in
-  List.iter bir ~f:log_bir;
-
+  let* sub =
+    liftr @@ Subst.substitute sub
+      ~tgt:target ~hvars ~spilled ~entry_tid in
+  log_sub sub;
   Log.send "Re-ordering blocks";
-  let bir = Shape.reorder_blks bir in
-  List.iter bir ~f:log_bir;
-
+  let sub = Shape.reorder_blks sub in
+  log_sub sub;
   Log.send "Applying optimizations in the Opt module";
-  let- bir = Opt.apply bir in
-  List.iter bir ~f:log_bir;
-
+  let* sub = liftr @@ Opt.apply sub in
+  log_sub sub;
   Log.send "Applying BAP optimizations";
-  let sub = Bir_helpers.create_sub bir in
-  let sub = Opt.Bap_opt.run sub in
-  let bir = Term.enum blk_t sub |> Seq.to_list in
-  List.iter bir ~f:log_bir;
-
-  let- bir =
-    if is_thumb then
-      begin
-        Log.send "This is thumb. Relaxing branches";
-        let bir = Shape.relax_branches bir ~target ~patch_info in
-        List.iter bir ~f:log_bir;
-        Ok bir
-      end
-    else Ok bir in
-
-  let- bir =
-    if is_thumb then
-      begin
-        Log.send "This is thumb. Splitting on conditionals";
-        let bir = Shape.split_on_conditional bir in
-        Ok bir
-      end
-    else Ok bir in
-
+  let sub = Bap_opt.run sub in
+  log_sub sub;
+  let* sub =
+    if is_thumb then begin
+      Log.send "Relaxing branches for the Thumb target";
+      let+ sub = Shape.relax_branches sub ~target ~patch_info in
+      log_sub sub; sub
+    end else !!sub  in
   Log.send "Re-ordering blocks again";
-  let bir = Shape.reorder_blks bir in
-  List.iter bir ~f:log_bir;
- 
-  Log.send "Getting the new CFG";
-  let sub = Bir_helpers.create_sub bir in
-  let cfg = Sub.to_graph sub in
-
+  let sub = Shape.reorder_blks sub in
+  log_sub sub;
   Log.send "Done with BIR passes";
-  let result = Types.create bir ~cfg ~argument_tids in
-  Ok result
+  !!(Types.create ~sub ~argument_tids)

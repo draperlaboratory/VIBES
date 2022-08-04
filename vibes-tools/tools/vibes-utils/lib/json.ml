@@ -1,9 +1,9 @@
-module T = Bap_core_theory.Theory
+open Core
+open Bap_core_theory
+
+module T = Theory
 module Json = Yojson.Safe
 module Log = Vibes_log_lib.Stream
-module Err = Vibes_error_lib.Std
-
-open Vibes_error_lib.Let
 
 module Bitvector = struct
 
@@ -14,8 +14,7 @@ module Bitvector = struct
   let equal = Word.equal
   let compare = Word.compare
 
-  let t_of_yojson json =
-    match json with
+  let t_of_yojson = function
     | `String s -> Word.of_string s
     | _ -> failwith "Invalid hex/bitvector string"
 
@@ -27,21 +26,15 @@ module Label = struct
 
   include Yojson.Safe
 
-  type t = T.Label.t
-  let equal = Bap.Std.Tid.equal
-  let compare = Bap.Std.Tid.compare
+  type t = string
+  let equal = String.equal
+  let compare = String.compare
 
-  let t_of_yojson json =
-    match json with
-    | `String s ->
-      begin
-        match Bap.Std.Tid.from_string s with
-        | Ok s -> s
-        | Error _ -> failwith (Format.sprintf "No such label '%s'" s)
-      end
+  let t_of_yojson = function
+    | `String s -> s
     | _ -> failwith "Invalid label string"
 
-  let yojson_of_t t = `String (Bap.Std.Tid.to_string t)
+  let yojson_of_t s = `String s
 
 end
 
@@ -49,18 +42,18 @@ let pp ~yojson_of_t fmt t =
   let json = yojson_of_t t in
   Json.pretty_print fmt json
 
+let (let*) x f = Result.bind x ~f
+
 let from_file ~yojson_of_t ~t_of_yojson filepath =
-  let- json =
+  let* json =
     try Ok (Json.from_file filepath)
     with _ ->
       let msg = Format.sprintf "Couldn't load JSON file: '%s'" filepath in
-      Error (Types.Json_parse_error msg)
-  in
+      Error (Errors.Json_parse_error msg) in
   try
     let data = t_of_yojson json in
-    let this_pp = pp ~yojson_of_t in
-    Log.send @@ Format.asprintf "Loaded: %a" this_pp data;
+    Log.send "Loaded: %a" (pp ~yojson_of_t) data;
     Ok data
   with _ ->
     let msg = Format.sprintf "Couldn't deserialize JSON in '%s'" filepath in
-    Error (Types.Json_deserialization_error msg)
+    Error (Errors.Json_deserialization_error msg)

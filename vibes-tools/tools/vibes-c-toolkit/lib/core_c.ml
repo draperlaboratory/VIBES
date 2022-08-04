@@ -76,8 +76,8 @@ let collect_args (e : Theory.label) : var list KB.t =
   Option.value ~default:[] args
 *)
 
-(* We need to mark calls as such in the KB, so that the instruction selector
-   knows to lower to a call instead of a normal jump. *)
+(* We need to mark calls as such in the KB, so that the instruction
+   selector knows to lower to a call instead of a normal jump. *)
 let declare_call (e : Theory.label) : unit KB.t =
   KB.provide Theory.Label.is_subroutine e (Some true)
 
@@ -115,7 +115,8 @@ module Eval(CT : Theory.Core) = struct
     let word_sort = T.Bitv.define bits in
     let byte_sort = T.Bitv.define (T.Target.byte tgt) in
     let ret_var = T.(Target.reg tgt Role.Register.function_return) in
-    let arg_vars = T.(Target.regs tgt ~roles:Role.Register.[function_argument]) in
+    let arg_vars =
+      T.(Target.regs tgt ~roles:Role.Register.[function_argument]) in
     let endianness = T.Target.endianness tgt in
     let+ endian =
       if T.Endianness.(endianness = eb) then CT.b1 else CT.b0 in
@@ -381,8 +382,8 @@ module Eval(CT : Theory.Core) = struct
     try
       List.mapi args ~f:(fun i a ->
           let r = List.nth_exn info.arg_vars i in
-          CT.set r !!a, Var.reify r)
-      |> KB.List.fold_right ~init:(!!empty_data, [])
+          CT.set r !!a, Var.reify r) |>
+      KB.List.fold_right ~init:(!!empty_data, [])
         ~f:(fun (assn, r) (acc_eff, acc_args) ->
             KB.return (CT.seq assn acc_eff, r :: acc_args))
     with _ ->
@@ -426,9 +427,7 @@ module Eval(CT : Theory.Core) = struct
   let rec stmt_to_eff
       ~(info : _ interp_info)
       ~(func_infos : Function_info.t)
-      (s : Patch_c.stmt)
-      : (unit eff * Function_info.t) KB.t =
-    match s with
+      (s : Patch_c.stmt) : (unit eff * Function_info.t) KB.t = match s with
     | NOP -> !!(empty_blk, func_infos)
     | BLOCK (_, s) -> stmt_to_eff s ~info ~func_infos
     | ASSIGN ((v, t), e) ->
@@ -444,7 +443,9 @@ module Eval(CT : Theory.Core) = struct
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
       let arg_names = List.map args ~f:Var.name in
-      let func_info = Function_info.create_func dst arg_names in
+      let* name = KB.collect Theory.Label.name dst in
+      let* addr = KB.collect Theory.Label.addr dst in
+      let func_info = Function_info.create_func dst arg_names ?name ?addr in
       let func_infos = Function_info.append func_infos ~func_info in
       let* () = declare_call dst in
       let* call = CT.goto dst in
@@ -455,7 +456,9 @@ module Eval(CT : Theory.Core) = struct
       let* setargs, args = assign_args info args in
       let* dst, setf = determine_call_dst info f in
       let arg_names = List.map args ~f:Var.name in
-      let func_info = Function_info.create_func dst arg_names in
+      let* name = KB.collect Theory.Label.name dst in
+      let* addr = KB.collect Theory.Label.addr dst in
+      let func_info = Function_info.create_func dst arg_names ?name ?addr in
       let func_infos = Function_info.append func_infos ~func_info in
       let* () = declare_call dst in
       let* call = CT.goto dst in
@@ -477,8 +480,8 @@ module Eval(CT : Theory.Core) = struct
       let term = data st in
       !!(term, func_infos)
     | SEQUENCE (s1, s2) ->
-      let* (s1, func_infos) = stmt_to_eff s1 ~info ~func_infos in
-      let* (s2, func_infos) = stmt_to_eff s2 ~info ~func_infos in
+      let* s1, func_infos = stmt_to_eff s1 ~info ~func_infos in
+      let* s2, func_infos = stmt_to_eff s2 ~info ~func_infos in
       let* s1 = s1 in
       let* s2 = s2 in
       let term = CT.seq !!s1 !!s2 in
@@ -497,8 +500,8 @@ module Eval(CT : Theory.Core) = struct
             Word.(to_bitvec @@ zero @@ Patch_c.Type.size info.tgt tcond) in
           CT.neq (resort scond c) zero
         else resort T.Bool.t c in
-      let* (st, func_infos) = stmt_to_eff st ~info ~func_infos in
-      let* (sf, func_infos) = stmt_to_eff sf ~info ~func_infos in
+      let* st, func_infos = stmt_to_eff st ~info ~func_infos in
+      let* sf, func_infos = stmt_to_eff sf ~info ~func_infos in
       let* st = st in
       let* sf = sf in
       let term = CT.branch !!c !!st !!sf in

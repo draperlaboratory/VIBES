@@ -92,20 +92,19 @@ let pp ppf (e : t) =
       Format.sprintf "PatchC failed with error: %s" s
     | Unknown_target -> "Target architecture is unknown"
     | Unknown_encoding -> "Target encoding is unknown"
-    | Other s -> s
-  in
+    | Other s -> s in
   Format.fprintf ppf "@[%s@]@." msg
 
-(* Encorprate these errors into the KB error type (a conflict). *)
+(* Incorprate these errors into the KB error type (a conflict). *)
 type KB.Conflict.t += Problem of t
-let printer (e : KB.Conflict.t) =
-  match e with
+
+let printer : KB.Conflict.t -> string option = function
   | Problem err -> Some (Format.asprintf "%a" pp err)
   | _ -> failwith "Unexpected Conflict Type"
+
 let () = KB.Conflict.register_printer printer
 
 (* Report an error and fail. *)
 let fail e =
-  let msg = Format.asprintf "%a" pp e in
-  Log.send msg;
+  Log.send "%a" pp e;
   KB.fail (Problem e)

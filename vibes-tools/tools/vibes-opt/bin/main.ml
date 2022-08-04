@@ -1,6 +1,7 @@
+open Bap_core_theory
+
 module C = Cmdliner
 module Log = Vibes_log_lib.Stream
-module Err = Vibes_error_lib.Std
 module Versions = Vibes_constants_lib.Versions
 module Cli_opts = Vibes_common_cli_options_lib
 
@@ -64,7 +65,7 @@ module Cli = struct
     in
     match result with
     | Ok () -> Ok ()
-    | Error e -> Error (Err.to_string e)
+    | Error e -> Error (KB.Conflict.to_string e)
 
   let runner = C.Term.(const run
     $ Cli_opts.Verbosity.is_verbose

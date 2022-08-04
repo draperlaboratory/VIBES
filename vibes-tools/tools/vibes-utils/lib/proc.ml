@@ -1,43 +1,43 @@
-module Err = Vibes_error_lib.Std
+open Core
+open Bap_core_theory
+
 module Log = Vibes_log_lib.Stream
 
 type stdout_data = string list
 type stderr_data = string list
-type cmd_result = (stdout_data * stderr_data, Err.t) result
+type cmd_result = (stdout_data * stderr_data, KB.Conflict.t) result
 
 let run (command : string) (args : string list) : cmd_result =
-  let env = Core.Array.init 0 ~f:(fun _ -> "") in
-  let cmd = Core.String.concat (command :: args) ~sep:" " in
-  Log.send (Format.sprintf "Running cmd: '%s'" cmd);
-  let (std_out, std_in, std_err) = Unix.open_process_full cmd env in
-  let output = Core.In_channel.input_lines std_out in
-  Log.send (Format.sprintf "STDOUT:\n%s" (Core.String.concat output ~sep:"\n"));
-  let error = Core.In_channel.input_lines std_err in
-  Log.send (Format.sprintf "STDERR:\n%s" (Core.String.concat error ~sep:"\n"));
-  Log.send ("Closing process channels");
-  let status = Unix.close_process_full (std_out, std_in, std_err) in
-  match status with
+  let env = Array.init 0 ~f:(fun _ -> "") in
+  let cmd = String.concat (command :: args) ~sep:" " in
+  Log.send "Running cmd: '%s'" cmd;
+  let std_out, std_in, std_err = Caml_unix.open_process_full cmd env in
+  let output = In_channel.input_lines std_out in
+  Log.send "STDOUT:\n%s" @@ String.concat output ~sep:"\n";
+  let error = In_channel.input_lines std_err in
+  Log.send "STDERR:\n%s" @@ String.concat error ~sep:"\n";
+  Log.send "Closing process channels";
+  match Caml_unix.close_process_full (std_out, std_in, std_err) with
   | WEXITED 0 ->
     Log.send "Exit code: 0";
     Ok (output, error)
   | WEXITED 127 ->
-    Log.send "Exit code: 127";
     let msg = Format.sprintf "'%s' not found on path\n%!" command in
-    Error (Types.Not_on_path msg)
+    Log.send "Exit code: 127";
+    Error (Errors.Not_on_path msg)
   | WEXITED n ->
-    Log.send (Format.sprintf "Exit code: '%d'" n);
     let msg = Format.sprintf "Exited with non-zero exit code '%d'\n%!" n in
-    Error (Types.Bad_exit_code msg)
+    Log.send "Exit code: '%d'" n;
+    Error (Errors.Bad_exit_code msg)
   | _ ->
     Log.send "Unknown exit status";
-    let out_lines = Core.String.concat output ~sep:"\n" in
-    let err_lines = Core.String.concat error ~sep:"\n" in
     let msg =
       Format.sprintf 
         "Command exited with unknown status.\n \
          COMMAND:\n%s\n \
          STDOUT:\n%s\n \
          STDERR:\n%s\n"
-        cmd out_lines err_lines
-    in
-    Error (Types.Unknown_exit msg)
+        cmd
+        (String.concat output ~sep:"\n")
+        (String.concat error ~sep:"\n") in
+    Error (Errors.Unknown_exit msg)

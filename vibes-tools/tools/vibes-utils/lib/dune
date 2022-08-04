@@ -5,5 +5,4 @@
     bap
     core
     yojson
-    vibes_log_lib
-    vibes_error_lib))
+    vibes_log_lib))

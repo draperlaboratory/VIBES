@@ -3,9 +3,8 @@
   (libraries
     findlib.dynload
     bap
+    bap-core-theory
     cmdliner
     vibes_log_lib
-    vibes_error_lib
     vibes_constants_lib
     vibes_common_cli_options_lib))
-

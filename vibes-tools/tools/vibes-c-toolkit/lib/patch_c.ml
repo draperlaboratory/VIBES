@@ -1645,5 +1645,5 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let s = Opt.Nops.go s in
   (* Success! *)
   let prog = {data; body = tenv, s} in
-  Log.send (Format.sprintf "Translated to the following PatchC program:\n%s" (to_string prog));
+  Log.send "Translated to the following PatchC program:\n%s" @@ to_string prog;
   KB.return prog
