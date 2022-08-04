@@ -3,26 +3,13 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
+module Log = Vibes_log_lib.Stream
 module Function_info = Vibes_function_info_lib.Types
 module Hvar = Vibes_higher_vars_lib.Higher_var
 module Naming = Vibes_higher_vars_lib.Substituter.Naming
 module Bir_helpers = Vibes_bir_lib.Helpers
 
 open KB.Syntax
-
-(* Provide function info to direct call destinations. *)
-let provide_function_info
-    (sub : sub term)
-    ~(func_info : Function_info.t) : unit KB.t =
-  Term.enum blk_t sub |> KB.Seq.iter ~f:(fun blk ->
-      Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
-          match Jmp.alt jmp with
-          | None -> !!()
-          | Some alt -> match Jmp.resolve alt with
-            | Second _ -> !!()
-            | First tid ->
-              KB.List.iter func_info.functions ~f:(fun f ->
-                  Function_info.provide_if_aliased f ~tid)))
 
 (* Collect the args to the call, if any. *)
 let collect_args

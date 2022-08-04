@@ -20,6 +20,38 @@ let liftr (r : ('a, KB.Conflict.t) result) : 'a KB.t = match r with
   | Error err -> KB.fail err
   | Ok r -> !!r
 
+(* Provide function info to direct call destinations. *)
+let provide_function_info
+    (sub : sub term)
+    ~(func_info : Function_info.t) : unit KB.t =
+  Term.enum blk_t sub |> KB.Seq.iter ~f:(fun blk ->
+      Term.enum jmp_t blk |> KB.Seq.iter ~f:(fun jmp ->
+          match Jmp.alt jmp with
+          | None -> !!()
+          | Some alt -> match Jmp.resolve alt with
+            | Second _ -> !!()
+            | First tid ->
+              KB.List.iter func_info.functions ~f:(fun f ->
+                  let* aliases = KB.collect T.Label.aliases tid in
+                  if Set.mem aliases f.label then begin
+                    let s = Tid.to_string tid in
+                    let* () = KB.provide T.Label.aliases tid @@
+                      Set.add aliases @@ Option.value_exn f.name in
+                    let* () = match f.name with
+                      | Some name ->
+                        Log.send "Providing name %s for tid %s" name s;
+                        KB.provide T.Label.name tid f.name
+                      | None -> !!() in
+                    let* () = match f.addr with
+                      | Some addr ->
+                        Log.send "Providing addr %a for tid %s"
+                          Bitvec.pp addr s;
+                        KB.provide T.Label.addr tid f.addr
+                      | None -> !!() in
+                    Log.send "Marking tid %s as a subroutine" s;
+                    KB.provide T.Label.is_subroutine tid @@ Some true
+                  end else !!())))
+
 let run
     (sub : sub term)
     ~(target : T.Target.t)
@@ -32,8 +64,7 @@ let run
   let is_thumb = Utils.Core_theory.is_thumb language in
   let* entry_blk = liftr @@ Bir_helpers.entry_blk sub in
   let entry_tid = Term.tid entry_blk in
-  Log.send "Providing function info";
-  let* () = Abi.provide_function_info sub ~func_info in
+  let* () = provide_function_info sub ~func_info in
   Log.send "Inserting new mems at callsites";
   let* argument_tids = Abi.collect_argument_tids sub ~target ~func_info in
   let* sub, mem_argument_tids =

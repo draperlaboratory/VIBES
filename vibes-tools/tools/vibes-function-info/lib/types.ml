@@ -51,16 +51,6 @@ let vars_of_args
   let s = T.Bitv.define @@ T.Target.bits target in
   List.map args ~f:(fun arg -> Var.reify @@ T.Var.define s arg)
 
-let provide_if_aliased (f : func) ~(tid : tid) : unit KB.t =
-  let* aliases = KB.collect T.Label.aliases tid in
-  if Set.mem aliases f.label && Option.is_some f.name then
-    let* () = KB.provide T.Label.aliases tid @@
-      Set.add aliases @@ Option.value_exn f.name in
-    let* () = KB.provide T.Label.name tid f.name in
-    let* () = KB.provide T.Label.addr tid f.addr in
-    KB.provide T.Label.is_subroutine tid @@ Some true
-  else !!()
-
 let find (t : t) ~(tid : tid) : string list option KB.t =
   KB.List.find_map t.functions ~f:(fun {name; args; _} ->
       let+ tid_name = KB.collect T.Label.name tid in
