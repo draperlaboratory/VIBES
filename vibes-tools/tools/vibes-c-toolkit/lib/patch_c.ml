@@ -4,7 +4,6 @@ open Bap_c.Std
 open Monads.Std
 open Bap_core_theory
 
-module Err = Kb_error
 module Utils = C_utils
 module Log = Vibes_log_lib.Stream
 module Hvar = Vibes_higher_vars_lib.Higher_var
@@ -25,7 +24,7 @@ module Data_model = struct
   let schar (data : t) : bool = data.schar
 
   (* Same across all data models. *)
-  let char_size : int = 8
+  let char_size : int = 8 [@@warning "-32"]
   let short_size : int = 16
   let long_long_size : int = 64
 
@@ -42,6 +41,7 @@ module Data_model = struct
   let addr_size (data : t) : int = match data.sizes with
     | #C.Data.model32 -> 32
     | #C.Data.model64 -> 64
+  [@@warning "-32"]
 
 end
 
@@ -54,8 +54,8 @@ module Size = struct
     | 16 -> `r16
     | 32 -> `r32
     | 64 -> `r64
-    | n -> invalid_argf
-             "Patch_c.size_of_int_exn: invalid size integer %d" n ()
+    | n -> invalid_argf "Patch_c.size_of_int_exn: \
+                         invalid size integer %d" n ()
 
   let equal (a : t) (b : t) : bool =
     Size.equal (a :> size) (b :> size)
@@ -612,7 +612,7 @@ module Transl = struct
   include Monad.State.T1(Env)(KB)
   include Monad.State.Make(Env)(KB)
 
-  let fail (msg : string) : 'a t = lift @@ Err.fail @@ Patch_c_error msg
+  let fail (msg : string) : 'a t = lift @@ KB.fail @@ Errors.Patch_c msg
 
 end
 
@@ -1615,12 +1615,13 @@ module Main = struct
 
 end
 
+let fail (msg : string) : 'a KB.t = KB.fail @@ Errors.Patch_c msg
+
 (* Get the C data model of the target, if we support it. *)
 let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
   let fail () =
-    Err.fail @@ Patch_c_error (
-      Format.asprintf "Unsupported target %a"
-        Theory.Target.pp target) in
+    fail @@ Format.asprintf "Unsupported target %a"
+      Theory.Target.pp target in
   if Theory.Target.matches target "arm" then
     if Theory.Target.bits target = 32
     then KB.return Data_model.{sizes = `ILP32; schar = false}
@@ -1635,9 +1636,8 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     | FUNDEF (_, b) -> KB.return b
     | _ ->
       let s = Utils.print_c Cprint.print_def patch in
-      Err.fail @@ Patch_c_error (
-        sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
-                 expected a single function definition" s) in
+      fail @@ sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
+                       expected a single function definition" s in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
     Transl.(Env.create ~target ~data () |> run (Main.go_body body)) in

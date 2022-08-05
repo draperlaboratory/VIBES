@@ -54,7 +54,7 @@ val is_exit_call : jmp term -> bool
     - [call <x> with return <indirect>]: This block will not be returning
     to the patch code.
 *)
-val exit_blks : sub term -> (blk term list, KB.Conflict.t) result
+val exit_blks : sub term -> (blk term list, KB.conflict) result
 
 (** Returns [true] if the block contains a call to a subroutine. *)
 val has_call : blk term -> bool
@@ -64,7 +64,7 @@ val call_blks : sub term -> blk term list
 
 (** Returns the entry block of the subroutine, or an error if there
     are no blocks. *)
-val entry_blk : sub term -> (blk term, KB.Conflict.t) result
+val entry_blk : sub term -> (blk term, KB.conflict) result
 
 (** Equivalent to [Result.map (entry_blk sub) ~f:Term.tid]. *)
-val entry_tid : sub term -> (tid, KB.Conflict.t) result
+val entry_tid : sub term -> (tid, KB.conflict) result

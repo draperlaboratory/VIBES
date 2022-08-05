@@ -9,8 +9,9 @@ module T = Theory
    it should be exposed in the user-facing API? *)
 
 let unknown =
+  let package = Vibes_constants_lib.Bap_kb.package in
   let unknown =
-    Theory.Value.Sort.Name.declare ~package:"vibes" "Unknown" in
+    Theory.Value.Sort.Name.declare ~package "Unknown" in
   Theory.Value.Sort.sym unknown
 
 let sort_of_typ t =
@@ -74,7 +75,7 @@ module Serializer = struct
     | SLE -> Atom "SLE"
 
   let serialize_var (v : var) : Sexp.t = List [
-      Atom (Var.name v);
+      Atom Var.(name @@ base v);
       Atom (Int.to_string @@ Var.index v);
       serialize_typ @@ Var.typ v;
       Atom (Bool.to_string @@ Var.is_virtual v);
@@ -209,7 +210,10 @@ module Serializer = struct
       )
     ]
 
-  let serialize_subterms cls t ~f =
+  let serialize_subterms
+      (cls : ('a, 'b) cls)
+      (t : 'a term)
+      ~(f : 'b term -> Sexp.t) : Sexp.t list =
     Term.enum cls t |> Seq.map ~f |> Seq.to_list
 
   let serialize_blk (blk : blk term) : Sexp.t = List [
@@ -253,7 +257,7 @@ module Deserializer = struct
   include Monad.State.T1(Env)(KB)
   include Monad.State.Make(Env)(KB)
 
-  let fail (err : KB.Conflict.t) : 'a t = lift @@ KB.fail err
+  let fail (err : KB.conflict) : 'a t = lift @@ KB.fail err
 
   let lookup_var (s : string) : var option t =
     gets @@ fun {vars; _} -> Map.find vars s

@@ -41,14 +41,14 @@ module Cli = struct
     C.Arg.required arg
 
   let run
-      (is_verbose : bool)
-      (is_no_color : bool)
+      (verbose : bool)
+      (no_color : bool)
       (target : string)
       (patch_info_filepath : string)
       (patch_filepath : string)
       (bir_outfile : string)
       (func_info_outfile : string) : (unit, string) result =
-    let () = Cli_opts.Verbosity.setup is_verbose is_no_color in
+    let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-parse'";
     let result =
       Runner.run
@@ -63,8 +63,8 @@ module Cli = struct
 
   let runner = C.Term.(
       const run
-      $ Cli_opts.Verbosity.is_verbose
-      $ Cli_opts.Verbosity.is_no_color
+      $ Cli_opts.Verbosity.verbose
+      $ Cli_opts.Verbosity.no_color
       $ Cli_opts.Target.target
       $ Cli_opts.Patch_info.filepath
       $ patch_filepath

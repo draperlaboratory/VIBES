@@ -1,6 +1,6 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
    | Not_on_path of string
    | Bad_exit_code of string
    | Unknown_exit of string
@@ -11,7 +11,7 @@ type KB.Conflict.t +=
    | Unknown_target of string
    | Unknown_language of string
 
-let printer (e : KB.Conflict.t) : string option =
+let printer (e : KB.conflict) : string option =
   match e with
   | Not_on_path s -> Some s
   | Bad_exit_code s -> Some s

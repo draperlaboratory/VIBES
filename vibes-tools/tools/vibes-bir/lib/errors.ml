@@ -1,9 +1,9 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
   | No_blks of string
 
-let printer : KB.Conflict.t -> string option = function
+let printer : KB.conflict -> string option = function
   | No_blks s -> Some s
   | _ -> None
 

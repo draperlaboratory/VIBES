@@ -1,11 +1,11 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
   | Unhandled_bir of string
   | Invalid_bir of string
   | Invalid_func_info of string
 
-let printer : KB.Conflict.t -> string option = function
+let printer : KB.conflict -> string option = function
   | Unhandled_bir s -> Some s
   | Invalid_bir s -> Some s
   | Invalid_func_info s -> Some s

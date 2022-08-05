@@ -16,11 +16,22 @@ open KB.Syntax
 let log_sub (sub : sub term) : unit =
   Log.send "New BIR:\n%a" Sub.pp sub
 
-let liftr (r : ('a, KB.Conflict.t) result) : 'a KB.t = match r with
+let liftr (r : ('a, KB.conflict) result) : 'a KB.t = match r with
   | Error err -> KB.fail err
   | Ok r -> !!r
 
-(* Provide function info to direct call destinations. *)
+(* Provide function info to direct call destinations.
+
+   This function info is needed if we are loading the serialized program
+   from disk, or if we're interacting with the program from a fresh
+   Knowledge Base.
+
+   If we're operating from the output of the [Core_c] pass, then the
+   corresponding slots of each relevant program label will already be
+   populated with this info, so if we're providing it again then it
+   must be consistent with the information already in the KB, otherwise
+   we will get a conflict.
+*)
 let provide_function_info
     (sub : sub term)
     ~(func_info : Function_info.t) : unit KB.t =

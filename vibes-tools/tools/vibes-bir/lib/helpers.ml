@@ -40,7 +40,7 @@ let is_exit_call (jmp : jmp term) : bool = match Jmp.kind jmp with
     Option.value_map ~default:true ~f:is_indirect_label
   | _ -> false
 
-let exit_blks (sub : sub term) : (blk term list, KB.Conflict.t) result =
+let exit_blks (sub : sub term) : (blk term list, KB.conflict) result =
   match Term.enum blk_t sub |> Seq.to_list with
   | [] ->
     let msg = "Vibes_bir.Helpers.exit_blks: got an empty list of blks" in
@@ -65,10 +65,10 @@ let call_blks (sub : sub term) : blk term list =
   Term.enum blk_t sub |> Seq.to_list |>
   List.filter_map ~f:(fun blk -> Option.some_if (has_call blk) blk)
 
-let entry_blk : sub term -> (blk term, KB.Conflict.t) result =
+let entry_blk : sub term -> (blk term, KB.conflict) result =
   let error =
     Errors.No_blks "Vibes_bir.Helpers.entry_blk: got an empty list of blks" in
   fun sub -> Term.first blk_t sub |> Result.of_option ~error
 
-let entry_tid (sub : sub term) : (tid, KB.Conflict.t) result =
+let entry_tid (sub : sub term) : (tid, KB.conflict) result =
   entry_blk sub |> Result.map ~f:Term.tid

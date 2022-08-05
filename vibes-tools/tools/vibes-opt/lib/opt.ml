@@ -8,7 +8,7 @@ module Helper = Vibes_bir_lib.Helpers
    according to `Shape.reorder_blks`, and that the program is NOT YET in SSA
    form. *)
 
-type t = sub term -> (sub term, KB.Conflict.t) result
+type t = sub term -> (sub term, KB.conflict) result
 
 module G = Graphs.Tid
 

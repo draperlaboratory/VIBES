@@ -7,14 +7,14 @@ let is_thumb (language : T.Language.t) : bool =
   String.is_substring ~substring:"thumb" @@
   T.Language.to_string language
 
-let get_target (name : string) : (T.Target.t, KB.Conflict.t) result =
+let get_target (name : string) : (T.Target.t, KB.conflict) result =
   match T.Target.lookup name with
   | None ->
     let msg = Format.sprintf "Unknown target: '%s'" name in
     Error (Errors.Unknown_target msg)
   | Some target -> Ok target
  
-let get_language (name : string) : (T.Language.t, KB.Conflict.t) result =
+let get_language (name : string) : (T.Language.t, KB.conflict) result =
   try
     let language = T.Language.read ~package:"bap" name in
     Ok language

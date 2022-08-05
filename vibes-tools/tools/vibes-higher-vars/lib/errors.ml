@@ -1,9 +1,9 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
   | Higher_var_not_substituted of string
 
-let printer : KB.Conflict.t -> string option = function
+let printer : KB.conflict -> string option = function
   | Higher_var_not_substituted s -> Some s
   | _ -> None
 

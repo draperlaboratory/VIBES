@@ -1,6 +1,6 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
   | No_bir of string
   | Invalid_bir of string
   | Invalid_func_infos of string
@@ -9,7 +9,7 @@ type KB.Conflict.t +=
   | Bad_hvar_at_exit of string
   | Stack_loc_already_used of string
 
-let printer (e : KB.Conflict.t) : string option =
+let printer (e : KB.conflict) : string option =
   match e with
   | No_bir s -> Some s
   | Invalid_bir s -> Some s

@@ -13,7 +13,7 @@ let get_lines (filepath : string) : string list =
   lines
 
 let get_lines_or_error
-    (filepath : string) : (string list, KB.Conflict.t) result =
+    (filepath : string) : (string list, KB.conflict) result =
   try Ok (get_lines filepath)
   with e ->
     let msg =
@@ -23,13 +23,13 @@ let get_lines_or_error
 (* Get the contents of a file, error if the file is empty. *)
 let get_file_contents_non_empty
     (filepath : string)
-    ~(error : string -> KB.Conflict.t) : (string, KB.Conflict.t) result =
+    ~(error : string -> KB.conflict) : (string, KB.conflict) result =
   let* lines = get_lines_or_error filepath in
   if List.is_empty lines then Error (error filepath)
   else Ok (String.concat lines ~sep:"\n")
 
 (* Get the contents of a file, allow it to be empty. *)
-let get_file_contents (filepath : string) : (string, KB.Conflict.t) result =
+let get_file_contents (filepath : string) : (string, KB.conflict) result =
   let+ lines = get_lines_or_error filepath in
   String.concat lines ~sep:"\n"
 
@@ -40,7 +40,7 @@ let write (data : string) (filepath : string) : unit =
 
 let write_or_error
     (data : string)
-    (filepath : string) : (unit, KB.Conflict.t) result =
+    (filepath : string) : (unit, KB.conflict) result =
   try Ok (write data filepath)
   with e ->
     let msg =

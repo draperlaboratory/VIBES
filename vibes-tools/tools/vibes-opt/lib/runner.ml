@@ -12,7 +12,7 @@ module Bir_helpers = Vibes_bir_lib.Helpers
 
 open KB.Syntax
 
-let liftr (r : ('a, KB.Conflict.t) result) : 'a KB.t = match r with
+let liftr (r : ('a, KB.conflict) result) : 'a KB.t = match r with
   | Error err -> KB.fail err
   | Ok r -> !!r
 
@@ -36,7 +36,7 @@ let try_deserialize_and_opt
     ~(target : T.target)
     ~(language : T.language)
     ~(patch_info : Patch_info.t)
-    ~(func_info : Function_info.t) : (Types.t, KB.Conflict.t) result =
+    ~(func_info : Function_info.t) : (Types.t, KB.conflict) result =
   let current = Toplevel.current () in
   let result = try
       let result = Toplevel.var "vibes-opt" in
@@ -54,7 +54,7 @@ let run
     (patch_info_filepath : string)
     (bir_filepath : string)
     (func_info_filepath : string)
-    (outfile : string) : (unit, KB.Conflict.t) result =
+    (outfile : string) : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
   Log.send "Vibes_opt_lib.Runner.run '%s' '%s' '%s' '%s' '%s' '%s'"
     target language patch_info_filepath

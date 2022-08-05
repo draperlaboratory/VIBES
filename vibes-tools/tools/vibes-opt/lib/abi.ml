@@ -11,6 +11,13 @@ module Bir_helpers = Vibes_bir_lib.Helpers
 
 open KB.Syntax
 
+(* Reify the argument names into variables. *)
+let vars_of_args
+    (args : string list)
+    ~(target : T.target) : var list =
+  let s = T.Bitv.define @@ T.Target.bits target in
+  List.map args ~f:(fun arg -> Var.reify @@ T.Var.define s arg)
+
 (* Collect the args to the call, if any. *)
 let collect_args
     (blk : blk term)
@@ -22,9 +29,8 @@ let collect_args
       | Second _ -> !!None
       | First tid ->
         (* Only direct calls are applicable. *)
-        let+ arg_names = Function_info.find func_info ~tid in
-        Option.map arg_names ~f:(fun arg_names ->
-            Function_info.vars_of_args arg_names ~target) in
+        let+ args = Function_info.find_args func_info ~tid in
+        Option.map args ~f:(vars_of_args ~target) in
   Term.enum jmp_t blk |> KB.Seq.find_map ~f:match_jmp
 
 (* Collect the tids where the arguments to calls are defined. *)
@@ -70,13 +76,13 @@ let insert_new_mems_at_callsites
    on SP-relative locations in memory. *)
 let check_hvars_for_existing_stack_locations
     (sp : var)
-    (hvars : Hvar.t list) : (unit, KB.Conflict.t) result =
+    (hvars : Hvar.t list) : (unit, KB.conflict) result =
   let sp = Var.name sp in
-  List.map hvars ~f:(fun hvar -> match Hvar.value hvar with
+  List.map hvars ~f:(fun hvar -> match hvar.value with
       | Memory (Frame (reg, offset)) when String.(reg = sp) ->
         let msg = Format.asprintf
             "Existing stack location [%s, %a] used by hvar '%s'"
-            reg Word.pp offset (Hvar.name hvar) in
+            reg Word.pp offset hvar.name in
         Error (Errors.Stack_loc_already_used msg)
       | _ -> Ok ()) |>
   Result.all |> Result.map ~f:ignore
@@ -114,7 +120,7 @@ module Spill = struct
       ~(spilled : String.Set.t ref)
       ~(live_after_call : string -> bool)
       ~(caller_save : (word * var) String.Map.t)
-      ~(sp : var) : (Hvar.t list, KB.Conflict.t) result =
+      ~(sp : var) : (Hvar.t list, KB.conflict) result =
     let spill ?(restore = false) name v offset hvar =
       preserved := Set.add !preserved v;
       if restore then restored := Set.add !restored v;
@@ -122,13 +128,11 @@ module Spill = struct
          then we can still refer to it by register instead of by
          stack location. *)
       if restore || live_after_call name then begin
-        let memory = Hvar.create_frame (Var.name sp) offset in
+        let memory = Hvar.Frame (Var.name sp, offset) in
         spilled := Set.add !spilled name;
-        Hvar.create_with_memory name ~memory
+        Hvar.{name; value = Memory memory}
       end else hvar in
-    List.map hvars ~f:(fun hvar ->
-        let name = Hvar.name hvar in
-        match Hvar.value hvar with
+    List.map hvars ~f:(fun ({name; value} as hvar) -> match value with
         | Hvar.Registers {at_entry = Some v; at_exit} -> begin
             match Map.find caller_save v with
             | None -> Ok hvar

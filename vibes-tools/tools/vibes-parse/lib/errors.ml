@@ -1,12 +1,12 @@
 open Bap_core_theory
 
-type KB.Conflict.t +=
+type KB.conflict +=
   | No_patch_code of string
   | Invalid_C of string
   | Invalid_sexp of string
   | Unknown_target of string
 
-let printer (e : KB.Conflict.t) : string option =
+let printer (e : KB.conflict) : string option =
   match e with
   | No_patch_code s -> Some s
   | Invalid_C s -> Some s

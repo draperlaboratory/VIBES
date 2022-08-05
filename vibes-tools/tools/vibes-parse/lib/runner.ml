@@ -17,7 +17,7 @@ open KB.Syntax
 let log_blk (blk : blk term) : unit =
   Log.send "BIR block:\n%a" Blk.pp blk
 
-let parse_c_code (raw_code : string) : (Types.ast, KB.Conflict.t) result =
+let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
   Log.send "Parsing C code";
   match C_toolkit.Parse_c.parse raw_code with
   | Error msg -> Error (Errors.Invalid_C msg)
@@ -52,7 +52,7 @@ type computed = T.Semantics.t * Function_info.t
 let compute
     (ast : Types.ast)
     (target : T.target)
-    (hvars : Hvar.t list) : (computed, KB.Conflict.t) result =
+    (hvars : Hvar.t list) : (computed, KB.conflict) result =
   match KB.run T.Program.cls (to_core ast target hvars) KB.empty with
   | Error _ as err -> err
   | Ok (snapshot, _) ->
@@ -81,7 +81,7 @@ let run
     (patch_info_filepath : string)
     (patch_filepath : string)
     (bir_outfile : string)
-    (func_info_outfile : string) : (unit, KB.Conflict.t) result =
+    (func_info_outfile : string) : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
   Log.send "Vibes_parse_lib.Runner.run '%s' '%s' '%s' '%s' '%s'"
     target patch_info_filepath patch_filepath bir_outfile func_info_outfile;

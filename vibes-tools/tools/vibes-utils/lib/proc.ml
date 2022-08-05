@@ -5,7 +5,7 @@ module Log = Vibes_log_lib.Stream
 
 type stdout_data = string list
 type stderr_data = string list
-type cmd_result = (stdout_data * stderr_data, KB.Conflict.t) result
+type cmd_result = (stdout_data * stderr_data, KB.conflict) result
 
 let run (command : string) (args : string list) : cmd_result =
   let env = Array.init 0 ~f:(fun _ -> "") in
