@@ -1,2 +1,3 @@
 (library
-  (name vibes_constants_lib))
+ (name vibes_constants_lib)
+ (public_name vibes-tools.constants))

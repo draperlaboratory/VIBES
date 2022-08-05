@@ -1,6 +1,7 @@
 (library
-  (name vibes_serializers_lib)
-  (libraries
-    findlib.dynload
-    bap
-    vibes_c_toolkit_lib))
+ (name vibes_serializers_lib)
+ (public_name vibes-tools.serializers)
+ (libraries
+   findlib.dynload
+   bap
+   vibes-tools.c-toolkit))

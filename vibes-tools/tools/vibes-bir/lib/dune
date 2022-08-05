@@ -1,6 +1,7 @@
 (library
  (name vibes_bir_lib)
+ (public_name vibes-tools.bir)
  (libraries
    findlib.dynload
    bap
-   vibes_log_lib))
+   vibes-tools.logging))

@@ -1,8 +1,9 @@
 (executable
-  (name main)
-  (libraries
-    cmdliner
-    vibes_log_lib
-    vibes_constants_lib
-    vibes_common_cli_options_lib
-    vibes_opt_lib))
+ (name main)
+ (public_name vibes-opt)
+ (libraries
+   cmdliner
+   vibes-tools.logging
+   vibes-tools.constants
+   vibes-tools.common-cli-options
+   vibes-tools.optimization))
