@@ -3,7 +3,7 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Bap_core_theory.Theory
-module Utils = Vibes_utils_lib
+module Utils = Vibes_utils
 
 open KB.Syntax
 

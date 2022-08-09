@@ -1,5 +1,5 @@
 (library
- (name vibes_common_cli_options_lib)
+ (name vibes_common_cli_options)
  (public_name vibes-tools.common-cli-options)
  (libraries
    cmdliner

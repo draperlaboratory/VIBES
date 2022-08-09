@@ -4,9 +4,9 @@ open Monads.Std
 open Bap_core_theory
 
 module T = Theory
-module Hvar = Vibes_higher_vars_lib.Higher_var
-module Naming = Vibes_higher_vars_lib.Substituter.Naming
-module Bir_helpers = Vibes_bir_lib.Helpers
+module Hvar = Vibes_higher_vars.Higher_var
+module Naming = Vibes_higher_vars.Substituter.Naming
+module Bir_helpers = Vibes_bir.Helpers
 
 module Linear = struct
 
@@ -80,12 +80,11 @@ module Linear = struct
 
   let linearize_def (def : def term) : def term t =
     let lhs = Def.lhs def in
+    let rhs = Def.rhs def in
     let* new_lhs = linearize_var lhs in
     let* () = update @@ Env.add_var new_lhs in
-    let new_def = Def.with_lhs def new_lhs in
-    let rhs = Def.rhs new_def in
     let+ new_rhs = linearize_exp rhs in
-    Def.with_rhs new_def new_rhs
+    Def.(with_rhs (with_lhs def new_lhs) new_rhs)
 
   let linearize_jmp (jmp : jmp term) : jmp term t =
     let* cond = linearize_exp @@ Jmp.cond jmp in
@@ -112,7 +111,8 @@ module Linear = struct
       | Int _ as k -> !!k in
     let+ kind = of_kind @@ Jmp.kind jmp in
     let tid = Term.tid jmp in
-    Jmp.create ~tid ~cond kind
+    let attrs = Term.attrs jmp in
+    Term.with_attrs (Jmp.create ~tid ~cond kind) attrs
 
   let linearize_subterms
       (cls : ('a, 'b) cls)
@@ -128,14 +128,16 @@ module Linear = struct
     let+ jmps = linearize_subterms jmp_t blk ~f:linearize_jmp in
     (* We will deliberately remove phi nodes since they are
        subsumed by congruence between vars in linear SSA form. *)
-    Blk.create ~phis:[] ~defs ~jmps ~tid ()
+    let attrs = Term.attrs blk in
+    Term.with_attrs (Blk.create ~phis:[] ~defs ~jmps ~tid ()) attrs
 
   let linearize_sub (sub : sub term) : sub term t =
     let tid = Term.tid sub in
     let name = Sub.name sub in
     let+ blks = linearize_subterms blk_t sub ~f:linearize_blk in
     let args = Term.enum arg_t sub |> Bap.Std.Seq.to_list in
-    Sub.create ~args ~blks ~tid ~name ()
+    let attrs = Term.attrs sub in
+    Term.with_attrs (Sub.create ~args ~blks ~tid ~name ()) attrs
 
 end
 
@@ -152,10 +154,8 @@ let collect_phi_defs (blks : blk term seq) : (var * exp) list Tid.Map.t =
 
 (* Expand the phi nodes to new defs at the corresponding
    edges in the CFG. *)
-let expand_phis
-    (sub : sub term)
-    (blks : blk term seq) : sub term KB.t =
-  let phi_map = collect_phi_defs blks in
+let expand_phis (sub : sub term) : sub term KB.t =
+  let phi_map = collect_phi_defs @@ Term.enum blk_t sub in
   Term.KB.map blk_t sub ~f:(fun blk ->
       match Map.find phi_map @@ Term.tid blk with
       | None -> !!blk
@@ -177,8 +177,8 @@ let add_finalizers_to_outs
   (* Compare the higher var storage information with the
      existing var. We need the SSA'd name of this var. *)
   let same reg v =
-    String.equal (Naming.mark_reg_name reg) @@
-    Var.name @@ Var.base v in
+    Naming.mark_reg_name_unsafe reg |>
+    String.equal Var.(name @@ base v) in
   (* For each higher var we intended to finalize, add them
      to the set of live outs for this block. *)
   List.fold hvars ~init:outs ~f:(fun outs -> function
@@ -190,11 +190,11 @@ let add_finalizers_to_outs
       | _ -> outs)
 
 (* Get the linearized ins and outs. *)
-let construct_ins_outs_map
+let mark_ins_outs
     (hvars : Hvar.t list)
-    (blks : blk term seq)
-    (liveness : Live.t) : Types.ins_outs_map =
-  Seq.fold blks ~init:Tid.Map.empty ~f:(fun ins_outs_map blk ->
+    (sub : sub term)
+    (liveness : Live.t) : sub term =
+  Term.map blk_t sub ~f:(fun blk ->
       let tid = Term.tid blk in
       let outs = Live.outs liveness tid in
       let outs =
@@ -204,45 +204,43 @@ let construct_ins_outs_map
         else add_finalizers_to_outs hvars blk outs in
       let ins = Live.ins liveness tid in
       let prefix = Utils.prefix_of_tid tid in
-      let outs = Var.Set.map outs ~f:(Utils.linearize ~prefix) in
       let ins = Var.Set.map ins ~f:(Utils.linearize ~prefix) in
-      Map.set ins_outs_map ~key:tid ~data:Types.{ins; outs})
+      let outs = Var.Set.map outs ~f:(Utils.linearize ~prefix) in
+      let blk = Term.set_attr blk Bir_helpers.ins_tag ins in
+      let blk = Term.set_attr blk Bir_helpers.outs_tag outs in
+      blk)
 
 let compute_liveness_and_expand_phis
     (hvars : Hvar.t list)
-    (sub : sub term) : (sub term * Types.ins_outs_map) KB.t =
-  let liveness = Live.compute sub in
-  let blks = Term.enum blk_t sub in
-  let+ sub = expand_phis sub blks in
-  sub, construct_ins_outs_map hvars blks liveness
+    (sub : sub term) : sub term KB.t =
+  expand_phis @@ mark_ins_outs hvars sub @@ Live.compute sub
 
 (* Add in live variables that persist across blocks that don't
    use them. *)
-let all_ins_outs_vars
-    (vars : Var.Set.t)
-    (ins_outs_map : Types.ins_outs_map) : Var.Set.t =
-  Var.Set.union vars @@ Var.Set.union_list @@
-  List.map ~f:(fun Types.{ins; outs} ->
-      Var.Set.union ins outs) @@
-  Tid.Map.data ins_outs_map
-
+let all_ins_outs_vars (sub : sub term) (vars : Var.Set.t) : Var.Set.t =
+  Var.Set.union vars @@ Var.Set.union_list begin
+    Term.enum blk_t sub |> Seq.to_list |> List.map ~f:(fun blk ->
+        let ins = Term.get_attr blk Bir_helpers.ins_tag in
+        let outs = Term.get_attr blk Bir_helpers.outs_tag in
+        Option.merge ins outs ~f:Set.union |>
+        Option.value ~default:Var.Set.empty)
+  end
+      
 (* Produce a relation between congruent variables. *)
-let collect_congruences
-    (vars : Var.Set.t)
-    (ins_outs_map : Types.ins_outs_map) : var Var.Map.t =
-  let vars = all_ins_outs_vars vars ins_outs_map in
+let make_congruences (sub : sub term) (vars : Var.Set.t) : sub term =
+  let vars = all_ins_outs_vars sub vars in
   let cong x y = Var.(x <> y) && Utils.congruent x y in
-  Set.fold vars ~init:Var.Map.empty ~f:(fun init x ->
-      Set.fold vars ~init ~f:(fun congruences y ->
-          if not @@ cong x y then congruences
-          else Map.set congruences ~key:x ~data:y))
+  let m = Set.fold vars ~init:Var.Map.empty ~f:(fun init x ->
+      Set.fold vars ~init ~f:(fun m y ->
+          if not @@ cong x y then m
+          else Map.update m x ~f:(function
+              | None -> Var.Set.singleton y
+              | Some s -> Var.Set.add s y))) in
+  Term.set_attr sub Bir_helpers.congruences_tag m
 
-let transform
-    (hvars : Hvar.t list)
-    (sub : sub term) : Types.t KB.t =
+let transform (sub : sub term) ~(hvars : Hvar.t list) : sub term KB.t =
   let module Env = Linear.Env in
   let* sub = if Sub.is_ssa sub then !!sub else Sub.KB.ssa sub in
-  let+ sub, ins_outs_map = compute_liveness_and_expand_phis hvars sub in
+  let+ sub = compute_liveness_and_expand_phis hvars sub in
   let sub, env = Monad.State.run (Linear.linearize_sub sub) Env.empty in
-  let congruences = collect_congruences env.Env.vars ins_outs_map in
-  Types.{sub; ins_outs_map; congruences}
+  make_congruences sub env.Env.vars

@@ -1,5 +1,5 @@
 module C = Cmdliner
-module Log = Vibes_log_lib.Stream
+module Log = Vibes_log.Stream
 
 let start_color : string = "\x1b[33m"
 let end_color : string = "\x1b[0m"

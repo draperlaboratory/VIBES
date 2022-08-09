@@ -2,7 +2,7 @@ open Core
 open Bap.Std
 open Monads.Std
 
-module Naming = Vibes_higher_vars_lib.Substituter.Naming
+module Naming = Vibes_higher_vars.Substituter.Naming
 
 type prefix = string
 
@@ -36,7 +36,7 @@ let orig_name (name : string) : string option =
     | split ->
       let+ split = List.drop_last split in
       String.concat split ~sep:"_" in
-  if is_reg then Naming.mark_reg_name name else name
+  if is_reg then Naming.mark_reg_name_unsafe name else name
 
 let same (x : var) (y : var) : bool =
   let x = Var.name x in

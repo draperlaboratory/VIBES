@@ -2,9 +2,9 @@ open Core
 open Bap_core_theory
 
 module T = Theory
-module Log = Vibes_log_lib.Stream
-module Constants = Vibes_constants_lib
-module Function_info = Vibes_function_info_lib.Types
+module Log = Vibes_log.Stream
+module Constants = Vibes_constants
+module Function_info = Vibes_function_info.Types
 
 type ast = Cabs.definition
 

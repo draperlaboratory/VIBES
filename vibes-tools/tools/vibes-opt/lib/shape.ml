@@ -4,24 +4,23 @@ open Graphlib.Std
 open Bap_core_theory
 
 module T = Theory
-module Patch_info = Vibes_patch_info_lib.Types
-module Bir_helpers = Vibes_bir_lib.Helpers
+module Patch_info = Vibes_patch_info.Types
+module Bir_helpers = Vibes_bir.Helpers
 
 open KB.Syntax
 
 module G = Graphs.Tid
 
 (* Remove any unreachable blocks. *)
-let remove_unreachable
-    (sub : sub term)
-    (entry_tid : tid) : sub term =
-  let cfg = Sub.to_graph sub in
-  Term.filter blk_t sub ~f:(fun blk ->
-      let tid = Term.tid blk in
-      Tid.(tid = entry_tid) ||
-      let preds =
-        G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
-      not @@ Tid.Set.(is_empty @@ remove preds G.start))
+let remove_unreachable (sub : sub term) : (sub term, KB.conflict) result =
+  Bir_helpers.entry_tid sub |> Result.map ~f:(fun entry_tid ->
+      let cfg = Sub.to_graph sub in
+      Term.filter blk_t sub ~f:(fun blk ->
+          let tid = Term.tid blk in
+          Tid.(tid = entry_tid) ||
+          let preds =
+            G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+          not @@ Tid.Set.(is_empty @@ remove preds G.start)))
 
 (* We need to insert explicit exit blocks when we encounter the following
    kinds of jmps:
@@ -68,25 +67,30 @@ let adjust_exits (sub : sub term) : sub term KB.t =
       let+ sub = Term.KB.map blk_t sub ~f:(fun blk ->
           let tid = Term.tid blk in
           if Set.mem exit_tids tid then
+            let attrs = Term.attrs blk in
             match Term.enum jmp_t blk |> Seq.to_list with
             | [] ->
               (* The block has no jumps, so it is implicitly an exit node.
                  Make this explicitly jump to a new exit block at the very
                  end of the program. *)
               let* jmp_tid = T.Label.fresh in
-              let+ tid' = make_extra () in
-              let jmp = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
+              let+ dst = make_extra () in
+              let jmp = Jmp.create_goto ~tid:jmp_tid (Direct dst) in
               let defs = Term.enum def_t blk |> Seq.to_list in
-              Blk.create ~tid ~jmps:[jmp] ~defs ()
+              Term.with_attrs
+                (Blk.create ~tid ~jmps:[jmp] ~defs ())
+                attrs
             | [jmp] when not @@ Bir_helpers.is_unconditional jmp ->
               (* The block has a single conditional jump, so it is implicitly
                  an exit node. Make this explicitly jump to a new exit block
                  at the very end of the program. *)
               let* jmp_tid = T.Label.fresh in
-              let+ tid' = make_extra () in
-              let jmp' = Jmp.create_goto ~tid:jmp_tid (Direct tid') in
+              let+ dst = make_extra () in
+              let new_jmp = Jmp.create_goto ~tid:jmp_tid (Direct dst) in
               let defs = Term.enum def_t blk |> Seq.to_list in
-              Blk.create ~tid ~jmps:[jmp; jmp'] ~defs ()
+              Term.with_attrs
+                (Blk.create ~tid ~jmps:[jmp; new_jmp] ~defs ())
+                attrs
             | _ -> Term.KB.map jmp_t blk ~f:(fun jmp ->
                 match Jmp.kind jmp with
                 | Call call -> begin
@@ -134,7 +138,8 @@ let reorder_blks (sub : sub term) : sub term =
   let args = Term.enum arg_t sub |> Seq.to_list in
   let name = Sub.name sub in
   let tid = Term.tid sub in
-  Sub.create () ~args ~blks ~name ~tid
+  let attrs = Term.attrs sub in
+  Term.with_attrs (Sub.create () ~args ~blks ~name ~tid) attrs
 
 (* Get the maximum address of each patch site. *)
 let collect_conservative_patch_points
@@ -178,12 +183,14 @@ let collect_conservative_patch_points
 let relax_branches
     (sub : sub term)
     ~(target : T.target)
-    ~(patch_info : Patch_info.t) : sub term KB.t =
+    ~(patch_info : Patch_info.t)
+    ~(fwd_limit : int)
+    ~(bwd_limit : int) : sub term KB.t =
   let width = T.Target.code_addr_size target in
   let patch_points =
     collect_conservative_patch_points ~patch_info ~width in
-  let fwd_limit = Word.of_int ~width 0xFFFFE in
-  let bwd_limit = Word.of_int ~width 0x100000 in
+  let fwd_limit = Word.of_int ~width fwd_limit in
+  let bwd_limit = Word.of_int ~width bwd_limit in
   let inserted = ref [] in
   let table = Addr.Table.create () in
   let can_fit addr = List.exists patch_points ~f:(fun maximum ->
@@ -295,9 +302,11 @@ let split_conditional_calls (sub : sub term) : sub term KB.t =
             let new_jmp = Jmp.create_call ~tid:jmp_tid call in
             let new_blk = Blk.create () ~tid:blk_tid ~jmps:[new_jmp] in
             Tid.Table.set after ~key:(Term.tid blk) ~data:new_blk;
-            Jmp.create_goto (Direct blk_tid)
-              ~cond:(Jmp.cond jmp)
-              ~tid:(Term.tid jmp)
+            Term.with_attrs
+              (Jmp.create_goto (Direct blk_tid)
+                 ~cond:(Jmp.cond jmp)
+                 ~tid:(Term.tid jmp))
+              (Term.attrs jmp)
           | _ -> !!jmp)) in
   Tid.Table.fold after ~init:sub
     ~f:(fun ~key:after ~data:blk sub ->

@@ -3,8 +3,8 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
-module Log = Vibes_log_lib.Stream
-module Bir_helpers = Vibes_bir_lib.Helpers
+module Log = Vibes_log.Stream
+module Bir_helpers = Vibes_bir.Helpers
 module Hvar = Higher_var
 
 open KB.Syntax
@@ -13,30 +13,36 @@ exception Subst_err of string
 
 module Naming = struct
 
-  (* BAP seems to prefix an underscore when it's just `$reg` so we will
-     just make it explicit. *)
-  let reg_prefix = "_$reg"
+  let reg_prefix = "reg:"
 
-  let mark_reg_name (v : string) : string = reg_prefix ^ v
+  let mark_reg_name_unsafe : string -> string =
+    Format.sprintf "%s%s" reg_prefix
 
-  let mark_reg (v : var) : var =
-    let name = Var.name v in
-    let typ = Var.typ v in
-    Var.create (mark_reg_name name) typ
+  let mark_reg_unsafe (v : var) : var =
+    let name = Format.sprintf "%s%s" reg_prefix @@ Var.name v in
+    Var.reify @@ T.Var.define (Var.sort v) name
 
-  (* Find a register with a given name in a target arch. *)
-  let mark_reg_exn : T.target -> string -> var =
+  let mark_reg_name : T.target -> string -> (string, string) result =
     let msg name target =
       Format.asprintf "Register %s not found in target %a!"
         name T.Target.pp target in
     fun target name ->
-      T.Target.regs target |>
-      Set.find ~f:(fun v -> String.(T.Var.name v = name)) |> function
-      | Some r -> mark_reg @@ Var.reify r
-      | None -> raise @@ Subst_err (msg name target)
+      T.Target.regs target |> Set.exists ~f:(fun r ->
+          String.equal name Var.(name @@ reify r)) |> function
+      | true -> Ok (reg_prefix ^ name)
+      | false -> Error (msg name target)
+
+  let mark_reg
+      (target : Theory.target)
+      (v : var) : (var, string) result =
+    Var.name v |> mark_reg_name target |>
+    Result.map ~f:(fun name -> Var.reify @@ T.Var.define (Var.sort v) name)
+
+  let is_reg_name : string -> bool = String.is_prefix ~prefix:reg_prefix
+  let is_reg : var -> bool = Fn.compose is_reg_name Var.name
 
   let unmark_reg_name (v : string) : string option =
-    if String.is_prefix v ~prefix:reg_prefix then
+    if is_reg_name v then
       Some (String.drop_prefix v @@ String.length reg_prefix)
     else None
 
@@ -63,27 +69,33 @@ let size_of_typ : typ -> string -> size =
 let initialize
     (sub : sub term)
     ~(typeof : string -> typ option)
-    ~(entry_tid : tid)
     ~(hvars : Hvar.t list)
-    ~(target : T.target)
-    ~(spilled : String.Set.t) : sub term KB.t =
+    ~(target : T.target) : sub term KB.t =
+  let* entry_tid = match Bir_helpers.entry_tid sub with
+    | Error err -> KB.fail err
+    | Ok tid -> !!tid in
   Term.KB.map blk_t sub ~f:(fun blk ->
       let tid = Term.tid blk in
       if Tid.(tid = entry_tid) then
-        let+ defs = KB.List.filter_map hvars ~f:(fun {name; value} ->
-            if Set.mem spilled name then !!None
-            else match value with
-              | Hvar.Constant _ -> !!None
-              | Hvar.Memory _ -> !!None
-              | Hvar.Registers {at_entry = None; _} -> !!None
-              | Hvar.Registers {at_entry = Some reg; _} ->
-                match typeof name with
-                | None ->
-                  Log.send "Warning: unused variable '%s'" name;
-                  !!None
-                | Some typ ->
-                  let lhs = Var.create name typ in
-                  let rhs = Naming.mark_reg_exn target reg in
+        let+ defs = KB.List.filter_map hvars ~f:(fun {name; value; _} ->
+            (* If this variable got spilled then it should have the Memory
+               classifier. *)
+            match value with
+            | Hvar.Constant _ -> !!None
+            | Hvar.Memory _ -> !!None
+            | Hvar.Registers {at_entry = None; _} -> !!None
+            | Hvar.Registers {at_entry = Some reg; _} ->
+              match typeof name with
+              | None ->
+                Log.send "Warning: unused variable '%s'" name;
+                !!None
+              | Some typ ->
+                let lhs = Var.create name typ in
+                match Naming.mark_reg_name target reg with
+                | Error msg ->
+                  KB.fail @@ Errors.Higher_var_not_substituted msg
+                | Ok name ->
+                  let rhs = Var.create name typ in
                   let+ tid = T.Label.fresh in
                   Some (Def.create ~tid lhs @@ Var rhs)) in
         (* Order these defs after we preserve any registers that were
@@ -112,7 +124,7 @@ let finalize
          exit blocks are assumed to go somewhere else in the program
          where the storage information is not needed. *)
       if Bir_helpers.no_jmps blk then
-        let+ defs = KB.List.filter_map hvars ~f:(fun {name; value} ->
+        let+ defs = KB.List.filter_map hvars ~f:(fun {name; value; _} ->
             match value with
             | Hvar.Constant _ -> !!None
             | Hvar.Memory _ -> !!None
@@ -124,9 +136,13 @@ let finalize
                 !!None
               | Some typ ->
                 let rhs = Bil.var @@ Var.create name typ in
-                let lhs = Naming.mark_reg_exn target reg in
-                let+ tid = T.Label.fresh in
-                Some (Def.create ~tid lhs rhs)) in
+                match Naming.mark_reg_name target reg with
+                | Error msg ->
+                  KB.fail @@ Errors.Higher_var_not_substituted msg
+                | Ok name ->
+                  let lhs = Var.create name typ in
+                  let+ tid = T.Label.fresh in
+                  Some (Def.create ~tid lhs rhs)) in
         (* Order these defs before we restore any registers that were
            spilled. *)
         let first_spill =
@@ -158,12 +174,13 @@ let subst_name
       let e = T.Target.endianness target in
       if T.Endianness.(e = le) then LittleEndian else BigEndian in
     match memory with
-    | Frame (loc, off) ->
-      let loc = Naming.mark_reg_exn target loc in
-      Bil.(load ~mem:(var mem) ~addr:(var loc + int off)
-             endian size)
     | Global addr ->
       Bil.(load ~mem:(var mem) ~addr:(int addr) endian size)
+    | Frame (loc, off) -> match Naming.mark_reg_name target loc with
+      | Error msg -> raise (Subst_err msg)
+      | Ok name ->
+        let loc = Var.create name typ in
+        Bil.(load ~mem:(var mem) ~addr:(var loc + int off) endian size)
 
 (* This replaces a variable with either the register or the memory
    read it corresponds to *)
@@ -202,13 +219,16 @@ let subst_def : T.target -> Hvar.t list -> def term -> def term =
           let e = T.Target.endianness target in
           if T.Endianness.(e = le) then LittleEndian else BigEndian in
         let rhs = match memory with
-          | Frame (loc, off) ->
-            let loc = Naming.mark_reg_exn target loc in
-            Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
-                   rhs endian size)
           | Global addr ->
-            Bil.(store ~mem:(var mem) ~addr:(int addr) rhs endian size) in
-        Def.create ~tid:(Term.tid def) lhs rhs
+            Bil.(store ~mem:(var mem) ~addr:(int addr) rhs endian size)
+          | Frame (loc, off) -> match Naming.mark_reg_name target loc with
+            | Error msg -> raise (Subst_err msg)
+            | Ok name ->
+              let loc = Var.create name typ in
+              Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
+                     rhs endian size) in
+        let attrs = Term.attrs def in
+        Term.with_attrs (Def.create ~tid:(Term.tid def) lhs rhs) attrs
 
 let subst_label
     (target : T.target)
@@ -252,7 +272,11 @@ let subst_jmp
     (target : T.target)
     (hvars : Hvar.t list)
     (jmp : jmp term) : jmp term KB.t =
-  Jmp.map_exp jmp ~f:(subst_exp target hvars) |> subst_dsts target hvars
+  let attrs = Term.attrs jmp in
+  let+ jmp =
+    Jmp.map_exp jmp ~f:(subst_exp target hvars) |>
+    subst_dsts target hvars in
+  Term.with_attrs jmp attrs
 
 let subst_blk
     (target : T.target)
@@ -262,29 +286,25 @@ let subst_blk
   Term.KB.map jmp_t blk ~f:(subst_jmp target hvars)
 
 let substitute
-    ?(spilled : String.Set.t = String.Set.empty)
     (sub : sub term)
-    ~(entry_tid : tid)
     ~(hvars : Hvar.t list)
     ~(target : T.target) : sub term KB.t =
-  try
-    let typeof =
-      let env =
-        Term.enum blk_t sub |>
-        Seq.fold ~init:String.Map.empty ~f:(fun env blk ->
-            let free = Blk.free_vars blk in
-            let lhs =
-              Term.enum def_t blk |>
-              Seq.fold ~init:Var.Set.empty ~f:(fun lhs def ->
-                  Set.add lhs @@ Def.lhs def) in
-            Var.Set.union free lhs |>
-            Set.fold ~init:env ~f:(fun env v ->
-                Map.set env ~key:(Var.name v) ~data:(Var.typ v))) in
-      (* NOTE: the variable might not have been mentioned in the
-         program. *)
-      Map.find env in
-    let* sub = initialize sub ~typeof ~entry_tid ~hvars ~target ~spilled in
-    let* sub = finalize sub ~typeof ~hvars ~target in
-    Term.KB.map blk_t sub ~f:(subst_blk target hvars)
-  with Subst_err msg ->
-    KB.fail @@ Errors.Higher_var_not_substituted msg
+  let typeof =
+    let env =
+      Term.enum blk_t sub |>
+      Seq.fold ~init:String.Map.empty ~f:(fun env blk ->
+          let free = Blk.free_vars blk in
+          let lhs =
+            Term.enum def_t blk |>
+            Seq.fold ~init:Var.Set.empty ~f:(fun lhs def ->
+                Set.add lhs @@ Def.lhs def) in
+          Var.Set.union free lhs |>
+          Set.fold ~init:env ~f:(fun env v ->
+              Map.set env ~key:(Var.name v) ~data:(Var.typ v))) in
+    (* NOTE: the variable might not have been mentioned in the
+       program. *)
+    Map.find env in
+  let* sub = initialize sub ~typeof ~hvars ~target in
+  let* sub = finalize sub ~typeof ~hvars ~target in
+  try Term.KB.map blk_t sub ~f:(subst_blk target hvars)
+  with Subst_err msg -> KB.fail @@ Errors.Higher_var_not_substituted msg

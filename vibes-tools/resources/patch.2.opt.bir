@@ -1,0 +1,50 @@
+(patch.2.bir
+ ((%0000000b block (phi ())
+   (data
+    ((%0000000d set (_0000000b_reg:R0_1 0 (imm 32) false) (int 3:32u)
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))
+     (%0000000c set (_0000000b_reg:R1_1 0 (imm 32) false) (int 6:32u)
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))
+     (%00000013 set (_0000000b_mem:call_1 0 (mem 32 8) false)
+      (var (_0000000b_mem 0 (mem 32 8) false))
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))))
+   (ctrl
+    ((%00000010 call (direct %00000011) (return (direct %00000009))
+      (when (int 1:1u)))))
+   (attrs
+    (("dd9a51b0-bfed-41e3-82a7-eba42a242428:vibes\\:outs"
+      (((name (Reg (name _0000000b_reg:R0_1) (ver 0)))
+        (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))))))
+     ("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins"
+      (((name (Reg (name _0000000b_mem) (ver 0)))
+        (sort
+         (App
+          (args
+           ((App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))
+            (App (args ((Int 8) (Sym core:BitVec))) (name (core:BitVec)))
+            (Sym core:Mem)))
+          (name (core:Mem))))))))))
+  (%00000009 block (phi ())
+   (data
+    ((%0000000a set (_00000009_z_1 0 (imm 32) false)
+      (var (_00000009_reg:R0_1 0 (imm 32) false)))))
+   (ctrl ((%00000014 goto (direct %00000015) (when (int 1:1u)))))
+   (attrs
+    (("dd9a51b0-bfed-41e3-82a7-eba42a242428:vibes\\:outs" ())
+     ("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins"
+      (((name (Reg (name _00000009_reg:R0_1) (ver 0)))
+        (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec))))))))))
+  (%00000015 block (phi ()) (data ()) (ctrl ())
+   (attrs
+    (("dd9a51b0-bfed-41e3-82a7-eba42a242428:vibes\\:outs" ())
+     ("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins" ())))))
+ (attrs
+  (("62fc18a7-61ff-4ee3-b02d-9e4a6b18cea9:vibes\\:congruences"
+    ((((name (Reg (name _00000009_reg:R0_1) (ver 0)))
+       (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))))
+      (((name (Reg (name _0000000b_reg:R0_1) (ver 0)))
+        (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))))))
+     (((name (Reg (name _0000000b_reg:R0_1) (ver 0)))
+       (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))))
+      (((name (Reg (name _00000009_reg:R0_1) (ver 0)))
+        (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec))))))))))))

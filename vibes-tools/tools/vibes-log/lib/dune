@@ -1,4 +1,4 @@
 (library
- (name vibes_log_lib)
+ (name vibes_log)
  (public_name vibes-tools.logging)
  (libraries core))

@@ -54,11 +54,11 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
-module Hvar = Vibes_higher_vars_lib.Higher_var
-module Substituter = Vibes_higher_vars_lib.Substituter
+module Hvar = Vibes_higher_vars.Higher_var
+module Substituter = Vibes_higher_vars.Substituter
 module Naming = Substituter.Naming
-module Function_info = Vibes_function_info_lib.Types
-module Utils = Vibes_utils_lib
+module Function_info = Vibes_function_info.Types
+module Utils = Vibes_utils
 
 module Eval(CT : Theory.Core) = struct
 
@@ -78,20 +78,21 @@ module Eval(CT : Theory.Core) = struct
     hvars     : Hvar.t list;
   } [@@deriving fields]
 
-  let make_reg (v : unit T.var) : unit T.var =
+  let make_reg (target : T.target) (v : unit T.var) : unit T.var KB.t =
     let sort = T.Var.sort v in
-    let v = Naming.mark_reg @@ Var.reify v in
-    T.Var.create sort @@ Var.ident v
+    match Naming.mark_reg target @@ Var.reify v with
+    | Error msg -> fail msg
+    | Ok v -> !!(T.Var.create sort @@ Var.ident v)
 
-  let make_ret_var (target : T.target) : unit T.var =
+  let make_ret_var (target : T.target) : unit T.var KB.t =
     let role = T.Role.Register.function_return in
     let ret_var = T.Target.reg target role in
-    make_reg (Option.value_exn ret_var)
+    make_reg target @@ Option.value_exn ret_var
 
-  let make_arg_vars (target : T.target) : unit T.var list =
+  let make_arg_vars (target : T.target) : unit T.var list KB.t =
     let roles = T.Role.Register.[function_argument] in
     let arg_vars = T.Target.regs target ~roles in
-    Set.to_list arg_vars |> List.map ~f:make_reg
+    Set.to_list arg_vars |> KB.List.map ~f:(make_reg target)
 
   let make_endian (target : T.target) : T.bool =
     let e = T.Target.endianness target in
@@ -103,9 +104,9 @@ module Eval(CT : Theory.Core) = struct
     let word_sort = T.(Bitv.define @@ Target.bits target) in
     let byte_sort = T.(Bitv.define @@ Target.byte target) in
     let mem_var = T.Target.data target in
-    let+ endian = make_endian target in
-    let ret_var = make_ret_var target in
-    let arg_vars = make_arg_vars target in
+    let* endian = make_endian target in
+    let* ret_var = make_ret_var target in
+    let+ arg_vars = make_arg_vars target in
     Fields_of_interp_info.create
       ~target ~word_sort ~byte_sort ~mem_var
       ~endian ~ret_var ~arg_vars ~hvars
@@ -255,13 +256,9 @@ module Eval(CT : Theory.Core) = struct
   let try_mark_reg
       (info : ('a, _) interp_info)
       (reg : string) : 'a T.Bitv.t T.var KB.t =
-    try
-      Naming.mark_reg_exn info.target reg |>
-      Var.name |> T.Var.Ident.of_string |>
-      T.Var.create info.word_sort |>
-      KB.return
-    with Substituter.Subst_err msg ->
-      fail @@ sprintf "addr_of_var: substitution failed: %s" msg
+    match Naming.mark_reg_name info.target reg with
+    | Ok s -> !!T.Var.(create info.word_sort @@ Ident.of_string s)
+    | Error msg -> fail msg
 
   let addr_of_var (info : _ interp_info) (v : string) : unit pure =
     match Hvar.find v info.hvars with

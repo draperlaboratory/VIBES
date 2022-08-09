@@ -1,1 +1,3 @@
-(%00000009 block(phi())(data((%00000005 set(x 0(imm 32)false)(int 3:32u))))(ctrl()))
+(%00000009 block (phi ())
+ (data ((%00000005 set (x 0 (imm 32) false) (int 3:32u) (attrs ()))))
+ (ctrl ()))

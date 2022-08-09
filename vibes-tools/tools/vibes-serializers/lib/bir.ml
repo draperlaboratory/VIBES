@@ -4,12 +4,13 @@ open Bap_core_theory
 open Monads.Std
 
 module T = Theory
+module Bir_helpers = Vibes_bir.Helpers
 
 (* This was borrowed from `bap/lib/bap_types/bap_var.ml`. Perhaps
    it should be exposed in the user-facing API? *)
 
 let unknown =
-  let package = Vibes_constants_lib.Bap_kb.package in
+  let package = Vibes_constants.Bap_kb.package in
   let unknown =
     Theory.Value.Sort.Name.declare ~package "Unknown" in
   Theory.Value.Sort.sym unknown
@@ -24,6 +25,12 @@ let sort_of_typ t =
     let ks,vs = T.Bitv.(define ks, define vs) in
     ret @@ T.Mem.define ks vs
   | Type.Unk -> ret @@ unknown
+
+(* The BIR program may have attributes that were set by default in BAP,
+   but we only care about the custom ones we've defined. *)
+let is_vibes_attr (attr : value) : bool =
+  let prefix = Vibes_constants.Attr.prefix in
+  String.is_prefix (Value.tagname attr) ~prefix
 
 module Serializer = struct
 
@@ -144,12 +151,18 @@ module Serializer = struct
         serialize_typ t;
       ]
 
-  let serialize_def (def : Def.t) : Sexp.t = List [
-      Atom (Tid.to_string @@ Term.tid def);
-      Atom "set";
-      serialize_var @@ Def.lhs def;
-      serialize_exp @@ Def.rhs def;
+  let serialize_attrs (attrs : dict) : Sexp.t = List [
+      Atom "attrs";
+      Dict.sexp_of_t attrs;
     ]
+
+  let serialize_def (def : def term) : Sexp.t =
+    let tid = Tid.to_string @@ Term.tid def in
+    let lhs = serialize_var @@ Def.lhs def in
+    let rhs = serialize_exp @@ Def.rhs def in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs def in
+    if Dict.is_empty attrs then List [Atom tid; Atom "set"; lhs; rhs]
+    else List [Atom tid; Atom "set"; lhs; rhs; serialize_attrs attrs]
 
   let serialize_label : label -> Sexp.t = function
     | Direct tid -> List [
@@ -216,22 +229,34 @@ module Serializer = struct
       ~(f : 'b term -> Sexp.t) : Sexp.t list =
     Term.enum cls t |> Seq.map ~f |> Seq.to_list
 
-  let serialize_blk (blk : blk term) : Sexp.t = List [
-      Atom (Tid.to_string @@ Term.tid blk);
-      Atom "block";
-      List [
-        Atom "phi";
-        List (serialize_subterms phi_t blk ~f:serialize_phi);
-      ];
-      List [
-        Atom "data";
-        List (serialize_subterms def_t blk ~f:serialize_def);
-      ];
-      List [
-        Atom "ctrl";
-        List (serialize_subterms jmp_t blk ~f:serialize_jmp);
-      ];
-    ]
+  let serialize_blk (blk : blk term) : Sexp.t =
+    let tid = Tid.to_string @@ Term.tid blk in
+    let phi = serialize_subterms phi_t blk ~f:serialize_phi in
+    let data = serialize_subterms def_t blk ~f:serialize_def in
+    let ctrl = serialize_subterms jmp_t blk ~f:serialize_jmp in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs blk in
+    if Dict.is_empty attrs then List [
+        Atom tid;
+        Atom "block";
+        List [Atom "phi"; List phi];
+        List [Atom "data"; List data];
+        List [Atom "ctrl"; List ctrl];
+      ]
+    else List [
+        Atom tid;
+        Atom "block";
+        List [Atom "phi"; List phi];
+        List [Atom "data"; List data];
+        List [Atom "ctrl"; List ctrl];
+        serialize_attrs attrs;
+      ]
+
+  let serialize_sub (sub : sub term) : Sexp.t =
+    let name = Sub.name sub in
+    let blks = serialize_subterms blk_t sub ~f:serialize_blk in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs sub in
+    if Dict.is_empty attrs then List [Atom name; List blks]
+    else List [Atom name; List blks; serialize_attrs attrs]
 
 end
 
@@ -573,12 +598,31 @@ module Deserializer = struct
       let msg = Format.asprintf "Expected phi, but got: '%a'" Sexp.pp sexp in
       fail @@ Errors.Invalid_bir msg
 
+  let deserialize_attrs : Sexp.t -> dict t = function
+    | List [Atom "attrs"; attrs] -> begin
+        try !!Dict.(filter ~f:is_vibes_attr @@ t_of_sexp attrs) with
+        | exn ->
+          let msg = Format.asprintf
+              "Failed to parse attrs '%a': %a"
+              Sexp.pp attrs Core.Exn.pp exn in
+          fail @@ Errors.Invalid_bir msg
+      end
+    | sexp ->
+      let msg = Format.asprintf "Expected attrs, but got: '%a'" Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
   let deserialize_def : Sexp.t -> def term t = function
     | List [Atom raw_tid; Atom "set"; raw_lhs; raw_rhs] ->
       let* tid = deserialize_tid raw_tid in
       let* v = deserialize_var raw_lhs in
       let+ exp = deserialize_exp raw_rhs in
       Def.create v exp ~tid
+    | List [Atom raw_tid; Atom "set"; raw_lhs; raw_rhs; attrs] ->
+      let* tid = deserialize_tid raw_tid in
+      let* v = deserialize_var raw_lhs in
+      let* exp = deserialize_exp raw_rhs in
+      let+ attrs = deserialize_attrs attrs in
+      Term.with_attrs (Def.create v exp ~tid) attrs
     | sexp ->
       let msg = Format.asprintf "Expected def, but got: '%a'" Sexp.pp sexp in
       fail @@ Errors.Invalid_bir msg
@@ -648,6 +692,20 @@ module Deserializer = struct
       let* defs = List.map raw_defs ~f:deserialize_def in
       let+ jmps = List.map raw_jmps ~f:deserialize_jmp in
       Blk.create () ~tid ~phis ~defs ~jmps
+    | List [
+        Atom raw_tid;
+        Atom "block";
+        List [Atom "phi"; List raw_phis];
+        List [Atom "data"; List raw_defs];
+        List [Atom "ctrl"; List raw_jmps];
+        attrs;
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* phis = List.map raw_phis ~f:deserialize_phi in
+      let* defs = List.map raw_defs ~f:deserialize_def in
+      let* jmps = List.map raw_jmps ~f:deserialize_jmp in
+      let+ attrs = deserialize_attrs attrs in
+      Term.with_attrs (Blk.create () ~tid ~phis ~defs ~jmps) attrs
     | sexp ->
       let msg = Format.asprintf
           "Expected block, but got: '%a'"
@@ -657,12 +715,27 @@ module Deserializer = struct
   let deserialize_blks : Sexp.t list -> blk term list t =
     List.map ~f:deserialize_blk
 
+  let deserialize_sub : Sexp.t -> sub term t = function
+    | List [Atom name; List blks] ->
+      let* blks = deserialize_blks blks in
+      lift @@ Bir_helpers.create_sub name blks
+    | List [Atom name; List blks; attrs] ->
+      let* blks = deserialize_blks blks in
+      let* attrs = deserialize_attrs attrs in
+      let+ sub = lift @@ Bir_helpers.create_sub name blks in
+      Term.with_attrs sub attrs
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected sub, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+ 
 end
 
-let serialize = Serializer.serialize_blk
+let serialize = Serializer.serialize_sub
 
-let deserialize (blks : Sexp.t list) : blk term list KB.t =
+let deserialize (sub : Sexp.t) : sub term KB.t =
   let open Deserializer in
-  deserialize_blks blks |>
+  deserialize_sub sub |>
   Base.Fn.flip run Env.empty |>
   KB.map ~f:fst

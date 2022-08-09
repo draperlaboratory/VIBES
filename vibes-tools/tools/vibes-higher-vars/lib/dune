@@ -1,5 +1,5 @@
 (library
- (name vibes_higher_vars_lib)
+ (name vibes_higher_vars)
  (public_name vibes-tools.higher-vars)
  (libraries
    findlib.dynload

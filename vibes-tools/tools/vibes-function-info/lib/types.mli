@@ -11,7 +11,7 @@ open Bap_core_theory
       arguments to the function.
 *)
 type func = {
-  label : Vibes_utils_lib.Json.Label.t;
+  label : Vibes_utils.Json.Label.t;
   name : string option;
   addr : Bitvec.t option;
   args : string list;

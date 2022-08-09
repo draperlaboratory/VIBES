@@ -2,7 +2,7 @@
 
 open Core
 
-module Utils = Vibes_utils_lib
+module Utils = Vibes_utils
 
 type memory =
   | Frame of string * Utils.Json.Bitvector.t [@name "frame"]
@@ -14,6 +14,7 @@ type value =
   | Registers of {
       at_entry: string option [@yojson.option] [@key "at-entry"];
       at_exit : string option [@yojson.option] [@key "at-exit"];
+      allow_opt : bool [@default false] [@key "allow-opt"];
     } [@name "register"]
   | Memory of memory [@name "memory"]
 [@@deriving yojson, equal, compare]

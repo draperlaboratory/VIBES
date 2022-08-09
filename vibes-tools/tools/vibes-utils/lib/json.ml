@@ -3,7 +3,8 @@ open Bap_core_theory
 
 module T = Theory
 module Json = Yojson.Safe
-module Log = Vibes_log_lib.Stream
+module Log = Vibes_log.Stream
+module Y = Ppx_yojson_conv_lib
 
 module Bitvector = struct
 
@@ -47,13 +48,17 @@ let (let*) x f = Result.bind x ~f
 let from_file ~yojson_of_t ~t_of_yojson filepath =
   let* json =
     try Ok (Json.from_file filepath)
-    with _ ->
-      let msg = Format.sprintf "Couldn't load JSON file: '%s'" filepath in
+    with Y.Yojson_conv.Of_yojson_error (exn, _) ->
+      let msg = Format.asprintf
+          "Couldn't load JSON file '%s': %a"
+          filepath Exn.pp exn in
       Error (Errors.Json_parse_error msg) in
   try
     let data = t_of_yojson json in
     Log.send "Loaded: %a" (pp ~yojson_of_t) data;
     Ok data
-  with _ ->
-    let msg = Format.sprintf "Couldn't deserialize JSON in '%s'" filepath in
+  with Y.Yojson_conv.Of_yojson_error (exn, _) ->
+    let msg = Format.asprintf
+        "Couldn't deserialize JSON in '%s': %a"
+        filepath Exn.pp exn in
     Error (Errors.Json_deserialization_error msg)

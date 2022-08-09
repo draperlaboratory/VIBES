@@ -3,18 +3,19 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
-module Log = Vibes_log_lib.Stream
-module Utils = Vibes_utils_lib
-module Function_info = Vibes_function_info_lib.Types
-module Hvar = Vibes_higher_vars_lib.Higher_var
-module Subst = Vibes_higher_vars_lib.Substituter
-module Patch_info = Vibes_patch_info_lib.Types
-module Bir_helpers = Vibes_bir_lib.Helpers
+module Log = Vibes_log.Stream
+module Utils = Vibes_utils
+module Function_info = Vibes_function_info.Types
+module Hvar = Vibes_higher_vars.Higher_var
+module Subst = Vibes_higher_vars.Substituter
+module Patch_info = Vibes_patch_info.Types
+module Bir_helpers = Vibes_bir.Helpers
+module Linear_ssa = Vibes_linear_ssa.Linearizer
 
 open KB.Syntax
 
 let log_sub (sub : sub term) : unit =
-  Log.send "New BIR:\n%a" Sub.pp sub
+  Log.send "New BIR:\n\n%a" Sub.pp sub
 
 let liftr (r : ('a, KB.conflict) result) : 'a KB.t = match r with
   | Error err -> KB.fail err
@@ -68,7 +69,8 @@ let thumb_specific
     ~(target : T.target)
     ~(patch_info : Patch_info.t) : sub term KB.t =
   Log.send "Relaxing branches";
-  let* sub = Shape.relax_branches sub ~target ~patch_info in
+  let* sub = Shape.relax_branches sub
+      ~target ~patch_info ~fwd_limit:0xFFFFE ~bwd_limit:0x100000 in
   log_sub sub;
   Log.send "Splitting conditional jumps";
   let+ sub = Shape.split_on_conditional sub in
@@ -77,25 +79,22 @@ let thumb_specific
 
 let run
     (sub : sub term)
-    ~(target : T.Target.t)
-    ~(language : T.Language.t)
+    ~(target : T.target)
+    ~(language : T.language)
     ~(patch_info : Patch_info.t)
-    ~(func_info : Function_info.t) : Types.t KB.t =
+    ~(func_info : Function_info.t) : sub term KB.t =
   let hvars = Patch_info.patch_vars patch_info in
   let sp_align = Patch_info.sp_align patch_info in
   Log.send "Running BIR passes";
   let is_thumb = Utils.Core_theory.is_thumb language in
-  let* entry_tid = liftr @@ Bir_helpers.entry_tid sub in
   let* () = provide_function_info sub ~func_info in
   Log.send "Collecting arguments at callsites";
-  let* argument_tids = Abi.collect_argument_tids sub ~target ~func_info in
+  let* sub = Abi.mark_argument_tids sub ~target ~func_info in
   Log.send "Inserting new mems at callsites";
-  let* sub, mem_argument_tids =
-    Abi.insert_new_mems_at_callsites sub ~target in
+  let* sub = Abi.insert_new_mems_at_callsites sub ~target in
   log_sub sub;
   Log.send "Removing unreachable BIR";
-  let argument_tids = Tid.Set.union argument_tids mem_argument_tids in
-  let sub = Shape.remove_unreachable sub entry_tid in
+  let* sub = liftr @@ Shape.remove_unreachable sub in
   log_sub sub;
   Log.send "Adjusting exits";
   let* sub = Shape.adjust_exits sub in
@@ -104,21 +103,17 @@ let run
   let* sub = Shape.split_conditional_calls sub in
   log_sub sub;
   Log.send "Spilling hvars and adjusting stack";
-  let* Abi.Spill.{sub; hvars; spilled} =
-    Abi.Spill.spill_hvars_and_adjust_stack sub
-      ~target ~sp_align ~hvars ~entry_tid in
+  let* sub, hvars =
+    Abi.spill_hvars_and_adjust_stack sub ~target ~sp_align ~hvars in
   log_sub sub;
   Log.send "Substituting hvars";
-  let* sub = Subst.substitute sub ~target ~hvars ~spilled ~entry_tid in
+  let* sub = Subst.substitute sub ~target ~hvars in
   log_sub sub;
   Log.send "Re-ordering blocks";
   let sub = Shape.reorder_blks sub in
   log_sub sub;
   Log.send "Applying optimizations in the Opt module";
-  let* sub = liftr @@ Opt.apply sub in
-  log_sub sub;
-  Log.send "Applying BAP optimizations";
-  let sub = Bap_opt.run sub in
+  let* sub = Opt.apply hvars sub in
   log_sub sub;
   let* sub =
     if is_thumb then begin
@@ -128,5 +123,8 @@ let run
   Log.send "Re-ordering blocks again";
   let sub = Shape.reorder_blks sub in
   log_sub sub;
+  Log.send "Converting to linear SSA form";
+  let+ sub = Linear_ssa.transform sub ~hvars in
+  log_sub sub;
   Log.send "Done with BIR passes";
-  !!(Types.create ~sub ~argument_tids)
+  sub

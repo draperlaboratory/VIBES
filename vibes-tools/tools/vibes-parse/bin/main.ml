@@ -1,10 +1,10 @@
 open Bap_core_theory
 
 module C = Cmdliner
-module Log = Vibes_log_lib.Stream
-module Versions = Vibes_constants_lib.Versions
-module Cli_opts = Vibes_common_cli_options_lib
-module Runner = Vibes_parse_lib.Runner
+module Log = Vibes_log.Stream
+module Versions = Vibes_constants.Versions
+module Cli_opts = Vibes_common_cli_options
+module Runner = Vibes_parse.Runner
 
 module Cli = struct
 

@@ -7,6 +7,6 @@ val run :
   sub term ->
   target:Theory.target ->
   language:Theory.language ->
-  patch_info:Vibes_patch_info_lib.Types.t ->
-  func_info:Vibes_function_info_lib.Types.t ->
-  Types.t KB.t
+  patch_info:Vibes_patch_info.Types.t ->
+  func_info:Vibes_function_info.Types.t ->
+  sub term KB.t

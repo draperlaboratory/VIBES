@@ -1,7 +1,7 @@
 open Core
 open Bap_core_theory
 
-module Log = Vibes_log_lib.Stream
+module Log = Vibes_log.Stream
 
 type stdout_data = string list
 type stderr_data = string list

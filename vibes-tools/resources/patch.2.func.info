@@ -1,1 +1,1 @@
-{"functions":[{"label":"%00000003","name":"foo","addr":null,"args":["_$regR0","_$regR1"]}]}
+{"functions":[{"label":"%00000003","name":"foo","addr":null,"args":["reg:R0","reg:R1"]}]}

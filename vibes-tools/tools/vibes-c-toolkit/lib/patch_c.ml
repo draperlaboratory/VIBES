@@ -5,8 +5,8 @@ open Monads.Std
 open Bap_core_theory
 
 module Utils = C_utils
-module Log = Vibes_log_lib.Stream
-module Hvar = Vibes_higher_vars_lib.Higher_var
+module Log = Vibes_log.Stream
+module Hvar = Vibes_higher_vars.Higher_var
 
 (* Describes the data model used by the target.
 

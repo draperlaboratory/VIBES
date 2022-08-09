@@ -1,9 +1,10 @@
 (library
- (name vibes_utils_lib)
+ (name vibes_utils)
  (public_name vibes-tools.utils)
  (libraries
    findlib.dynload
    bap
    core
    yojson
+   ppx_yojson_conv_lib
    vibes-tools.logging))

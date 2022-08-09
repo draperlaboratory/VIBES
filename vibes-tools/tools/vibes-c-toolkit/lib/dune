@@ -1,5 +1,5 @@
 (library
- (name vibes_c_toolkit_lib)
+ (name vibes_c_toolkit)
  (public_name vibes-tools.c-toolkit)
  (libraries
    findlib.dynload

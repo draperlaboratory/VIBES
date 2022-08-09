@@ -1,7 +1,7 @@
 open Core
 open Bap_core_theory
 
-module Log = Vibes_log_lib.Stream
+module Log = Vibes_log.Stream
 
 let (let*) x f = Result.bind x ~f
 let (let+) x f = Result.map x ~f

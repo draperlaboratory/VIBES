@@ -1,4 +1,4 @@
-open Vibes_utils_lib
+open Vibes_utils
 
 (** A memory storage classifier.
 
@@ -24,7 +24,10 @@ type memory =
     - [Registers]: the variable lives in a register, and will
       optionally be in register [at_entry] at the start of the
       program, and optionally must be stored in [at_exit] when
-      the program finishes normally.
+      the program finishes normally. If [allow_opt] is [true]
+      (default is [false]), then the variable is allowed to be
+      optimized away during dead code elimination. Note that
+      it will still be stored in [at_exit] if specified.
 
     - [Memory]: the variable lives in some memory location for
       the duration of the program.
@@ -34,11 +37,11 @@ type value =
   | Registers of {
       at_entry : string option;
       at_exit : string option;
+      allow_opt : bool;
     } 
   | Memory of memory
 [@@deriving yojson, equal, compare]
 
-(** A higher var. *)
 type t = {
   name : string;
   value : value;

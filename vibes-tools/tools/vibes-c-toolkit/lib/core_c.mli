@@ -7,9 +7,9 @@ module Eval(_ : Theory.Core) : sig
       call information for the later stages of the compilation
       pipeline. *)
   val parse :
-    Vibes_higher_vars_lib.Higher_var.t list ->
+    Vibes_higher_vars.Higher_var.t list ->
     Theory.target ->
     Cabs.definition ->
-    (unit Theory.eff * Vibes_function_info_lib.Types.t) KB.t
+    (unit Theory.eff * Vibes_function_info.Types.t) KB.t
 
 end

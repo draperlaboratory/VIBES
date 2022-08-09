@@ -1,5 +1,5 @@
 (library
- (name vibes_patch_info_lib)
+ (name vibes_patch_info)
  (public_name vibes-tools.patch-info)
  (libraries
    findlib.dynload

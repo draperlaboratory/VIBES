@@ -1,8 +1,9 @@
 (library
- (name vibes_opt_lib)
+ (name vibes_opt)
  (public_name vibes-tools.optimization)
  (libraries
    findlib.dynload
+   vibes-tools.linear-ssa
    vibes-tools.logging
    vibes-tools.utils
    vibes-tools.patch-info

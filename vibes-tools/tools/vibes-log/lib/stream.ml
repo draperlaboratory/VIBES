@@ -10,7 +10,8 @@ let subscribe (observer : observer) : unit =
   let next_slot = Hashtbl.length observers in
   Hashtbl.set observers ~key:next_slot ~data:observer
 
+let broadcast (event : event) : unit =
+  Hashtbl.iter observers ~f:((|>) event)
+
 let send (fmt : 'a formatter) : 'a =
-  Format.kasprintf (fun event ->
-      Hashtbl.iter observers ~f:(fun handle -> handle event))
-    fmt
+  Format.kasprintf broadcast fmt

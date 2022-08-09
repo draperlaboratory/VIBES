@@ -1,6 +1,6 @@
-module Log = Vibes_log_lib.Stream
-module Utils = Vibes_utils_lib
-module Hvar = Vibes_higher_vars_lib.Higher_var
+module Log = Vibes_log.Stream
+module Utils = Vibes_utils
+module Hvar = Vibes_higher_vars.Higher_var
 
 type space = {
   address : int64 [@key "address"]; 

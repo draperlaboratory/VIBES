@@ -1,5 +1,5 @@
 (library
- (name vibes_parse_lib)
+ (name vibes_parse)
  (public_name vibes-tools.parser)
  (libraries
    bap-core-theory

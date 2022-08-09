@@ -2,9 +2,23 @@ open Core
 open Bap.Std
 open Bap_core_theory
 
-(** This attribute is set for the [def term]s that are inserted for
-    preserving caller-save registers. *)
+(** The attribute for [def] terms that are inserted for preserving
+    caller-save registers. *)
 val spill_tag : unit tag
+
+(** The attribute for [def] terms that set an argument for a function
+    call. *)
+val argument_tag : unit tag
+
+(** The attribute for [blk] terms that denotes the live-in set. *)
+val ins_tag : Var.Set.t tag
+
+(** The attribute for [blk] terms that denotes the live-out set. *)
+val outs_tag : Var.Set.t tag
+
+(** The attribute for [sub] terms that denotes the congruence relation
+    between variables. *)
+val congruences_tag : Var.Set.t Var.Map.t tag
 
 (** [create_sub name blks] creates a subroutine named [name] from
     a list of [blks]. It is implied that the first [blk] is the

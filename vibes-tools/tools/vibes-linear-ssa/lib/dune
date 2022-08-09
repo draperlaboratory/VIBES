@@ -1,5 +1,5 @@
 (library
- (name vibes_linear_ssa_lib)
+ (name vibes_linear_ssa)
  (public_name vibes-tools.linear-ssa)
  (libraries
    findlib.dynload

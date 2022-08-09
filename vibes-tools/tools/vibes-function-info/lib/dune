@@ -1,5 +1,5 @@
 (library
- (name vibes_function_info_lib)
+ (name vibes_function_info)
  (public_name vibes-tools.function-info)
  (libraries
    findlib.dynload

@@ -3,14 +3,15 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
-module Log = Vibes_log_lib.Stream
-module Utils = Vibes_utils_lib
-module Serializers = Vibes_serializers_lib
-module C_toolkit = Vibes_c_toolkit_lib
-module Function_info = Vibes_function_info_lib.Types
-module Patch_info = Vibes_patch_info_lib.Types
-module Hvar = Vibes_higher_vars_lib.Higher_var
+module Log = Vibes_log.Stream
+module Utils = Vibes_utils
+module Serializers = Vibes_serializers
+module C_toolkit = Vibes_c_toolkit
+module Function_info = Vibes_function_info.Types
+module Patch_info = Vibes_patch_info.Types
+module Hvar = Vibes_higher_vars.Higher_var
 module Parsed_c_code = Types.Parsed_c_code
+module Bir_helpers = Vibes_bir.Helpers
 
 open KB.Syntax
 
@@ -67,14 +68,17 @@ let no_patch_code filename =
   Errors.No_patch_code (Format.sprintf "No patch code in file: '%s'" filename)
 
 (* Make sure to discard the changes to the Toplevel KB. *)
-let lift_bir (sem : insn) : blk term list =
+let lift_bir (name : string) (sem : insn) : sub term =
   let current = Toplevel.current () in
-  let bir = Blk.from_insns [sem] in
+  let result = Toplevel.var "vibes-parse" in
+  Toplevel.put result begin
+    let* blks = Blk.KB.from_insns [sem] in
+    Bir_helpers.create_sub name blks
+  end;
+  let sub = Toplevel.get result in
+  Log.send "Lifted BIR program:\n%a" Sub.pp sub;
   Toplevel.set current;
-  List.map bir ~f:(Format.asprintf "%a" Blk.pp) |>
-  String.concat ~sep:"\n" |>
-  Log.send "Lifted BIR program:\n%s";
-  bir
+  sub
 
 let run
     (target : string)
@@ -83,7 +87,7 @@ let run
     (bir_outfile : string)
     (func_info_outfile : string) : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
-  Log.send "Vibes_parse_lib.Runner.run '%s' '%s' '%s' '%s' '%s'"
+  Log.send "Vibes_parse.Runner.run '%s' '%s' '%s' '%s' '%s'"
     target patch_info_filepath patch_filepath bir_outfile func_info_outfile;
   Log.send "Loading patch-info";
   let* patch_info = Patch_info.from_file patch_info_filepath in
@@ -95,10 +99,10 @@ let run
   let* semantics, func_info = compute ast target hvars in
   let finalized_func_info = Function_info.to_string func_info in
   Log.send "Finalized function info:\n%s" finalized_func_info;
-  let bir = lift_bir semantics in
-  let bir_sexps = List.map bir ~f:Serializers.Bir.serialize in
-  let bir_strings = List.map bir_sexps ~f:Sexp.to_string in
-  let bir_data = String.concat bir_strings ~sep:"\n" in
+  let bir_name = Filename.basename bir_outfile in
+  let bir = lift_bir bir_name semantics in
+  let bir_sexp = Serializers.Bir.serialize bir in
+  let bir_data = Sexp.to_string_hum bir_sexp in
   Log.send "Serialized BIR:\n%s" bir_data;
   Log.send "Writing serialized BIR";
   let finalized_bir = Format.sprintf "%s\n" bir_data in
