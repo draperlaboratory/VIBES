@@ -123,8 +123,5 @@ let run
   Log.send "Re-ordering blocks again";
   let sub = Shape.reorder_blks sub in
   log_sub sub;
-  Log.send "Converting to linear SSA form";
-  let+ sub = Linear_ssa.transform sub ~hvars in
-  log_sub sub;
   Log.send "Done with BIR passes";
-  sub
+  !!sub

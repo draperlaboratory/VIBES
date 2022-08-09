@@ -68,10 +68,9 @@ let run
   Log.send "Function info:\n%a" Function_info.pp func_info;
   let* sub = try_deserialize_and_opt bir_sexp
       ~target ~language ~patch_info ~func_info in
+  Log.send "Serializing BIR";
   let bir_sexp = Serializers.Bir.serialize sub in
   let bir_data = Sexp.to_string_hum bir_sexp in
-  Log.send "Serialized BIR:\n%s" bir_data;
-  Log.send "Writing serialized BIR";
   let finalized_bir = Format.sprintf "%s\n" bir_data in
   let* () = Utils.Files.write_or_error finalized_bir bir_outfile in
   Ok ()

@@ -1,17 +1,7 @@
 (patch.bir
  ((%00000009 block (phi ())
    (data
-    ((%0000000a set (_00000009_mem_1 0 (mem 32 8) false)
-      (store (var (_00000009_mem 0 (mem 32 8) false)) (int 0xBEEF:32u)
-       (int 3:32u) LittleEndian 32))))
-   (ctrl ())
-   (attrs
-    (("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins"
-      (((name (Reg (name _00000009_mem) (ver 0)))
-        (sort
-         (App
-          (args
-           ((App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec)))
-            (App (args ((Int 8) (Sym core:BitVec))) (name (core:BitVec)))
-            (Sym core:Mem)))
-          (name (core:Mem))))))))))))
+    ((%0000000a set (mem 0 (mem 32 8) false)
+      (store (var (mem 0 (mem 32 8) false)) (int 0xBEEF:32u) (int 3:32u)
+       LittleEndian 32))))
+   (ctrl ()))))
