@@ -400,6 +400,28 @@ module Eval(CT : Theory.Core) = struct
     let func_info = Function_info.create_func dst arg_names ?name ?addr in
     Function_info.append func_infos ~func_info
 
+  (* Currently, we only support bitv-like return types in our C frontend.
+     If we call a function that returns a value that's smaller than the
+     size of the return register, then we need to add a cast to to keep
+     the Core Theory program well-typed. *)
+  let cast_call_assign
+      (v : unit T.var)
+      ~(info : _ interp_info) : T.data eff =
+    match T.Bitv.refine @@ T.Var.sort v with
+    |  None ->
+      let msg = Format.asprintf
+          "Expected bitv sort for CALLASSIGN of var %a"
+          T.Var.pp v in
+      fail msg
+    | Some s ->
+      let ret =
+        if T.Value.Sort.same s info.word_sort then
+          let* v = CT.var info.ret_var in
+          let+ c = CT.(cast s b0 (resort info.word_sort v)) in
+          T.Value.forget c
+        else CT.var info.ret_var in
+      CT.set v ret
+
   let rec stmt_to_eff
       ~(info : _ interp_info)
       ~(func_infos : Function_info.t)
@@ -422,7 +444,7 @@ module Eval(CT : Theory.Core) = struct
       let+ func_infos = new_func func_infos args dst in
       let term =
         CT.(seq (block setargs (goto dst))
-              (data @@ set v @@ var info.ret_var)) in
+              (data @@ cast_call_assign v ~info)) in
       term, func_infos
     | STORE (l, r) ->
       let sr = ty_of_base_type info @@ Patch_c.Exp.typeof r in
