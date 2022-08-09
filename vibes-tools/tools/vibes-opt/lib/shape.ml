@@ -145,17 +145,16 @@ let reorder_blks (sub : sub term) : sub term =
 let collect_conservative_patch_points
     ~(patch_info : Patch_info.t)
     ~(width : int) : word list =
-  let patch_spaces = match Patch_info.patch_spaces patch_info with
-    | Some spaces -> List.map spaces ~f:(fun space ->
-        (Patch_info.address space, Patch_info.size space))
-    | None ->
+  let patch_spaces = match patch_info.patch_spaces with    
+    | [] ->
       (* Fall back to the default patch point. *)
       let patch_point =
-        let word = Patch_info.patch_point patch_info in
+        let word = patch_info.patch_point in
         let bv = Word.to_bitvec word in
         Bitvec.to_int64 bv in
-      let patch_size = Patch_info.patch_size patch_info in
-      [patch_point, patch_size] in
+      [patch_point, patch_info.patch_size]
+    | spaces -> List.map spaces ~f:(fun space ->
+        (space.address, space.size)) in
   List.map patch_spaces ~f:(fun (offset, size) ->
       Word.of_int64 ~width Int64.((offset + size) - 4L))
 

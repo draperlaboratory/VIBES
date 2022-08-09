@@ -12,8 +12,7 @@ module Cli = struct
 
   let run
       (verbose : bool)
-      (no_color : bool)
-      : (unit, string) result =
+      (no_color : bool) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-dummy-cli foo'";
     (* START PLAYGROUND (do what you want here) *)

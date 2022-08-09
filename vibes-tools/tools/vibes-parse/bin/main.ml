@@ -50,14 +50,12 @@ module Cli = struct
       (func_info_outfile : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-parse'";
-    let result =
-      Runner.run
-        target
-        patch_info_filepath
-        patch_filepath
-        bir_outfile
-        func_info_outfile in
-    match result with
+    Runner.run
+      ~target
+      ~patch_info_filepath
+      ~patch_filepath
+      ~bir_outfile
+      ~func_info_outfile |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 

@@ -83,8 +83,8 @@ let run
     ~(language : T.language)
     ~(patch_info : Patch_info.t)
     ~(func_info : Function_info.t) : sub term KB.t =
-  let hvars = Patch_info.patch_vars patch_info in
-  let sp_align = Patch_info.sp_align patch_info in
+  let hvars = patch_info.patch_vars in
+  let sp_align = patch_info.sp_align in
   Log.send "Running BIR passes";
   let is_thumb = Utils.Core_theory.is_thumb language in
   let* () = provide_function_info sub ~func_info in

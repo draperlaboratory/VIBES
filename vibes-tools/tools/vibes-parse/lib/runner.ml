@@ -15,9 +15,6 @@ module Bir_helpers = Vibes_bir.Helpers
 
 open KB.Syntax
 
-let log_blk (blk : blk term) : unit =
-  Log.send "BIR block:\n%a" Blk.pp blk
-
 let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
   Log.send "Parsing C code";
   match C_toolkit.Parse_c.parse raw_code with
@@ -58,9 +55,9 @@ let compute
   | Error _ as err -> err
   | Ok (snapshot, _) ->
     Log.send "Snapshot:\n%a" KB.Value.pp snapshot;
-    let sem = KB.Value.get T.Semantics.slot snapshot in
+    let sem = snapshot.$[T.Semantics.slot] in
     Log.send "Promised semantics:\n%a" KB.Value.pp sem;
-    let func_info = KB.Value.get Parsed_c_code.function_info_slot snapshot in
+    let func_info = snapshot.$[Parsed_c_code.function_info_slot] in
     Log.send "Promised function info:\n%a" Function_info.pp func_info;
     Ok (sem, func_info)
 
@@ -81,17 +78,17 @@ let lift_bir (name : string) (sem : insn) : sub term =
   sub
 
 let run
-    (target : string)
-    (patch_info_filepath : string)
-    (patch_filepath : string)
-    (bir_outfile : string)
-    (func_info_outfile : string) : (unit, KB.conflict) result =
+    ~(target : string)
+    ~(patch_info_filepath : string)
+    ~(patch_filepath : string)
+    ~(bir_outfile : string)
+    ~(func_info_outfile : string) : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
   Log.send "Vibes_parse.Runner.run '%s' '%s' '%s' '%s' '%s'"
     target patch_info_filepath patch_filepath bir_outfile func_info_outfile;
   Log.send "Loading patch-info";
   let* patch_info = Patch_info.from_file patch_info_filepath in
-  let hvars = Patch_info.patch_vars patch_info in
+  let hvars = patch_info.patch_vars in
   let* target = Utils.Core_theory.get_target target in
   let* raw_code = Utils.Files.get_file_contents_non_empty
       patch_filepath ~error:no_patch_code in
