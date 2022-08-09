@@ -205,9 +205,15 @@ let mark_ins_outs
       let ins = Live.ins liveness tid in
       let prefix = Utils.prefix_of_tid tid in
       let ins = Var.Set.map ins ~f:(Utils.linearize ~prefix) in
+      let blk =
+        if not @@ Set.is_empty ins then
+          Term.set_attr blk Bir_helpers.ins_tag ins
+        else blk in
       let outs = Var.Set.map outs ~f:(Utils.linearize ~prefix) in
-      let blk = Term.set_attr blk Bir_helpers.ins_tag ins in
-      let blk = Term.set_attr blk Bir_helpers.outs_tag outs in
+      let blk =
+        if not @@ Set.is_empty outs then
+          Term.set_attr blk Bir_helpers.outs_tag outs
+        else blk in
       blk)
 
 let compute_liveness_and_expand_phis
@@ -236,7 +242,9 @@ let make_congruences (sub : sub term) (vars : Var.Set.t) : sub term =
           else Map.update m x ~f:(function
               | None -> Var.Set.singleton y
               | Some s -> Var.Set.add s y))) in
-  Term.set_attr sub Bir_helpers.congruences_tag m
+  if not @@ Map.is_empty m then
+    Term.set_attr sub Bir_helpers.congruences_tag m
+  else sub
 
 let transform (sub : sub term) ~(hvars : Hvar.t list) : sub term KB.t =
   let module Env = Linear.Env in

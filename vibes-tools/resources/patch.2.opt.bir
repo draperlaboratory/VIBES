@@ -30,14 +30,10 @@
       (var (_00000009_reg:R0_1 0 (imm 32) false)))))
    (ctrl ((%00000014 goto (direct %00000015) (when (int 1:1u)))))
    (attrs
-    (("dd9a51b0-bfed-41e3-82a7-eba42a242428:vibes\\:outs" ())
-     ("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins"
+    (("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins"
       (((name (Reg (name _00000009_reg:R0_1) (ver 0)))
         (sort (App (args ((Int 32) (Sym core:BitVec))) (name (core:BitVec))))))))))
-  (%00000015 block (phi ()) (data ()) (ctrl ())
-   (attrs
-    (("dd9a51b0-bfed-41e3-82a7-eba42a242428:vibes\\:outs" ())
-     ("f5274885-8155-427c-8d9f-7efebaf00827:vibes\\:ins" ())))))
+  (%00000015 block (phi ()) (data ()) (ctrl ())))
  (attrs
   (("62fc18a7-61ff-4ee3-b02d-9e4a6b18cea9:vibes\\:congruences"
     ((((name (Reg (name _00000009_reg:R0_1) (ver 0)))
