@@ -265,8 +265,9 @@ let spill_hvars_and_adjust_stack
           then BigEndian else LittleEndian in
         (* Predetermined amount of space to allocate on the stack. *)
         let space =
+          let to_multiple_of = T.Target.data_alignment target lsr 3 in
           Map.length caller_save * (width lsr 3) |>
-          Int.round_up ~to_multiple_of:(T.Target.data_alignment target) in
+          Int.round_up ~to_multiple_of in
         let space = Word.of_int ~width @@
           if no_regs then sp_align else sp_align + space in
         let sp = Naming.mark_reg_unsafe sp in

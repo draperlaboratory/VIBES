@@ -729,7 +729,7 @@ module Deserializer = struct
           "Expected sub, but got: '%a'"
           Sexp.pp sexp in
       fail @@ Errors.Invalid_bir msg
- 
+
 end
 
 let serialize = Serializer.serialize_sub

@@ -225,7 +225,7 @@ let all_ins_outs_vars (sub : sub term) (vars : Var.Set.t) : Var.Set.t =
         Option.merge ins outs ~f:Set.union |>
         Option.value ~default:Var.Set.empty)
   end
-      
+
 (* Produce a relation between congruent variables. *)
 let make_congruences (sub : sub term) (vars : Var.Set.t) : sub term =
   let vars = all_ins_outs_vars sub vars in
