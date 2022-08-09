@@ -8,6 +8,7 @@ module Function_info = Vibes_function_info.Types
 module Hvar = Vibes_higher_vars.Higher_var
 module Naming = Vibes_higher_vars.Substituter.Naming
 module Bir_helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
 open KB.Syntax
 
@@ -55,7 +56,7 @@ let mark_argument_tids
           let tids = func_args blk args in
           Term.map def_t blk ~f:(fun def ->
               if Set.mem tids @@ Term.tid def then
-                Term.set_attr def Bir_helpers.argument_tag ()
+                Term.set_attr def Tags.argument ()
               else def)))
 
 (* Create a fake memory assignment which is a signpost to the selector
@@ -72,7 +73,7 @@ let insert_new_mems_at_callsites
         let lhs = T.Var.define (Var.sort mem) name in
         let def = Def.create ~tid (Var.reify lhs) @@ Var mem in
         Term.append def_t blk @@
-        Term.set_attr def Bir_helpers.argument_tag ()
+        Term.set_attr def Tags.argument ()
       else !!blk)
 
 (* We shouldn't do any spilling if there are higher vars that depend
@@ -189,14 +190,14 @@ let create_activation_record
       let tid = Term.tid blk in
       if Tid.(tid = entry_tid) then
         let blk = List.fold pushes ~init:blk ~f:(fun blk def ->
-            let def = Term.set_attr def Bir_helpers.spill_tag () in
+            let def = Term.set_attr def Tags.spill () in
             Term.prepend def_t blk def) in
         let+ tid = T.Label.fresh in
         let adj = Def.create ~tid sp Bil.(var sp - int space) in
         Term.prepend def_t blk adj
       else if Set.mem exit_tids tid then
         let blk = List.fold pops ~init:blk ~f:(fun blk def ->
-            let def = Term.set_attr def Bir_helpers.spill_tag () in
+            let def = Term.set_attr def Tags.spill () in
             Term.append def_t blk def) in
         let+ tid = T.Label.fresh in
         let adj = Def.create ~tid sp Bil.(var sp + int space) in

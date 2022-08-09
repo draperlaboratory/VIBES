@@ -7,6 +7,7 @@ module T = Theory
 module Hvar = Vibes_higher_vars.Higher_var
 module Naming = Vibes_higher_vars.Substituter.Naming
 module Bir_helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
 module Linear = struct
 
@@ -207,12 +208,12 @@ let mark_ins_outs
       let ins = Var.Set.map ins ~f:(Utils.linearize ~prefix) in
       let blk =
         if not @@ Set.is_empty ins then
-          Term.set_attr blk Bir_helpers.ins_tag ins
+          Term.set_attr blk Tags.ins ins
         else blk in
       let outs = Var.Set.map outs ~f:(Utils.linearize ~prefix) in
       let blk =
         if not @@ Set.is_empty outs then
-          Term.set_attr blk Bir_helpers.outs_tag outs
+          Term.set_attr blk Tags.outs outs
         else blk in
       blk)
 
@@ -226,8 +227,8 @@ let compute_liveness_and_expand_phis
 let all_ins_outs_vars (sub : sub term) (vars : Var.Set.t) : Var.Set.t =
   Var.Set.union vars @@ Var.Set.union_list begin
     Term.enum blk_t sub |> Seq.to_list |> List.map ~f:(fun blk ->
-        let ins = Term.get_attr blk Bir_helpers.ins_tag in
-        let outs = Term.get_attr blk Bir_helpers.outs_tag in
+        let ins = Term.get_attr blk Tags.ins in
+        let outs = Term.get_attr blk Tags.outs in
         Option.merge ins outs ~f:Set.union |>
         Option.value ~default:Var.Set.empty)
   end
@@ -243,7 +244,7 @@ let make_congruences (sub : sub term) (vars : Var.Set.t) : sub term =
               | None -> Var.Set.singleton y
               | Some s -> Var.Set.add s y))) in
   if not @@ Map.is_empty m then
-    Term.set_attr sub Bir_helpers.congruences_tag m
+    Term.set_attr sub Tags.congruences m
   else sub
 
 let transform (sub : sub term) ~(hvars : Hvar.t list) : sub term KB.t =

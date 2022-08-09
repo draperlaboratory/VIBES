@@ -5,6 +5,7 @@ open Bap_core_theory
 module T = Theory
 module Log = Vibes_log.Stream
 module Bir_helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 module Hvar = Higher_var
 
 open KB.Syntax
@@ -103,7 +104,7 @@ let initialize
         let last_spill =
           Term.enum def_t blk |> Seq.to_list_rev |>
           List.find_map ~f:(fun def ->
-              if Term.has_attr def Bir_helpers.spill_tag
+              if Term.has_attr def Tags.spill
               then Some (Term.tid def)
               else None) in
         match last_spill with
@@ -147,7 +148,7 @@ let finalize
            spilled. *)
         let first_spill =
           Term.enum def_t blk |> Seq.find_map ~f:(fun def ->
-              if Term.has_attr def Bir_helpers.spill_tag
+              if Term.has_attr def Tags.spill
               then Some (Term.tid def)
               else None) in
         match first_spill with
