@@ -6,6 +6,7 @@ open Bap_core_theory
 module T = Theory
 module Patch_info = Vibes_patch_info.Types
 module Bir_helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
 open KB.Syntax
 
@@ -212,6 +213,7 @@ let relax_branches
                   let+ jmp_tid = T.Label.fresh in
                   let new_jmp = Jmp.create kind ~tid:jmp_tid in
                   let new_blk = Blk.create () ~jmps:[new_jmp] ~tid:blk_tid in
+                  let new_blk = Term.set_attr new_blk Tags.split () in
                   inserted := new_blk :: !inserted;
                   Addr.Table.set table ~key:addr ~data:blk_tid;
                   Jmp.with_kind jmp @@ Goto (Direct blk_tid)
@@ -273,6 +275,7 @@ let split_on_conditional (sub : sub term) : sub term KB.t =
             let* jmp_tid = T.Label.fresh in
             let+ blk_tid = T.Label.fresh in
             let cont = Blk.create () ~tid:blk_tid ~jmps:[jmp] in
+            let cont = Term.set_attr cont Tags.split () in
             Tid.Table.set after ~key:(Term.tid blk) ~data:cont;
             Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid))) in
   Tid.Table.fold after ~init:sub
@@ -300,6 +303,7 @@ let split_conditional_calls (sub : sub term) : sub term KB.t =
             let+ jmp_tid = T.Label.fresh in
             let new_jmp = Jmp.create_call ~tid:jmp_tid call in
             let new_blk = Blk.create () ~tid:blk_tid ~jmps:[new_jmp] in
+            let new_blk = Term.set_attr new_blk Tags.split () in
             Tid.Table.set after ~key:(Term.tid blk) ~data:new_blk;
             Term.with_attrs
               (Jmp.create_goto (Direct blk_tid)

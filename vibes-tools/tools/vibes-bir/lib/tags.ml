@@ -48,3 +48,7 @@ let congruences : Var.Set.t Var.Map.t tag =
   Value.Tag.register (module Var_map)
     ~name:(Attr.make "congruences")
     ~uuid:"62fc18a7-61ff-4ee3-b02d-9e4a6b18cea9"
+
+let split : unit tag = Value.Tag.register (module Unit)
+    ~name:(Attr.make "split")
+    ~uuid:"4adb3fef-b083-4d0a-8248-b7d343683b04"

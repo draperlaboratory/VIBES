@@ -5,6 +5,7 @@ open Bap_core_theory
 
 module Hvar = Vibes_higher_vars.Higher_var
 module Helper = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
 type t = Hvar.t list -> sub term -> sub term KB.t
 
@@ -267,11 +268,18 @@ module Merge : S = struct
 
      We remove the pseudo-entry node to get the real predecessor count.
   *)
-  let can_merge (tid : tid) (exit_tid : tid option) (cfg : G.t) : bool =
-    not (Option.exists exit_tid ~f:(Tid.equal tid)) &&
-    let preds =
-      G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
-    Set.(length @@ remove preds G.start) = 1
+  let can_merge
+      (blk_table : blk term Tid.Map.t)
+      (tid : tid)
+      (exit_tid : tid option) (cfg : G.t) : blk term option =
+    Map.find blk_table tid |> Option.bind ~f:(fun blk ->
+        Option.some_if begin
+          not (Option.exists exit_tid ~f:(Tid.equal tid)) &&
+          not (Term.has_attr blk Tags.split) &&
+          let preds =
+            G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+          Set.(length @@ remove preds G.start) = 1
+        end blk)
 
   let rec loop (sub : sub term) : sub term =
     with_cfg (Sub.to_graph sub) sub
@@ -292,24 +300,25 @@ module Merge : S = struct
         else match Term.enum jmp_t blk |> Seq.to_list with
           | [jmp] when Helper.is_unconditional jmp -> begin
               match Jmp.kind jmp with
-              | Goto (Direct tid') when Tid.(tid <> tid') ->
-                if can_merge tid' exit_tid cfg then
-                  (* This must run before the SSA pass, so there should
-                     not be any phi nodes in the program. *)
-                  let blk' = Map.find_exn blk_table tid' in
-                  let defs = Term.enum def_t blk |> Seq.to_list in
-                  let defs' = Term.enum def_t blk' |> Seq.to_list in
-                  let jmps' = Term.enum jmp_t blk' |> Seq.to_list in
-                  let attrs = Term.attrs blk in
-                  let blk = Blk.create ()
-                      ~tid ~defs:(defs @ defs') ~jmps:jmps' in
-                  Hash_set.add merged tid';
-                  Some (Term.with_attrs blk attrs)
-                else
-                  (* An implicit fallthrough is possible here, but
-                     we should defer that until after selection,
-                     scheduling, and allocation. *)
-                  Some blk
+              | Goto (Direct tid') when Tid.(tid <> tid') -> begin
+                  match can_merge blk_table tid' exit_tid cfg with
+                  | Some blk' ->
+                    (* This must run before the SSA pass, so there should
+                       not be any phi nodes in the program. *)
+                    let defs = Term.enum def_t blk |> Seq.to_list in
+                    let defs' = Term.enum def_t blk' |> Seq.to_list in
+                    let jmps' = Term.enum jmp_t blk' |> Seq.to_list in
+                    let attrs = Term.attrs blk in
+                    let blk = Blk.create ()
+                        ~tid ~defs:(defs @ defs') ~jmps:jmps' in
+                    Hash_set.add merged tid';
+                    Some (Term.with_attrs blk attrs)
+                  | None ->
+                    (* An implicit fallthrough is possible here, but
+                       we should defer that until after selection,
+                       scheduling, and allocation. *)
+                    Some blk
+                end
               | Goto _ | Call _ | Ret _ | Int _ -> Some blk
             end
           | _ -> Some blk) in
@@ -338,6 +347,7 @@ module Contract : S = struct
         (* Note that the entry block can never be a candidate for
            contraction. *)
         if Tid.(tid <> entry_tid)
+        && not (Term.has_attr blk Tags.split)
         && Seq.is_empty @@ Term.enum def_t blk then
           let jmps = Term.enum jmp_t blk |> Seq.to_list in
           match jmps with
