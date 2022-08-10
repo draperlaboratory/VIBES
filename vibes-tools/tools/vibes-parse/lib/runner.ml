@@ -24,34 +24,13 @@ let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
     C_toolkit.C_utils.print_c Cprint.print_def ast;
     Ok ast
 
-let create_compilation_unit (target : T.target) : T.Unit.t KB.t =
-  let* compilation_unit = KB.Object.create T.Unit.cls in
-  let* () = KB.provide T.Unit.target compilation_unit target in
-  KB.return compilation_unit
-
-let to_core
-    (ast : Types.ast)
-    (target : T.target)
-    (hvars : Hvar.t list) : T.label KB.t =
-  let* label = KB.Object.create T.Program.cls in
-  let* compilation_unit = create_compilation_unit target in
-  let* () = KB.provide T.Label.unit label (Some compilation_unit) in
-  let* theory = T.instance () in
-  let* (module Core) = T.require theory in
-  let module C_parser = C_toolkit.Core_c.Eval(Core) in
-  let* sem, func_info = C_parser.parse hvars target ast in
-  let* sem = sem in
-  let* () = Parsed_c_code.set label sem in
-  let+ () = Parsed_c_code.stash_function_info label func_info in
-  label
-
 type computed = T.Semantics.t * Function_info.t
 
 let compute
     (ast : Types.ast)
     (target : T.target)
     (hvars : Hvar.t list) : (computed, KB.conflict) result =
-  match KB.run T.Program.cls (to_core ast target hvars) KB.empty with
+  match KB.run T.Program.cls (Compile.to_core ast target hvars) KB.empty with
   | Error _ as err -> err
   | Ok (snapshot, _) ->
     Log.send "Snapshot:\n%a" KB.Value.pp snapshot;

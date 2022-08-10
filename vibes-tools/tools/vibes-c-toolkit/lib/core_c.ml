@@ -60,7 +60,7 @@ module Naming = Substituter.Naming
 module Function_info = Vibes_function_info.Types
 module Utils = Vibes_utils
 
-module Eval(CT : Theory.Core) = struct
+module Make(CT : Theory.Core) = struct
 
   open KB.Syntax
 
@@ -488,17 +488,20 @@ module Eval(CT : Theory.Core) = struct
       let+ label = T.Label.for_name label in
       ctrl CT.(goto label), func_infos
 
-  and body_to_eff info (prog : Patch_c.t)
-    : (unit eff * Function_info.t) KB.t =
+  and body_to_eff
+      (prog : Patch_c.t)
+      ~(info : _ interp_info) : (unit eff * Function_info.t) KB.t =
     let _, stmt = prog.body in
     stmt_to_eff stmt ~info ~func_infos:Function_info.empty
 
-  let parse
+  let compile
       (hvars : Hvar.t list)
       (target : T.target)
-      (patch : Cabs.definition) : (unit eff * Function_info.t) KB.t =
+      (patch : Cabs.definition) : (T.Semantics.t * Function_info.t) KB.t =
     let* body = Patch_c.translate patch ~target in
     let* info = make_interp_info hvars target in
-    body_to_eff info body
+    let* eff, func_infos = body_to_eff body ~info in
+    let+ sem = eff in
+    sem, func_infos
 
 end
