@@ -14,7 +14,7 @@ module C_semantics = struct
   let package = Constants.Bap_kb.package
 
   let slot : (T.program, T.Semantics.t) KB.slot =
-    KB.Class.property T.Program.cls "semantics"
+    KB.Class.property T.Program.cls "c-semantics"
       T.Semantics.domain ~package
 
   (* Our provided semantics for the C code needs to be available
