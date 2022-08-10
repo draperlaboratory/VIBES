@@ -10,6 +10,7 @@ open KB.Syntax
 module Bitvec = struct
 
   include Bitvec
+  include Bitvec_sexp
 
   let yojson_of_t b = `String (to_string b)
 
@@ -24,11 +25,11 @@ type func = {
   name : string option;
   addr : Bitvec.t option;
   args : string list;
-} [@@deriving yojson, equal, compare]
+} [@@deriving yojson, equal, compare, sexp]
 
 type t = {
   functions : func list;
-} [@@deriving yojson, equal, compare]
+} [@@deriving yojson, equal, compare, sexp]
 
 let pp : Format.formatter -> t -> unit  =
   Utils.Json.pp ~yojson_of_t

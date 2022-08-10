@@ -15,12 +15,12 @@ type func = {
   name : string option;
   addr : Bitvec.t option;
   args : string list;
-} [@@deriving yojson, equal, compare]
+} [@@deriving yojson, equal, compare, sexp]
 
 (** A list of function call metadata. *)
 type t = {
   functions : func list;
-} [@@deriving yojson, equal, compare]
+} [@@deriving yojson, equal, compare, sexp]
 
 (** Pretty-print the function call metadata. *)
 val pp : Format.formatter -> t -> unit

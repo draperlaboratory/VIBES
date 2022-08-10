@@ -1,4 +1,5 @@
 open Core
+open Bap.Std
 open Bap_core_theory
 
 module T = Theory
@@ -9,11 +10,10 @@ module Y = Ppx_yojson_conv_lib
 module Bitvector = struct
 
   include Yojson.Safe
-  module Word = Bap.Std.Word
 
-  type t = Word.t
+  type t = word [@@deriving compare, sexp]
+
   let equal = Word.equal
-  let compare = Word.compare
 
   let t_of_yojson = function
     | `String s -> Word.of_string s
@@ -27,9 +27,7 @@ module Label = struct
 
   include Yojson.Safe
 
-  type t = string
-  let equal = String.equal
-  let compare = String.compare
+  type t = string [@@deriving compare, equal, sexp]
 
   let t_of_yojson = function
     | `String s -> s

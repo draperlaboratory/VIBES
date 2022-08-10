@@ -4,22 +4,18 @@ open Bap_core_theory
 (** JSON representation of [Bap.Std.Bitvector]. *)
 module Bitvector : sig
 
-  type t = word
+  type t = word [@@deriving compare, equal, sexp]
 
-  val equal : t -> t -> bool
-  val compare : t -> t -> int
   val t_of_yojson : Yojson.Safe.t -> t
   val yojson_of_t : t -> Yojson.Safe.t
-  
+
 end
 
 (** JSON representation of tids ([Theory.label]s). *)
 module Label : sig
 
-  type t = string
+  type t = string [@@deriving compare, equal, sexp]
 
-  val equal : t -> t -> bool
-  val compare : t -> t -> int
   val t_of_yojson : Yojson.Safe.t -> t
   val yojson_of_t : t -> Yojson.Safe.t
   

@@ -7,4 +7,5 @@
    core
    yojson
    ppx_yojson_conv_lib
-   vibes-tools.logging))
+   vibes-tools.logging)
+ (preprocess (pps ppx_compare ppx_sexp_conv)))

@@ -10,7 +10,6 @@ module C_toolkit = Vibes_c_toolkit
 module Function_info = Vibes_function_info.Types
 module Patch_info = Vibes_patch_info.Types
 module Hvar = Vibes_higher_vars.Higher_var
-module Parsed_c_code = Types.Parsed_c_code
 module Bir_helpers = Vibes_bir.Helpers
 
 open KB.Syntax
@@ -24,37 +23,32 @@ let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
     C_toolkit.C_utils.print_c Cprint.print_def ast;
     Ok ast
 
-type computed = T.Semantics.t * Function_info.t
-
-let compute
+let compile
+    (name : string)
     (ast : Types.ast)
     (target : T.target)
-    (hvars : Hvar.t list) : (computed, KB.conflict) result =
-  match KB.run T.Program.cls (Compile.to_core ast target hvars) KB.empty with
-  | Error _ as err -> err
-  | Ok (snapshot, _) ->
-    Log.send "Snapshot:\n%a" KB.Value.pp snapshot;
-    let sem = snapshot.$[T.Semantics.slot] in
-    Log.send "Promised semantics:\n%a" KB.Value.pp sem;
-    let func_info = snapshot.$[Parsed_c_code.function_info_slot] in
-    Log.send "Promised function info:\n%a" Function_info.pp func_info;
-    Ok (sem, func_info)
+    (hvars : Hvar.t list) : (sub term * Function_info.t, KB.conflict) result =
+  let current = Toplevel.current () in
+  try
+    let result = Toplevel.var "vibes-parse" in
+    Toplevel.put result begin
+      let* label, func_infos = Compile.to_core ast target hvars in
+      let* sem = KB.collect T.Semantics.slot label in
+      Log.send "Semantics:\n%a" KB.Value.pp sem;
+      let* blks = Blk.KB.from_insns [sem] in
+      let+ sub = Bir_helpers.create_sub name blks in
+      Log.send "Lifted BIR program:\n%a" Sub.pp sub;
+      sub, func_infos
+    end;
+    let sub, func_infos = Toplevel.get result in
+    Toplevel.set current;
+    Ok (sub, func_infos)
+  with Toplevel.Conflict err ->
+    Toplevel.set current;
+    Error err
 
 let no_patch_code filename =
   Errors.No_patch_code (Format.sprintf "No patch code in file: '%s'" filename)
-
-(* Make sure to discard the changes to the Toplevel KB. *)
-let lift_bir (name : string) (sem : insn) : sub term =
-  let current = Toplevel.current () in
-  let result = Toplevel.var "vibes-parse" in
-  Toplevel.put result begin
-    let* blks = Blk.KB.from_insns [sem] in
-    Bir_helpers.create_sub name blks
-  end;
-  let sub = Toplevel.get result in
-  Log.send "Lifted BIR program:\n%a" Sub.pp sub;
-  Toplevel.set current;
-  sub
 
 let run
     ~(target : string)
@@ -72,14 +66,12 @@ let run
   let* raw_code = Utils.Files.get_file_contents_non_empty
       patch_filepath ~error:no_patch_code in
   let* ast = parse_c_code raw_code in
-  let* semantics, func_info = compute ast target hvars in
+  let bir_name = Filename.basename bir_outfile in
+  let* bir, func_info = compile bir_name ast target hvars in
   let finalized_func_info = Function_info.to_string func_info in
   Log.send "Finalized function info:\n%s" finalized_func_info;
-  let bir_name = Filename.basename bir_outfile in
-  let bir = lift_bir bir_name semantics in
   let bir_sexp = Serializers.Bir.serialize bir in
   let bir_data = Sexp.to_string_hum bir_sexp in
-  Log.send "Serialized BIR:\n%s" bir_data;
   Log.send "Writing serialized BIR";
   let finalized_bir = Format.sprintf "%s\n" bir_data in
   let* () = Utils.Files.write_or_error finalized_bir bir_outfile in
