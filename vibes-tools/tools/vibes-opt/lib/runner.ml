@@ -30,15 +30,12 @@ let try_deserialize_and_opt
     ~(language : T.language)
     ~(patch_info : Patch_info.t)
     ~(func_info : Function_info.t) : (sub term, KB.conflict) result =
-  let current = Toplevel.current () in
-  let result = try
-      let result = Toplevel.var "vibes-opt" in
-      Toplevel.put result @@ deserialize_and_opt bir_sexp
-        ~target ~language ~patch_info ~func_info;
-      Result.return @@ Toplevel.get result
-    with Toplevel.Conflict err -> Error err in
-  Toplevel.set current;
-  result
+  try
+    let result = Toplevel.var "vibes-opt" in
+    Toplevel.put result @@ deserialize_and_opt bir_sexp
+      ~target ~language ~patch_info ~func_info;
+    Result.return @@ Toplevel.get result
+  with Toplevel.Conflict err -> Error err
 
 let run
     ~(target : string)

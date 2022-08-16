@@ -28,7 +28,6 @@ let compile
     (ast : Types.ast)
     (target : T.target)
     (hvars : Hvar.t list) : (sub term * Function_info.t, KB.conflict) result =
-  let current = Toplevel.current () in
   try
     let result = Toplevel.var "vibes-parse" in
     Toplevel.put result begin
@@ -40,12 +39,8 @@ let compile
       Log.send "Lifted BIR program:\n%a" Sub.pp sub;
       sub, func_infos
     end;
-    let sub, func_infos = Toplevel.get result in
-    Toplevel.set current;
-    Ok (sub, func_infos)
-  with Toplevel.Conflict err ->
-    Toplevel.set current;
-    Error err
+    Ok (Toplevel.get result)
+  with Toplevel.Conflict err -> Error err
 
 let no_patch_code filename =
   Errors.No_patch_code (Format.sprintf "No patch code in file: '%s'" filename)
