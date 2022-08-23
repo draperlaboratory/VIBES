@@ -1,0 +1,14 @@
+opam-version: "2.0"
+name: "vibes-c-toolkit"
+version: "0.0.1"
+synopsis: "VIBES toolkit for compiling C code."
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+depends: [
+  "bap"
+  "core"
+  "FrontC"
+]
+build: [
+  [make]
+]

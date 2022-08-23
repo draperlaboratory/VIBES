@@ -1,10 +1,10 @@
 (library
  (name vibes_patch_info)
- (public_name vibes-tools.patch-info)
+ (public_name vibes-patch-info)
  (libraries
    findlib.dynload
    bap
-   vibes-tools.logging
-   vibes-tools.utils
-   vibes-tools.higher-vars)
+   vibes-log
+   vibes-utils
+   vibes-higher-vars)
  (preprocess (pps ppx_yojson_conv ppx_fields_conv)))

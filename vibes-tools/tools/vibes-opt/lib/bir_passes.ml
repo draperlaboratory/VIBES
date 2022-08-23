@@ -10,7 +10,6 @@ module Hvar = Vibes_higher_vars.Higher_var
 module Subst = Vibes_higher_vars.Substituter
 module Patch_info = Vibes_patch_info.Types
 module Bir_helpers = Vibes_bir.Helpers
-module Linear_ssa = Vibes_linear_ssa.Linearizer
 
 open KB.Syntax
 

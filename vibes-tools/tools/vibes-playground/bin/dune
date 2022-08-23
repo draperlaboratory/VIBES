@@ -6,6 +6,6 @@
    bap
    bap-core-theory
    cmdliner
-   vibes-tools.logging
-   vibes-tools.constants
-   vibes-tools.common-cli-options))
+   vibes-log
+   vibes-constants
+   vibes-common-cli-options))

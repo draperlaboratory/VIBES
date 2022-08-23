@@ -1,14 +1,14 @@
 (library
  (name vibes_c_toolkit)
- (public_name vibes-tools.c-toolkit)
+ (public_name vibes-c-toolkit)
  (libraries
    findlib.dynload
    bap
    bap-arm
    FrontC
    core_unix.sys_unix
-   vibes-tools.logging
-   vibes-tools.utils
-   vibes-tools.function-info
-   vibes-tools.higher-vars)
+   vibes-log
+   vibes-utils
+   vibes-function-info
+   vibes-higher-vars)
  (preprocess (pps ppx_jane)))

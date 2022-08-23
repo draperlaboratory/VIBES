@@ -1,12 +1,11 @@
 (library
  (name vibes_opt)
- (public_name vibes-tools.optimization)
+ (public_name vibes-opt)
  (libraries
    findlib.dynload
-   vibes-tools.linear-ssa
-   vibes-tools.logging
-   vibes-tools.utils
-   vibes-tools.patch-info
-   vibes-tools.serializers
-   vibes-tools.c-toolkit)
+   vibes-log
+   vibes-utils
+   vibes-patch-info
+   vibes-serializers
+   vibes-c-toolkit)
  (preprocess (pps ppx_fields_conv)))

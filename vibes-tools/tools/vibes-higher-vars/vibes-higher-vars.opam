@@ -1,0 +1,14 @@
+opam-version: "2.0"
+name: "vibes-higher-vars"
+version: "0.0.1"
+synopsis: "Higher variables library for VIBES."
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+depends: [
+  "bap"
+  "core"
+  "yojson"
+]
+build: [
+  [make]
+]

@@ -53,3 +53,60 @@ tools.uninstall:
 .PHONY: tools.clean
 tools.clean:
 	$(MAKE) -C $(TOOLS_SRC) clean
+
+###################################
+# vibes-playground
+###################################
+
+.PHONY: playground
+playground: playground.install
+
+.PHONY: playground.build
+playground.build:
+	$(MAKE) -C $(TOOLS_SRC) playground.build
+
+.PHONY: playground.install
+playground.install:
+	$(MAKE) -C $(TOOLS_SRC) playground.install
+
+.PHONY:
+playground.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) playground.uninstall
+
+###################################
+# vibes-parse
+###################################
+
+.PHONY: parse
+parse: parse.install
+
+.PHONY: parse.build
+parse.build:
+	$(MAKE) -C $(TOOLS_SRC) parse.build
+
+.PHONY: parse.install
+parse.install:
+	$(MAKE) -C $(TOOLS_SRC) parse.install
+
+.PHONY:
+parse.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) parse.uninstall
+
+###################################
+# vibes-opt
+###################################
+
+.PHONY: opt
+opt: opt.install
+
+.PHONY: opt.build
+opt.build:
+	$(MAKE) -C $(TOOLS_SRC) opt.build
+
+.PHONY: opt.install
+opt.install:
+	$(MAKE) -C $(TOOLS_SRC) opt.install
+
+.PHONY:
+opt.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) opt.uninstall

@@ -1,6 +1,6 @@
 (library
  (name vibes_common_cli_options)
- (public_name vibes-tools.common-cli-options)
+ (public_name vibes-common-cli-options)
  (libraries
    cmdliner
-   vibes-tools.logging))
+   vibes-log))

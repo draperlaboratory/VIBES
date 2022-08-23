@@ -1,12 +1,12 @@
 (library
  (name vibes_parse)
- (public_name vibes-tools.parser)
+ (public_name vibes-parse)
  (libraries
    bap-core-theory
-   vibes-tools.logging
-   vibes-tools.constants
-   vibes-tools.utils
-   vibes-tools.serializers
-   vibes-tools.c-toolkit
-   vibes-tools.patch-info
-   vibes-tools.higher-vars))
+   vibes-log
+   vibes-constants
+   vibes-utils
+   vibes-serializers
+   vibes-c-toolkit
+   vibes-patch-info
+   vibes-higher-vars))

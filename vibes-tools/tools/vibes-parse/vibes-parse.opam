@@ -1,10 +1,7 @@
 opam-version: "2.0"
-name: "vibes-tools"
+name: "vibes-parse"
 version: "0.0.1"
-synopsis: "Tools and libraries associated with the VIBES project."
-description: """
-Verified, Incremental Binary Editing with Synthesis.
-"""
+synopsis: "The VIBES parser tool."
 maintainer: "Draper Laboratory"
 authors: "Draper Laboratory"
 depends: [

@@ -1,10 +1,10 @@
 (library
  (name vibes_linear_ssa)
- (public_name vibes-tools.linear-ssa)
+ (public_name vibes-linear-ssa)
  (libraries
    findlib.dynload
    bap
    core
    monads
-   vibes-tools.logging
-   vibes-tools.higher-vars))
+   vibes-log
+   vibes-higher-vars))

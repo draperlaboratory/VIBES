@@ -3,7 +3,7 @@
  (public_name vibes-parse)
  (libraries
    cmdliner
-   vibes-tools.logging
-   vibes-tools.constants
-   vibes-tools.common-cli-options
-   vibes-tools.parser))
+   vibes-parse
+   vibes-log
+   vibes-constants
+   vibes-common-cli-options))
