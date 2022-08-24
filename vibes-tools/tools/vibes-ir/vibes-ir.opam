@@ -1,0 +1,13 @@
+opam-version: "2.0"
+name: "vibes-ir"
+version: "0.0.1"
+synopsis: "Library for VIBES IR."
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+depends: [
+  "bap"
+  "core"
+]
+build: [
+  [make]
+]
