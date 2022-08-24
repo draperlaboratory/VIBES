@@ -1,7 +1,9 @@
 (library
-  (name vibes_bir_lib)
-  (libraries
-    findlib.dynload
-    bap
-    vibes_log_lib
-    vibes_error_lib))
+ (name vibes_bir)
+ (public_name vibes-bir)
+ (libraries
+   findlib.dynload
+   bap
+   vibes-constants
+   vibes-log)
+ (preprocess (pps ppx_compare ppx_sexp_conv ppx_bin_prot)))

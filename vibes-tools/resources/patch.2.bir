@@ -1,2 +1,14 @@
-(%00000008 block(data((%00000005 set(var x)(int 3:32u))(%00000008 set(var y)(int 6:32u))(%00000010 set(var _$regR0)(var x))(%00000013 set(var _$regR1)(var y))))(ctrl((%0000000d call(direct %0000000b)(return(direct %00000016))(when(int 1:1u))))))
-(%00000016 block(data((%00000017 set(var z)(var _$regR0))))(ctrl()))
+(patch.2.bir
+ ((%00000021 block (phi ())
+   (data
+    ((%0000000f set (x 0 (imm 32) false) (int 3:32u))
+     (%00000012 set (y 0 (imm 32) false) (int 6:32u))
+     (%00000015 set (reg:R0 0 (imm 32) false) (var (x 0 (imm 32) false)))
+     (%00000018 set (reg:R1 0 (imm 32) false) (var (y 0 (imm 32) false)))))
+   (ctrl
+    ((%0000001a call (direct %0000000a) (return (direct %0000001d))
+      (when (int 1:1u))))))
+  (%0000001d block (phi ())
+   (data
+    ((%0000001e set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
+   (ctrl ()))))

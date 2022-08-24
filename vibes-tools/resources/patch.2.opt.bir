@@ -1,0 +1,18 @@
+(patch.2.bir
+ ((%0000000b block (phi ())
+   (data
+    ((%0000000d set (reg:R0 0 (imm 32) false) (int 3:32u)
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))
+     (%0000000c set (reg:R1 0 (imm 32) false) (int 6:32u)
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))
+     (%00000013 set (mem:call 0 (mem 32 8) false)
+      (var (mem 0 (mem 32 8) false))
+      (attrs (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))))
+   (ctrl
+    ((%00000010 call (direct %00000011) (return (direct %00000009))
+      (when (int 1:1u))))))
+  (%00000009 block (phi ())
+   (data
+    ((%0000000a set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
+   (ctrl ((%00000014 goto (direct %00000015) (when (int 1:1u))))))
+  (%00000015 block (phi ()) (data ()) (ctrl ()))))

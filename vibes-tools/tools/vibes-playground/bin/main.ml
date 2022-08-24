@@ -1,7 +1,7 @@
 module C = Cmdliner
-module Log = Vibes_log_lib.Stream
-module Versions = Vibes_constants_lib.Versions
-module Cli_opts = Vibes_common_cli_options_lib
+module Log = Vibes_log.Stream
+module Versions = Vibes_constants.Versions
+module Cli_opts = Vibes_common_cli_options
 
 module Cli = struct
 
@@ -11,10 +11,9 @@ module Cli = struct
   let info = C.Cmd.info name ~doc ~version
 
   let run
-      (is_verbose : bool)
-      (is_no_color : bool)
-      : (unit, string) result =
-    let () = Cli_opts.Verbosity.setup is_verbose is_no_color in
+      (verbose : bool)
+      (no_color : bool) : (unit, string) result =
+    let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-dummy-cli foo'";
     (* START PLAYGROUND (do what you want here) *)
 
@@ -25,8 +24,8 @@ module Cli = struct
 
   let runner =
     C.Term.(const run
-      $ Cli_opts.Verbosity.is_verbose
-      $ Cli_opts.Verbosity.is_no_color)
+      $ Cli_opts.Verbosity.verbose
+      $ Cli_opts.Verbosity.no_color)
 
   let () = match Bap_main.init () with
     | Ok () -> ()

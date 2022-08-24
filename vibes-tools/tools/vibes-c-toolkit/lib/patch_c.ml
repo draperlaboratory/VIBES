@@ -4,10 +4,9 @@ open Bap_c.Std
 open Monads.Std
 open Bap_core_theory
 
-module Err = Kb_error
 module Utils = C_utils
-module Log = Vibes_log_lib.Stream
-module Hvar = Vibes_higher_vars_lib.Higher_var
+module Log = Vibes_log.Stream
+module Hvar = Vibes_higher_vars.Higher_var
 
 (* Describes the data model used by the target.
 
@@ -25,7 +24,7 @@ module Data_model = struct
   let schar (data : t) : bool = data.schar
 
   (* Same across all data models. *)
-  let char_size : int = 8
+  let char_size : int = 8 [@@warning "-32"]
   let short_size : int = 16
   let long_long_size : int = 64
 
@@ -42,6 +41,7 @@ module Data_model = struct
   let addr_size (data : t) : int = match data.sizes with
     | #C.Data.model32 -> 32
     | #C.Data.model64 -> 64
+  [@@warning "-32"]
 
 end
 
@@ -54,8 +54,8 @@ module Size = struct
     | 16 -> `r16
     | 32 -> `r32
     | 64 -> `r64
-    | n -> invalid_argf
-             "Patch_c.size_of_int_exn: invalid size integer %d" n ()
+    | n -> invalid_argf "Patch_c.size_of_int_exn: \
+                         invalid size integer %d" n ()
 
   let equal (a : t) (b : t) : bool =
     Size.equal (a :> size) (b :> size)
@@ -287,8 +287,6 @@ module Exp = struct
       INT (Size.of_int_exn w, sign)
     | VARIABLE (_, t) -> t
 
-
-
   (* Convert to a particular type. *)
   let rec with_type (e : t) (t : typ) : t = match e with
     | UNARY _ | BINARY _ | VARIABLE _ -> CAST (t, e)
@@ -392,7 +390,7 @@ module Type = struct
     | _, VOID -> Some t1
     | _ -> if equal t1 t2 then Some t1 else None
 
-  (* Perform te conversions for pure expressions. *)
+  (* Perform the conversions for pure expressions. *)
   let unify (t1 : t) (t2 : t) : t option =
     match t1, t2 with
     | VOID, VOID -> Some VOID
@@ -428,7 +426,7 @@ module Type = struct
     | VOID, _ | _, VOID -> Some t1
     | _ -> if equal t1 t2 then Some t1 else None
 
-  (* Perform te conversions for an assignment. Returns the unified type
+  (* Perform the conversions for an assignment. Returns the unified type
      and the expression with an explicit cast. *)
   let cast_assign (tl : t) (tr : typ) (r : exp) : (typ * exp) option =
     match tl, tr with
@@ -451,7 +449,6 @@ module Type = struct
     | INT (sizel, signl), INT (sizer, signr) ->
       if equal_size sizel sizer && equal_sign signl signr
       then Some (tl, r) else Some (tl, Exp.with_type r tl)
-
 
 end
 
@@ -615,7 +612,7 @@ module Transl = struct
   include Monad.State.T1(Env)(KB)
   include Monad.State.Make(Env)(KB)
 
-  let fail (msg : string) : 'a t = lift @@ Err.fail @@ Patch_c_error msg
+  let fail (msg : string) : 'a t = lift @@ KB.fail @@ Errors.Patch_c msg
 
 end
 
@@ -720,11 +717,7 @@ module Main = struct
   module Helper = struct
 
     (* If the expression had side-effects, then store the result in a
-       temporary variable.
-
-       `no_post` indicates that a temporary shouldn't be generated if
-       there are no post-effects.
-    *)
+       temporary variable. *)
     let new_tmp_or_simple
         (pre : stmt)
         (e : exp)
@@ -821,7 +814,7 @@ module Main = struct
       | Some (_, e2) -> match e1 with
         | VARIABLE var -> return @@ ASSIGN (var, e2)
         | UNARY (MEMOF, addr, _) -> return @@ STORE (addr, e2)
-        | _ -> fail "Csmall.make_assign: unexpected shape"
+        | _ -> fail "Patch_c.make_assign: unexpected shape"
 
     (* Generate an arithmetic expression depending on whether pointer
        arithmetic is allowed. *)
@@ -843,11 +836,19 @@ module Main = struct
           | INT _, PTR _ ->
             let+ inc = increment NOTHING t2 in
             t2, BINARY (MUL, e1, inc, t1), e2
-          | INT _, INT _ ->
-            let t = Type.unify t1 t2 in
-            let t = Option.value_exn t in
-            return (t, e1, e2)
-          | _ -> typ_unify_error e t1 t2 in
+          | INT _, INT _ -> begin
+              (* The size of a constant integer is ambiguous until
+                 we use it in some kind of operation. *)
+              match e1, e2 with
+              | CONST_INT _, _ -> return (t2, Exp.with_type e1 t2, e2)
+              | _, CONST_INT _ -> return (t1, e1, Exp.with_type e2 t1)
+              | _ -> begin
+                  match Type.unify t1 t2 with
+                  | None -> typ_unify_error e t1 t2
+                  | Some t ->
+                    return (t, Exp.with_type e1 t, Exp.with_type e2 t)
+                end
+            end          | _ -> typ_unify_error e t1 t2 in
         BINARY (b, e1, e2, t)
 
   end
@@ -956,11 +957,11 @@ module Main = struct
       let i = Word.(signed @@ of_int64 ~width i) in
       NOP, Some (CONST_INT (i, SIGNED)), NOP
     | Cabs.(CONSTANT (CONST_CHAR s)) ->
-      let+ _ = gets @@ fun {data; _} ->
+      let+ sign = gets @@ fun {data; _} ->
         if data.schar then SIGNED else UNSIGNED in
       let i = Word.of_int ~width:8 Char.(to_int @@ of_string s) in
       let i = Word.signed i in
-      NOP, Some (CONST_INT (i, UNSIGNED)), NOP
+      NOP, Some (CONST_INT (i, sign)), NOP
     | Cabs.VARIABLE v -> begin
         let* t = Transl.(gets @@ Env.typeof v) in
         match t with
@@ -1313,7 +1314,7 @@ module Main = struct
       | _ ->
         let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
         fail (
-          sprintf "Csmall.go_assign: expected an l-value \
+          sprintf "Patch_c.go_assign: expected an l-value \
                    for LHS of assignment, got:\n\n%s\n" s) in
     (* We follow order of evaluation as right-to-left. *)
     let* te2 = Helper.new_tmp_or_simple spre2 e2 spost2 in
@@ -1440,9 +1441,10 @@ module Main = struct
           | [] -> return (sequence [pre; post], List.rev args)
           | (spre, e, spost) :: rest ->
             let* te = Helper.new_tmp_or_simple spre e spost in
-            let eff, e = match te with
-              | First e -> sequence [pre; post], e
-              | Second (spre, e, _) -> sequence [pre; post; spre], e in
+            let eff, e, spost = match te with
+              | First e -> sequence [pre; post], e, NOP
+              | Second (spre, e, spost) ->
+                sequence [pre; post; spre], e, spost in
             aux (eff, e :: args, spost) rest in
         aux (sfpre, [], sfpost) args in
       let is_void = match Type.unify tret VOID with
@@ -1613,12 +1615,13 @@ module Main = struct
 
 end
 
+let fail (msg : string) : 'a KB.t = KB.fail @@ Errors.Patch_c msg
+
 (* Get the C data model of the target, if we support it. *)
 let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
   let fail () =
-    Err.fail @@ Patch_c_error (
-      Format.asprintf "Unsupported target %a"
-        Theory.Target.pp target) in
+    fail @@ Format.asprintf "Unsupported target %a"
+      Theory.Target.pp target in
   if Theory.Target.matches target "arm" then
     if Theory.Target.bits target = 32
     then KB.return Data_model.{sizes = `ILP32; schar = false}
@@ -1633,9 +1636,8 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
     | FUNDEF (_, b) -> KB.return b
     | _ ->
       let s = Utils.print_c Cprint.print_def patch in
-      Err.fail @@ Patch_c_error (
-        sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
-                 expected a single function definition" s) in
+      fail @@ sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
+                       expected a single function definition" s in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
     Transl.(Env.create ~target ~data () |> run (Main.go_body body)) in
@@ -1645,5 +1647,5 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let s = Opt.Nops.go s in
   (* Success! *)
   let prog = {data; body = tenv, s} in
-  Log.send (Format.sprintf "Translated to the following PatchC program:\n%s" (to_string prog));
+  Log.send "Translated to the following PatchC program:\n%s" @@ to_string prog;
   KB.return prog

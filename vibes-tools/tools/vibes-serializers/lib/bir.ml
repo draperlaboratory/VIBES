@@ -1,473 +1,741 @@
 open Core
 open Bap.Std
-open Vibes_error_lib.Let
+open Bap_core_theory
+open Monads.Std
 
-module T = Bap_core_theory.Theory
-module Err = Vibes_error_lib.Std
+module T = Theory
+module Bir_helpers = Vibes_bir.Helpers
+
+(* This was borrowed from `bap/lib/bap_types/bap_var.ml`. Perhaps
+   it should be exposed in the user-facing API? *)
+
+let unknown =
+  let package = Vibes_constants.Bap_kb.package in
+  let unknown =
+    Theory.Value.Sort.Name.declare ~package "Unknown" in
+  Theory.Value.Sort.sym unknown
+
+let sort_of_typ t =
+  let ret = T.Value.Sort.forget in
+  match t with
+  | Type.Imm 1 -> ret T.Bool.t
+  | Type.Imm m -> ret @@ T.Bitv.define m
+  | Type.Mem (ks,vs) ->
+    let ks,vs = Size.(in_bits ks, in_bits vs) in
+    let ks,vs = T.Bitv.(define ks, define vs) in
+    ret @@ T.Mem.define ks vs
+  | Type.Unk -> ret @@ unknown
+
+(* The BIR program may have attributes that were set by default in BAP,
+   but we only care about the custom ones we've defined. *)
+let is_vibes_attr (attr : value) : bool =
+  let prefix = Vibes_constants.Attr.prefix in
+  String.is_prefix (Value.tagname attr) ~prefix
 
 module Serializer = struct
 
   let serialize_size (sz : size) : Sexp.t =
-    let bits = Size.in_bits sz in
-    Sexp.Atom (Format.sprintf "%d" bits)
+    Atom (Int.to_string @@ Size.in_bits sz)
 
-  let serialize_endianness (e : endian) : Sexp.t =
-    match e with
-    | LittleEndian -> Sexp.Atom "LittleEndian"
-    | BigEndian -> Sexp.Atom "BigEndian"
+  let serialize_typ : typ -> Sexp.t = function
+    | Imm n -> List [Atom "imm"; Atom (Int.to_string n)]
+    | Mem (a, b) -> List [
+        Atom "mem";
+        serialize_size (a :> size);
+        serialize_size b;
+      ]
+    | Unk -> Atom "unk"
 
-  let serialize_cast (c : cast) : Sexp.t =
-    match c with
-    | UNSIGNED -> Sexp.Atom "UNSIGNED"
-    | SIGNED -> Sexp.Atom "SIGNED"
-    | HIGH -> Sexp.Atom "HIGH"
-    | LOW -> Sexp.Atom "LOW"
+  let serialize_endianness : endian -> Sexp.t = function
+    | LittleEndian -> Atom "LittleEndian"
+    | BigEndian -> Atom "BigEndian"
 
-  let serialize_unop (op : unop) : Sexp.t =
-    match op with
-    | NEG -> Sexp.Atom "NEG"
-    | NOT -> Sexp.Atom "NOT"
+  let serialize_cast : cast -> Sexp.t = function
+    | UNSIGNED -> Atom "UNSIGNED"
+    | SIGNED -> Atom "SIGNED"
+    | HIGH -> Atom "HIGH"
+    | LOW -> Atom "LOW"
 
-  let serialize_binop (op : binop) : Sexp.t =
-    match op with
-    | PLUS -> Sexp.Atom "PLUS"
-    | MINUS -> Sexp.Atom "MINUS"
-    | TIMES -> Sexp.Atom "TIMES"
-    | DIVIDE -> Sexp.Atom "DIVIDE"
-    | SDIVIDE -> Sexp.Atom "SDIVIDE"
-    | MOD -> Sexp.Atom "MOD"
-    | SMOD -> Sexp.Atom "SMOD"
-    | LSHIFT -> Sexp.Atom "LSHIFT"
-    | RSHIFT -> Sexp.Atom "RSHIFT"
-    | ARSHIFT -> Sexp.Atom "ARSHIFT"
-    | AND -> Sexp.Atom "AND"
-    | OR -> Sexp.Atom "OR"
-    | XOR -> Sexp.Atom "XOR"
-    | EQ -> Sexp.Atom "EQ"
-    | NEQ -> Sexp.Atom "NEQ"
-    | LT -> Sexp.Atom "LT"
-    | LE -> Sexp.Atom "LE"
-    | SLT -> Sexp.Atom "SLT"
-    | SLE -> Sexp.Atom "SLE"
+  let serialize_unop : unop -> Sexp.t = function
+    | NEG -> Atom "NEG"
+    | NOT -> Atom "NOT"
 
-  let rec serialize_exp (exp : Exp.t) : (Sexp.t, Err.t) result =
-    match exp with
-    | Load (e1, e2, endianness, size) ->
-       let- e1' = serialize_exp e1 in
-       let- e2' = serialize_exp e2 in
-       let endianness' = serialize_endianness endianness in
-       let size' = serialize_size size in
-       Ok (Sexp.List [Atom "load"; e1'; e2'; endianness'; size'])
-    | Store (e1, e2, e3, endianness, size) ->
-       let- e1' = serialize_exp e1 in
-       let- e2' = serialize_exp e2 in
-       let- e3' = serialize_exp e3 in
-       let endianness' = serialize_endianness endianness in
-       let size' = serialize_size size in
-       Ok (Sexp.List [Atom "store"; e1'; e2'; e3'; endianness'; size'])
-    | BinOp (op, e1, e2) ->
-       let- e1' = serialize_exp e1 in
-       let- e2' = serialize_exp e2 in
-       let op' = serialize_binop op in
-       Ok (Sexp.List [Atom "binop"; op'; e1'; e2'])
+  let serialize_binop : binop -> Sexp.t = function
+    | PLUS -> Atom "PLUS"
+    | MINUS -> Atom "MINUS"
+    | TIMES -> Atom "TIMES"
+    | DIVIDE -> Atom "DIVIDE"
+    | SDIVIDE -> Atom "SDIVIDE"
+    | MOD -> Atom "MOD"
+    | SMOD -> Atom "SMOD"
+    | LSHIFT -> Atom "LSHIFT"
+    | RSHIFT -> Atom "RSHIFT"
+    | ARSHIFT -> Atom "ARSHIFT"
+    | AND -> Atom "AND"
+    | OR -> Atom "OR"
+    | XOR -> Atom "XOR"
+    | EQ -> Atom "EQ"
+    | NEQ -> Atom "NEQ"
+    | LT -> Atom "LT"
+    | LE -> Atom "LE"
+    | SLT -> Atom "SLT"
+    | SLE -> Atom "SLE"
+
+  let serialize_var (v : var) : Sexp.t = List [
+      Atom Var.(name @@ base v);
+      Atom (Int.to_string @@ Var.index v);
+      serialize_typ @@ Var.typ v;
+      Atom (Bool.to_string @@ Var.is_virtual v);
+    ]
+
+  let rec serialize_exp : exp -> Sexp.t = function
+    | Load (e1, e2, endianness, size) -> List [
+        Atom "load";
+        serialize_exp e1;
+        serialize_exp e2;
+        serialize_endianness endianness;
+        serialize_size size
+      ]
+    | Store (e1, e2, e3, endianness, size) -> List [
+        Atom "store";
+        serialize_exp e1;
+        serialize_exp e2;
+        serialize_exp e3;
+        serialize_endianness endianness;
+        serialize_size size
+      ]
+    | BinOp (op, e1, e2) -> List [
+        Atom "binop";
+        serialize_binop op;
+        serialize_exp e1;
+        serialize_exp e2;
+      ]
     | UnOp (op, e) ->
-       let- e' = serialize_exp e in
-       let op' = serialize_unop op in
-       Ok (Sexp.List [Atom "unop"; op'; e'])
-    | Var v ->
-       Ok (Sexp.List [Atom "var"; Atom (Var.name v)])
-    | Int w ->
-       Ok (Sexp.List [Atom "int"; Atom (Word.to_string w)])
-    | Cast (cast, i, e) ->
-       let- e' = serialize_exp e in
-       let cast' = serialize_cast cast in
-       let i' = Sexp.Atom (Format.sprintf "%d" i) in
-       Ok (Sexp.List [Atom "cast"; cast'; i'; e'])
-    | Ite (e1, e2, e3) ->
-       let- e1' = serialize_exp e1 in
-       let- e2' = serialize_exp e2 in
-       let- e3' = serialize_exp e3 in
-       Ok (Sexp.List [Atom "ite"; e1'; e2'; e3'])
-    | Extract (i1, i2, e) ->
-       let- e' = serialize_exp e in
-       let i1' = Sexp.Atom (Format.sprintf "%d" i1) in
-       let i2' = Sexp.Atom (Format.sprintf "%d" i2) in
-       Ok (Sexp.List [Atom "extract"; i1'; i2'; e'])
-    | Concat (e1, e2) ->
-       let- e1' = serialize_exp e1 in
-       let- e2' = serialize_exp e2 in
-       Ok (Sexp.List [Atom "concat"; e1'; e2'])
-    | _ ->
-       let msg =
-         Format.sprintf "Can't serialize exp: '%s'" (Exp.to_string exp)
-       in
-       Error (Types.Unhandled_bir msg)
+      let e = serialize_exp e in
+      let op = serialize_unop op in
+      List [Atom "unop"; op; e]
+    | Var v -> List [Atom "var"; serialize_var v]
+    | Int w -> List [Atom "int"; Atom (Word.to_string w)]
+    | Cast (cast, width, e) -> List [
+        Atom "cast";
+        serialize_cast cast;
+        Atom (Int.to_string width);
+        serialize_exp e
+      ]
+    | Ite (e1, e2, e3) -> List [
+        Atom "ite";
+        serialize_exp e1;
+        serialize_exp e2;
+        serialize_exp e3;
+      ]
+    | Extract (hi, lo, e) -> List [
+        Atom "extract";
+        Atom (Int.to_string hi);
+        Atom (Int.to_string lo);
+        serialize_exp e
+      ]
+    | Concat (e1, e2) -> List [
+        Atom "concat";
+        serialize_exp e1;
+        serialize_exp e2;
+      ]
+    | Let (v, x, y) -> List [
+        Atom "let";
+        serialize_var v;
+        serialize_exp x;
+        serialize_exp y;
+      ]
+    | Unknown (s, t) -> List [
+        Atom "unknown";
+        Atom s;
+        serialize_typ t;
+      ]
 
-  let serialize_def (def : Def.t) : (Sexp.t, Err.t) result =
-    let tid = Tid.to_string (Term.tid def) in
-    let lhs = Def.lhs def in
-    let rhs = Def.rhs def in
-    let var = Var.name lhs in
-    let- exp = serialize_exp rhs in
-    Ok (Sexp.List [Atom tid; Atom "set"; List [Atom "var"; Atom var]; exp])
+  let serialize_attrs (attrs : dict) : Sexp.t = List [
+      Atom "attrs";
+      Dict.sexp_of_t attrs;
+    ]
 
-  let serialize_label (l : label) : (Sexp.t, Err.t) result =
-    match l with
-    | Direct tid ->
-       Ok (Sexp.List [Atom "direct"; Atom (Tid.to_string tid)])
-    | Indirect exp ->
-       let- exp' = serialize_exp exp in
-       Ok (Sexp.List [Atom "indirect"; exp'])
+  let serialize_def (def : def term) : Sexp.t =
+    let tid = Tid.to_string @@ Term.tid def in
+    let lhs = serialize_var @@ Def.lhs def in
+    let rhs = serialize_exp @@ Def.rhs def in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs def in
+    if Dict.is_empty attrs then List [Atom tid; Atom "set"; lhs; rhs]
+    else List [Atom tid; Atom "set"; lhs; rhs; serialize_attrs attrs]
 
-  let serialize_jmp (jmp : Jmp.t) : (Sexp.t, Err.t) result =
+  let serialize_label : label -> Sexp.t = function
+    | Direct tid -> List [
+        Atom "direct";
+        Atom (Tid.to_string tid);
+      ]
+    | Indirect exp -> List [
+        Atom "indirect";
+        serialize_exp exp;
+      ]
+
+  let serialize_jmp (jmp : jmp term) : Sexp.t =
     let tid = Tid.to_string (Term.tid jmp) in
-    let cond = Jmp.cond jmp in
-    let- exp = serialize_exp cond in
+    let cond = serialize_exp @@ Jmp.cond jmp in
     match Jmp.kind jmp with
-    | Call c ->
-       let- dst = serialize_label (Call.target c) in
-       let- return = match Call.return c with
-         | Some l ->
-            let- l' = serialize_label l in
-            Ok (Sexp.List [Atom "return"; l'])
-         | None -> Ok (Sexp.List [Atom "no-return"])
-       in
-       let result = Sexp.List [Atom tid; Atom "call"; dst; return;
-         List [Atom "when"; exp]]
-       in
-       Ok result
-    | Goto label ->
-       let- dst = serialize_label label in
-       Ok (Sexp.List [Atom tid; Atom "goto"; dst; List [Atom "when"; exp]])
-    | Ret label ->
-       let- dst = serialize_label label in
-       Ok (Sexp.List [Atom tid; Atom "return"; dst; List [Atom "when"; exp]])
-    | Int (_, _) ->
-       let msg = Format.sprintf
-         "Can't serialize jmp: '%s'"
-         (Jmp.to_string jmp)
-       in
-       Error (Types.Unhandled_bir msg)
+    | Call c -> List [
+        Atom tid;
+        Atom "call";
+        serialize_label @@ Call.target c;
+        List (
+          let open Sexp in
+          Call.return c |>
+          Option.value_map ~default:[Atom "noreturn"] ~f:(fun l ->
+              [Atom "return"; serialize_label l])
+        );
+        List [Atom "when"; cond];
+      ]
+    | Goto label -> List [
+        Atom tid;
+        Atom "goto";
+        serialize_label label;
+        List [Atom "when"; cond];
+      ]
+    | Ret label -> List [
+        Atom tid;
+        Atom "return";
+        serialize_label label;
+        List [Atom "when"; cond];
+      ]
+    | Int (n, t) -> List [
+        Atom tid;
+        Atom "interrupt";
+        Atom (Int.to_string n);
+        Atom (Tid.to_string t);
+        List [Atom "when"; cond];
+      ]
 
-  let serialize_blk (blk : Blk.t) : (Sexp.t, Err.t) result =
-    let tid = Tid.to_string (Term.tid blk) in
-    let orig_phis = Seq.to_list (Term.enum phi_t blk) in
-    let- _ =
-      if List.length orig_phis > 0 then
-        let msg =
-          Format.sprintf
-            "We don't serialize phi nodes in blk '%s'"
-            (Blk.to_string blk)
-        in
-        Error (Types.Unhandled_bir msg)
-      else Ok ()
-    in
-    let orig_defs = Seq.to_list (Term.enum def_t blk) in
-    let- defs = Result.all (List.map orig_defs ~f:serialize_def) in
-    let orig_jmps = Seq.to_list (Term.enum jmp_t blk) in
-    let- jmps = Result.all (List.map orig_jmps ~f:serialize_jmp) in
-    Ok (Sexp.List [
-      Atom tid;
-      Atom "block";
-      Sexp.List [Atom "data"; Sexp.List defs];
-      Sexp.List [Atom "ctrl"; Sexp.List jmps];
-    ])
+  let serialize_phi (phi : phi term) : Sexp.t = List [
+      Atom (Tid.to_string @@ Term.tid phi);
+      Atom "phi";
+      serialize_var @@ Phi.lhs phi;
+      List (
+        let open Sexp in
+        Phi.values phi |> Seq.map ~f:(fun (tid, exp) -> List [
+            Atom (Tid.to_string tid);
+            serialize_exp exp;
+          ]) |> Seq.to_list
+      )
+    ]
+
+  let serialize_subterms
+      (cls : ('a, 'b) cls)
+      (t : 'a term)
+      ~(f : 'b term -> Sexp.t) : Sexp.t list =
+    Term.enum cls t |> Seq.map ~f |> Seq.to_list
+
+  let serialize_blk (blk : blk term) : Sexp.t =
+    let tid = Tid.to_string @@ Term.tid blk in
+    let phi = serialize_subterms phi_t blk ~f:serialize_phi in
+    let data = serialize_subterms def_t blk ~f:serialize_def in
+    let ctrl = serialize_subterms jmp_t blk ~f:serialize_jmp in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs blk in
+    if Dict.is_empty attrs then List [
+        Atom tid;
+        Atom "block";
+        List [Atom "phi"; List phi];
+        List [Atom "data"; List data];
+        List [Atom "ctrl"; List ctrl];
+      ]
+    else List [
+        Atom tid;
+        Atom "block";
+        List [Atom "phi"; List phi];
+        List [Atom "data"; List data];
+        List [Atom "ctrl"; List ctrl];
+        serialize_attrs attrs;
+      ]
+
+  let serialize_sub (sub : sub term) : Sexp.t =
+    let name = Sub.name sub in
+    let blks = serialize_subterms blk_t sub ~f:serialize_blk in
+    let attrs = Dict.filter ~f:is_vibes_attr @@ Term.attrs sub in
+    if Dict.is_empty attrs then List [Atom name; List blks]
+    else List [Atom name; List blks; serialize_attrs attrs]
 
 end
 
 module Deserializer = struct
 
-  let s_of = Sexp.to_string
+  module Env = struct
 
-  let word_size (target : T.Target.t) : typ =
-    let bits = T.Target.bits target in
-    Imm bits
+    (* Since we rely on tid and var string representations, we use
+       this environment to track them as they are created, and then
+       to make sure that their uses are consistent across the program. *)
+    type t = {
+      vars : var String.Map.t;
+      tids : tid String.Map.t;
+    }
 
-  let deserialize_tid (s : string) : (Tid.t, Err.t) result =
-    match Tid.from_string s with
-    | Ok tid -> Ok tid
-    | Error e ->
-       let e_str = Error.to_string_hum e in
-       let msg = Format.sprintf "Error deserializing tid: '%s'" e_str in
-       Error (Types.Invalid_bir msg)
+    let empty : t = {
+      vars = String.Map.empty;
+      tids = String.Map.empty;
+    }
 
-  let deserialize_int (s : string) : (int, Err.t) result =
-    match int_of_string_opt s with
-    | Some i -> Ok i
+  end
+
+  include Monad.State.T1(Env)(KB)
+  include Monad.State.Make(Env)(KB)
+
+  let fail (err : KB.conflict) : 'a t = lift @@ KB.fail err
+
+  let lookup_var (s : string) : var option t =
+    gets @@ fun {vars; _} -> Map.find vars s
+
+  let lookup_tid (s : string) : tid option t =
+    gets @@ fun {tids; _} -> Map.find tids s
+
+  let add_var (s : string) (v : var) : unit t =
+    update @@ fun env -> {
+      env with vars = Map.set env.vars ~key:s ~data:v;
+    }
+
+  (* We can use this property to relate names in the [Function_info]
+     structures with actual tids in the Knowledge Base. *)
+  let provide_alias (s : string) (t : tid) : unit t =
+    let alias = Set.singleton (module String) s in
+    lift @@ KB.provide T.Label.aliases t alias
+
+  let add_tid (s : string) (t : tid) : unit t =
+    let* () = provide_alias s t in
+    update @@ fun env -> {
+      env with tids = Map.set env.tids ~key:s ~data:t;
+    }
+
+  let deserialize_tid (s : string) : tid t =
+    let* tid = lookup_tid s in
+    match tid with
+    | Some tid -> !!tid
     | None ->
-       let msg = Format.sprintf "Expected int, but got '%s'" s in
-       Error (Types.Invalid_bir msg)
+      let* tid = lift @@ T.Label.fresh in
+      let+ () = add_tid s tid in
+      tid
 
-  let deserialize_var ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (Var.t, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom "var"; Atom raw_v] ->
-       let size = word_size target in
-       let v = Var.create raw_v size in
-       Ok v
-    | _ ->
-       let msg =
-         Format.sprintf "Expected '(var x)', but got: '%s'" (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_int (s : string) : int t =
+    match int_of_string_opt s with
+    | Some i -> !!i
+    | None ->
+      let msg = Format.sprintf "Expected int, but got '%s'" s in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_word (sexp : Sexp.t) : (Word.t, Err.t) result =
-    let msg = Format.sprintf
-      "Expected '(int w)', but got: '%s'"
-      (s_of sexp)
-    in
-    match sexp with
-    | Sexp.List [Atom "int"; Atom w] ->
-       begin
-         try Ok (Word.of_string w)
-         with _ -> Error (Types.Invalid_bir msg)
-       end
-    | _ -> Error (Types.Invalid_bir msg)
+  let deserialize_addr_size : Sexp.t -> addr_size t = function
+    | Atom raw as sexp -> begin
+        let* i = deserialize_int raw in
+        match Size.of_int_opt i with
+        | Some `r32 -> !!`r32
+        | Some `r64 -> !!`r64
+        | None | Some _ ->
+          let msg = Format.asprintf
+              "Expected Bap.Std.addr_size, but got '%a'"
+              Sexp.pp sexp in
+          fail @@ Errors.Invalid_bir msg
+      end
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected integer size, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_endianness (sexp : Sexp.t) : (endian, Err.t) result =
-    match sexp with
-    | Sexp.Atom "BigEndian" -> Ok BigEndian
-    | Sexp.Atom "LittleEndian" -> Ok LittleEndian
-    | _ ->
-       let msg =
-         Format.sprintf
-           "Expected 'BigEndian' or 'LittleEndian' endianness, but got: '%s'"
-           (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_size : Sexp.t -> size t = function
+    | Atom raw as sexp -> begin
+        let* i = deserialize_int raw in
+        match Size.of_int_opt i with
+        | Some size -> !!size
+        | None ->
+          let msg = Format.asprintf
+              "Expected Bap.Std.size, but got '%a'"
+              Sexp.pp sexp in
+          fail @@ Errors.Invalid_bir msg
+      end
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected integer size, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_size (sexp : Sexp.t) : (size, Err.t) result =
-    match sexp with
-    | Sexp.Atom raw_i ->
-       let- i = deserialize_int raw_i in
-       begin
-         match Size.of_int_opt i with
-         | Some size -> Ok size
-         | None ->
-            let msg = Format.sprintf
-              "Expected Bap.Std.size, but got '%s'"
-              (s_of sexp)
-            in
-            Error (Types.Invalid_bir msg)
-       end
-    | _ ->
-       let msg = Format.sprintf
-         "Expected integer size, but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_bool (s : string) : bool t =
+    match bool_of_string_opt s with
+    | Some i -> !!i
+    | None ->
+      let msg = Format.sprintf "Expected bool, but got '%s'" s in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_cast (sexp : Sexp.t) : (cast, Err.t) result =
-    match sexp with
-    | Sexp.Atom "UNSIGNED" -> Ok UNSIGNED
-    | Sexp.Atom "SIGNED" -> Ok SIGNED
-    | Sexp.Atom "HIGH" -> Ok HIGH
-    | Sexp.Atom "LOW" -> Ok LOW
-    | _ ->
-       let msg = Format.sprintf
-         "Expected valid Bil.cast, but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_typ : Sexp.t -> typ t = function
+    | List [Atom "imm"; Atom n] ->
+      let+ n = deserialize_int n in
+      Type.Imm n
+    | List [Atom "mem"; a; b] ->
+      let* a = deserialize_addr_size a in
+      let+ b = deserialize_size b in
+      Type.Mem (a, b)
+    | List [Atom "unk"] -> !!Type.Unk
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected Bap.Std.typ, but got '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_unop (sexp : Sexp.t) : (unop, Err.t) result =
-    match sexp with
-    | Sexp.Atom "NEG" -> Ok NEG
-    | Sexp.Atom "NOT" -> Ok NOT
-    | _ ->
-       let msg = Format.sprintf
-         "Expected valid Bil.unop, but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let same_typ (t : typ) (v : var) : bool =
+    Type.equal t @@ Var.typ v
 
-  let deserialize_binop (sexp : Sexp.t) : (binop, Err.t) result =
-    match sexp with
-    | Sexp.Atom "PLUS" -> Ok PLUS
-    | Sexp.Atom "MINUS" -> Ok MINUS
-    | Sexp.Atom "TIMES" -> Ok TIMES
-    | Sexp.Atom "DIVIDE" -> Ok DIVIDE
-    | Sexp.Atom "SDIVIDE" -> Ok SDIVIDE
-    | Sexp.Atom "MOD" -> Ok MOD
-    | Sexp.Atom "SMOD" -> Ok SMOD
-    | Sexp.Atom "LSHIFT" -> Ok LSHIFT
-    | Sexp.Atom "RSHIFT" -> Ok RSHIFT
-    | Sexp.Atom "ARSHIFT" -> Ok ARSHIFT
-    | Sexp.Atom "AND" -> Ok AND
-    | Sexp.Atom "OR" -> Ok OR
-    | Sexp.Atom "XOR" -> Ok XOR
-    | Sexp.Atom "EQ" -> Ok EQ
-    | Sexp.Atom "NEQ" -> Ok NEQ
-    | Sexp.Atom "LT" -> Ok LT
-    | Sexp.Atom "LE" -> Ok LE
-    | Sexp.Atom "SLT" -> Ok SLT
-    | Sexp.Atom "SLE" -> Ok SLE
-    | _ ->
-       let msg = Format.sprintf
-         "Expected valid Bil.binop, but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let same_virt (b : bool) (v : var) : bool =
+    Bool.equal b @@ Var.is_virtual v
 
-  let rec deserialize_exp ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (Exp.t, Err.t) result =
+  let deserialize_var : Sexp.t -> var t = function
+    | List [Atom name; Atom idx; typ; Atom virt] -> begin
+        let* var = lookup_var name in
+        let* idx = deserialize_int idx in
+        let* typ = deserialize_typ typ in
+        let* is_virtual = deserialize_bool virt in
+        match var with
+        | Some v when not @@ same_typ typ v ->
+          let msg = Format.asprintf
+              "Expected type '%a' for var '%s', but got '%a'"
+              Type.pp (Var.typ v) name Type.pp typ in
+          fail @@ Errors.Invalid_bir msg
+        | Some v when not @@ same_virt is_virtual v ->
+          let s b = if b then "virtual" else "physical" in
+          let msg = Format.asprintf
+              "Expected var '%s' to be %s, but got %s"
+              name (s @@ Var.is_virtual v) (s is_virtual) in
+          fail @@ Errors.Invalid_bir msg
+        | Some v when Var.index v = idx -> !!v
+        | x ->
+          let s = sort_of_typ typ in
+          let* v =
+            if is_virtual then lift @@ T.Var.fresh s
+            else !!(T.Var.define s name) in
+          let v = Var.(with_index (reify v) idx) in
+          (* If the var is already in our env, but this one
+             has a different index, then don't re-add it to
+             the env. We've already verified that its type
+             is consistent with the previous definition. *)
+          let+ () =
+            if Option.is_some x then !!()
+            else add_var name v in
+          v 
+      end
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected '(string int typ bool)', but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_word (sexp : Sexp.t) : word t =
+    let msg = Format.asprintf
+        "Expected 'Bap.Std.word', but got: '%a'"
+        Sexp.pp sexp in
     match sexp with
-    | Sexp.List [Atom "load"; raw_e1; raw_e2; raw_endianness; raw_size] ->
-       let- e1 = deserialize_exp raw_e1 ~target in
-       let- e2 = deserialize_exp raw_e2 ~target in
-       let- endianness = deserialize_endianness raw_endianness in
-       let- size = deserialize_size raw_size in
-       Ok (Bil.Load (e1, e2, endianness, size))
-    | Sexp.List
-         [Atom "store"; raw_e1; raw_e2; raw_e3; raw_endianness; raw_size] ->
-       let- e1 = deserialize_exp raw_e1 ~target in
-       let- e2 = deserialize_exp raw_e2 ~target in
-       let- e3 = deserialize_exp raw_e3 ~target in
-       let- endianness = deserialize_endianness raw_endianness in
-       let- size = deserialize_size raw_size in
-       Ok (Bil.Store (e1, e2, e3, endianness, size))
-    | Sexp.List [Atom "binop"; raw_binop; raw_e1; raw_e2] ->
-       let- binop = deserialize_binop raw_binop in
-       let- e1 = deserialize_exp raw_e1 ~target in
-       let- e2 = deserialize_exp raw_e2 ~target in
-       Ok (Bil.BinOp (binop, e1, e2))
-    | Sexp.List [Atom "unop"; raw_unop; raw_e] ->
-       let- unop = deserialize_unop raw_unop in
-       let- e = deserialize_exp raw_e ~target in
-       Ok (Bil.UnOp (unop, e))
-    | Sexp.List [Atom "var"; _] ->
-       let- v = deserialize_var sexp ~target in
-       Ok (Bil.Var v)
-    | Sexp.List [Atom "int"; _] ->
-       let- w = deserialize_word sexp in
-       Ok (Bil.Int w)
-    | Sexp.List [Atom "cast"; raw_cast; Atom raw_i; raw_e] ->
-       let- cast = deserialize_cast raw_cast in
-       let- i = deserialize_int raw_i in
-       let- e = deserialize_exp raw_e ~target in
-       Ok (Bil.Cast (cast, i, e))
+    | Atom w -> begin
+        try !!(Word.of_string w)
+        with _ -> fail @@ Errors.Invalid_bir msg
+      end
+    | _ -> fail @@ Errors.Invalid_bir msg
+
+  let deserialize_endianness : Sexp.t -> endian t = function
+    | Atom "BigEndian" -> !!BigEndian
+    | Atom "LittleEndian" -> !!LittleEndian
+    | sexp ->
+      let msg =
+        Format.asprintf
+          "Expected 'BigEndian' or 'LittleEndian' endianness, \
+           but got: '%a'" Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_cast : Sexp.t -> cast t = function
+    | Atom "UNSIGNED" -> !!Bil.UNSIGNED
+    | Atom "SIGNED" -> !!Bil.SIGNED
+    | Atom "HIGH" -> !!Bil.HIGH
+    | Atom "LOW" -> !!Bil.LOW
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected valid Bil.cast, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_unop : Sexp.t -> unop t = function
+    | Atom "NEG" -> !!Bil.NEG
+    | Atom "NOT" -> !!Bil.NOT
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected valid Bil.unop, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_binop : Sexp.t -> binop t = function
+    | Atom "PLUS" -> !!Bil.PLUS
+    | Atom "MINUS" -> !!Bil.MINUS
+    | Atom "TIMES" -> !!Bil.TIMES
+    | Atom "DIVIDE" -> !!Bil.DIVIDE
+    | Atom "SDIVIDE" -> !!Bil.SDIVIDE
+    | Atom "MOD" -> !!Bil.MOD
+    | Atom "SMOD" -> !!Bil.SMOD
+    | Atom "LSHIFT" -> !!Bil.LSHIFT
+    | Atom "RSHIFT" -> !!Bil.RSHIFT
+    | Atom "ARSHIFT" -> !!Bil.ARSHIFT
+    | Atom "AND" -> !!Bil.AND
+    | Atom "OR" -> !!Bil.OR
+    | Atom "XOR" -> !!Bil.XOR
+    | Atom "EQ" -> !!Bil.EQ
+    | Atom "NEQ" -> !!Bil.NEQ
+    | Atom "LT" -> !!Bil.LT
+    | Atom "LE" -> !!Bil.LE
+    | Atom "SLT" -> !!Bil.SLT
+    | Atom "SLE" -> !!Bil.SLE
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected valid Bil.binop, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let rec deserialize_exp : Sexp.t -> exp t = function
+    | List [Atom "load"; raw_e1; raw_e2; raw_endianness; raw_size] ->
+      let* e1 = deserialize_exp raw_e1 in
+      let* e2 = deserialize_exp raw_e2 in
+      let* endianness = deserialize_endianness raw_endianness in
+      let+ size = deserialize_size raw_size in
+      Bil.Load (e1, e2, endianness, size)
+    | List [Atom "store"; raw_e1; raw_e2; raw_e3; raw_endianness; raw_size] ->
+      let* e1 = deserialize_exp raw_e1 in
+      let* e2 = deserialize_exp raw_e2 in
+      let* e3 = deserialize_exp raw_e3 in
+      let* endianness = deserialize_endianness raw_endianness in
+      let+ size = deserialize_size raw_size in
+      Bil.Store (e1, e2, e3, endianness, size)
+    | List [Atom "binop"; raw_binop; raw_e1; raw_e2] ->
+      let* binop = deserialize_binop raw_binop in
+      let* e1 = deserialize_exp raw_e1 in
+      let+ e2 = deserialize_exp raw_e2 in
+      Bil.BinOp (binop, e1, e2)
+    | List [Atom "unop"; raw_unop; raw_e] ->
+      let* unop = deserialize_unop raw_unop in
+      let+ e = deserialize_exp raw_e in
+      Bil.UnOp (unop, e)
+    | List [Atom "var"; v] ->
+      let+ v = deserialize_var v in
+      Bil.Var v
+    | List [Atom "int"; w] ->
+      let+ w = deserialize_word w in
+      Bil.Int w
+    | List [Atom "cast"; raw_cast; Atom raw_i; raw_e] ->
+      let* cast = deserialize_cast raw_cast in
+      let* i = deserialize_int raw_i in
+      let+ e = deserialize_exp raw_e in
+      Bil.Cast (cast, i, e)
     | Sexp.List [Atom "ite"; raw_e1; raw_e2; raw_e3] ->
-       let- e1 = deserialize_exp raw_e1 ~target in
-       let- e2 = deserialize_exp raw_e2 ~target in
-       let- e3 = deserialize_exp raw_e3 ~target in
-       Ok (Bil.Ite (e1, e2, e3))
-    | Sexp.List [Atom "extract"; Atom raw_i1; Atom raw_i2; raw_e] ->
-       let- i1 = deserialize_int raw_i1 in
-       let- i2 = deserialize_int raw_i2 in
-       let- e = deserialize_exp raw_e ~target in
-       Ok (Bil.Extract (i1, i2, e))
-    | Sexp.List [Atom "concat"; raw_e1; raw_e2] ->
-       let- e1 = deserialize_exp raw_e1 ~target in
-       let- e2 = deserialize_exp raw_e2 ~target in
-       Ok (Bil.Concat (e1, e2))
-    | _ ->
-       let msg = Format.sprintf "Can't deserialize expr: '%s'" (s_of sexp) in
-       Error (Types.Invalid_bir msg)
+      let* e1 = deserialize_exp raw_e1 in
+      let* e2 = deserialize_exp raw_e2 in
+      let+ e3 = deserialize_exp raw_e3 in
+      Bil.Ite (e1, e2, e3)
+    | List [Atom "extract"; Atom raw_i1; Atom raw_i2; raw_e] ->
+      let* i1 = deserialize_int raw_i1 in
+      let* i2 = deserialize_int raw_i2 in
+      let+ e = deserialize_exp raw_e in
+      Bil.Extract (i1, i2, e)
+    | List [Atom "concat"; raw_e1; raw_e2] ->
+      let* e1 = deserialize_exp raw_e1 in
+      let+ e2 = deserialize_exp raw_e2 in
+      Bil.Concat (e1, e2)
+    | List [Atom "unknown"; Atom s; t] ->
+      let+ t = deserialize_typ t in
+      Bil.Unknown (s, t)
+    | List [Atom "let"; v; x; y] ->
+      let* v = deserialize_var v in
+      let* x = deserialize_exp x in
+      let+ y = deserialize_exp y in
+      Bil.Let (v, x, y)
+    | sexp ->
+      let msg = Format.asprintf
+          "Can't deserialize expr: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_label ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (label, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom "direct"; Atom raw_tid] ->
-       let- tid = deserialize_tid raw_tid in
-       Ok (Direct tid)
-    | Sexp.List [Atom "indirect"; raw_e] ->
-       let- e = deserialize_exp raw_e ~target in
-       Ok (Indirect e)
-    | _ ->
-       let msg = Format.sprintf
-         "Expected 'direct tid' or 'indirect exp' but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_label : Sexp.t -> label t = function
+    | List [Atom "direct"; Atom raw_tid] ->
+      let+ tid = deserialize_tid raw_tid in
+      Direct tid
+    | List [Atom "indirect"; raw_e] ->
+      let+ e = deserialize_exp raw_e in
+      Indirect e
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected 'direct tid' or 'indirect exp' but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_return ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (label option, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom "return"; raw_dst] ->
-       let- dst = deserialize_label raw_dst ~target in
-       Ok (Some dst)
-    | Sexp.List [Atom "no-return"] -> Ok None
-    | _ ->
-       let msg = Format.sprintf
-         "Expected 'return label' or 'no-return' but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_return : Sexp.t -> label option t = function
+    | List [Atom "return"; raw_dst] ->
+      let+ dst = deserialize_label raw_dst in
+      Some dst
+    | List [Atom "noreturn"] -> !!None
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected 'return label' or 'noreturn' but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_def ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (Def.t, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom raw_tid; Atom "set"; raw_lhs; raw_rhs] ->
-       let- tid = deserialize_tid raw_tid in
-       let- v = deserialize_var raw_lhs ~target in
-       let- exp = deserialize_exp raw_rhs ~target in
-       let def = Def.create v exp ~tid in
-       Ok def
-    | _ ->
-       let msg = Format.sprintf "Expected def, but got: '%s'" (s_of sexp) in
-       Error (Types.Invalid_bir msg)
+  let deserialize_phi : Sexp.t -> phi term t = function
+    | List [Atom raw_tid; Atom "phi"; raw_lhs; List raw_values] ->
+      let* tid = deserialize_tid raw_tid in
+      let* lhs = deserialize_var raw_lhs in
+      let+ values = List.map raw_values ~f:(function
+          | List [Atom raw_tid; raw_exp] ->
+            let* tid = deserialize_tid raw_tid in
+            let+ exp = deserialize_exp raw_exp in
+            tid, exp
+          | sexp ->
+            let msg = Format.asprintf
+                "Expected (tid exp) for phi, but got: '%a'"
+                Sexp.pp sexp in
+            fail @@ Errors.Invalid_bir msg) in
+      Phi.of_list lhs values ~tid
+    | sexp ->
+      let msg = Format.asprintf "Expected phi, but got: '%a'" Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_jmp ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (Jmp.t, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom raw_tid; Atom "call"; raw_dst; raw_return;
-         List [Atom "when"; raw_exp]] ->
-       begin
-         let- tid = deserialize_tid raw_tid in
-         let- dst = deserialize_label raw_dst ~target in
-         let- ret = deserialize_return raw_return ~target in
-         let- cond = deserialize_exp raw_exp ~target in
-         let call_prototype = Call.create () ~target:dst in
-         let call = match ret with
-           | Some label -> Call.with_return call_prototype label
-           | None -> Call.with_noreturn call_prototype
-         in
-         let jmp = Jmp.create_call call ~tid ~cond in
-         Ok jmp
-       end
-    | Sexp.List [Atom raw_tid; Atom "goto"; raw_dst;
-         List [Atom "when"; raw_exp]] ->
-       let- tid = deserialize_tid raw_tid in
-       let- dst = deserialize_label raw_dst ~target in
-       let- cond = deserialize_exp raw_exp ~target in
-       let jmp = Jmp.create_goto dst ~tid ~cond in
-       Ok jmp
-    | Sexp.List [Atom raw_tid; Atom "return"; raw_dst;
-         List [Atom "when"; raw_exp]] ->
-       let- tid = deserialize_tid raw_tid in
-       let- dst = deserialize_label raw_dst ~target in
-       let- cond = deserialize_exp raw_exp ~target in
-       let jmp = Jmp.create_ret dst ~tid ~cond in
-       Ok jmp
-    | _ ->
-       let msg = Format.sprintf
-         "Expected call, goto, or ret jmp but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_attrs : Sexp.t -> dict t = function
+    | List [Atom "attrs"; attrs] -> begin
+        try !!Dict.(filter ~f:is_vibes_attr @@ t_of_sexp attrs) with
+        | exn ->
+          let msg = Format.asprintf
+              "Failed to parse attrs '%a': %a"
+              Sexp.pp attrs Core.Exn.pp exn in
+          fail @@ Errors.Invalid_bir msg
+      end
+    | sexp ->
+      let msg = Format.asprintf "Expected attrs, but got: '%a'" Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
-  let deserialize_blk ~target:(target : T.Target.t) (sexp : Sexp.t)
-      : (Blk.t, Err.t) result =
-    match sexp with
-    | Sexp.List [Atom raw_tid; Atom "block"; List [Atom "data"; List raw_defs];
-         List [Atom "ctrl"; Sexp.List raw_jmps]] ->
-       let- tid = deserialize_tid raw_tid in
-       let- defs = Result.all
-         (List.map raw_defs ~f:(fun def -> deserialize_def def ~target))
-       in
-       let- jmps = Result.all
-         (List.map raw_jmps ~f:(fun jmp -> deserialize_jmp jmp ~target))
-       in
-       let blk = Blk.create () ~tid ~defs ~jmps in
-       Ok blk
-    | _ ->
-       let msg = Format.sprintf
-         "Expected block, but got: '%s'"
-         (s_of sexp)
-       in
-       Error (Types.Invalid_bir msg)
+  let deserialize_def : Sexp.t -> def term t = function
+    | List [Atom raw_tid; Atom "set"; raw_lhs; raw_rhs] ->
+      let* tid = deserialize_tid raw_tid in
+      let* v = deserialize_var raw_lhs in
+      let+ exp = deserialize_exp raw_rhs in
+      Def.create v exp ~tid
+    | List [Atom raw_tid; Atom "set"; raw_lhs; raw_rhs; attrs] ->
+      let* tid = deserialize_tid raw_tid in
+      let* v = deserialize_var raw_lhs in
+      let* exp = deserialize_exp raw_rhs in
+      let+ attrs = deserialize_attrs attrs in
+      Term.with_attrs (Def.create v exp ~tid) attrs
+    | sexp ->
+      let msg = Format.asprintf "Expected def, but got: '%a'" Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_jmp : Sexp.t -> jmp term t = function
+    | List [
+        Atom raw_tid;
+        Atom "call";
+        raw_dst;
+        raw_return;
+        List [Atom "when"; raw_exp]
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* target = deserialize_label raw_dst in
+      let* return = deserialize_return raw_return in
+      let+ cond = deserialize_exp raw_exp  in
+      let call = Call.create () ~target ?return in
+      Jmp.create_call call ~tid ~cond
+    | List [
+        Atom raw_tid;
+        Atom "goto";
+        raw_dst;
+        List [Atom "when"; raw_exp]
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* dst = deserialize_label raw_dst in
+      let+ cond = deserialize_exp raw_exp in
+      Jmp.create_goto dst ~tid ~cond
+    | List [
+        Atom raw_tid;
+        Atom "return";
+        raw_dst;
+        List [Atom "when"; raw_exp]
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* dst = deserialize_label raw_dst in
+      let+ cond = deserialize_exp raw_exp in
+      Jmp.create_ret dst ~tid ~cond
+    | List [
+        Atom raw_tid;
+        Atom "interrupt";
+        Atom n;
+        Atom t;
+        List [Atom "when"; raw_exp];
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* n = deserialize_int n in
+      let* t = deserialize_tid t in
+      let+ cond = deserialize_exp raw_exp in
+      Jmp.create_int n t ~tid ~cond
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected call, goto, or ret jmp but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_blk : Sexp.t -> blk term t = function
+    | List [
+        Atom raw_tid;
+        Atom "block";
+        List [Atom "phi"; List raw_phis];
+        List [Atom "data"; List raw_defs];
+        List [Atom "ctrl"; List raw_jmps];
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* phis = List.map raw_phis ~f:deserialize_phi in
+      let* defs = List.map raw_defs ~f:deserialize_def in
+      let+ jmps = List.map raw_jmps ~f:deserialize_jmp in
+      Blk.create () ~tid ~phis ~defs ~jmps
+    | List [
+        Atom raw_tid;
+        Atom "block";
+        List [Atom "phi"; List raw_phis];
+        List [Atom "data"; List raw_defs];
+        List [Atom "ctrl"; List raw_jmps];
+        attrs;
+      ] ->
+      let* tid = deserialize_tid raw_tid in
+      let* phis = List.map raw_phis ~f:deserialize_phi in
+      let* defs = List.map raw_defs ~f:deserialize_def in
+      let* jmps = List.map raw_jmps ~f:deserialize_jmp in
+      let+ attrs = deserialize_attrs attrs in
+      Term.with_attrs (Blk.create () ~tid ~phis ~defs ~jmps) attrs
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected block, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
+
+  let deserialize_blks : Sexp.t list -> blk term list t =
+    List.map ~f:deserialize_blk
+
+  let deserialize_sub : Sexp.t -> sub term t = function
+    | List [Atom name; List blks] ->
+      let* blks = deserialize_blks blks in
+      lift @@ Bir_helpers.create_sub name blks
+    | List [Atom name; List blks; attrs] ->
+      let* blks = deserialize_blks blks in
+      let* attrs = deserialize_attrs attrs in
+      let+ sub = lift @@ Bir_helpers.create_sub name blks in
+      Term.with_attrs sub attrs
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected sub, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_bir msg
 
 end
 
-let serialize = Serializer.serialize_blk
-let deserialize = Deserializer.deserialize_blk
+let serialize = Serializer.serialize_sub
+
+let deserialize (sub : Sexp.t) : sub term KB.t =
+  let open Deserializer in
+  deserialize_sub sub |>
+  Base.Fn.flip run Env.empty |>
+  KB.map ~f:fst

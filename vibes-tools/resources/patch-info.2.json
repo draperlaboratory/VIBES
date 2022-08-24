@@ -1,5 +1,25 @@
 {
   "patch-point": "0x10400:32",
   "patch-size": 2,
-  "sp-align": 0
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "x",
+      "storage-class": [
+        "register",
+        {
+          "allow-opt": true
+        }
+      ]
+    },
+    {
+      "name": "y",
+      "storage-class": [
+        "register",
+        {
+          "allow-opt": true
+        }
+      ]
+    }
+  ]
 }

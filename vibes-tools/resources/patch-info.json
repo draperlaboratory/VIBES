@@ -6,19 +6,41 @@
   "patch-vars": [
     {
       "name": "index",
-      "storage-class": ["register", {"at-entry": "R1", "at-exit": "R1"}]
+      "storage-class": [
+        "register",
+        {
+          "at-entry": "R1",
+          "at-exit": "R1"
+        }
+      ]
     },
     {
       "name": "some_func",
-      "storage-class": ["constant", "0xdeadbeef:32"]
+      "storage-class": [
+        "constant",
+        "0xdeadbeef:32"
+      ]
     },
     {
       "name": "x",
-      "storage-class": ["memory", ["address", "0xbeef:32"]]
+      "storage-class": [
+        "memory",
+        [
+          "address",
+          "0xbeef:32"
+        ]
+      ]
     },
     {
       "name": "y",
-      "storage-class": ["memory", ["frame", "R11", "0x04:32"]]
+      "storage-class": [
+        "memory",
+        [
+          "frame",
+          "R11",
+          "0x04:32"
+        ]
+      ]
     }
   ]
 }

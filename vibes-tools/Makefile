@@ -1,8 +1,4 @@
 TOOLS_SRC := tools
-VIBES_PLAYGROUND := vibes-playground
-VIBES_PARSE := vibes-parse
-VIBES_OPT := vibes-opt
-
 
 ###################################
 # DEFAULT
@@ -16,85 +12,101 @@ VIBES_OPT := vibes-opt
 ###################################
 
 all:
-	$(MAKE) $(VIBES_PLAYGROUND)
-	$(MAKE) $(VIBES_PARSE)
-	$(MAKE) $(VIBES_OPT)
+	$(MAKE) tools.all
+
+.PHONY: build
+build:
+	$(MAKE) tools.build
+
+.PHONY: install
+install:
+	$(MAKE) tools.install
+
+.PHONY: uninstall
+uninstall:
+	$(MAKE) tools.uninstall
 
 .PHONY: clean
-clean: clean.$(VIBES_PLAYGROUND) clean.$(VIBES_PARSE) clean.$(VIBES_OPT)
+clean:
+	$(MAKE) tools.clean
 
-build: build.$(VIBES_PLAYGROUND) build.$(VIBES_PARSE) build.$(VIBES_OPT)
+###################################
+# TOOLS
+###################################
 
-install: install.$(VIBES_PLAYGROUND) install.$(VIBES_PARSE) install.$(VIBES_OPT)
+.PHONY: tools.all
+tools.all:
+	$(MAKE) tools.install
 
-uninstall: uninstall.$(VIBES_PLAYGROUND) uninstall.$(VIBES_PARSE) uninstall.$(VIBES_OPT)
+.PHONY: tools.build
+tools.build:
+	$(MAKE) -C $(TOOLS_SRC) build
 
+.PHONY: tools.install
+tools.install:
+	$(MAKE) -C $(TOOLS_SRC) install
+
+.PHONY:
+tools.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) uninstall
+
+.PHONY: tools.clean
+tools.clean:
+	$(MAKE) -C $(TOOLS_SRC) clean
 
 ###################################
 # vibes-playground
 ###################################
 
-.PHONY: clean.$(VIBES_PLAYGROUND)
-clean.$(VIBES_PLAYGROUND):
-	$(MAKE) clean -C $(TOOLS_SRC)/$(VIBES_PLAYGROUND)
+.PHONY: playground
+playground: playground.install
 
-build.$(VIBES_PLAYGROUND):
-	$(MAKE) build -C $(TOOLS_SRC)/$(VIBES_PLAYGROUND)
+.PHONY: playground.build
+playground.build:
+	$(MAKE) -C $(TOOLS_SRC) playground.build
 
-install.$(VIBES_PLAYGROUND):
-	$(MAKE) install -C $(TOOLS_SRC)/$(VIBES_PLAYGROUND)
+.PHONY: playground.install
+playground.install:
+	$(MAKE) -C $(TOOLS_SRC) playground.install
 
-uninstall.$(VIBES_PLAYGROUND):
-	$(MAKE) uninstall -C $(TOOLS_SRC)/$(VIBES_PLAYGROUND)
-
-$(VIBES_PLAYGROUND):
-	$(MAKE) clean.$(VIBES_PLAYGROUND)
-	$(MAKE) build.$(VIBES_PLAYGROUND)
-	$(MAKE) install.$(VIBES_PLAYGROUND)
-
+.PHONY:
+playground.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) playground.uninstall
 
 ###################################
 # vibes-parse
 ###################################
 
-.PHONY: clean.$(VIBES_PARSE)
-clean.$(VIBES_PARSE):
-	$(MAKE) clean -C $(TOOLS_SRC)/$(VIBES_PARSE)
+.PHONY: parse
+parse: parse.install
 
-build.$(VIBES_PARSE):
-	$(MAKE) build -C $(TOOLS_SRC)/$(VIBES_PARSE)
+.PHONY: parse.build
+parse.build:
+	$(MAKE) -C $(TOOLS_SRC) parse.build
 
-install.$(VIBES_PARSE):
-	$(MAKE) install -C $(TOOLS_SRC)/$(VIBES_PARSE)
+.PHONY: parse.install
+parse.install:
+	$(MAKE) -C $(TOOLS_SRC) parse.install
 
-uninstall.$(VIBES_PARSE):
-	$(MAKE) uninstall -C $(TOOLS_SRC)/$(VIBES_PARSE)
-
-$(VIBES_PARSE):
-	$(MAKE) clean.$(VIBES_PARSE)
-	$(MAKE) build.$(VIBES_PARSE)
-	$(MAKE) install.$(VIBES_PARSE)
-
+.PHONY:
+parse.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) parse.uninstall
 
 ###################################
 # vibes-opt
 ###################################
 
-.PHONY: clean.$(VIBES_OPT)
-clean.$(VIBES_OPT):
-	$(MAKE) clean -C $(TOOLS_SRC)/$(VIBES_OPT)
+.PHONY: opt
+opt: opt.install
 
-build.$(VIBES_OPT):
-	$(MAKE) build -C $(TOOLS_SRC)/$(VIBES_OPT)
+.PHONY: opt.build
+opt.build:
+	$(MAKE) -C $(TOOLS_SRC) opt.build
 
-install.$(VIBES_OPT):
-	$(MAKE) install -C $(TOOLS_SRC)/$(VIBES_OPT)
+.PHONY: opt.install
+opt.install:
+	$(MAKE) -C $(TOOLS_SRC) opt.install
 
-uninstall.$(VIBES_OPT):
-	$(MAKE) uninstall -C $(TOOLS_SRC)/$(VIBES_OPT)
-
-$(VIBES_OPT):
-	$(MAKE) clean.$(VIBES_OPT)
-	$(MAKE) build.$(VIBES_OPT)
-	$(MAKE) install.$(VIBES_OPT)
-
+.PHONY:
+opt.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) opt.uninstall

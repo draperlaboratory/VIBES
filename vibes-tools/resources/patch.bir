@@ -1,1 +1,3 @@
-(%00000008 block(data((%00000005 set(var x)(int 3:32u))))(ctrl()))
+(patch.bir
+ ((%0000000d block (phi ())
+   (data ((%0000000c set (x 0 (imm 32) false) (int 3:32u)))) (ctrl ()))))

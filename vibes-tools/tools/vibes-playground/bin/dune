@@ -1,11 +1,11 @@
 (executable
-  (name main)
-  (libraries
-    findlib.dynload
-    bap
-    cmdliner
-    vibes_log_lib
-    vibes_error_lib
-    vibes_constants_lib
-    vibes_common_cli_options_lib))
-
+ (name main)
+ (public_name vibes-playground)
+ (libraries
+   findlib.dynload
+   bap
+   bap-core-theory
+   cmdliner
+   vibes-log
+   vibes-constants
+   vibes-common-cli-options))

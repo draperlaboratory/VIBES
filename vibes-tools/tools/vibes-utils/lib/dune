@@ -1,9 +1,11 @@
 (library
-  (name vibes_utils_lib)
-  (libraries
-    findlib.dynload
-    bap
-    core
-    yojson
-    vibes_log_lib
-    vibes_error_lib))
+ (name vibes_utils)
+ (public_name vibes-utils)
+ (libraries
+   findlib.dynload
+   bap
+   core
+   yojson
+   ppx_yojson_conv_lib
+   vibes-log)
+ (preprocess (pps ppx_compare ppx_sexp_conv)))

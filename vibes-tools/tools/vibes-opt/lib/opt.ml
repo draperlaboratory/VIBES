@@ -1,218 +1,25 @@
 open Core
 open Bap.Std
 open Graphlib.Std
+open Bap_core_theory
 
-module Err = Vibes_error_lib.Std
-module Helper = Vibes_bir_lib.Helpers
+module Hvar = Vibes_higher_vars.Higher_var
+module Helper = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
-open Vibes_error_lib.Let
+type t = Hvar.t list -> sub term -> sub term KB.t
 
-(* BIR optimizations. All of these passes assume that the blocks are ordered
-   according to `Shape.reorder_blks`, and that the program is NOT YET in SSA
-   form. *)
+module type S = sig val go : t end
 
-type t = blk term list -> (blk term list, Err.t) result
+module G = Graphs.Tid
 
-module Contract = struct
+open KB.Syntax
 
-  (* Edge contraction: https://en.wikipedia.org/wiki/Edge_contraction *)
-  let go : t = fun blks ->
-    let module G = Graphs.Tid in
-    (* Since we assume the correct ordering of the blocks, the entry tid
-       should be the first in the list. *)
-    let- entry_tid = match blks with
-      | [] ->
-        let msg = "Opt.Contract: no entry block found" in
-        Error (Types.No_blks msg)
-      | blk :: _ -> Ok (Term.tid blk) in
-    let rec loop blks =
-      (* Collect all blocks that contain only a single unconditional Goto.
-         In other words, these blocks are just "middlemen" and can thus be
-         "cut out". Predecessors of these blocks can then have their
-         control flow redirected to the successors of these "middlemen". *)
-      let singles =
-        List.filter_map blks ~f:(fun blk ->
-            let tid = Term.tid blk in
-            (* Note that the entry block can never be a candidate for
-               contraction. *)
-            if Tid.(tid <> entry_tid)
-            && Seq.is_empty @@ Term.enum def_t blk then
-              let jmps = Term.enum jmp_t blk |> Seq.to_list in
-              match jmps with
-              | [jmp] when Helper.is_unconditional jmp -> begin
-                  match Jmp.kind jmp with
-                  | Goto lbl -> Some (tid, lbl)
-                  | _ -> None
-                end
-              | _ -> None
-            else None) |>
-        Tid.Table.of_alist_exn in
-      (* If `tid` is a "single", and it is part of an arbitrarily long chain
-         of "singles", then we can try to chase down the final destination.
-         Since we may encounter a cycle, we carry around the set of visited
-         nodes. *)
-      let rec find_single_dst ?(visited = Tid.Set.empty) tid =
-        if Set.mem visited tid then None
-        else
-          let visited = Set.add visited tid in
-          Tid.Table.find singles tid |> Option.bind ~f:(function
-              | Indirect _ as ind -> Some ind
-              | Direct tid' as dir -> match find_single_dst tid' ~visited with
-                | Some _ as next -> next
-                | None -> Some dir) in
-      let contracted, blks, changed =
-        let init = Tid.Set.empty, [], false in
-        List.fold blks ~init ~f:(fun (contracted, blks, changed) blk ->
-            let tid = Term.tid blk in
-            (* Ignore "singles" that were part of a contraction on
-               this iteration. We will keep them in the IR until they
-               are no longer reachable. *)
-            if Set.mem contracted tid
-            then contracted, blk :: blks, changed
-            else
-              let contracted = ref contracted in
-              let changed = ref changed in
-              let blk = Term.map jmp_t blk ~f:(fun jmp ->
-                  match Jmp.kind jmp with
-                  | Goto (Direct tid') when Tid.(tid <> tid') -> begin
-                      match find_single_dst tid' with
-                      | Some (Direct tid'') when Tid.(tid' <> tid'') ->
-                        contracted := Set.add !contracted tid';
-                        changed := true;
-                        Jmp.with_kind jmp @@ Goto (Direct tid'')
-                      | Some (Indirect _ as ind) ->
-                        contracted := Set.add !contracted tid';
-                        changed := true;
-                        Jmp.with_kind jmp @@ Goto ind
-                      | None | Some (Direct _) -> jmp
-                    end
-                  | _ -> jmp) in
-              !contracted, blk :: blks, !changed) in
-      (* Repeat until we reach a fixed point. *)
-      let blks = List.rev blks in
-      if changed then
-        (* Remove unreachable nodes before iterating again. *)
-        let sub = Helper.create_sub blks in
-        let cfg = Sub.to_graph sub in
-        loop @@ List.filter blks ~f:(fun blk ->
-            let tid = Term.tid blk in
-            if Set.mem contracted tid then
-              let preds =
-                G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
-              not @@ Tid.Set.(is_empty @@ remove preds G.start)
-            else true)
-      else Ok blks in
-    loop blks
-
-end
-
-module Simpl = struct
-
-  let simplify_exp : exp -> exp = Exp.simpl ~ignore:Eff.[read]
-
-  let simplify_blk (blk : blk term) : blk term =
-    Term.map def_t blk ~f:(fun def ->
-        Def.with_rhs def @@ simplify_exp @@ Def.rhs def) |>
-    Term.map jmp_t ~f:(fun jmp ->
-        Jmp.with_cond jmp @@ simplify_exp @@ Jmp.cond jmp)
-
-  (* Simplify expressions in blocks. *)
-  let go : t = fun blks -> Ok (List.map blks ~f:simplify_blk)
-
-end
-
-module Merge = struct
-
-  (* If two blocks have a single, unconditional edge in between them,
-     then they can be merged together. This requires a particular
-     ordering for the blocks, since blocks that get merged into their
-     predecessors will get deleted. Therefore, they must be visited
-     afterwards in the ordering. *)
-  let go : t = fun blks ->
-    let module G = Graphs.Tid in
-    let rec loop blks =
-      let sub = Helper.create_sub blks in
-      with_cfg (Sub.to_graph sub) blks
-    and with_cfg cfg blks =
-      (* Map tids to blocks. *)
-      let blk_table = Tid.Table.create () in
-      List.iter blks ~f:(fun blk ->
-          Tid.Table.set blk_table ~key:(Term.tid blk) ~data:blk);
-      (* Get the implicit exit block. *)
-      let exit_tid = List.find_map blks ~f:(fun blk ->
-          if Helper.is_implicit_exit blk
-          then Some (Term.tid blk) else None) in
-      (* We can merge with a successor block if we are its only predecessor.
-         Note that the pseudo-start node will be a predecessor of
-         "unreachable" blocks. Furthermore, the implicit exit block cannot
-         be merged with. *)
-      let can_merge tid =
-        not (Option.exists exit_tid ~f:(Tid.equal tid)) &&
-        let preds =
-          G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
-        Set.(length @@ remove preds G.start) = 1 in
-      let merged = ref Tid.Set.empty in
-      let blks =
-        List.filter_map blks ~f:(fun blk ->
-            let tid = Term.tid blk in
-            if Tid.Set.mem !merged tid then None
-            else match Term.enum jmp_t blk |> Seq.to_list with
-              | [jmp] when Helper.is_unconditional jmp -> begin
-                  match Jmp.kind jmp with
-                  | Goto (Direct tid') when Tid.(tid <> tid') ->
-                    if can_merge tid' then
-                      (* This must run before the SSA pass, so there should
-                         not be any phi nodes in the program. *)
-                      let blk' = Tid.Table.find_exn blk_table tid' in
-                      let defs = Term.enum def_t blk |> Seq.to_list in
-                      let defs' = Term.enum def_t blk' |> Seq.to_list in
-                      let jmps' = Term.enum jmp_t blk' |> Seq.to_list in
-                      let blk = Blk.create ()
-                          ~tid ~defs:(defs @ defs') ~jmps:jmps' in
-                      merged := Tid.Set.add !merged tid';
-                      Some blk
-                    else
-                      (* An implicit fallthrough is possible here, but
-                         we should defer that until after selection,
-                         scheduling, and allocation. *)
-                      Some blk
-                  | Goto _ | Call _ | Ret _ | Int _ -> Some blk
-                end
-              | _ -> Some blk) in
-      (* If we changed anything, then recompute the CFG and repeat the
-         optimization. We terminate when a fixed point is reached. *)
-      if Tid.Set.is_empty !merged
-      then Ok blks
-      else loop blks in
-    loop blks
-
-end
-
-(* Applies all the optimizations in the list *)
-let apply_list (opts : t list) : t = fun init ->
-  List.fold opts ~init:(Ok init) ~f:(fun ir opt ->
-    let- old_ir = ir in
-    let- new_ir = opt old_ir in
-    Ok (List.append old_ir new_ir))
-
-(* Applies all the optimizations we currently perform. *)
-let apply : t = apply_list [
-    Simpl.go;
-    Merge.go;
-    Contract.go;
-  ]
-
-(* This code is taken directly from BAP's optimization passes:
-   https://github.com/BinaryAnalysisPlatform/bap/tree/master/plugins/optimization
-   Since this is a plugin and not a library, it's not exposed for
-   programmatic use.
-   For our purposes, we will use an optimization level of 1, so
-   only virtual variables will be touched.
-*)
-module Bap_opt = struct
+module Builtin : S = struct
 
   (* Optimization_data *)
   module O = struct
+
     type jmp_update = {
       cond : exp;
       kind : jmp_kind;
@@ -329,15 +136,12 @@ module Bap_opt = struct
         filter_map_alive deads jmp_t in
       filter_map_alive deads blk_t sub ~f:update_blk
 
-    let apply sub {deads; updates} =
-      let update_blk b =
-        filter_map_alive deads def_t b ~f:(update_def updates) |>
-        filter_map_alive deads jmp_t ~f:(update_jmp updates) in
-      filter_map_alive deads blk_t sub ~f:update_blk
   end
 
-  let is_optimization_allowed var =
-    Var.is_virtual var
+  let is_optimization_allowed hvars var =
+    Var.is_virtual var || match Hvar.find Var.(name @@ base var) hvars with
+    | Some {value = Registers {allow_opt; _}; _} -> allow_opt
+    | Some _ | None -> false
 
   let def_use_collector = object
     inherit [Var.Set.t * Var.Set.t] Term.visitor
@@ -378,6 +182,8 @@ module Bap_opt = struct
     Term.filter def_t blk ~f:(fun d ->
         not (can_touch (Def.lhs d)) || is_alive dead d)
 
+  exception Ill_typed of string
+
   let rec substitute vars exp =
     let substituter = object
       inherit Exp.mapper as super
@@ -389,7 +195,13 @@ module Bap_opt = struct
         | None -> Bil.var v
         | Some e -> e
     end in
-    substituter#map_exp exp |> Exp.fold_consts
+    let e = substituter#map_exp exp in
+    try Exp.fold_consts e
+    with _ ->
+      let msg = Format.asprintf
+          "Vibes_opt.Opt.Builtin.substitute: expression %a is not \
+           well-formed" Exp.pp e in
+      raise @@ Ill_typed msg
 
   let equal_kinds j j' = compare_jmp_kind (Jmp.kind j) (Jmp.kind j') = 0
 
@@ -433,20 +245,202 @@ module Bap_opt = struct
       let dead = Set.union dead dead' in
       if Set.is_empty dead' then s, dead
       else loop dead (clean can_touch dead' s) in
-    let sub', dead = loop Tid.Set.empty (Sub.ssa sub) in
+    let+ sub' = Sub.KB.ssa sub in
+    let sub', dead = loop Tid.Set.empty sub' in
     O.create ~deads:dead sub'
 
-  let run sub =
-    (* TODO: [free] should be the result of [Sub.free_vars], 
-       but [Sub.free_vars] is raising an error...why? 
-       To get the thing to keep running I'm just saying there are no free vars,
-       but this is just to make sure the thing compiles and runs...
-       Obviously we need to fix this... *)
-    let free = Var.Set.empty in (* Sub.free_vars sub in *)
-    let can_touch = is_optimization_allowed in
-    let data = process_sub free can_touch sub in
-    let sub = O.update sub data in
-    let data = O.find_unreachable sub data in
-    O.remove_dead_code sub data
+  let go hvars sub = try
+      let free = Sub.free_vars sub in
+      let can_touch = is_optimization_allowed hvars in
+      let+ data = process_sub free can_touch sub in
+      let sub = O.update sub data in
+      let data = O.find_unreachable sub data in
+      O.remove_dead_code sub data
+    with Ill_typed msg -> KB.fail @@ Errors.Invalid_bir msg
 
 end
+
+module Merge : S = struct
+
+  (* We can merge with a successor block if we are its only predecessor.
+     Note that the pseudo-start node will be a predecessor of "unreachable"
+     blocks. Furthermore, the implicit exit block cannot be merged with.
+
+     We remove the pseudo-entry node to get the real predecessor count.
+  *)
+  let can_merge
+      (blk_table : blk term Tid.Map.t)
+      (tid : tid)
+      (exit_tid : tid option) (cfg : G.t) : blk term option =
+    Map.find blk_table tid |> Option.bind ~f:(fun blk ->
+        Option.some_if begin
+          not (Option.exists exit_tid ~f:(Tid.equal tid)) &&
+          not (Term.has_attr blk Tags.split) &&
+          let preds =
+            G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+          Set.(length @@ remove preds G.start) = 1
+        end blk)
+
+  let rec loop (sub : sub term) : sub term =
+    with_cfg (Sub.to_graph sub) sub
+
+  and with_cfg (cfg : G.t) (sub : sub term) : sub term =
+    let blks = Term.enum blk_t sub in
+    (* Map tids to blocks. *)
+    let blk_table =
+      Seq.fold blks ~init:Tid.Map.empty ~f:(fun tbl blk ->
+          Map.set tbl ~key:(Term.tid blk) ~data:blk) in
+    (* Get the implicit exit block. *)
+    let exit_tid = Seq.find_map blks ~f:(fun blk ->
+        Option.some_if (Helper.no_jmps blk) (Term.tid blk)) in
+    let merged = Tid.Hash_set.create () in
+    let sub = Term.filter_map blk_t sub ~f:(fun blk ->
+        let tid = Term.tid blk in
+        if Hash_set.mem merged tid then None
+        else match Term.enum jmp_t blk |> Seq.to_list with
+          | [jmp] when Helper.is_unconditional jmp -> begin
+              match Jmp.kind jmp with
+              | Goto (Direct tid') when Tid.(tid <> tid') -> begin
+                  match can_merge blk_table tid' exit_tid cfg with
+                  | Some blk' ->
+                    (* This must run before the SSA pass, so there should
+                       not be any phi nodes in the program. *)
+                    let defs = Term.enum def_t blk |> Seq.to_list in
+                    let defs' = Term.enum def_t blk' |> Seq.to_list in
+                    let jmps' = Term.enum jmp_t blk' |> Seq.to_list in
+                    let attrs = Term.attrs blk in
+                    let blk = Blk.create ()
+                        ~tid ~defs:(defs @ defs') ~jmps:jmps' in
+                    Hash_set.add merged tid';
+                    Some (Term.with_attrs blk attrs)
+                  | None ->
+                    (* An implicit fallthrough is possible here, but
+                       we should defer that until after selection,
+                       scheduling, and allocation. *)
+                    Some blk
+                end
+              | Goto _ | Call _ | Ret _ | Int _ -> Some blk
+            end
+          | _ -> Some blk) in
+    (* If we changed anything, then recompute the CFG and repeat the
+       optimization. We terminate when a fixed point is reached. *)
+    if Hash_set.is_empty merged then sub else loop sub
+
+  (* If two blocks have a single, unconditional edge in between them,
+     then they can be merged together. This requires a particular
+     ordering for the blocks, since blocks that get merged into their
+     predecessors will get deleted. Therefore, they must be visited
+     afterwards in the ordering. *)
+  let go : t = fun _ sub -> !!(loop sub)
+
+end
+
+module Contract : S = struct
+
+  (* Collect all blocks that contain only a single unconditional Goto.
+     In other words, these blocks are just "middlemen" and can thus be
+     "cut out". Predecessors of these blocks can then have their
+     control flow redirected to the successors of these "middlemen". *)
+  let collect_singles (sub : sub term) (entry_tid : tid) : label Tid.Map.t =
+    Term.enum blk_t sub |> Seq.filter_map ~f:(fun blk ->
+        let tid = Term.tid blk in
+        (* Note that the entry block can never be a candidate for
+           contraction. *)
+        if Tid.(tid <> entry_tid)
+        && not (Term.has_attr blk Tags.split)
+        && Seq.is_empty @@ Term.enum def_t blk then
+          let jmps = Term.enum jmp_t blk |> Seq.to_list in
+          match jmps with
+          | [jmp] when Helper.is_unconditional jmp -> begin
+              match Jmp.kind jmp with
+              | Goto lbl -> Some (tid, lbl)
+              | _ -> None
+            end
+          | _ -> None
+        else None) |>
+    Tid.Map.of_sequence_exn
+
+  (* If `tid` is a "single", and it is part of an arbitrarily long chain
+     of "singles", then we can try to chase down the final destination.
+     Since we may encounter a cycle, we carry around the set of visited
+     nodes. *)
+  let rec find_single_dst
+      ?(visited : Tid.Set.t = Tid.Set.empty)
+      (tid : tid)
+      (singles : label Tid.Map.t) : label option =
+    if Set.mem visited tid then None
+    else
+      let visited = Set.add visited tid in
+      Map.find singles tid |> Option.bind ~f:(function
+          | Indirect _ as ind -> Some ind
+          | Direct tid' as dir ->
+            match find_single_dst tid' singles ~visited with
+            | Some _ as next -> next
+            | None -> Some dir)
+
+  let rec loop (sub : sub term) (entry_tid : tid) : sub term =
+    let singles = collect_singles sub entry_tid in
+    let contracted = Tid.Hash_set.create () in
+    let changed = ref false in
+    let sub = Term.map blk_t sub ~f:(fun blk ->
+        let tid = Term.tid blk in
+        (* Ignore "singles" that were part of a contraction on
+           this iteration. We will keep them in the IR until they
+           are no longer reachable. *)
+        if Hash_set.mem contracted tid then blk
+        else Term.map jmp_t blk ~f:(fun jmp ->
+            match Jmp.kind jmp with
+            | Goto (Direct tid') when Tid.(tid <> tid') -> begin
+                match find_single_dst tid' singles with
+                | Some (Direct tid'') when Tid.(tid' <> tid'') ->
+                  Hash_set.add contracted tid';
+                  changed := true;
+                  Jmp.with_kind jmp @@ Goto (Direct tid'')
+                | Some (Indirect _ as ind) ->
+                  Hash_set.add contracted tid';
+                  changed := true;
+                  Jmp.with_kind jmp @@ Goto ind
+                | None | Some (Direct _) -> jmp
+              end
+            | _ -> jmp)) in
+    (* Repeat until we reach a fixed point. *)
+    if !changed then
+      (* Remove unreachable nodes before iterating again. *)
+      let cfg = Sub.to_graph sub in
+      let sub = Term.filter blk_t sub ~f:(fun blk ->
+          let tid = Term.tid blk in
+          if Hash_set.mem contracted tid then
+            let preds =
+              G.Node.preds tid cfg |> Seq.to_list |> Tid.Set.of_list in
+            not @@ Tid.Set.(is_empty @@ remove preds G.start)
+          else true) in
+      loop sub entry_tid
+    else sub
+
+  (* Edge contraction: https://en.wikipedia.org/wiki/Edge_contraction *)
+  let go : t = fun _ sub -> match Helper.entry_tid sub with
+    | Ok entry_tid -> !!(loop sub entry_tid)
+    | Error err -> KB.fail err
+
+end
+
+module Nop : S = struct
+
+  let go _ sub = !!sub
+
+end
+
+let passes : (module S) Vector.t =
+  Vector.create ~capacity:16 (module Nop : S)
+
+let register : (module S) -> unit = Vector.append passes
+
+let () =
+  register (module Builtin);
+  register (module Merge);
+  register (module Contract)
+
+let apply hvars sub (module O : S) = O.go hvars sub
+
+let apply : t = fun hvars sub ->
+  Vector.to_list passes |> KB.List.fold ~init:sub ~f:(apply hvars)

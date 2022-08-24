@@ -1,197 +1,255 @@
 open Core
 open Bap.Std
+open Monads.Std
+open Bap_core_theory
 
-module Hvar = Vibes_higher_vars_lib.Higher_var
-module Linear = Types.Linear
+module T = Theory
+module Hvar = Vibes_higher_vars.Higher_var
+module Naming = Vibes_higher_vars.Substituter.Naming
+module Bir_helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
-open Linear.Let
+module Linear = struct
 
-type 'a linear = 'a Linear.t
+  module Env = struct
 
-let linearize_var (v : var) : var linear =
-  Linear.gets @@ fun {prefix; _} -> Types.linearize v ~prefix
+    type t = {
+      vars : Var.Set.t;
+      prefix : Utils.prefix option;
+    }
 
-let rec linearize_exp (exp : exp) : exp linear = match exp with
-  | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
-    Bil.Load (new_sub_exp_1, new_sub_exp_2, endian, size) 
-  | Bil.Store (sub_exp_1, sub_exp_2, sub_exp_3, endian, size) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let* new_sub_exp_2 = linearize_exp sub_exp_2 in
-    let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
-    Bil.Store (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3, endian, size)
-  | Bil.UnOp (unop, sub_exp) -> 
-    let+ new_sub_exp = linearize_exp sub_exp in
-    Bil.UnOp (unop, new_sub_exp) 
-  | Bil.BinOp (binop, sub_exp_1, sub_exp_2) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
-    Bil.BinOp (binop, new_sub_exp_1, new_sub_exp_2)
-  | Bil.Var v ->
-    let* new_var = linearize_var v in
-    let+ () = Linear.(update @@ Env.add_var new_var) in
-    Bil.Var new_var
-  | Bil.Int _ -> Linear.return exp
-  | Bil.Cast (cast, i, sub_exp) ->
-    let+ new_sub_exp = linearize_exp sub_exp in
-    Bil.Cast (cast, i, new_sub_exp)
-  | Bil.Let (var, sub_exp_1, sub_exp_2) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
-    Bil.Let (var, new_sub_exp_1, new_sub_exp_2)
-  | Bil.Ite (sub_exp_1, sub_exp_2, sub_exp_3) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let* new_sub_exp_2 = linearize_exp sub_exp_2 in
-    let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
-    Bil.Ite (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3)
-  | Bil.Extract (i, j, sub_exp) ->
-    let+ new_sub_exp = linearize_exp sub_exp in
-    Bil.Extract (i, j, new_sub_exp) 
-  | Bil.Concat (sub_exp_1, sub_exp_2) ->
-    let* new_sub_exp_1 = linearize_exp sub_exp_1 in
-    let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
-    Bil.Concat (new_sub_exp_1, new_sub_exp_2)
-  | Bil.Unknown (_, _) -> Linear.return exp
+    let empty = {
+      vars = Var.Set.empty;
+      prefix = None;
+    }
 
-let linearize_def (def : def term) : def term linear =
-  let lhs = Def.lhs def in
-  let* new_lhs = linearize_var lhs in
-  let* () = Linear.(update @@ Env.add_var new_lhs) in
-  let new_def = Def.with_lhs def new_lhs in
-  let rhs = Def.rhs new_def in
-  let+ new_rhs = linearize_exp rhs in
-  Def.with_rhs new_def new_rhs
+    let add_var v env = {env with vars = Set.add env.vars v}
+    let with_prefix prefix env = {env with prefix}
 
-let linearize_jmp (jmp : jmp term) : jmp term linear =
-  let* cond = linearize_exp @@ Jmp.cond jmp in
-  let of_label = function
-    | Indirect e ->
-      let+ e = linearize_exp e in
-      Indirect e
-    | lbl -> Linear.return lbl in
-  let of_kind = function
-    | Call call ->
-      let* call = match Call.return call with
-        | None -> Linear.return call
-        | Some lbl ->
-          let+ lbl = of_label lbl in
-          Call.with_return call lbl in
-      let+ tgt = of_label @@ Call.target call in
-      Call (Call.with_target call tgt)
-    | Goto lbl ->
-      let+ lbl = of_label lbl in
-      Goto lbl
-    | Ret lbl ->
-      let+ lbl = of_label lbl in
-      Ret lbl
-    | Int _ as k -> Linear.return k in
-  let+ kind = of_kind @@ Jmp.kind jmp in
-  let tid = Term.tid jmp in
-  Jmp.create ~tid ~cond kind
+  end
 
-let go (cls : ('a, 'b) cls) (t : 'a term)
-    ~(f : 'b term -> 'b term linear) : 'b term list linear =
-  Term.enum cls t |> Seq.to_list |> Linear.List.map ~f
+  include Monad.State.T1(Env)(Monad.Ident)
+  include Monad.State.Make(Env)(Monad.Ident)
 
-let linearize_blk (blk : blk term) : blk term linear =
-  let prefix = prefix_from blk in
-  let* () = Linear.(update @@ Env.with_prefix prefix) in
-  let* defs = go def_t blk ~f:linearize_def in
-  let+ jmps = go jmp_t blk ~f:linearize_jmp in
-  (* We will deliberately remove phi nodes since they are subsumed by
-     congruence between linear SSA vars. *)
-  Blk.create ~phis:[] ~defs ~jmps ~tid:(Term.tid blk) ()
+  let linearize_var (v : var) : var t =
+    gets @@ fun {prefix; _} -> match prefix with
+    | Some prefix -> Utils.linearize v ~prefix
+    | None -> v
 
-(* Produce a linear_ssa-ified live variable map. Each variable
-   get the prefix from it's block.
-   Also, expand the phi nodes to new defs at the corresponding
+  let rec linearize_exp (exp : exp) : exp t = match exp with
+    | Bil.Load (sub_exp_1, sub_exp_2, endian, size) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
+      Bil.Load (new_sub_exp_1, new_sub_exp_2, endian, size)
+    | Bil.Store (sub_exp_1, sub_exp_2, sub_exp_3, endian, size) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let* new_sub_exp_2 = linearize_exp sub_exp_2 in
+      let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
+      Bil.Store (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3, endian, size)
+    | Bil.UnOp (unop, sub_exp) ->
+      let+ new_sub_exp = linearize_exp sub_exp in
+      Bil.UnOp (unop, new_sub_exp)
+    | Bil.BinOp (binop, sub_exp_1, sub_exp_2) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
+      Bil.BinOp (binop, new_sub_exp_1, new_sub_exp_2)
+    | Bil.Var v ->
+      let* new_var = linearize_var v in
+      let+ () = update @@ Env.add_var new_var in
+      Bil.Var new_var
+    | Bil.Int _ -> !!exp
+    | Bil.Cast (cast, i, sub_exp) ->
+      let+ new_sub_exp = linearize_exp sub_exp in
+      Bil.Cast (cast, i, new_sub_exp)
+    | Bil.Let (var, sub_exp_1, sub_exp_2) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
+      Bil.Let (var, new_sub_exp_1, new_sub_exp_2)
+    | Bil.Ite (sub_exp_1, sub_exp_2, sub_exp_3) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let* new_sub_exp_2 = linearize_exp sub_exp_2 in
+      let+ new_sub_exp_3 = linearize_exp sub_exp_3 in
+      Bil.Ite (new_sub_exp_1, new_sub_exp_2, new_sub_exp_3)
+    | Bil.Extract (i, j, sub_exp) ->
+      let+ new_sub_exp = linearize_exp sub_exp in
+      Bil.Extract (i, j, new_sub_exp)
+    | Bil.Concat (sub_exp_1, sub_exp_2) ->
+      let* new_sub_exp_1 = linearize_exp sub_exp_1 in
+      let+ new_sub_exp_2 = linearize_exp sub_exp_2 in
+      Bil.Concat (new_sub_exp_1, new_sub_exp_2)
+    | Bil.Unknown (_, _) -> !!exp
+
+  let linearize_def (def : def term) : def term t =
+    let lhs = Def.lhs def in
+    let rhs = Def.rhs def in
+    let* new_lhs = linearize_var lhs in
+    let* () = update @@ Env.add_var new_lhs in
+    let+ new_rhs = linearize_exp rhs in
+    Def.(with_rhs (with_lhs def new_lhs) new_rhs)
+
+  let linearize_jmp (jmp : jmp term) : jmp term t =
+    let* cond = linearize_exp @@ Jmp.cond jmp in
+    let of_label = function
+      | Indirect e ->
+        let+ e = linearize_exp e in
+        Indirect e
+      | lbl -> !!lbl in
+    let of_kind = function
+      | Call call ->
+        let* call = match Call.return call with
+          | None -> !!call
+          | Some lbl ->
+            let+ lbl = of_label lbl in
+            Call.with_return call lbl in
+        let+ tgt = of_label @@ Call.target call in
+        Call (Call.with_target call tgt)
+      | Goto lbl ->
+        let+ lbl = of_label lbl in
+        Goto lbl
+      | Ret lbl ->
+        let+ lbl = of_label lbl in
+        Ret lbl
+      | Int _ as k -> !!k in
+    let+ kind = of_kind @@ Jmp.kind jmp in
+    let tid = Term.tid jmp in
+    let attrs = Term.attrs jmp in
+    Term.with_attrs (Jmp.create ~tid ~cond kind) attrs
+
+  let linearize_subterms
+      (cls : ('a, 'b) cls)
+      (t : 'a term)
+      ~(f : 'b term -> 'b term t) : 'b term list t =
+    Term.enum cls t |> Bap.Std.Seq.to_list |> List.map ~f
+
+  let linearize_blk (blk : blk term) : blk term t =
+    let tid = Term.tid blk in
+    let prefix = Utils.prefix_of_tid tid in
+    let* () = update @@ Env.with_prefix @@ Some prefix in
+    let* defs = linearize_subterms def_t blk ~f:linearize_def in
+    let+ jmps = linearize_subterms jmp_t blk ~f:linearize_jmp in
+    (* We will deliberately remove phi nodes since they are
+       subsumed by congruence between vars in linear SSA form. *)
+    let attrs = Term.attrs blk in
+    Term.with_attrs (Blk.create ~phis:[] ~defs ~jmps ~tid ()) attrs
+
+  let linearize_sub (sub : sub term) : sub term t =
+    let tid = Term.tid sub in
+    let name = Sub.name sub in
+    let+ blks = linearize_subterms blk_t sub ~f:linearize_blk in
+    let args = Term.enum arg_t sub |> Bap.Std.Seq.to_list in
+    let attrs = Term.attrs sub in
+    Term.with_attrs (Sub.create ~args ~blks ~tid ~name ()) attrs
+
+end
+
+open KB.Syntax
+
+(* Map each block to a list of pseudo definitions according to the
+   phi nodes we discovered. *)
+let collect_phi_defs (blks : blk term seq) : (var * exp) list Tid.Map.t =
+  Seq.fold blks ~init:Tid.Map.empty ~f:(fun init blk ->
+      Term.enum phi_t blk |> Seq.fold ~init ~f:(fun init phi ->
+          let lhs = Phi.lhs phi in
+          Phi.values phi |> Seq.fold ~init ~f:(fun m (tid, e) ->
+              Map.add_multi m ~key:tid ~data:(lhs, e))))
+
+(* Expand the phi nodes to new defs at the corresponding
    edges in the CFG. *)
-let compute_liveness_and_expand_phis
-    (hvars : Hvar.t list)
-    (sub : sub term) : (blk term list * Data.ins_outs Tid.Map.t) KB.t =
-  let open KB.Let in
-  let liveness = Live.compute sub in
-  let blks = Term.enum blk_t sub |> Seq.to_list in
-  (* Map each block to a list of pseudo definitions according to the
-     phi nodes we discovered. *)
-  let phi_map : (var * exp) list Tid.Map.t =
-    List.fold blks ~init:Tid.Map.empty ~f:(fun init blk ->
-        Term.enum phi_t blk |> Seq.fold ~init ~f:(fun init phi ->
-            let lhs = Phi.lhs phi in
-            Phi.values phi |> Seq.fold ~init ~f:(fun m (tid, e) ->
-                Map.add_multi m ~key:tid ~data:(lhs, e)))) in
-  (* Insert these pseudo-definitions. *)
-  let* blks = KB.List.map blks ~f:(fun blk ->
+let expand_phis (sub : sub term) : sub term KB.t =
+  let phi_map = collect_phi_defs @@ Term.enum blk_t sub in
+  Term.KB.map blk_t sub ~f:(fun blk ->
       match Map.find phi_map @@ Term.tid blk with
-      | None -> KB.return blk
+      | None -> !!blk
       | Some defs ->
-        let builder = Blk.Builder.init blk
-            ~same_tid:true  ~copy_phis:true
-            ~copy_defs:true ~copy_jmps:true in
-        let* () = KB.List.iter defs ~f:(fun (lhs, e) ->
-            let+ tid = Theory.Label.fresh in
-            let def = Def.create ~tid lhs e in
-            Blk.Builder.add_def builder def) in
-        KB.return @@ Blk.Builder.result builder) in
-  (* Get the linearized ins and outs. *)
-  let ins_outs_map = List.map blks ~f:(fun blk ->
+        let+ defs = KB.List.map defs ~f:(fun (lhs, rhs) ->
+            let+ tid = T.Label.fresh in
+            Def.create ~tid lhs rhs) in
+        List.fold defs ~init:blk ~f:(Term.append def_t))
+
+let add_finalizers_to_outs
+    (hvars : Hvar.t list)
+    (blk : blk term)
+    (outs : Var.Set.t) : Var.Set.t =
+  (* Get all of the finalizers, which are assignments to
+     preassigned registers. *)
+  let vars =
+    Term.enum def_t blk |> Seq.map ~f:Def.lhs |>
+    Seq.filter ~f:(Fn.compose Option.is_some Naming.unmark_reg) in
+  (* Compare the higher var storage information with the
+     existing var. We need the SSA'd name of this var. *)
+  let same reg v =
+    Naming.mark_reg_name_unsafe reg |>
+    String.equal Var.(name @@ base v) in
+  (* For each higher var we intended to finalize, add them
+     to the set of live outs for this block. *)
+  List.fold hvars ~init:outs ~f:(fun outs -> function
+      | {value = Registers ({at_exit = Some reg; _}); _} -> begin
+          match Seq.find vars ~f:(same reg) with
+          | Some v -> Set.add outs v
+          | None -> outs
+        end
+      | _ -> outs)
+
+(* Get the linearized ins and outs. *)
+let mark_ins_outs
+    (hvars : Hvar.t list)
+    (sub : sub term)
+    (liveness : Live.t) : sub term =
+  Term.map blk_t sub ~f:(fun blk ->
       let tid = Term.tid blk in
       let outs = Live.outs liveness tid in
       let outs =
         (* Implicit exit blocks will have the `at-exit` finalizers,
            if they exist. *)
-        if Bir_helpers.is_implicit_exit blk then
-          (* Get all of the finalizers, which are assignments to
-             preassigned registers. *)
-          let vars =
-            Term.enum def_t blk |> Seq.map ~f:Def.lhs |>
-            Seq.filter ~f:(fun v -> Option.is_some @@ Naming.unmark_reg v) in
-          (* Compare the higher var storage information with the
-             existing var. We need the SSA'd name of this var. *)
-          let same reg v =
-            String.equal (Naming.mark_reg_name reg) @@
-            Var.name @@ Var.base v in
-          (* For each higher var we intended to finalize, add them
-             to the set of live outs for this block. *)
-          List.fold hvars ~init:outs ~f:(fun outs -> function
-              | {value = Registers ({at_exit = Some reg; _}); _} -> begin
-                  match Seq.find vars ~f:(same reg) with
-                  | Some v -> Set.add outs v
-                  | None -> outs
-                end
-              | _ -> outs)
-        else outs in
+        if not @@ Bir_helpers.no_jmps blk then outs
+        else add_finalizers_to_outs hvars blk outs in
       let ins = Live.ins liveness tid in
-      let prefix = prefix_from blk in
-      let outs = Var.Set.map outs ~f:(fun var -> linearize ~prefix var) in
-      let ins = Var.Set.map ins ~f:(fun var -> linearize ~prefix var) in
-      let ins_outs : Data.ins_outs = {ins; outs} in
-      tid, ins_outs) in
-  KB.return (blks, Tid.Map.of_alist_exn ins_outs_map)
+      let prefix = Utils.prefix_of_tid tid in
+      let ins = Var.Set.map ins ~f:(Utils.linearize ~prefix) in
+      let blk =
+        if not @@ Set.is_empty ins then
+          Term.set_attr blk Tags.ins ins
+        else blk in
+      let outs = Var.Set.map outs ~f:(Utils.linearize ~prefix) in
+      let blk =
+        if not @@ Set.is_empty outs then
+          Term.set_attr blk Tags.outs outs
+        else blk in
+      blk)
 
-let all_ins_outs_vars (ins_outs : Data.ins_outs Tid.Map.t) : Var.Set.t =
-  Var.Set.union_list @@
-  List.map ~f:(fun Data.{ins; outs} -> Var.Set.union ins outs) @@
-  Tid.Map.data ins_outs
+let compute_liveness_and_expand_phis
+    (hvars : Hvar.t list)
+    (sub : sub term) : sub term KB.t =
+  expand_phis @@ mark_ins_outs hvars sub @@ Live.compute sub
 
-let transform
-    ?(patch : Data.Patch.t option = None)
-    (hvars : Higher_var.t list)
-    (sub : sub term) : blk term list KB.t =
-  let open KB.Let in
-  let* blks, ins_outs_map = compute_liveness_and_expand_phis hvars sub in
-  let blks, Linear.Env.{vars; _} =
-    Linear.(run (List.map blks ~f:linearize_blk) Env.empty) in
-  (* Add in live variables that persist across blocks that don't use them *)
-  let vars = Var.Set.union vars (all_ins_outs_vars ins_outs_map) in
-  let* () = match patch with
-    | None -> KB.return ()
-    | Some patch ->
-      let* () = Data.Patch.set_ins_outs_map patch ins_outs_map in
-      let cong v1 v2 = Var.(v1 <> v2) && congruent v1 v2 in
-      Var.Set.to_list vars |> KB.List.iter ~f:(fun v1 ->
-          let vars = Set.filter vars ~f:(cong v1) in
-          Set.to_list vars |> KB.List.iter ~f:(fun v2 ->
-              Data.Patch.add_congruence patch (v1, v2))) in
-  KB.return blks
+(* Add in live variables that persist across blocks that don't
+   use them. *)
+let all_ins_outs_vars (sub : sub term) (vars : Var.Set.t) : Var.Set.t =
+  Var.Set.union vars @@ Var.Set.union_list begin
+    Term.enum blk_t sub |> Seq.to_list |> List.map ~f:(fun blk ->
+        let ins = Term.get_attr blk Tags.ins in
+        let outs = Term.get_attr blk Tags.outs in
+        Option.merge ins outs ~f:Set.union |>
+        Option.value ~default:Var.Set.empty)
+  end
+
+(* Produce a relation between congruent variables. *)
+let make_congruences (sub : sub term) (vars : Var.Set.t) : sub term =
+  let vars = all_ins_outs_vars sub vars in
+  let cong x y = Var.(x <> y) && Utils.congruent x y in
+  let m = Set.fold vars ~init:Var.Map.empty ~f:(fun init x ->
+      Set.fold vars ~init ~f:(fun m y ->
+          if not @@ cong x y then m
+          else Map.update m x ~f:(function
+              | None -> Var.Set.singleton y
+              | Some s -> Var.Set.add s y))) in
+  if not @@ Map.is_empty m then
+    Term.set_attr sub Tags.congruences m
+  else sub
+
+let transform (sub : sub term) ~(hvars : Hvar.t list) : sub term KB.t =
+  let module Env = Linear.Env in
+  let* sub = if Sub.is_ssa sub then !!sub else Sub.KB.ssa sub in
+  let+ sub = compute_liveness_and_expand_phis hvars sub in
+  let sub, env = Monad.State.run (Linear.linearize_sub sub) Env.empty in
+  make_congruences sub env.Env.vars
