@@ -42,6 +42,9 @@ let run
           | None -> Var.Set.empty
           | Some outs -> outs in
         Map.set acc ~key:(Term.tid blk) ~data:(ins, outs)) in
-  let ir = Ir.populate_ins_outs ir ins_outs in
+  let ir_cong = match Term.get_attr sub Tags.congruences with
+    | Some congruences -> Ir.{empty with congruences}
+    | None -> Ir.empty in
+  let ir = Ir.(union (populate_ins_outs ir ins_outs) ir_cong) in
   Log.send "VIBES IR:\n%a" Ir.pp ir;
   ir

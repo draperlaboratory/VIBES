@@ -40,4 +40,8 @@
    (ins (25 (lhs ()) (opcodes ()) (optional false) (operands ())))
    (outs (24 (lhs ()) (opcodes ()) (optional false) (operands ())))
    (frequency 1)))
- (congruences ()))
+ (congruences
+  (((_0000001a_reg:R0_1 0 (imm 32) false)
+    ((_0000001d_reg:R0_1 0 (imm 32) false)))
+   ((_0000001d_reg:R0_1 0 (imm 32) false)
+    ((_0000001a_reg:R0_1 0 (imm 32) false))))))
