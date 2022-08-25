@@ -7,8 +7,8 @@ module Cli_opts = Vibes_common_cli_options
 
 module Cli = struct
 
-  let name = "vibes-opt"
-  let doc = "Take BAP Core Theory code and produce optimized BIR."
+  let name = "vibes-select"
+  let doc = "Take optimized BIR and produce VIBES IR."
   let version = Versions.vibes_select
   let info = C.Cmd.info name ~doc ~version
   
