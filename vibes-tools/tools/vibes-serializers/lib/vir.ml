@@ -347,7 +347,7 @@ module Deserialize = struct
       Ir.Operation.{id; lhs = []; opcodes = []; optional = false; operands}
     | sexp ->
       let msg = Format.asprintf
-          "Expected ins, but got: '%a'"
+          "Expected outs, but got: '%a'"
           Sexp.pp sexp in
       fail @@ Errors.Invalid_vir msg
   
