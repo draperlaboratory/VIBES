@@ -295,19 +295,19 @@ module Block = struct
     let rec aux ppf = function
       | [] -> ()
       | [x] -> Format.fprintf ppf "\t%a\n" Operation.pp x
-      | x :: rest -> Format.fprintf ppf "\t%a\n%a" Operation.pp x aux rest in
+      | x :: rest -> Format.fprintf ppf "\t%a\n\t%a" Operation.pp x aux rest in
     aux ppf ops
 
   let pp (ppf : Format.formatter) (t : t) : unit =
     Format.fprintf ppf
       "blk : %a\n\
-       ins : %a\n\
-       outs : %a\n\
-       data : %a\n\
-       ctrl : %a"
+       \tins : %d: [%a]\n\
+       \touts : %d: [%a]\n\n\
+       \tdata : %a\n\
+       \tctrl : %a"
       Tid.pp t.tid
-      Operation.pp t.ins
-      Operation.pp t.outs
+      t.ins.id  Operation.pp_operands t.ins.lhs
+      t.outs.id Operation.pp_operands t.outs.operands
       pp_operations t.data
       pp_operations t.ctrl
 
