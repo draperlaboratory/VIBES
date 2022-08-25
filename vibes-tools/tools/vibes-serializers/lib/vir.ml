@@ -37,12 +37,22 @@ module Serializer = struct
       List [Atom "operands"; List (List.map o.operands ~f:serialize_operand)];
     ]
 
+  let serialize_ins (o : Ir.Operation.t) : Sexp.t = List [
+      serialize_id o.id;
+      List (List.map o.lhs ~f:serialize_operand);
+    ]
+
+ let serialize_outs (o : Ir.Operation.t) : Sexp.t = List [
+      serialize_id o.id;
+      List (List.map o.operands ~f:serialize_operand);
+    ] 
+  
   let serialize_block (b : Ir.Block.t) : Sexp.t = List [
       Atom (Tid.to_string b.tid);
       List [Atom "data"; List (List.map b.data ~f:serialize_operation)];
       List [Atom "ctrl"; List (List.map b.ctrl ~f:serialize_operation)];
-      List [Atom "ins"; serialize_operation b.ins];
-      List [Atom "outs"; serialize_operation b.outs];
+      List [Atom "ins"; serialize_ins b.ins];
+      List [Atom "outs"; serialize_outs b.outs];
       List [Atom "frequency"; Atom (Int.to_string b.frequency)];
     ]
 
@@ -319,6 +329,28 @@ module Deserialize = struct
           Sexp.pp sexp in
       fail @@ Errors.Invalid_vir msg
 
+  let deserialize_ins : Sexp.t -> Ir.Operation.t t = function
+    | List [Atom id; List ops] ->
+      let* id = deserialize_id id in
+      let+ lhs = List.map ops ~f:deserialize_operand in
+      Ir.Operation.{id; lhs; opcodes = []; optional = false; operands = []}
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected ins, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_vir msg
+
+  let deserialize_outs : Sexp.t -> Ir.Operation.t t = function
+    | List [Atom id; List ops] ->
+      let* id = deserialize_id id in
+      let+ operands = List.map ops ~f:deserialize_operand in
+      Ir.Operation.{id; lhs = []; opcodes = []; optional = false; operands}
+    | sexp ->
+      let msg = Format.asprintf
+          "Expected ins, but got: '%a'"
+          Sexp.pp sexp in
+      fail @@ Errors.Invalid_vir msg
+  
   let deserialize_block : Sexp.t -> Ir.Block.t t = function
     | List [
         Atom tid;
@@ -331,8 +363,8 @@ module Deserialize = struct
       let* tid = deserialize_tid tid in
       let* data = List.map data ~f:deserialize_operation in
       let* ctrl = List.map ctrl ~f:deserialize_operation in
-      let* ins = deserialize_operation ins in
-      let* outs = deserialize_operation outs in
+      let* ins = deserialize_ins ins in
+      let* outs = deserialize_outs outs in
       let+ frequency = deserialize_int frequency in
       Ir.Block.{tid; data; ctrl; ins; outs; frequency}
     | sexp ->

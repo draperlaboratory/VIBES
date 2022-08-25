@@ -12,9 +12,6 @@
         (var (opvar 8 ((#2 0 (imm 32) true)) ()))
         (var (opvar 9 ((#0 0 (imm 32) true)) ())))))))
    (ctrl ())
-   (ins
-    (12 (lhs ((void (opvar 13 ((_00000019_mem 0 (mem 32 8) false)) ()))))
-     (opcodes ()) (optional false) (operands ())))
-   (outs (11 (lhs ()) (opcodes ()) (optional false) (operands ())))
-   (frequency 1)))
+   (ins (12 ((void (opvar 13 ((_00000019_mem 0 (mem 32 8) false)) ())))))
+   (outs (11 ())) (frequency 1)))
  (congruences ()))
