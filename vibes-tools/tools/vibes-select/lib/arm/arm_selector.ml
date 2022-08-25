@@ -8,103 +8,12 @@ module Ir = Vibes_ir.Types
 module Helpers = Vibes_bir.Helpers
 module Linear = Vibes_linear_ssa.Utils
 module Naming = Vibes_higher_vars.Substituter.Naming
+module Ops = Arm_ops
 
 open KB.Syntax
 open Types
 
 let fail msg = KB.fail @@ Errors.Selector_error msg
-
-(* Condition codes used in ARM. *)
-module Cond = struct
-
-  type t = EQ | NE | LE | GT | LT | GE | HI | LO | HS | LS
-
-  let to_string : t -> string = function
-    | EQ -> "eq"
-    | NE -> "ne"
-    | LE -> "le"
-    | GT -> "gt"
-    | LT -> "lt"
-    | GE -> "ge"
-    | HI -> "hi"
-    | LO -> "lo"
-    | HS -> "hs"
-    | LS -> "ls"
-
-  let of_string : string -> t option = function
-    | "eq" -> Some EQ
-    | "ne" -> Some NE
-    | "le" -> Some LE
-    | "gt" -> Some GT
-    | "lt" -> Some LT
-    | "ge" -> Some GE
-    | "hi" -> Some HI
-    | "lo" -> Some LO
-    | "hs" -> Some HS
-    | "ls" -> Some LS
-    | _ -> None
-
-  let opposite : t -> t = function
-    | EQ -> NE
-    | NE -> EQ
-    | LE -> GT
-    | GT -> LE
-    | LT -> GE
-    | GE -> LT
-    | HI -> LS
-    | LO -> HS
-    | HS -> LO
-    | LS -> HI
-
-end
-
-module Ops = struct
-
-  let op ?(cnd : Cond.t option = None) (s : string) : Ir.opcode =
-    s ^ Option.value_map cnd ~default:"" ~f:Cond.to_string
-
-  (* With Thumb, there are cases where we need to set the flags to get the
-     narrow encoding of the instruction (and other cases where this is the
-     opposite). *)
-
-  let movcc (cnd : Cond.t option) : Ir.opcode = op "mov" ~cnd
-
-  let mov (set_flags : bool) : Ir.opcode =
-    op (if set_flags then "movs" else "mov")
-
-  let movw : Ir.opcode = op "movw"
-
-  let add (set_flags : bool) : Ir.opcode =
-    op (if set_flags then "adds" else "add")
-
-  let mul : Ir.opcode = op "mul"
-
-  let sub (set_flags : bool) : Ir.opcode =
-    op (if set_flags then "subs" else "sub")
-
-  let neg : Ir.opcode = op "neg"
-  let mvn : Ir.opcode = op "mvn"
-  let lsl_ : Ir.opcode = op "lsl"
-  let lsr_ : Ir.opcode = op "lsr"
-  let asr_ : Ir.opcode = op "asr"
-  let and_ : Ir.opcode = op "and"
-  let orr : Ir.opcode = op "orr"
-  let eor : Ir.opcode = op "eor"
-  let ldr : Ir.opcode = op "ldr"
-  let ldrh : Ir.opcode = op "ldrh"
-  let ldrb : Ir.opcode = op "ldrb"
-  let str : Ir.opcode = op "str"
-  let cmp : Ir.opcode = op "cmp"
-  let sdiv : Ir.opcode = op "sdiv"
-  let udiv : Ir.opcode = op "udiv"
-
-  let b ?(cnd : Cond.t option = None) () : Ir.opcode =
-    op "b" ~cnd
-
-  let bl ?(cnd : Cond.t option = None) () : Ir.opcode =
-    op "bl" ~cnd
-
-end
 
 let word_ty : typ = Bil.Imm 32
 let bit_ty : typ = Bil.Imm 1
@@ -142,7 +51,7 @@ module Branch = struct
      the fake destination operand. `flg` is to mark the status flags
      as a dependency of the branch instruction. *)
   type t =
-    cnd:Cond.t ->
+    cnd:Ops.cond ->
     flg:Ir.Operand.t ->
     (Ir.Operation.t * Ir.Operand.t) KB.t
 
@@ -169,7 +78,7 @@ let is_movcc (o : Ir.Operation.t) : bool =
   List.exists o.opcodes ~f:(fun n ->
       String.is_prefix n ~prefix:"mov" &&
       let n = String.drop_prefix n 3 in
-      Option.is_some @@ Cond.of_string n)
+      Option.is_some @@ Ops.Cond.of_string n)
 
 let mov (l : Ir.Operand.t) (r : pure) ~(is_thumb : bool) : eff KB.t =
   match l, r.value with
@@ -300,12 +209,6 @@ let mul (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
 let sub (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
   binop Ops.(sub is_thumb) word_ty l r ~is_thumb
 
-let sdiv (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
-  binop Ops.sdiv word_ty l r ~is_thumb
-
-let udiv (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
-  binop Ops.udiv word_ty l r ~is_thumb
-
 let lsl_ (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
   binop Ops.lsl_ word_ty l r ~is_thumb
 
@@ -393,7 +296,7 @@ let xor (a : pure) (b : pure) ~(is_thumb : bool) : pure KB.t =
 
 (* Specialization of binops for generating comparisons. *)
 let binop_cmp
-    (cond : Cond.t)
+    (cond : Ops.cond)
     (l : pure)
     (r : pure)
     ~(is_thumb : bool)
@@ -437,7 +340,7 @@ let binop_cmp
        will assume the condition is true first, and then clear the result
        if it is false. *)
     let then_ = Ops.mov is_thumb in
-    let else_ = Ops.movcc @@ Some (Cond.opposite cond) in
+    let else_ = Ops.movcc @@ Ops.Cond.opposite cond in
     let then_ =
       Ir.Operation.create_simple then_ (Var tmp1) [Const Word.(one 32)] in
     let cmp =
@@ -520,8 +423,6 @@ let sel_binop
   | PLUS -> !!(add ~is_thumb)
   | MINUS -> !!(sub ~is_thumb)
   | TIMES -> !!(mul ~is_thumb)
-  | DIVIDE -> !!(udiv ~is_thumb)
-  | SDIVIDE -> !!(sdiv ~is_thumb)
   | LSHIFT -> !!(lsl_ ~is_thumb)
   | RSHIFT -> !!(lsr_ ~is_thumb)
   | ARSHIFT ->  !!(asr_ ~is_thumb)
@@ -534,7 +435,7 @@ let sel_binop
   | SLT -> !!(signed_less_than ~is_thumb ~branch)
   | SLE -> !!(signed_less_or_equal ~is_thumb ~branch)
   | XOR -> !!(xor ~is_thumb)
-  | MOD | SMOD -> fail @@ Format.sprintf
+  | DIVIDE | SDIVIDE | MOD | SMOD -> fail @@ Format.sprintf
       "sel_binop: unsupported operation %s"
       (Bil.string_of_binop o)
 
