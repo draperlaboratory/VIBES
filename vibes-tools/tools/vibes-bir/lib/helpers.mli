@@ -64,3 +64,6 @@ val entry_blk : sub term -> (blk term, KB.conflict) result
 
 (** Equivalent to [Result.map (entry_blk sub) ~f:Term.tid]. *)
 val entry_tid : sub term -> (tid, KB.conflict) result
+
+(** Converts a BIL type into a Core Theory sort. *)
+val sort_of_typ : typ -> unit Theory.Value.sort

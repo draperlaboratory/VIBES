@@ -2,11 +2,11 @@ open Core
 open Bap.Std
 open Bap_core_theory
 
-type opcode = string [@@deriving compare, equal, sexp]
+type opcode = string [@@deriving compare, equal]
 
 type 'a opcode_map = 'a String.Map.t
 
-type id = int [@@deriving compare, equal, sexp]
+type id = int [@@deriving compare, equal]
 
 type 'a id_map = 'a Int.Map.t
 
@@ -21,13 +21,15 @@ module Roles : sig
 
 end
 
+val fresh_id : unit -> id
+
 module Opvar : sig
 
   type t = {
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare, sexp]
+  } [@@deriving compare]
 
   val create : ?preassign:var option -> var -> t
   val equal : t -> t -> bool
@@ -43,7 +45,7 @@ module Operand : sig
     | Label of Tid.t
     | Void of Opvar.t
     | Offset of Word.t
-  [@@deriving compare, equal, sexp]
+  [@@deriving compare, equal]
 
   val freshen : t -> t
   val var_operands : t -> Opvar.t list
@@ -59,7 +61,7 @@ module Operation : sig
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal, sexp]
+  } [@@deriving compare, equal]
 
   val create_empty : unit -> t
 
@@ -79,7 +81,7 @@ module Operation : sig
 
   val create_void : ?optional:bool -> opcode -> t
 
-  val operands : t -> Operand.t list
+  val all_operands : t -> Operand.t list
   val freshen : t -> t
   val pp : Format.formatter -> t -> unit
 
@@ -94,7 +96,7 @@ module Block : sig
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal, sexp]
+  } [@@deriving compare, equal]
 
   val create_simple :
     ?frequency:int ->
@@ -119,7 +121,7 @@ end
 type t = {
   blks : Block.t list;
   congruences : Var.Set.t Var.Map.t;
-} [@@deriving compare, equal, sexp]
+} [@@deriving compare, equal]
 
 val empty : t
 val union : t -> t -> t
@@ -150,5 +152,7 @@ val op_classes : t -> Roles.map
 val block_to_ins : t -> id Tid.Map.t
 val block_to_outs : t -> id Tid.Map.t
 val block_to_operations : t -> id list Tid.Map.t
+
+val populate_ins_outs : t -> (Var.Set.t * Var.Set.t) Tid.Map.t -> t
 
 val pp : Format.formatter -> t -> unit

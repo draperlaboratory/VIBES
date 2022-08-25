@@ -1,0 +1,9 @@
+(executable
+ (name main)
+ (public_name vibes-select)
+ (libraries
+   cmdliner
+   vibes-select
+   vibes-log
+   vibes-constants
+   vibes-common-cli-options))

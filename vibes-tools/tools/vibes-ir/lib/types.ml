@@ -4,11 +4,11 @@ open Bap_core_theory
 
 module Utils = Vibes_utils.Misc
 
-type opcode = string [@@deriving compare, equal, sexp]
+type opcode = string [@@deriving compare, equal]
 
 type 'a opcode_map = 'a String.Map.t
 
-type id = int [@@deriving compare, equal, sexp]
+type id = int [@@deriving compare, equal]
 
 type 'a id_map = 'a Int.Map.t
 
@@ -47,7 +47,7 @@ module Opvar = struct
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare, sexp]
+  } [@@deriving compare]
 
   let create ?(preassign : var option = None) (v : var) : t = {
     id = fresh_id ();
@@ -84,7 +84,7 @@ module Operand = struct
     | Label of Tid.t
     | Void of Opvar.t
     | Offset of Word.t
-  [@@deriving compare, equal, sexp]
+  [@@deriving compare, equal]
 
   let freshen : t -> t = function
     | Var v -> Var {v with id = fresh_id ()}
@@ -121,7 +121,7 @@ module Operation = struct
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal, sexp]
+  } [@@deriving compare, equal]
 
   let create_empty () : t = {
     id = fresh_id ();
@@ -165,8 +165,7 @@ module Operation = struct
     operands = [];
   }
 
-  let operands (t : t) : Operand.t list = t.lhs @ t.operands
-
+  let all_operands (t : t) : Operand.t list = t.lhs @ t.operands
   let lhs_operands (t : t) : Operand.t list = t.lhs
   let rhs_operands (t : t) : Operand.t list = t.operands
 
@@ -175,7 +174,7 @@ module Operation = struct
   }
 
   let op_classes (opcodes : opcode list) (t : t) : Roles.map =
-    operands t |> List.fold ~init:Int.Map.empty ~f:(fun acc op ->
+    all_operands t |> List.fold ~init:Int.Map.empty ~f:(fun acc op ->
         Operand.op_classes opcodes op |>
         Map.merge acc ~f:(fun ~key -> function
             | `Left a | `Right a -> Some a
@@ -211,7 +210,7 @@ module Block = struct
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal, sexp]
+  } [@@deriving compare, equal]
 
   let create_simple
       ?(frequency : int = 1)
@@ -229,8 +228,8 @@ module Block = struct
   let all_operands (t : t) : Operand.t list =
     t.ins.lhs @
     t.outs.operands @
-    List.concat_map t.data ~f:Operation.operands @
-    List.concat_map t.ctrl ~f:Operation.operands
+    List.concat_map t.data ~f:Operation.all_operands @
+    List.concat_map t.ctrl ~f:Operation.all_operands
 
   let all_lhs_operands (t : t) : Operand.t list =
     t.ins.lhs @
@@ -295,17 +294,17 @@ module Block = struct
   let pp_operations (ppf : Format.formatter) (ops : Operation.t list) : unit =
     let rec aux ppf = function
       | [] -> ()
-      | [x] -> Format.fprintf ppf "%a" Operation.pp x
-      | x :: rest -> Format.fprintf ppf "%a@;%a" Operation.pp x aux rest in
+      | [x] -> Format.fprintf ppf "\t%a\n" Operation.pp x
+      | x :: rest -> Format.fprintf ppf "\t%a\n%a" Operation.pp x aux rest in
     aux ppf ops
 
   let pp (ppf : Format.formatter) (t : t) : unit =
     Format.fprintf ppf
-      "blk : %a\
-       @[ins : %a@]\
-       @[outs : %a@]\
-       @[data : @[%a@]]\
-       @[ctrl : @[%a@]]"
+      "blk : %a\n\
+       ins : %a\n\
+       outs : %a\n\
+       data : %a\n\
+       ctrl : %a"
       Tid.pp t.tid
       Operation.pp t.ins
       Operation.pp t.outs
@@ -317,7 +316,7 @@ end
 type t = {
   blks : Block.t list;
   congruences : Var.Set.t Var.Map.t;
-} [@@deriving compare, equal, sexp]
+} [@@deriving compare, equal]
 
 let empty : t = {
   blks = [];
@@ -462,11 +461,31 @@ let block_to_operations (t : t) : id list Tid.Map.t =
         List.map ~f:(fun o -> o.Operation.id) in
       blk.tid, ops)
 
+let populate_ins_outs
+    (t : t)
+    (ins_outs : (Var.Set.t * Var.Set.t) Tid.Map.t) : t =
+  let operands vars = Var.Set.to_list vars |> List.map ~f:(fun v->
+      let typ = Var.typ v in
+      let v = Opvar.create v in
+      match typ with
+      | Imm _ -> Operand.Var v
+      | Mem _ -> Operand.Void v
+      | Unk   -> Operand.Void v) in
+  map_blks t ~f:(fun blk ->
+      match Tid.Map.find ins_outs blk.tid with
+      | None -> blk
+      | Some (ins, outs) ->
+        let in_ops = operands ins in
+        let out_ops = operands outs in
+        let ins = {blk.ins with lhs = blk.ins.lhs @ in_ops} in
+        let outs = {blk.outs with operands = blk.outs.operands @ out_ops} in
+        {blk with ins; outs})
+
 let pp_blks (ppf : Format.formatter) (blks : Block.t list) : unit =
   let rec aux ppf = function
     | [] -> ()
     | [x] -> Format.fprintf ppf "%a" Block.pp x
-    | x :: rest -> Format.fprintf ppf "%a@;%a" Block.pp x aux rest in
+    | x :: rest -> Format.fprintf ppf "%a\n\n%a" Block.pp x aux rest in
   aux ppf blks
 
 let pp (ppf : Format.formatter) (t : t) : unit =

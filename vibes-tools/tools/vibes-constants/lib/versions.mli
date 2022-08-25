@@ -6,3 +6,6 @@ val vibes_parse : string
 
 (** The version string for [vibes-opt]. *)
 val vibes_opt : string
+
+(** The version string for [vibes-select]. *)
+val vibes_select : string

@@ -60,7 +60,7 @@ let run
           Format.sprintf "Invalid BIR S-exp: %s" s)) in
   let* bir_sexp = match bir_sexps with
     | [sexp] -> Ok sexp
-    | _ -> Error (Errors.Invalid_bir "Expected single subroutine") in
+    | _ -> Error (Errors.Invalid_bir "Expected single S-exp") in
   let* func_info = Function_info.from_file func_info_filepath in
   Log.send "Function info:\n%a" Function_info.pp func_info;
   let* sub = try_deserialize_and_opt bir_sexp

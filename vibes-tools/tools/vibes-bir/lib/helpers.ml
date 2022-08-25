@@ -4,6 +4,8 @@ open Bap_core_theory
 
 open KB.Syntax
 
+module T = Theory
+
 let create_sub
     (name : string)
     (blks : blk term list) : sub term KB.t =
@@ -68,3 +70,23 @@ let entry_blk : sub term -> (blk term, KB.conflict) result =
 
 let entry_tid (sub : sub term) : (tid, KB.conflict) result =
   entry_blk sub |> Result.map ~f:Term.tid
+
+(* This was borrowed from `bap/lib/bap_types/bap_var.ml`. Perhaps
+   it should be exposed in the user-facing API? *)
+
+let unknown =
+  let package = Vibes_constants.Bap_kb.package in
+  let unknown =
+    Theory.Value.Sort.Name.declare ~package "Unknown" in
+  Theory.Value.Sort.sym unknown
+
+let sort_of_typ t =
+  let ret = T.Value.Sort.forget in
+  match t with
+  | Type.Imm 1 -> ret T.Bool.t
+  | Type.Imm m -> ret @@ T.Bitv.define m
+  | Type.Mem (ks,vs) ->
+    let ks,vs = Size.(in_bits ks, in_bits vs) in
+    let ks,vs = T.Bitv.(define ks, define vs) in
+    ret @@ T.Mem.define ks vs
+  | Type.Unk -> ret @@ unknown

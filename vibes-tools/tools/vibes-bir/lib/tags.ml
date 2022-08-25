@@ -52,3 +52,7 @@ let congruences : Var.Set.t Var.Map.t tag =
 let split : unit tag = Value.Tag.register (module Unit)
     ~name:(Attr.make "split")
     ~uuid:"4adb3fef-b083-4d0a-8248-b7d343683b04"
+
+let is_vibes_attr (attr : value) : bool =
+  let prefix = Vibes_constants.Attr.prefix in
+  String.is_prefix (Value.tagname attr) ~prefix
