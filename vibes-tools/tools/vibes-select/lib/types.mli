@@ -54,5 +54,33 @@ module Preassign : sig
   (** Runs the preassignment pass on all opvars in the IR, according
       to the transformer [f]. *)
   val run : t -> f:transform -> t
-  
+
+end
+
+(** Information about parameters to function calls. *)
+module Call_params : sig
+
+  (** Information for each [blk term]:
+
+      - [ops] is the list of operands which are to be passed as
+        parameters to the function call.
+
+      - [ignored] is the set of [def term] tids that are to be
+        ignored during code generation.
+  *)
+  type info = {
+    ops : Operand.t list;
+    ignored : Tid.Set.t;
+  }
+
+  (** No call information available. *)
+  val empty_info : info
+
+  (** A mapping from [blk term] tids to their respective call
+      parameter information. *)
+  type t = info Tid.Map.t
+
+  (** Collects the call parameter information for the program. *)
+  val collect : sub term -> t
+
 end

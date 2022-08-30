@@ -10,6 +10,7 @@ module Linear = Vibes_linear_ssa.Utils
 module Naming = Vibes_higher_vars.Substituter.Naming
 module Ops = Arm_ops
 module Pre = Types.Preassign
+module Param = Types.Call_params
 
 open KB.Syntax
 open Types.Sel
@@ -747,50 +748,14 @@ and select_elts
     let+ ss = select_elts call_params ss ~is_thumb in
     ss @. s
 
-(* `argument_tids` contains the set of def tids where we assign
-   parameter registers before a call. These are guaranteed to be
-   present in the same block of their corresponding call (see the
-   implementation in Core_c).
-
-   The same applies to the spurious memory assignment before the call.
-   This is a signpost for Minizinc, so that it knows that the call
-   depends on the current state of the memory. This way, the scheduler
-   won't reorder loads and stores in a way that breaks the generated
-   code.
-*)
-and blk_call_params
-    (b : blk term)
-    ~(argument_tids : Tid.Set.t) : (Ir.Operand.t list * Tid.Set.t) KB.t =
-  let init = [], Tid.Set.empty in
-  Term.enum def_t b |> KB.Seq.fold ~init ~f:(fun (acc, ignored) def ->
-      let lhs = Def.lhs def in
-      let tid = Term.tid def in
-      if Tid.Set.mem argument_tids tid then
-        match Var.typ lhs, Def.rhs def with
-        | Imm _, _ | Unk, _ ->
-          let v = Ir.Operand.Var (Ir.Opvar.create lhs) in
-          !!(v :: acc, ignored)
-        | Mem _, Var m ->
-          (* We do not want to actually generate code for this.
-             It is just a signpost for the selector to collect the
-             most recent version of the memory so we can pass it as
-             a dependency of the call. *)
-          let m = Ir.Operand.Void (Ir.Opvar.create m) in
-          !!(m :: acc, Tid.Set.add ignored tid)
-        | Mem _, _ -> fail @@ Format.asprintf 
-            "select_blk: unexpected RHS for call param mem %a at tid %a"
-            Var.pp lhs Tid.pp tid
-      else !!(acc, ignored))
-
 and select_blk
     (b : blk term)
     ~(is_thumb : bool)
-    ~(argument_tids : Tid.Set.t) : eff KB.t =
-  let* call_params, ignored = blk_call_params b ~argument_tids in
+    ~(param_info : Param.info) : eff KB.t =
   let+ {data; ctrl; ir} =
     Blk.elts b |> Seq.to_list |> List.filter ~f:(function
-        | `Def d -> not @@ Tid.Set.mem ignored @@ Term.tid d
-        | _ -> true) |> select_elts call_params ~is_thumb in
+        | `Def d -> not @@ Tid.Set.mem param_info.ignored @@ Term.tid d
+        | _ -> true) |> select_elts param_info.ops ~is_thumb in
   let new_blk =
     Term.tid b |> Ir.Block.create_simple
       ~data:(List.rev data)
@@ -800,21 +765,19 @@ and select_blk
 let rec select_blks
     (blks : blk term list)
     ~(is_thumb : bool)
-    ~(argument_tids : Tid.Set.t) : eff KB.t =
+    ~(params : Param.t) : eff KB.t =
   match blks with
   | [] -> !!empty_eff
   | blk :: rest ->
-    let* blk = select_blk blk ~is_thumb ~argument_tids in
-    let+ rest = select_blks rest ~is_thumb ~argument_tids in
+    let param_info =
+      Term.tid blk |> Map.find params |>
+      Option.value ~default:Param.empty_info in
+    let* blk = select_blk blk ~is_thumb ~param_info in
+    let+ rest = select_blks rest ~is_thumb ~params in
     blk @. rest
 
 let select (sub : sub term) ~(is_thumb : bool) : Ir.t KB.t =
   let blks = Term.enum blk_t sub |> Seq.to_list in
-  let argument_tids =
-    List.fold blks ~init:Tid.Set.empty ~f:(fun init blk ->
-        Term.enum def_t blk |> Seq.fold ~init ~f:(fun acc def ->
-            if Term.has_attr def Tags.argument then
-              Set.add acc @@ Term.tid def
-            else acc)) in
-  let+ eff = select_blks blks ~is_thumb ~argument_tids in
+  let params = Param.collect sub in
+  let+ eff = select_blks blks ~is_thumb ~params in
   eff.ir
