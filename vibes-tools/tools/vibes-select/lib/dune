@@ -1,0 +1,14 @@
+(include_subdirs unqualified)
+
+(library
+ (name vibes_select)
+ (public_name vibes-select)
+ (libraries
+   bap
+   vibes-ir
+   vibes-log
+   vibes-linear-ssa
+   vibes-serializers
+   vibes-utils
+   vibes-patch-info
+   vibes-constants))

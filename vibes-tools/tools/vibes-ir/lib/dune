@@ -1,0 +1,8 @@
+(library
+ (name vibes_ir)
+ (public_name vibes-ir)
+ (libraries
+   bap
+   vibes-utils
+   vibes-constants)
+ (preprocess (pps ppx_compare ppx_sexp_conv ppx_bin_prot)))

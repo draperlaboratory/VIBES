@@ -4,5 +4,6 @@
  (libraries
    findlib.dynload
    bap
+   vibes-ir
    vibes-constants
    vibes-c-toolkit))

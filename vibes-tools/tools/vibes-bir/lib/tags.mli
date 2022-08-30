@@ -21,3 +21,6 @@ val congruences : Var.Set.t Var.Map.t tag
 (** The attribute for [blk] terms that were deliberately created by
     splitting from an existing block. *)
 val split : unit tag
+
+(** Returns [true] if this is an attribute that we defined for VIBES. *)
+val is_vibes_attr : value -> bool

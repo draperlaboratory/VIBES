@@ -3,7 +3,8 @@
 TOOLS := \
 	vibes-playground \
 	vibes-parse \
-	vibes-opt
+	vibes-opt \
+	vibes-select
 
 ###################################
 # ALL
@@ -74,3 +75,19 @@ opt.install: opt.build
 .PHONY: opt.uninstall
 opt.uninstall:
 	dune uninstall vibes-opt
+
+###################################
+# vibes-select
+###################################
+
+.PHONY: select.build
+select.build:
+	dune build vibes-select
+
+.PHONY: select.install
+select.install: select.build
+	dune install vibes-select
+
+.PHONY: select.uninstall
+select.uninstall:
+	dune uninstall vibes-select

@@ -4,33 +4,8 @@ open Bap_core_theory
 open Monads.Std
 
 module T = Theory
-module Bir_helpers = Vibes_bir.Helpers
-
-(* This was borrowed from `bap/lib/bap_types/bap_var.ml`. Perhaps
-   it should be exposed in the user-facing API? *)
-
-let unknown =
-  let package = Vibes_constants.Bap_kb.package in
-  let unknown =
-    Theory.Value.Sort.Name.declare ~package "Unknown" in
-  Theory.Value.Sort.sym unknown
-
-let sort_of_typ t =
-  let ret = T.Value.Sort.forget in
-  match t with
-  | Type.Imm 1 -> ret T.Bool.t
-  | Type.Imm m -> ret @@ T.Bitv.define m
-  | Type.Mem (ks,vs) ->
-    let ks,vs = Size.(in_bits ks, in_bits vs) in
-    let ks,vs = T.Bitv.(define ks, define vs) in
-    ret @@ T.Mem.define ks vs
-  | Type.Unk -> ret @@ unknown
-
-(* The BIR program may have attributes that were set by default in BAP,
-   but we only care about the custom ones we've defined. *)
-let is_vibes_attr (attr : value) : bool =
-  let prefix = Vibes_constants.Attr.prefix in
-  String.is_prefix (Value.tagname attr) ~prefix
+module Helpers = Vibes_bir.Helpers
+module Tags = Vibes_bir.Tags
 
 module Serializer = struct
 
@@ -179,7 +154,7 @@ module Serializer = struct
     let tid = Tid.to_string @@ Term.tid def in
     let lhs = serialize_var @@ Def.lhs def in
     let rhs = serialize_exp @@ Def.rhs def in
-    let dict = Dict.filter ~f:is_vibes_attr @@ Term.attrs def in
+    let dict = Dict.filter ~f:Tags.is_vibes_attr @@ Term.attrs def in
     let+ () = update_attrs tid dict in
     Sexp.List [Atom tid; Atom "set"; lhs; rhs]
 
@@ -255,7 +230,7 @@ module Serializer = struct
     let* phi = serialize_subterms phi_t blk ~f:serialize_phi in
     let* data = serialize_subterms def_t blk ~f:serialize_def in
     let* ctrl = serialize_subterms jmp_t blk ~f:serialize_jmp in
-    let dict = Dict.filter ~f:is_vibes_attr @@ Term.attrs blk in
+    let dict = Dict.filter ~f:Tags.is_vibes_attr @@ Term.attrs blk in
     let+ () = update_attrs tid dict in
     Sexp.List [
       Atom tid;
@@ -268,7 +243,7 @@ module Serializer = struct
   let serialize_sub (sub : sub term) : Sexp.t t =
     let name = Sub.name sub in
     let* blks = serialize_subterms blk_t sub ~f:serialize_blk in
-    let dict = Dict.filter ~f:is_vibes_attr @@ Term.attrs sub in
+    let dict = Dict.filter ~f:Tags.is_vibes_attr @@ Term.attrs sub in
     let+ () = update_attrs name dict in
     Sexp.List [Atom name; List blks]
 
@@ -440,7 +415,7 @@ module Deserializer = struct
           fail @@ Errors.Invalid_bir msg
         | Some v when Var.index v = idx -> !!v
         | x ->
-          let s = sort_of_typ typ in
+          let s = Helpers.sort_of_typ typ in
           let* v =
             if is_virtual then lift @@ T.Var.fresh s
             else !!(T.Var.define s name) in
@@ -738,7 +713,7 @@ module Deserializer = struct
   let deserialize_sub : Sexp.t -> sub term t = function
     | List [Atom name; List blks] ->
       let* blks = deserialize_blks blks in
-      let* sub = lift @@ Bir_helpers.create_sub name blks in
+      let* sub = lift @@ Helpers.create_sub name blks in
       set_attrs name sub
     | sexp ->
       let msg = Format.asprintf
@@ -747,6 +722,9 @@ module Deserializer = struct
       fail @@ Errors.Invalid_bir msg
 
 end
+
+let serialize_var (v : var) : Sexp.t =
+  Serializer.serialize_var v
 
 let serialize (sub : sub term) : Sexp.t =
   let open Serializer in
