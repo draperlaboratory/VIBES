@@ -20,10 +20,10 @@ let run
   Log.send "Transforming to Linear SSA form";
   let* sub = Linear.transform sub ~hvars in
   Log.send "Linearized BIR:\n%a" Sub.pp sub;
-  let* select =
+  let* select, preassign =
     if T.Target.belongs Arm_target.parent target then
       let is_thumb = Utils.Core_theory.is_thumb language in
-      !!(Arm_selector.select ~is_thumb)
+      !!(Arm_selector.select ~is_thumb, Arm_utils.preassign ~is_thumb)
     else
       let msg = Format.asprintf
           "Unsupported target %a"
@@ -46,5 +46,6 @@ let run
     | Some congruences -> Ir.{empty with congruences}
     | None -> Ir.empty in
   let ir = Ir.(union (populate_ins_outs ir ins_outs) ir_cong) in
+  let ir = Types.Preassign.run ir ~f:preassign in
   Log.send "VIBES IR:\n%a" Ir.pp ir;
   ir

@@ -9,9 +9,10 @@ module Helpers = Vibes_bir.Helpers
 module Linear = Vibes_linear_ssa.Utils
 module Naming = Vibes_higher_vars.Substituter.Naming
 module Ops = Arm_ops
+module Pre = Types.Preassign
 
 open KB.Syntax
-open Types
+open Types.Sel
 
 let fail msg = KB.fail @@ Errors.Selector_error msg
 
@@ -32,14 +33,7 @@ let void_temp (t : typ) : Ir.Operand.t KB.t =
   let+ v = temp t in
   Ir.Operand.Void v
 
-(* Assuming the var is in linear SSA form, we undo this form,
-   and then check if it's a register name. *)
-let reg_name (v : var) : string option =
-  let name = Var.name v in
-  let name = Option.value ~default:name (Linear.orig_name name) in
-  Naming.unmark_reg_name name
-
-let is_stack_pointer (v : var) : bool = match reg_name v with
+let is_stack_pointer (v : var) : bool = match Pre.reg_name v with
   | Some "SP" -> true
   | _ -> false
 
@@ -411,8 +405,7 @@ let goto
      the return successor of each call site, where we make each effect
      explicit. *)
   let+ tmp_branch = void_temp bit_ty in
-  let params = [tgt] @ call_params in
-  let op = Ir.Operation.create_simple c tmp_branch params in
+  let op = Ir.Operation.create_simple c tmp_branch (tgt :: call_params) in
   control op empty_eff
 
 let sel_binop
