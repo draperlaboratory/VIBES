@@ -2,6 +2,13 @@ open Core
 open Bap.Std
 open Vibes_ir.Types
 
+let filter_empty_blocks (ir : t) : t =
+  let blks = List.filter ir.blks ~f:(fun b ->
+      match b.ctrl, b.data with
+      | [], [] -> false
+      | _ -> true) in
+  {ir with blks}
+
 let filter_nops (blk : Block.t) ~(is_nop : Operation.t -> bool) : Block.t =
   {blk with ctrl = List.filter blk.ctrl ~f:(Fn.non is_nop);
             data = List.filter blk.data ~f:(Fn.non is_nop)}
@@ -40,6 +47,7 @@ let peephole
     (ir : t)
     ~(is_nop : Operation.t -> bool)
     ~(unconditional_branch_target : Operation.t -> tid option) : t =
+  let ir = filter_empty_blocks ir in
   let ir = map_blks ir ~f:(filter_nops ~is_nop) in
   let ir = create_implicit_fallthroughs ir ~unconditional_branch_target in
   ir

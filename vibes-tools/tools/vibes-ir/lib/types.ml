@@ -4,15 +4,15 @@ open Bap_core_theory
 
 module Utils = Vibes_utils.Misc
 
-type opcode = string [@@deriving compare, equal]
+type opcode = string [@@deriving compare, equal, sexp]
 
-type 'a opcode_map = 'a String.Map.t
+type 'a opcode_map = 'a String.Map.t [@@deriving compare, equal, sexp]
 
-type id = int [@@deriving compare, equal]
+type id = int [@@deriving compare, equal, sexp]
 
-type 'a id_map = 'a Int.Map.t
+type 'a id_map = 'a Int.Map.t [@@deriving compare, equal, sexp]
 
-type id_set = Int.Set.t
+type id_set = Int.Set.t [@@deriving compare, equal, sexp]
 
 module Roles = struct
 

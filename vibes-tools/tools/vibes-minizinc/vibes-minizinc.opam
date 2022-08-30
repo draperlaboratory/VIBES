@@ -1,0 +1,14 @@
+opam-version: "2.0"
+name: "vibes-minizinc"
+version: "0.0.1"
+synopsis: "The VIBES MiniZinc library."
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+depends: [
+  "bap"
+  "core"
+  "yojson"
+]
+build: [
+  [make]
+]

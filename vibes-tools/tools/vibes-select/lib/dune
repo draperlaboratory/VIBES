@@ -11,4 +11,5 @@
    vibes-serializers
    vibes-utils
    vibes-patch-info
-   vibes-constants))
+   vibes-constants
+   vibes-minizinc))

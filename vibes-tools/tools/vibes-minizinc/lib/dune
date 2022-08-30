@@ -1,0 +1,13 @@
+(library
+ (name vibes_minizinc)
+ (public_name vibes-minizinc)
+ (libraries
+   bap
+   vibes-ir
+   vibes-log
+   vibes-utils
+   vibes-linear-ssa
+   vibes-constants)
+ (preprocess (pps ppx_compare
+                  ppx_sexp_conv
+                  ppx_yojson_conv)))
