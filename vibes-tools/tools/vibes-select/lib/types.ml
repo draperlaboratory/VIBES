@@ -79,25 +79,25 @@ module Call_params = struct
   let collect (sub : sub term) : t =
     Term.enum blk_t sub |>
     Seq.fold ~init:Tid.Map.empty ~f:(fun m blk ->
-        let ops, ignored =
-          let init = [], Tid.Set.empty in
+        let info =
           Term.enum def_t blk |>
-          Seq.fold ~init ~f:(fun (acc, ignored) def ->
+          Seq.fold ~init:empty_info ~f:(fun info def ->
               if Term.has_attr def Tags.argument then
                 let lhs = Def.lhs def in
                 match Var.typ lhs, Def.rhs def with
                 | Imm _, _ ->
                   let v = Operand.Var (Opvar.create lhs) in
-                  v :: acc, ignored
+                  {info with ops = v :: info.ops}
                 | Mem _, Var m ->
                   (* We do not want to actually generate code for this.
                      It is just a signpost for the selector to collect the
                      most recent version of the memory so we can pass it as
                      a dependency of the call. *)
                   let m = Operand.Void (Opvar.create m) in
-                  m :: acc, Set.add ignored (Term.tid def)
-                | _ -> acc, ignored
-              else acc, ignored) in
-        Map.set m ~key:(Term.tid blk) ~data:{ops; ignored})
+                  let ignored = Set.add info.ignored @@ Term.tid def in
+                  {ops = m :: info.ops; ignored}
+                | _ -> info
+              else info) in
+        Map.set m ~key:(Term.tid blk) ~data:info)
 
 end
