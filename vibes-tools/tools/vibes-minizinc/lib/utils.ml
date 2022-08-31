@@ -2,7 +2,6 @@ open Core
 open Bap_core_theory
 
 module Filename = Stdlib.Filename
-module Json = Vibes_utils.Json
 module Proc = Vibes_utils.Proc
 module Log = Vibes_log.Stream
 
@@ -22,5 +21,7 @@ let run_minizinc
       "--search-complete-msg"; "\"\"";
       "--solver"; "chuffed";
       model_filepath;
-    ] |> Result.map ~f:(fun _ -> solution_filepath)
+    ] |> Result.map ~f:(fun _ ->
+      Log.send "Solution: %s" solution_filepath;
+      solution_filepath)
 
