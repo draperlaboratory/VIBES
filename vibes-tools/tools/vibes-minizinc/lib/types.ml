@@ -11,10 +11,15 @@ module R = Monad.Result.Make(KB.Conflict)(Monad.Ident)
 
 open R.Let
 
-type 'a set = 'a list [@@deriving yojson]
+type 'a set = {set : 'a list} [@@deriving yojson]
 type ('k, 'v) map = 'v list [@@deriving yojson]
-type enum = string [@@deriving yojson]
+type enum = {e: string} [@@deriving yojson]
 type enum_def = enum set [@@deriving yojson]
+
+let set (set : 'a list) : 'a set = {set}
+let enum (e : string) : enum = {e}
+let enum_set : string list -> enum set = Fn.compose set @@ List.map ~f:enum
+
 type operand = enum [@@deriving yojson]
 type operation = enum [@@deriving yojson]
 type block = enum [@@deriving yojson]
@@ -78,15 +83,18 @@ module Solution = struct
         ~t_of_yojson:serial_of_yojson in
     try
       let reg =
-        List.zip_exn info.temps
-          (List.map serial.reg ~f:(Map.find_exn info.reg_map)) |>
+        let regs =
+          List.map serial.reg ~f:(fun r ->
+              Map.find_exn info.reg_map r.e) in
+        List.zip_exn info.temps regs |>
         Var.Map.of_alist_exn in
       let opcode =
-        List.zip_exn info.operations serial.opcode |>
+        let opcode = List.map serial.opcode ~f:(fun {e} -> e) in
+        List.zip_exn info.operations opcode |>
         Int.Map.of_alist_exn in
       let temp =
         List.map2_exn info.operands serial.temp ~f:(fun op temp ->
-            op, Map.find_exn info.temp_map temp) |>
+            op, Map.find_exn info.temp_map temp.e) |>
         Int.Map.of_alist_exn in
       let active =
         List.zip_exn info.operations serial.active |>
@@ -119,6 +127,11 @@ end
 
 module Params = struct
 
+  type class_t = (operand, (opcode, reg set) map) map [@@deriving yojson]
+  type congruent = (operand, operand set) map [@@deriving yojson]
+  type exclude_reg = (int, (temp, reg) map) map [@@deriving yojson]
+  type hvars_temps = (hvar, temp set) map [@@deriving yojson]
+
   type t = {
     reg_t : enum_def;
     opcode_t : enum_def;
@@ -127,7 +140,7 @@ module Params = struct
     operand_t : enum_def;
     operation_t : enum_def;
     block_t : enum_def;
-    class_t : (operand, (opcode, reg set) map) map;
+    class_t : class_t;
     operand_operation : (operand, operation) map;
     definer : (temp, operand) map;
     users : (temp, operand set) map;
@@ -135,15 +148,15 @@ module Params = struct
     copy : operation set;
     width : (temp, int) map;
     preassign : (operand, reg set) map;
-    congruent : (operand, operand set) map;
+    congruent : congruent;
     operation_opcodes : (operation, opcode set) map;
     latency : (opcode, int) map;
     number_excluded : int;
-    exclude_reg : (int, (temp, reg) map) map;
+    exclude_reg : exclude_reg;
     block_outs : (block, operation) map;
     block_ins : (block, operation) map;
     block_operations : (block, operation set) map;
-    hvars_temps : (hvar, temp set) map;
+    hvars_temps : hvars_temps;
   } [@@deriving yojson]
 
   let dummy : var = Var.create "vibes:dummy_reg" Unk
@@ -151,10 +164,13 @@ module Params = struct
   let regs_of_role
       (r : Theory.role)
       ~(gpr : string list)
-      ~(regs : string list) : (string list, KB.conflict) result =
-    if Theory.Role.(r = Register.general) then Ok gpr
-    else if Theory.Role.(r = Ir.Roles.dummy) then Ok [Var.to_string dummy]
-    else if Theory.Role.(r = Ir.Roles.preassigned) then Ok regs
+      ~(regs : string list) : (reg set, KB.conflict) result =
+    if Theory.Role.(r = Register.general) then
+      Ok (enum_set gpr)
+    else if Theory.Role.(r = Ir.Roles.dummy) then
+      Ok (enum_set [Var.to_string dummy])
+    else if Theory.Role.(r = Ir.Roles.preassigned) then
+      Ok (enum_set regs)
     else
       let msg = Format.asprintf
           "Unsupported register role: %a"
@@ -173,15 +189,93 @@ module Params = struct
           Var.pp v in
       Error (Errors.Invalid_width msg)
 
+  let key_map
+      (keys : 'k list)
+      (m : ('k, 'v, _) Map.t)
+      ~(f : 'a -> 'c) : 'c list =
+    List.map keys ~f:(Fn.compose f @@ Map.find_exn m)
+
+  let key_map_d
+      (keys : 'k list)
+      (m : ('k, 'v, _) Map.t)
+      ~(default : 'c)
+      ~(f : 'a -> 'c) : 'c list =
+    List.map keys ~f:(fun x -> match Map.find m x with
+        | None -> default
+        | Some x -> f x)
+
+  let serialize_class_t
+      (opcodes : Ir.opcode list)
+      (operands : Ir.id list)
+      (regs : var list)
+      (gpr : var list)
+      (op_classes : Ir.Roles.map) : (class_t, KB.conflict) result =
+    let regs = List.map regs ~f:Var.to_string in
+    let gpr = List.map gpr ~f:Var.to_string in
+    R.List.map operands ~f:(fun o ->
+        match Map.find op_classes o with
+        | None -> Ok []
+        | Some r ->
+          R.List.map opcodes ~f:(fun op ->
+              match Map.find r op with
+              | None -> Ok (set [])
+              | Some r -> regs_of_role r ~gpr ~regs))
+
+  let serialize_congruences
+      (ir : Ir.t)
+      (temps : var list) : congruent =
+    List.map temps ~f:(fun t ->
+        match Var.typ t with
+        | Type.Mem _ | Type.Unk -> set []
+        | Type.Imm _ -> match Map.find ir.congruences t with
+          | Some s ->
+            Set.to_list s |>
+            List.map ~f:(Fn.compose enum Var.to_string) |>
+            set
+          | None -> set []) 
+
+  let serialize_exclude_reg
+      (prev_solutions : Solution.set)
+      (temps : var list) : exclude_reg =
+    Set.to_list prev_solutions |>
+    List.map ~f:(fun (s : Solution.t) ->
+        key_map temps s.reg ~f:(Fn.compose enum Var.to_string))
+
+  let serialize_hvar_t (temp_names : string list) : hvar set =
+    List.filter_map temp_names ~f:Linear.orig_name |>
+    List.sort ~compare:String.compare |>
+    List.map ~f:(fun v -> enum ("hvar_" ^ v)) |>
+    set
+
+  let serialize_hvars_temps
+      (hvar_t : hvar set)
+      (temp_names : string list) : hvars_temps =
+    List.map hvar_t.set ~f:(fun {e = hvar} ->
+        List.filter temp_names ~f:(fun t ->
+            Linear.orig_name t |>
+            Option.value_map ~default:false ~f:(String.equal hvar)) |>
+        enum_set)
+
+  let regs_gpr (target : Theory.target) : var list * var list =
+    let regs =
+      Theory.Target.regs target |>
+      Set.map (module Var) ~f:Var.reify |>
+      Set.to_list in
+    let gpr =
+      let roles = Theory.Role.Register.[general] in
+      let exclude = Theory.Role.Register.[stack_pointer] in
+      Theory.Target.regs target ~exclude ~roles |>
+      Set.map (module Var) ~f:Var.reify |>
+      Set.to_list in
+    regs, gpr
+  
   let serialize
       ?(prev_solutions : Solution.set = Solution.empty_set)
       (ir : Ir.t)
-      ~(target : Theory.target)
-      ~(gpr : Var.Set.t)
-      ~(regs : Var.Set.t) : (t * serialization_info, KB.conflict) result =
+      (target : Theory.target) : (t * serialization_info, KB.conflict) result =
+    let regs, gpr = regs_gpr target in
     let reg_map =
-      Set.to_list regs |> List.cons dummy |>
-      List.map ~f:(fun r -> Var.to_string r, r) |>
+      List.map (dummy :: regs) ~f:(fun r -> Var.to_string r, r) |>
       String.Map.of_alist_exn in
     let temps = Ir.all_temps ir |> Var.Set.to_list in
     let temp_names = List.map temps ~f:Var.to_string in
@@ -191,116 +285,65 @@ module Params = struct
     let operation_opcodes = Ir.operation_to_opcodes ir in
     let operations = Map.keys operation_opcodes in
     let operands = Ir.all_opvar_ids ir |> Set.to_list in
-    let reg_t = Map.keys reg_map in
-    let opcode_t = Ir.all_opcodes ir in
-    let temp_t = temp_names in
-    let hvar_t =
-      List.filter_map temp_names ~f:Linear.orig_name |>
-      List.sort ~compare:String.compare |>
-      List.map ~f:(fun v -> "hvar_" ^ v) in
-    let operand_t = List.map operands ~f:Int.to_string in
-    let operation_t = List.map operations ~f:Int.to_string in
-    let block_t = List.map blocks ~f:Tid.to_string in
-    let operand_operation =
-      let m = Ir.operand_to_operation ir in
-      List.map operands ~f:(fun o ->
-          let op = Map.find_exn m o in
-          Int.to_string op.id) in
-    let definer =
-      let m = Ir.definer_map ir in
-      List.map temps ~f:(fun t ->
-          let d = Map.find_exn m t in
-          Int.to_string d.id) in
-    let op_classes = Ir.op_classes ir in
     let opcodes = Ir.all_opcodes ir in
-    let* class_t =
-      let gpr = Var.Set.to_list gpr |> List.map ~f:Var.to_string in
-      let regs = Var.Set.to_list regs |> List.map ~f:Var.to_string in
-      R.List.map operands ~f:(fun o ->
-          match Map.find op_classes o with
-          | None -> Ok []
-          | Some r ->
-            R.List.map opcodes ~f:(fun op ->
-                match Map.find r op with
-                | None -> Ok []
-                | Some r -> regs_of_role r ~gpr ~regs)) in
+    let hvar_t = serialize_hvar_t temp_names in
+    let operand_operation =
+      Ir.operand_to_operation ir |>
+      key_map operands ~f:(fun op ->
+          enum @@ Int.to_string op.Ir.Operation.id) in
+    let definer =
+      Ir.definer_map ir |>
+      key_map temps ~f:(fun d ->
+          enum @@ Int.to_string d.Ir.Opvar.id) in
     let users =
-      let m = Ir.users_map ir in
-      List.map temps ~f:(fun t ->
-          match Map.find m t with
-          | None -> []
-          | Some ops ->
-            List.map ops ~f:(fun o -> Int.to_string o.id)) in
-    let temp_block = List.map temps ~f:(fun t ->
-        let b = Map.find_exn temp_block t in
-        Tid.to_string b) in
-    let copy = [] in
+      Ir.users_map ir |>
+      key_map_d temps ~default:(set []) ~f:(fun ops ->
+          List.map ops ~f:(fun o ->
+              Int.to_string o.Ir.Opvar.id) |>
+          enum_set) in
+    let* class_t =
+      Ir.op_classes ir |>
+      serialize_class_t opcodes operands regs gpr in
     let* width = R.List.map temps ~f:(width_of_var ~target) in
     let preassign =
-      let m = Ir.opvar_to_preassign ir in
-      List.map operands ~f:(fun o ->
-          match Map.find m o with
-          | Some r -> [Var.to_string r]
-          | None -> []) in
-    let congruent =
-      List.map temps ~f:(fun t ->
-          match Var.typ t with
-          | Type.Mem _ | Type.Unk -> []
-          | Type.Imm _ -> match Map.find ir.congruences t with
-            | Some s -> Set.to_list s |> List.map ~f:Var.to_string
-            | None -> []) in
-    let operation_opcodes = List.map operations ~f:(fun o ->
-        Map.find_exn operation_opcodes o) in
-    let latency = List.map opcodes ~f:(fun _ -> 1) in
-    let number_excluded = Set.length prev_solutions in
-    let exclude_reg =
-      Set.to_list prev_solutions |>
-      List.map ~f:(fun (s : Solution.t) ->
-          List.map temps ~f:(fun t ->
-              Var.to_string @@ Map.find_exn s.reg t)) in
-    let block_ins =
-      let m = Ir.block_to_ins ir in
-      List.map blocks ~f:(fun b ->
-          Int.to_string @@ Map.find_exn m b) in
+      Ir.opvar_to_preassign ir |>
+      key_map_d operands ~default:(set []) ~f:(fun v ->
+          enum_set [Var.to_string v]) in
     let block_outs =
-      let m = Ir.block_to_outs ir in
-      List.map blocks ~f:(fun b ->
-          Int.to_string @@ Map.find_exn m b) in
+      Ir.block_to_outs ir |>
+      key_map blocks ~f:(Fn.compose enum Int.to_string) in
+    let block_ins =
+      Ir.block_to_ins ir |>
+      key_map blocks ~f:(Fn.compose enum Int.to_string) in
     let block_operations =
-      let m = Ir.block_to_operations ir in
-      List.map blocks ~f:(fun b ->
-          Map.find_exn m b |> List.map ~f:Int.to_string) in
-    let hvars_temps =
-      List.map hvar_t ~f:(fun hvar ->
-          List.filter temp_names ~f:(fun t ->
-              match Linear.orig_name t with
-              | Some name -> String.(name = hvar)
-              | None -> false)) in
+      Ir.block_to_operations ir |>
+      key_map blocks ~f:(fun ops ->
+          List.map ops ~f:Int.to_string |> enum_set) in
     let params = {
-      reg_t;
-      opcode_t;
-      temp_t;
+      reg_t = Map.keys reg_map |> enum_set;
+      opcode_t = enum_set opcodes;
+      temp_t = enum_set temp_names;
       hvar_t;
-      operand_t;
-      operation_t;
-      block_t;
+      operand_t = List.map operands ~f:Int.to_string |> enum_set;
+      operation_t = List.map operations ~f:Int.to_string |> enum_set;
+      block_t = List.map blocks ~f:Tid.to_string |> enum_set;
       class_t;
       operand_operation;
       definer;
       users;
-      temp_block;
-      copy;
+      temp_block = key_map temps temp_block ~f:(Fn.compose enum Tid.to_string);
+      copy = set [];
       width;
       preassign;
-      congruent;
-      operation_opcodes;
-      latency;
-      number_excluded;
-      exclude_reg;
+      congruent = serialize_congruences ir temps;
+      operation_opcodes = key_map operations operation_opcodes ~f:enum_set;
+      latency = List.map opcodes ~f:(fun _ -> 1);
+      number_excluded = Set.length prev_solutions;
+      exclude_reg = serialize_exclude_reg prev_solutions temps;
       block_outs;
       block_ins;
       block_operations;
-      hvars_temps;
+      hvars_temps = serialize_hvars_temps hvar_t temp_names;
     } in
     Ok (params, {temps; temp_map; reg_map; operations; operands})
 

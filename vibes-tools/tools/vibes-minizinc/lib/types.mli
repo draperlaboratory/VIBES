@@ -4,10 +4,11 @@ open Bap_core_theory
 
 module Ir = Vibes_ir.Types
 
-type 'a set = 'a list [@@deriving yojson]
+type 'a set = {set : 'a list} [@@deriving yojson]
 type ('k, 'v) map = 'v list [@@deriving yojson]
-type enum = string [@@deriving yojson]
+type enum = {e : string} [@@deriving yojson]
 type enum_def = enum set [@@deriving yojson]
+
 type operand = enum [@@deriving yojson]
 type operation = enum [@@deriving yojson]
 type block = enum [@@deriving yojson]
@@ -16,6 +17,10 @@ type opcode = enum [@@deriving yojson]
 type reg = enum [@@deriving yojson]
 type hvar = enum [@@deriving yojson]
 
+(** Retains auxiliary information which is primarily useful for
+    interpreting the solution returned by MiniZinc. In particular it
+    retains the ordering of temporaries, operations, and operands.
+    This is important because a MiniZinc map is represented as an array. *)
 type serialization_info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
@@ -24,6 +29,7 @@ type serialization_info = {
   operands : Ir.id list;
 } [@@deriving equal]
 
+(** Representation of the solution returned by MiniZinc. *)
 module Solution : sig
 
   type t = {
@@ -40,17 +46,22 @@ module Solution : sig
 
   val empty_set : set
 
+  (** [deserialize filename info] parses the solution produced by MiniZinc
+      to the file [filename], and interprets the data according to [info]. *)
   val deserialize :
     string ->
     serialization_info ->
     (t, KB.conflict) result
 
+  (** [apply ir solution] applies the [solution] to the [ir] program. *)
   val apply : Ir.t -> t -> Ir.t
 
 end
 
 module Params : sig
 
+  (** Datatype used to serialize the IR program to a form that is
+      interpretable by MiniZinc. *)
   type t = {
     reg_t : enum_def;
     opcode_t : enum_def;
@@ -78,12 +89,13 @@ module Params : sig
     hvars_temps : (hvar, temp set) map;
   } [@@deriving yojson]
 
+  (** [serialize ir target ?prev_solutions] will translate the IR program
+      into the serializable datatype for consumption by MiniZinc, along
+      with auxilliary information for interpreting the solution. *)
   val serialize :
     ?prev_solutions:Solution.set ->
     Ir.t ->
-    target:Theory.target ->
-    gpr:Var.Set.t ->
-    regs:Var.Set.t ->
+    Theory.target ->
     (t * serialization_info, KB.conflict) result
 
 end
