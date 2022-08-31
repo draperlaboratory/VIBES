@@ -8,7 +8,7 @@ type stderr_data = string list
 type cmd_result = (stdout_data * stderr_data, KB.conflict) result
 
 let run (command : string) (args : string list) : cmd_result =
-  let env = Array.init 0 ~f:(fun _ -> "") in
+  let env = Caml_unix.environment () in
   let cmd = String.concat (command :: args) ~sep:" " in
   Log.send "Running cmd: '%s'" cmd;
   let std_out, std_in, std_err = Caml_unix.open_process_full cmd env in

@@ -246,7 +246,7 @@ module Params = struct
 
   let serialize_hvar_t (temp_names : string list) : hvar set =
     List.filter_map temp_names ~f:Linear.orig_name |>
-    List.sort ~compare:String.compare |>
+    List.dedup_and_sort ~compare:String.compare |>
     List.map ~f:(fun v -> enum ("hvar_" ^ v)) |>
     set
 
@@ -284,7 +284,9 @@ module Params = struct
     let temp_names = List.map temps ~f:Var.to_string in
     let temp_map = List.zip_exn temp_names temps |> String.Map.of_alist_exn in
     let temp_block = Ir.temp_to_block ir in
-    let blocks = Map.data temp_block |> List.sort ~compare:Tid.compare in
+    let blocks =
+      Map.data temp_block |>
+      List.dedup_and_sort ~compare:Tid.compare in
     let operation_opcodes = Ir.operation_to_opcodes ir in
     let operations = Map.keys operation_opcodes in
     let operands = Ir.all_opvar_ids ir |> Set.to_list in

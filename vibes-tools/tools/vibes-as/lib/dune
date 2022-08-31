@@ -1,0 +1,12 @@
+(library
+ (name vibes_as)
+ (public_name vibes-as)
+ (libraries
+   bap-core-theory
+   vibes-log
+   vibes-constants
+   vibes-utils
+   vibes-serializers
+   vibes-ir
+   vibes-minizinc
+   vibes-select))

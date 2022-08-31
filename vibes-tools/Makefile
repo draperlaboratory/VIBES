@@ -129,3 +129,22 @@ select.install:
 .PHONY:
 select.uninstall:
 	$(MAKE) -C $(TOOLS_SRC) select.uninstall
+
+###################################
+# vibes-as
+###################################
+
+.PHONY: as
+as: as.install
+
+.PHONY: as.build
+as.build:
+	$(MAKE) -C $(TOOLS_SRC) as.build
+
+.PHONY: as.install
+as.install:
+	$(MAKE) -C $(TOOLS_SRC) as.install
+
+.PHONY:
+as.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) as.uninstall

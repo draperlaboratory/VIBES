@@ -40,7 +40,7 @@ let run
     ~(bir_filepath : string)
     ~(vir_outfile : string) : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
-  Log.send "Vibes_select.Runner.run '%s' '%s' '%s' '%s"
+  Log.send "Vibes_select.Runner.run '%s' '%s' '%s' '%s'"
     target language bir_filepath vir_outfile;
   Log.send "Loading patch-info";
   let* patch_info = Patch_info.from_file patch_info_filepath in
