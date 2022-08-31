@@ -24,4 +24,3 @@ let run_minizinc
     ] |> Result.map ~f:(fun _ ->
       Log.send "Solution: %s" solution_filepath;
       solution_filepath)
-
