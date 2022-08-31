@@ -34,7 +34,7 @@ type opcode = enum [@@deriving yojson]
 type reg = enum [@@deriving yojson]
 type hvar = enum [@@deriving yojson]
 
-type serialization_info = {
+type info = {
   temps : Var.t list;
   temp_map : Var.t String.Map.t;
   reg_map : Var.t String.Map.t;
@@ -83,7 +83,7 @@ module Solution = struct
 
   let deserialize
       (filename : string)
-      (info : serialization_info) : (t, KB.conflict) result =
+      (info : info) : (t, KB.conflict) result =
     let* serial = Json.from_file filename
         ~yojson_of_t:yojson_of_serial
         ~t_of_yojson:serial_of_yojson in
@@ -271,11 +271,11 @@ module Params = struct
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list in
     regs, gpr
-  
+
   let serialize
       ?(prev_solutions : Solution.set = Solution.empty_set)
       (ir : Ir.t)
-      (target : Theory.target) : (t * serialization_info, KB.conflict) result =
+      (target : Theory.target) : (Yojson.Safe.t * info, KB.conflict) result =
     let regs, gpr = regs_gpr target in
     let reg_map =
       List.map (dummy :: regs) ~f:(fun r -> Var.to_string r, r) |>
@@ -340,6 +340,8 @@ module Params = struct
       block_operations;
       hvars_temps = serialize_hvars_temps hvar_t temp_names;
     } in
-    Ok (params, {temps; temp_map; reg_map; operations; operands})
+    let info = {temps; temp_map; reg_map; operations; operands} in
+    Ok (yojson_of_t params, info)
+
 
 end
