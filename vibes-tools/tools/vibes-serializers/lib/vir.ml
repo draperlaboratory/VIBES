@@ -269,12 +269,12 @@ module Deserialize = struct
     | List [Atom "opvar"; Atom id; List temps; List []] ->
       let* id = deserialize_id id in
       let+ temps = List.map temps ~f:deserialize_var in
-      Ir.Opvar.{id; temps; preassign = None}
+      Ir.Opvar.Fields.create ~id ~temps ~preassign:None
     | List [Atom "opvar"; Atom id; List temps; List [preassign]] ->
       let* id = deserialize_id id in
       let* temps = List.map temps ~f:deserialize_var in
       let+ pre = deserialize_var preassign in
-      Ir.Opvar.{id; temps; preassign = Some pre}
+      Ir.Opvar.Fields.create ~id ~temps ~preassign:(Some pre)
     | sexp ->
       let msg = Format.asprintf
           "Expected opvar, but got: '%a'"
@@ -322,7 +322,7 @@ module Deserialize = struct
             fail @@ Errors.Invalid_vir msg) in
       let* optional = deserialize_bool optional in
       let+ operands = List.map operands ~f:deserialize_operand in
-      Ir.Operation.{id; lhs; opcodes; optional; operands}
+      Ir.Operation.Fields.create ~id ~lhs ~opcodes ~optional ~operands
     | sexp ->
       let msg = Format.asprintf
           "Expected operation, but got: '%a'"
@@ -333,7 +333,10 @@ module Deserialize = struct
     | List [Atom id; List ops] ->
       let* id = deserialize_id id in
       let+ lhs = List.map ops ~f:deserialize_operand in
-      Ir.Operation.{id; lhs; opcodes = []; optional = false; operands = []}
+      Ir.Operation.Fields.create ~id ~lhs
+        ~opcodes:[]
+        ~optional:false
+        ~operands:[]
     | sexp ->
       let msg = Format.asprintf
           "Expected ins, but got: '%a'"
@@ -344,7 +347,10 @@ module Deserialize = struct
     | List [Atom id; List ops] ->
       let* id = deserialize_id id in
       let+ operands = List.map ops ~f:deserialize_operand in
-      Ir.Operation.{id; lhs = []; opcodes = []; optional = false; operands}
+      Ir.Operation.Fields.create ~id ~operands
+        ~lhs:[]
+        ~opcodes:[]
+        ~optional:false
     | sexp ->
       let msg = Format.asprintf
           "Expected outs, but got: '%a'"
@@ -366,7 +372,7 @@ module Deserialize = struct
       let* ins = deserialize_ins ins in
       let* outs = deserialize_outs outs in
       let+ frequency = deserialize_int frequency in
-      Ir.Block.{tid; data; ctrl; ins; outs; frequency}
+      Ir.Block.Fields.create ~tid ~data ~ctrl ~ins ~outs ~frequency
     | sexp ->
       let msg = Format.asprintf
           "Expected block, but got: '%a'"

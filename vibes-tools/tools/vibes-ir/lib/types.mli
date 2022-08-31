@@ -29,7 +29,7 @@ module Opvar : sig
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare]
+  } [@@deriving compare, fields]
 
   val create : ?preassign:var option -> var -> t
   val equal : t -> t -> bool
@@ -61,7 +61,7 @@ module Operation : sig
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   val create_empty : unit -> t
 
@@ -96,7 +96,7 @@ module Block : sig
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   val create_simple :
     ?frequency:int ->

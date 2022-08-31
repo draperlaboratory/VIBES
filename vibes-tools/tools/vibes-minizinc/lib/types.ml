@@ -18,7 +18,13 @@ type enum_def = enum set [@@deriving yojson]
 
 let set (set : 'a list) : 'a set = {set}
 let enum (e : string) : enum = {e}
-let enum_set : string list -> enum set = Fn.compose set @@ List.map ~f:enum
+let enumf (f : 'a -> string) (x : 'a) : enum = {e = f x}
+
+let enum_set : string list -> enum set =
+  Fn.compose set @@ List.map ~f:enum
+
+let enum_setf (f : 'a -> string) : 'a list -> enum set =
+  Fn.compose set @@ List.map ~f:(enumf f)
 
 type operand = enum [@@deriving yojson]
 type operation = enum [@@deriving yojson]
@@ -168,7 +174,7 @@ module Params = struct
     if Theory.Role.(r = Register.general) then
       Ok (enum_set gpr)
     else if Theory.Role.(r = Ir.Roles.dummy) then
-      Ok (enum_set [Var.to_string dummy])
+      Ok (enum_setf Var.to_string [dummy])
     else if Theory.Role.(r = Ir.Roles.preassigned) then
       Ok (enum_set regs)
     else
@@ -228,10 +234,7 @@ module Params = struct
         match Var.typ t with
         | Type.Mem _ | Type.Unk -> set []
         | Type.Imm _ -> match Map.find ir.congruences t with
-          | Some s ->
-            Set.to_list s |>
-            List.map ~f:(Fn.compose enum Var.to_string) |>
-            set
+          | Some s -> Set.to_list s |> enum_setf Var.to_string
           | None -> set []) 
 
   let serialize_exclude_reg
@@ -239,7 +242,7 @@ module Params = struct
       (temps : var list) : exclude_reg =
     Set.to_list prev_solutions |>
     List.map ~f:(fun (s : Solution.t) ->
-        key_map temps s.reg ~f:(Fn.compose enum Var.to_string))
+        key_map temps s.reg ~f:(enumf Var.to_string))
 
   let serialize_hvar_t (temp_names : string list) : hvar set =
     List.filter_map temp_names ~f:Linear.orig_name |>
@@ -288,19 +291,14 @@ module Params = struct
     let opcodes = Ir.all_opcodes ir in
     let hvar_t = serialize_hvar_t temp_names in
     let operand_operation =
-      Ir.operand_to_operation ir |>
-      key_map operands ~f:(fun op ->
-          enum @@ Int.to_string op.Ir.Operation.id) in
+      let f = Fn.compose Int.to_string Ir.Operation.id in
+      Ir.operand_to_operation ir |> key_map operands ~f:(enumf f) in
     let definer =
-      Ir.definer_map ir |>
-      key_map temps ~f:(fun d ->
-          enum @@ Int.to_string d.Ir.Opvar.id) in
+      let f = Fn.compose Int.to_string Ir.Opvar.id in
+      Ir.definer_map ir |> key_map temps ~f:(enumf f) in
     let users =
-      Ir.users_map ir |>
-      key_map_d temps ~default:(set []) ~f:(fun ops ->
-          List.map ops ~f:(fun o ->
-              Int.to_string o.Ir.Opvar.id) |>
-          enum_set) in
+      let f = Fn.compose Int.to_string Ir.Opvar.id in
+      Ir.users_map ir |> key_map_d temps ~default:(set []) ~f:(enum_setf f) in
     let* class_t =
       Ir.op_classes ir |>
       serialize_class_t opcodes operands regs gpr in
@@ -308,30 +306,27 @@ module Params = struct
     let preassign =
       Ir.opvar_to_preassign ir |>
       key_map_d operands ~default:(set []) ~f:(fun v ->
-          enum_set [Var.to_string v]) in
+          enum_setf Var.to_string [v]) in
     let block_outs =
-      Ir.block_to_outs ir |>
-      key_map blocks ~f:(Fn.compose enum Int.to_string) in
+      Ir.block_to_outs ir |> key_map blocks ~f:(enumf Int.to_string) in
     let block_ins =
-      Ir.block_to_ins ir |>
-      key_map blocks ~f:(Fn.compose enum Int.to_string) in
+      Ir.block_to_ins ir |> key_map blocks ~f:(enumf Int.to_string) in
     let block_operations =
       Ir.block_to_operations ir |>
-      key_map blocks ~f:(fun ops ->
-          List.map ops ~f:Int.to_string |> enum_set) in
+      key_map blocks ~f:(enum_setf Int.to_string) in
     let params = {
       reg_t = Map.keys reg_map |> enum_set;
       opcode_t = enum_set opcodes;
       temp_t = enum_set temp_names;
       hvar_t;
-      operand_t = List.map operands ~f:Int.to_string |> enum_set;
-      operation_t = List.map operations ~f:Int.to_string |> enum_set;
-      block_t = List.map blocks ~f:Tid.to_string |> enum_set;
+      operand_t = enum_setf Int.to_string operands;
+      operation_t = enum_setf Int.to_string operations;
+      block_t = enum_setf Tid.to_string blocks;
       class_t;
       operand_operation;
       definer;
       users;
-      temp_block = key_map temps temp_block ~f:(Fn.compose enum Tid.to_string);
+      temp_block = key_map temps temp_block ~f:(enumf Tid.to_string);
       copy = set [];
       width;
       preassign;

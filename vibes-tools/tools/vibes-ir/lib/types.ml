@@ -47,7 +47,7 @@ module Opvar = struct
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare]
+  } [@@deriving compare, fields]
 
   let create ?(preassign : var option = None) (v : var) : t = {
     id = fresh_id ();
@@ -121,7 +121,7 @@ module Operation = struct
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   let create_empty () : t = {
     id = fresh_id ();
@@ -210,7 +210,7 @@ module Block = struct
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   let create_simple
       ?(frequency : int = 1)
