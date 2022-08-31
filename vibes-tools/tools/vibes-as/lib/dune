@@ -1,3 +1,5 @@
+(include_subdirs unqualified)
+
 (library
  (name vibes_as)
  (public_name vibes-as)
@@ -9,4 +11,5 @@
    vibes-serializers
    vibes-ir
    vibes-minizinc
-   vibes-select))
+   vibes-select)
+ (preprocess (pps ppx_fields_conv ppx_sexp_conv)))

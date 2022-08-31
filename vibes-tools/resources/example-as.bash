@@ -8,6 +8,6 @@ vibes-as \
   --target bap:arm \
   --language llvm-armv7 \
   --vir-filepath resources/patch.vir \
-  --vir-outfile resources/patch.as.vir \
+  --asm-outfile resources/patch.asm \
   --model ../resources/minizinc/model.mzn  \
   --verbose

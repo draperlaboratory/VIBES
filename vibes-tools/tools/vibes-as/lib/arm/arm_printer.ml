@@ -4,7 +4,8 @@ open Bap_core_theory
 
 module Constants = Vibes_constants.Asm
 module Ir = Vibes_ir.Types
-module Ops = Arm_ops
+module Ops = Vibes_select.Arm_ops
+module Asm = Types.Assembly
 
 type opc = (string, string * string) Either.t
 
@@ -147,16 +148,16 @@ let operation
 
 let block
     (t : Ir.Block.t)
-    ~(is_thumb : bool) : (string list, KB.conflict) result =
-  let all_ops = t.data @ t.ctrl in
-  List.map ~f:(operation ~is_thumb) all_ops |>
-  Result.all |> Result.map ~f:(fun ops ->
-      Format.asprintf "%s:" (tid_to_asm_label t.tid) ::
-      List.(concat ops |> map ~f:(fun o ->
-          Format.sprintf "    %s" o)))
+    ~(is_thumb : bool) : (Types.Assembly.block, KB.conflict) result =
+  let+ insns =
+    List.map ~f:(operation ~is_thumb) (t.data @ t.ctrl) |>
+    Result.all |> Result.map ~f:List.concat in
+  let label = Format.asprintf "%s" @@ tid_to_asm_label t.tid in
+  Asm.Fields_of_block.create ~label ~insns
 
-let ir
-    (t : Ir.t)
-    ~(is_thumb : bool) : (string list, KB.conflict) result =
-  List.map ~f:(block ~is_thumb) t.blks |>
-  Result.all |> Result.map ~f:List.concat
+let ir ~(is_thumb : bool) : Asm.printer = fun t ->
+  let+ blocks =
+    List.map ~f:(block ~is_thumb) t.blks |>
+    Result.all in
+  let directives = [".syntax_unified"] in
+  Asm.Fields.create ~directives ~blocks

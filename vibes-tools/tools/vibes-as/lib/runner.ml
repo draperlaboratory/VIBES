@@ -17,28 +17,26 @@ let try_deserialize (vir_sexp : Sexp.t) : (Ir.t, KB.conflict) result =
     Result.return @@ Toplevel.get result      
   with Toplevel.Conflict err -> Error err
 
-type printer = Ir.t -> (string list, KB.conflict) result
-
 let printer
     (target : T.target)
-    (language : T.language) : (printer, KB.conflict) result =
+    (language : T.language) : (Types.Assembly.printer, KB.conflict) result =
   if T.Target.belongs Arm_target.parent target then
     let is_thumb = Utils.Core_theory.is_thumb language in
-    Ok (Vibes_select.Arm_printer.ir ~is_thumb)
+    Ok (Arm_printer.ir ~is_thumb)
   else
     let msg = Format.asprintf
         "Unsupported target %a"
         T.Target.pp target in
-    Error (Vibes_select.Errors.Unsupported_target msg)
+    Error (Errors.Unsupported_target msg)
 
 let run
     ~(target : string)
     ~(language : string)
     ~(vir_filepath : string)
-    ~(vir_outfile : string)
+    ~(asm_outfile : string)
     ~(model_filepath : string) : (unit, KB.conflict) result =
   Log.send "Vibes_as.Runner.run '%s' '%s' '%s' '%s' '%s'"
-    target language vir_filepath vir_outfile model_filepath;
+    target language vir_filepath asm_outfile model_filepath;
   let* target = Utils.Core_theory.get_target target in
   let* language = Utils.Core_theory.get_language language in
   let* raw_vir_code = Utils.Files.get_file_contents_non_empty vir_filepath
@@ -56,10 +54,10 @@ let run
   Log.send "Solved VIBES IR:\n%a\n" Ir.pp ir;
   let* printer = printer target language in
   let* asm = printer ir in
-  Log.send "Assembly:\n%s\n" @@ String.concat asm ~sep:"\n";
-  let vir_sexp = Serializers.Vir.serialize ir in
-  let vir_data = Sexp.to_string_hum vir_sexp in
-  Log.send "Writing serialized VIBES IR";
-  let finalized_vir = Format.sprintf "%s\n" vir_data in
-  let* () = Utils.Files.write_or_error finalized_vir vir_outfile in
+  Log.send "Assembly:\n%a\n" Types.Assembly.pp asm;
+  let asm_sexp = Types.Assembly.sexp_of_t asm in
+  let asm_data = Sexp.to_string_hum asm_sexp in
+  Log.send "Writing serialized assembly";
+  let finalized_asm = Format.sprintf "%s\n" asm_data in
+  let* () = Utils.Files.write_or_error finalized_asm asm_outfile in
   Ok ()

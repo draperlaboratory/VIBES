@@ -4,11 +4,9 @@ open Bap_core_theory
 module T = Theory
 module Log = Vibes_log.Stream
 module Ir = Vibes_ir.Types
-module Opt = Vibes_select.Opt
 module Params = Vibes_minizinc.Types.Params
 module Solution = Vibes_minizinc.Types.Solution
 module Minizinc = Vibes_minizinc.Utils
-module Arm_utils = Vibes_select.Arm_utils
 
 let (let*) x f = Result.bind x ~f
 
@@ -22,7 +20,7 @@ let opt
       let msg = Format.asprintf
           "Unsupported target %a"
           T.Target.pp target in
-      Error (Vibes_select.Errors.Unsupported_target msg) in
+      Error (Errors.Unsupported_target msg) in
   Ok (Opt.peephole ir ~is_nop ~unconditional_branch_target)
 
 let solve

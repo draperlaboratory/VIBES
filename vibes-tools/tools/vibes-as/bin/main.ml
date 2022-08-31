@@ -9,7 +9,8 @@ module Runner = Vibes_as.Runner
 module Cli = struct
 
   let name = "vibes-as"
-  let doc = "Runs register allocation and scheduling on VIBES IR."
+  let doc = "Runs register allocation and scheduling on VIBES IR, \
+             and outputs a serialized assembly program."
   let version = Versions.vibes_as
   let info = C.Cmd.info name ~doc ~version
 
@@ -22,10 +23,10 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let vir_outfile : string C.Term.t =
-    let info = C.Arg.info ["o"; "vir-outfile"]
-        ~docv:"VIR_OUTFILE"
-        ~doc:"Path/name of file to output VIBES IR to" in
+  let asm_outfile : string C.Term.t =
+    let info = C.Arg.info ["o"; "asm-outfile"]
+        ~docv:"ASM_OUTFILE"
+        ~doc:"Path/name of file to output the serialized assembly" in
     let parser = C.Arg.some' C.Arg.string in
     let default = None in
     let arg = C.Arg.opt parser default info in
@@ -46,7 +47,7 @@ module Cli = struct
       (target : string)
       (language : string)
       (vir_filepath : string)
-      (vir_outfile : string)
+      (asm_outfile : string)
       (model_filepath : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-as'";
@@ -54,7 +55,7 @@ module Cli = struct
       ~target
       ~language
       ~vir_filepath
-      ~vir_outfile
+      ~asm_outfile
       ~model_filepath |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
@@ -66,7 +67,7 @@ module Cli = struct
       $ Cli_opts.Target.target
       $ Cli_opts.Language.language
       $ vir_filepath
-      $ vir_outfile
+      $ asm_outfile
       $ model_filepath
     )
 

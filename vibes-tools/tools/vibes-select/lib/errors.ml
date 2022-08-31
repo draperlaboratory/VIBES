@@ -5,7 +5,6 @@ type KB.conflict +=
   | Invalid_bir of string
   | Unsupported_target of string
   | Selector_error of string
-  | Printer_error of string
 
 let printer (e : KB.conflict) : string option =
   match e with
@@ -13,7 +12,6 @@ let printer (e : KB.conflict) : string option =
   | Invalid_bir s -> Some s
   | Unsupported_target s -> Some s
   | Selector_error s -> Some s
-  | Printer_error s -> Some s
   | _ -> None
 
 let () = KB.Conflict.register_printer printer
