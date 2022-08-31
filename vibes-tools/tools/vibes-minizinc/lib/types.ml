@@ -343,5 +343,4 @@ module Params = struct
     let info = {temps; temp_map; reg_map; operations; operands} in
     Ok (yojson_of_t params, info)
 
-
 end
