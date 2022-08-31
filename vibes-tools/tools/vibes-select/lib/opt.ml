@@ -47,7 +47,7 @@ let peephole
     (ir : t)
     ~(is_nop : Operation.t -> bool)
     ~(unconditional_branch_target : Operation.t -> tid option) : t =
-  let ir = filter_empty_blocks ir in
   let ir = map_blks ir ~f:(filter_nops ~is_nop) in
   let ir = create_implicit_fallthroughs ir ~unconditional_branch_target in
+  let ir = filter_empty_blocks ir in
   ir

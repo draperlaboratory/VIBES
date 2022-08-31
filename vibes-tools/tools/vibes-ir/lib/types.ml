@@ -451,7 +451,7 @@ let block_to_ins (t : t) : id Tid.Map.t =
 let block_to_outs (t : t) : id Tid.Map.t =
   Tid.Map.of_alist_exn @@
   List.map t.blks ~f:(fun blk ->
-      blk.tid, blk.ins.id)
+      blk.tid, blk.outs.id)
 
 let block_to_operations (t : t) : id list Tid.Map.t =
   Tid.Map.of_alist_exn @@

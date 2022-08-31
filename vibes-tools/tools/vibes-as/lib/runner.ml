@@ -52,7 +52,7 @@ let run
     | _ -> Error (Errors.Invalid_vir "Expected single S-exp") in
   let* ir = try_deserialize vir_sexp in
   Log.send "Deserialized VIBES IR:\n%a\n" Ir.pp ir;
-  let* ir = Solver.solve ir target model_filepath in
+  let* ir = Solver.solve ir target language model_filepath in
   Log.send "Solved VIBES IR:\n%a\n" Ir.pp ir;
   let* printer = printer target language in
   let* asm = printer ir in

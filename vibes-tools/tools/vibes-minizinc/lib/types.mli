@@ -44,13 +44,14 @@ end
 
 module Params : sig
 
-  (** [serialize ir target ?prev_solutions] will translate the IR program
-      into the JSON format for consumption by MiniZinc, along with
-      auxilliary information for interpreting the solution. *)
+  (** [serialize ir target language ?prev_solutions] will translate
+      the IR program into the JSON format for consumption by MiniZinc,
+      along with auxilliary information for interpreting the solution. *)
   val serialize :
     ?prev_solutions:Solution.set ->
     Ir.t ->
     Theory.target ->
+    Theory.language ->
     (Yojson.Safe.t * info, KB.conflict) result
 
 end

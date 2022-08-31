@@ -3,6 +3,7 @@ open Bap.Std
 open Monads.Std
 open Bap_core_theory
 
+
 module Json = Vibes_utils.Json
 module Ir = Vibes_ir.Types
 module Linear = Vibes_linear_ssa.Utils
@@ -76,7 +77,7 @@ module Solution = struct
     live : bool list;
     active : bool list;
     issue : int list;
-    stary_cycle: int list;
+    start_cycle: int list;
     end_cycle : int list;
     _objective : int;
   } [@@deriving yojson]
@@ -244,28 +245,30 @@ module Params = struct
     List.map ~f:(fun (s : Solution.t) ->
         key_map temps s.reg ~f:(enumf Var.to_string))
 
-  let serialize_hvar_t (temp_names : string list) : hvar set =
-    List.filter_map temp_names ~f:Linear.orig_name |>
-    List.dedup_and_sort ~compare:String.compare |>
-    List.map ~f:(fun v -> enum ("hvar_" ^ v)) |>
-    set
-
   let serialize_hvars_temps
-      (hvar_t : hvar set)
+      (hvars : string list)
       (temp_names : string list) : hvars_temps =
-    List.map hvar_t.set ~f:(fun {e = hvar} ->
+    List.map hvars ~f:(fun hvar ->
         List.filter temp_names ~f:(fun t ->
             Linear.orig_name t |>
             Option.value_map ~default:false ~f:(String.equal hvar)) |>
         enum_set)
 
-  let regs_gpr (target : Theory.target) : var list * var list =
+  let regs_gpr
+      (target : Theory.target)
+      (language : Theory.language) : var list * var list =
     let regs =
       Theory.Target.regs target |>
       Set.map (module Var) ~f:Var.reify |>
-      Set.to_list in
+      Set.to_list |>
+      List.cons dummy in
     let gpr =
-      let roles = Theory.Role.Register.[general] in
+      let roles = Theory.Role.Register.[general; integer] in
+      let roles =
+        if Theory.Target.belongs Arm_target.parent target
+        && Vibes_utils.Core_theory.is_thumb language
+        then Arm_target.thumb :: roles
+        else roles in
       let exclude = Theory.Role.Register.[stack_pointer] in
       Theory.Target.regs target ~exclude ~roles |>
       Set.map (module Var) ~f:Var.reify |>
@@ -275,10 +278,11 @@ module Params = struct
   let serialize
       ?(prev_solutions : Solution.set = Solution.empty_set)
       (ir : Ir.t)
-      (target : Theory.target) : (Yojson.Safe.t * info, KB.conflict) result =
-    let regs, gpr = regs_gpr target in
+      (target : Theory.target)
+      (language : Theory.language) : (Yojson.Safe.t * info, KB.conflict) result =
+    let regs, gpr = regs_gpr target language in
     let reg_map =
-      List.map (dummy :: regs) ~f:(fun r -> Var.to_string r, r) |>
+      List.map regs ~f:(fun r -> Var.to_string r, r) |>
       String.Map.of_alist_exn in
     let temps = Ir.all_temps ir |> Var.Set.to_list in
     let temp_names = List.map temps ~f:Var.to_string in
@@ -291,7 +295,9 @@ module Params = struct
     let operations = Map.keys operation_opcodes in
     let operands = Ir.all_opvar_ids ir |> Set.to_list in
     let opcodes = Ir.all_opcodes ir in
-    let hvar_t = serialize_hvar_t temp_names in
+    let hvars =
+      List.filter_map temp_names ~f:Linear.orig_name |>
+      List.dedup_and_sort ~compare:String.compare in
     let operand_operation =
       let f = Fn.compose Int.to_string Ir.Operation.id in
       Ir.operand_to_operation ir |> key_map operands ~f:(enumf f) in
@@ -317,10 +323,10 @@ module Params = struct
       Ir.block_to_operations ir |>
       key_map blocks ~f:(enum_setf Int.to_string) in
     let params = {
-      reg_t = Map.keys reg_map |> enum_set;
+      reg_t = enum_setf Var.to_string regs;
       opcode_t = enum_set opcodes;
       temp_t = enum_set temp_names;
-      hvar_t;
+      hvar_t = enum_setf (fun v -> "hvar_" ^ v) hvars;
       operand_t = enum_setf Int.to_string operands;
       operation_t = enum_setf Int.to_string operations;
       block_t = enum_setf Tid.to_string blocks;
@@ -340,7 +346,7 @@ module Params = struct
       block_outs;
       block_ins;
       block_operations;
-      hvars_temps = serialize_hvars_temps hvar_t temp_names;
+      hvars_temps = serialize_hvars_temps hvars temp_names;
     } in
     let info = {temps; temp_map; reg_map; operations; operands} in
     Ok (yojson_of_t params, info)
