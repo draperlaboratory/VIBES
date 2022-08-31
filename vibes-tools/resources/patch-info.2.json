@@ -20,6 +20,13 @@
           "allow-opt": true
         }
       ]
+    },
+    {
+      "name": "foo",
+      "storage-class": [
+        "constant",
+        "0x1234:32"
+      ]
     }
   ]
 }
