@@ -3,7 +3,6 @@ open Bap.Std
 open Monads.Std
 open Bap_core_theory
 
-
 module Json = Vibes_utils.Json
 module Ir = Vibes_ir.Types
 module Linear = Vibes_linear_ssa.Utils

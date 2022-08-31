@@ -24,4 +24,3 @@ module Assembly = struct
     List.iter asm.blocks ~f:(Format.fprintf ppf "%a\n%!" pp_block)
   
 end
-
