@@ -18,9 +18,9 @@ module Assembly = struct
   let pp_block (ppf : Format.formatter) (blk : block) : unit =
     Format.fprintf ppf "%s:\n%!" blk.label;
     List.iter blk.insns ~f:(Format.fprintf ppf "    %s\n%!")
-  
+
   let pp (ppf : Format.formatter) (asm : t) : unit =
-    List.iter asm.directives ~f:(Format.fprintf ppf "%s\n%!");
-    List.iter asm.blocks ~f:(Format.fprintf ppf "%a\n%!" pp_block)
-  
+    List.iter asm.directives ~f:(Format.fprintf ppf "%s\n\n%!");
+    List.iter asm.blocks ~f:(Format.fprintf ppf "%a%!" pp_block)
+
 end
