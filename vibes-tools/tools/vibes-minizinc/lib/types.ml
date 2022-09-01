@@ -117,9 +117,14 @@ module Solution = struct
 
   let apply (ir : Ir.t) (solution : t) : Ir.t =
     let ir = Ir.map_blks ir ~f:(fun b ->
-        let data = List.filter b.data ~f:(fun o ->
-            Map.find solution.active o.id |>
-            Option.value ~default:false) in
+        let data =
+          List.filter b.data ~f:(fun o ->
+              Map.find solution.active o.id |>
+              Option.value ~default:false) |>
+          List.sort ~compare:(fun a b ->
+              let a = Map.find_exn solution.issue @@ Ir.Operation.id a in
+              let b = Map.find_exn solution.issue @@ Ir.Operation.id b in
+              Int.compare a b) in
         {b with data}) in
     let ir = Ir.map_opvars ir ~f:(fun o ->
         Map.find solution.temp o.id |>
