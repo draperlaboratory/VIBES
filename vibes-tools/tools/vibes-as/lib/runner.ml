@@ -12,7 +12,7 @@ let (let*) x f = Result.bind x ~f
 
 let try_deserialize (vir_sexp : Sexp.t) : (Ir.t, KB.conflict) result =
   try
-    let result = Toplevel.var "vibes-select" in
+    let result = Toplevel.var "vibes-as" in
     Toplevel.put result @@ Serializers.Vir.deserialize vir_sexp;
     Result.return @@ Toplevel.get result      
   with Toplevel.Conflict err -> Error err
