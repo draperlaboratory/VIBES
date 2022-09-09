@@ -7,7 +7,7 @@
       (%00000013 set (mem:call 0 (mem 32 8) false)
        (var (mem 0 (mem 32 8) false)))))
     (ctrl
-     ((%00000010 call (direct %00000011) (return (direct %00000009))
+     ((%00000010 call (indirect (int 0x1234:32u)) (return (direct %00000009))
        (when (int 1:1u))))))
    (%00000009 block (phi ())
     (data

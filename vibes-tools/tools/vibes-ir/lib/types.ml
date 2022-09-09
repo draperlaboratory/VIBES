@@ -4,15 +4,15 @@ open Bap_core_theory
 
 module Utils = Vibes_utils.Misc
 
-type opcode = string [@@deriving compare, equal]
+type opcode = string [@@deriving compare, equal, sexp]
 
-type 'a opcode_map = 'a String.Map.t
+type 'a opcode_map = 'a String.Map.t [@@deriving compare, equal, sexp]
 
-type id = int [@@deriving compare, equal]
+type id = int [@@deriving compare, equal, sexp]
 
-type 'a id_map = 'a Int.Map.t
+type 'a id_map = 'a Int.Map.t [@@deriving compare, equal, sexp]
 
-type id_set = Int.Set.t
+type id_set = Int.Set.t [@@deriving compare, equal, sexp]
 
 module Roles = struct
 
@@ -47,7 +47,7 @@ module Opvar = struct
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare]
+  } [@@deriving compare, fields]
 
   let create ?(preassign : var option = None) (v : var) : t = {
     id = fresh_id ();
@@ -121,7 +121,7 @@ module Operation = struct
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   let create_empty () : t = {
     id = fresh_id ();
@@ -210,7 +210,7 @@ module Block = struct
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   let create_simple
       ?(frequency : int = 1)
@@ -451,7 +451,7 @@ let block_to_ins (t : t) : id Tid.Map.t =
 let block_to_outs (t : t) : id Tid.Map.t =
   Tid.Map.of_alist_exn @@
   List.map t.blks ~f:(fun blk ->
-      blk.tid, blk.ins.id)
+      blk.tid, blk.outs.id)
 
 let block_to_operations (t : t) : id list Tid.Map.t =
   Tid.Map.of_alist_exn @@

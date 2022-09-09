@@ -1,0 +1,15 @@
+(include_subdirs unqualified)
+
+(library
+ (name vibes_as)
+ (public_name vibes-as)
+ (libraries
+   bap-core-theory
+   vibes-log
+   vibes-constants
+   vibes-utils
+   vibes-serializers
+   vibes-ir
+   vibes-minizinc
+   vibes-select)
+ (preprocess (pps ppx_fields_conv ppx_sexp_conv)))

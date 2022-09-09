@@ -2,15 +2,15 @@ open Core
 open Bap.Std
 open Bap_core_theory
 
-type opcode = string [@@deriving compare, equal]
+type opcode = string [@@deriving compare, equal, sexp]
 
-type 'a opcode_map = 'a String.Map.t
+type 'a opcode_map = 'a String.Map.t [@@deriving compare, equal, sexp]
 
-type id = int [@@deriving compare, equal]
+type id = int [@@deriving compare, equal, sexp]
 
-type 'a id_map = 'a Int.Map.t
+type 'a id_map = 'a Int.Map.t [@@deriving compare, equal, sexp]
 
-type id_set = Int.Set.t
+type id_set = Int.Set.t [@@deriving compare, equal, sexp]
 
 module Roles : sig
 
@@ -29,7 +29,7 @@ module Opvar : sig
     id : id;
     temps : var list;
     preassign : var option;
-  } [@@deriving compare]
+  } [@@deriving compare, fields]
 
   val create : ?preassign:var option -> var -> t
   val equal : t -> t -> bool
@@ -61,7 +61,7 @@ module Operation : sig
     opcodes : opcode list;
     optional : bool;
     operands : Operand.t list;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   val create_empty : unit -> t
 
@@ -96,7 +96,7 @@ module Block : sig
     ins : Operation.t;
     outs : Operation.t;
     frequency : int;
-  } [@@deriving compare, equal]
+  } [@@deriving compare, equal, fields]
 
   val create_simple :
     ?frequency:int ->
