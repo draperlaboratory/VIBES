@@ -13,18 +13,22 @@ let (let*) x f = Result.bind x ~f
 let assembler = "/usr/bin/arm-linux-gnueabi-as"
 let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy"
 
-let trampoline (loc : int64) : Asm.block =
-  let b = Format.sprintf "%s (%s + (%Ld))"
-      (Ops.b ()) Constants.patch_start_label loc in
-  let label = Format.sprintf "trampoline%Ld" loc in
+let trampoline (addr : int64) : Asm.block =
+  let op = Ops.b () in
+  let b = Format.sprintf "%s (%s + %Ld - %s)"
+      op
+      Constants.patch_start_label
+      addr
+      Constants.patch_location in
+  let label = Format.sprintf "trampoline%Ld" addr in
   Asm.Fields_of_block.create ~label ~insns:[b]
 
-let create_trampoline (loc : int64) : Asm.t =
-  let block = trampoline loc in
+let create_trampoline (addr : int64) : Asm.t =
+  let block = trampoline addr in
   Asm.{directives = [".syntax unified"]; blocks = [block]}
 
-let insert_trampoline (loc : int64) (asm : Asm.t) : Asm.t =
-  let block = trampoline loc in
+let insert_trampoline (addr : int64) (asm : Asm.t) : Asm.t =
+  let block = trampoline addr in
   Asm.{asm with blocks = asm.blocks @ [block]}
 
 let has_ldr_large_const : Asm.t -> bool =
@@ -62,7 +66,7 @@ let situate
     let start = Asm.Fields_of_block.create ~label ~insns:[] in
     Asm.{asm with blocks = start :: asm.blocks} in
   match jmp with
-  | Some jmp -> insert_trampoline Int64.(jmp - loc) asm
+  | Some jmp -> insert_trampoline jmp asm
   | None -> asm
 
 module Toolchain = struct

@@ -115,14 +115,14 @@ let rec try_patch_spaces
     Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
     let* region = Utils.find_code_region space.address spec in
-    let trampoline =
-      Utils.addr_to_offset space.address region |>
-      Target.create_trampoline in
     (* We have to make sure that the jump to the external space
        will fit at the intended patch point. *)
     let* trampoline =
+      let asm =
+        Utils.addr_to_offset space.address region |>
+        Target.create_trampoline in
       try_patch_site orig_region addr size
-        None trampoline target language in
+        None asm target language in
     match trampoline with
     | None ->
       Error (Errors.No_patch_room
@@ -152,7 +152,7 @@ let place_patch
     Word.to_int64_exn patch_info.patch_point,
     patch_info.patch_size in
   let* region = Utils.find_code_region addr spec in
-  let ret = Utils.addr_to_offset Int64.(addr + size) region in
+  let ret = Int64.(addr + size) in
   let* patch =
     try_patch_site region addr size (Some ret) asm target language in
   match patch with

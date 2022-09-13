@@ -27,8 +27,8 @@ module type Target = sig
     to_addr:(int64 -> int64) ->
     Asm.t
 
-  (** [create_trampoline loc] creates a fresh assembly program for the
-      purpose of jumping to the patch location [loc]. *)
+  (** [create_trampoline addr] creates a fresh assembly program for the
+      purpose of jumping to the address [addr]. *)
   val create_trampoline : int64 -> Asm.t
 
   (** Returns [true] if the assembly program is expected to
