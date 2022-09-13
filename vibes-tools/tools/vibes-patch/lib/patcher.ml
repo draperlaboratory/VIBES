@@ -22,6 +22,7 @@ let target_info (target : T.target) : (target, KB.conflict) result =
 type patch = {
   data : string;
   loc : int64;
+  len : int64;
 } [@@deriving sexp]
 
 (* Copy the original binary and write the patches to it. *)
@@ -35,7 +36,7 @@ let patch_file
       Out_channel.output_string file orig_data;
       Out_channel.seek file patch.loc;
       Out_channel.output_string file patch.data;
-      Option.iter trampoline ~f:(fun {loc; data} ->
+      Option.iter trampoline ~f:(fun {loc; data; _} ->
           Out_channel.seek file loc;
           Out_channel.output_string file data))
 
@@ -80,16 +81,16 @@ let try_patch_site
   let* data = try_ jmp in
   let len = Int64.of_int @@ String.length data in
   if Int64.(len = size) then
-    Ok (Some {data; loc})
+    Ok (Some {data; loc; len})
   else if Int64.(len < size) then
     if extern || Option.is_some jmp then
-      Ok (Some {data; loc})
+      Ok (Some {data; loc; len})
     else
       (* For patching at the original location, we need to insert
          a jump to the end of the specified space. *)
       let* data = try_ ret in
       let len = Int64.of_int @@ String.length data in
-      Ok (Option.some_if Int64.(len <= size) {data; loc})
+      Ok (Option.some_if Int64.(len <= size) {data; loc; len})
   else Ok None
 
 (* Try the provided external patch spaces. *)
