@@ -68,7 +68,7 @@ module Cli = struct
       ~binary
       ~asm_filepath
       ~patched_binary
-    ~ogre_filepath |> function
+      ~ogre_filepath |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 
