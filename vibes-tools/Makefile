@@ -148,3 +148,22 @@ as.install:
 .PHONY:
 as.uninstall:
 	$(MAKE) -C $(TOOLS_SRC) as.uninstall
+
+###################################
+# vibes-patch
+###################################
+
+.PHONY: patch
+patch: patch.install
+
+.PHONY: patch.build
+patch.build:
+	$(MAKE) -C $(TOOLS_SRC) patch.build
+
+.PHONY: patch.install
+patch.install:
+	$(MAKE) -C $(TOOLS_SRC) patch.install
+
+.PHONY:
+patch.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) patch.uninstall
