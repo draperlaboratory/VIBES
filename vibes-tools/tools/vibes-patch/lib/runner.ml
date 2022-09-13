@@ -42,25 +42,16 @@ let run
       let msg = Format.asprintf "Invalid ASM: %a" Sexp.pp_hum asm_sexp in
       Error (Errors.Invalid_asm msg) in
   Log.send "Assembly:\n%a\n%!" Asm.pp asm;
-  let* backend = match ogre_filepath with
-    | None -> Ok None
-    | Some ogre_filepath ->
-      let* data = Files.get_file_contents_non_empty ogre_filepath
-          ~error:(fun s ->
-              let msg = Format.sprintf "Expected non-empty OGRE file %s" s in
-              Errors.Invalid_ogre msg) in
-      try
-        Loader.register data;
-        Ok (Some Loader.name)
-      with
-      | exn ->
-        let msg = Format.asprintf
-            "Failed to register OGRE loader: %a"
-            Exn.pp exn in
+  let* () = match ogre_filepath with
+    | None -> Ok ()
+    | Some path -> match Sys_unix.file_exists path with
+      | `Yes -> Ok ()
+      | `No | `Unknown ->
+        let msg = Format.sprintf "OGRE file %s not found" path in
         Error (Errors.Invalid_ogre msg) in
   let* patch =
     Patcher.patch patch_info target language
-      asm ~binary ~patched_binary ~backend in
+      asm ~binary ~patched_binary ~backend:ogre_filepath in
   Format.printf "Placed at 0x%Lx using %Ld bytes\n%!"
     patch.Patcher.addr patch.Patcher.len;
   Ok ()
