@@ -21,9 +21,13 @@ let target_info (target : T.target) : (target, KB.conflict) result =
 
 type patch = {
   data : string;
+  addr : int64;
   loc : int64;
   len : int64;
-} [@@deriving sexp]
+}
+
+let pp_patch (ppf : Format.formatter) (p : patch) : unit =
+  Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%Ld" p.addr p.loc p.len
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
@@ -81,16 +85,16 @@ let try_patch_site
   let* data = try_ jmp in
   let len = Int64.of_int @@ String.length data in
   if Int64.(len = size) then
-    Ok (Some {data; loc; len})
+    Ok (Some {data; addr; loc; len})
   else if Int64.(len < size) then
     if extern || Option.is_some jmp then
-      Ok (Some {data; loc; len})
+      Ok (Some {data; addr; loc; len})
     else
       (* For patching at the original location, we need to insert
          a jump to the end of the specified space. *)
       let* data = try_ ret in
       let len = Int64.of_int @@ String.length data in
-      Ok (Option.some_if Int64.(len <= size) {data; loc; len})
+      Ok (Option.some_if Int64.(len <= size) {data; addr; loc; len})
   else Ok None
 
 (* Try the provided external patch spaces. *)
@@ -166,16 +170,15 @@ let patch
     (language : T.language)
     (asm : Asm.t)
     ~(binary : string)
-    ~(patched_binary : string) : (unit, KB.conflict) result =
+    ~(patched_binary : string) : (patch, KB.conflict) result =
   Log.send "Loading binary %s" binary;
   let* image = Loader.image binary ?backend in
   let spec = Image.spec image in
   let* target = target_info target in
   Log.send "Solving patch placement";
   let* patch, trampoline = place_patch patch_info spec asm target language in
-  Log.send "Solved patch placement: %a" Sexp.pp_hum @@ sexp_of_patch patch;
-  Option.map trampoline ~f:sexp_of_patch |>
-  Option.iter ~f:(Log.send "Trampoline: %a" Sexp.pp_hum);
+  Log.send "Solved patch placement: %a" pp_patch patch;
+  Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
   Log.send "Writing to patched binary %s" patched_binary;
   patch_file patch binary patched_binary ~trampoline;
-  Ok ()
+  Ok patch

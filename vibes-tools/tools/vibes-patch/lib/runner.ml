@@ -58,7 +58,9 @@ let run
             "Failed to register OGRE loader: %a"
             Exn.pp exn in
         Error (Errors.Invalid_ogre msg) in
-  let* () =
+  let* patch =
     Patcher.patch patch_info target language
       asm ~binary ~patched_binary ~backend in
+  Format.printf "Placed at 0x%Lx using %Ld bytes\n%!"
+    patch.Patcher.addr patch.Patcher.len;
   Ok ()
