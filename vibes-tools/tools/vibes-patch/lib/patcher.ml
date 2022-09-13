@@ -118,9 +118,7 @@ let rec try_patch_spaces
     (* We have to make sure that the jump to the external space
        will fit at the intended patch point. *)
     let* trampoline =
-      let asm =
-        Utils.addr_to_offset space.address region |>
-        Target.create_trampoline in
+      let asm = Target.create_trampoline space.address in
       try_patch_site orig_region addr size
         None asm target language in
     match trampoline with
