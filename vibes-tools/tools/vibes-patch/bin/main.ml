@@ -21,7 +21,7 @@ module Cli = struct
     let default = None in
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
-  
+
   let asm_filepath : string C.Term.t =
     let info = C.Arg.info ["f"; "asm-filepath"]
         ~docv:"ASM_FILEPATH"
@@ -40,6 +40,15 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
+  let ogre_filepath : string option C.Term.t =
+    let info = C.Arg.info ["O"; "ogre"]
+        ~docv:"OGRE_FILEPATH"
+        ~doc:"Path/name of the optional OGRE loader file" in
+    let parser = C.Arg.some' C.Arg.string in
+    let default = None in
+    let arg = C.Arg.opt parser default info in
+    C.Arg.value arg
+
   let run
       (verbose : bool)
       (no_color : bool)
@@ -48,7 +57,8 @@ module Cli = struct
       (patch_info_filepath : string)
       (binary : string)
       (asm_filepath : string)
-      (patched_binary : string) : (unit, string) result =
+      (patched_binary : string)
+      (ogre_filepath : string option) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-as'";
     Runner.run
@@ -57,7 +67,8 @@ module Cli = struct
       ~patch_info_filepath
       ~binary
       ~asm_filepath
-      ~patched_binary |> function
+      ~patched_binary
+    ~ogre_filepath |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 
@@ -71,6 +82,7 @@ module Cli = struct
       $ binary
       $ asm_filepath
       $ patched_binary
+      $ ogre_filepath
     )
 
   let cmd = C.Cmd.v info runner

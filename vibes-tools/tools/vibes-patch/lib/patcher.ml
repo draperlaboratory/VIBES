@@ -160,6 +160,7 @@ let place_patch
     Ok (patch, Some trampoline)
 
 let patch
+    ?(backend : string option = None)
     (patch_info : Patch_info.t)
     (target : T.target)
     (language : T.language)
@@ -167,7 +168,7 @@ let patch
     ~(binary : string)
     ~(patched_binary : string) : (unit, KB.conflict) result =
   Log.send "Loading binary %s" binary;
-  let* image = Loader.image binary in
+  let* image = Loader.image binary ?backend in
   let spec = Image.spec image in
   let* target = target_info target in
   Log.send "Solving patch placement";

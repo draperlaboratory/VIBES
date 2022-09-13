@@ -21,7 +21,7 @@ let trampoline (loc : int64) : Asm.block =
 
 let create_trampoline (loc : int64) : Asm.t =
   let block = trampoline loc in
-  Asm.{directives = [".syntax_unified"]; blocks = [block]}
+  Asm.{directives = [".syntax unified"]; blocks = [block]}
 
 let insert_trampoline (loc : int64) (asm : Asm.t) : Asm.t =
   let block = trampoline loc in
@@ -51,12 +51,12 @@ let situate
     let dir =
       Format.sprintf ".equiv %s, %Ld"
         Constants.patch_location @@ to_addr loc in
-    Asm.{asm with directives = dir :: asm.directives} in
+    Asm.{asm with directives = asm.directives @ [dir]} in
   let asm = match org with
     | None -> asm
     | Some org ->
       let dir = Format.sprintf ".org %Ld" org in
-      Asm.{asm with directives = dir :: asm.directives} in
+      Asm.{asm with directives = asm.directives @ [dir]} in
   let asm =
     let label = Constants.patch_start_label in
     let start = Asm.Fields_of_block.create ~label ~insns:[] in
