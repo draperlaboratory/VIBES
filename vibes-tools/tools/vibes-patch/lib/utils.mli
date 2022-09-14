@@ -1,6 +1,3 @@
-open Core
-open Bap_core_theory
-
 (** A region in the binary. *)
 type region = {
   addr : int64;
@@ -10,7 +7,7 @@ type region = {
 
 (** [find_code_region addr spec] looks up the code region in [spec] that
     contains [addr]. *)
-val find_code_region : int64 -> Ogre.doc -> (region, KB.conflict) result
+val find_code_region : int64 -> Ogre.doc -> region option
 
 (** Converts a virtual address into a file offset. Assumes that the address
     is contained within the region. *)

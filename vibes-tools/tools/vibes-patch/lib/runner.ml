@@ -52,6 +52,6 @@ let run
   let* patch =
     Patcher.patch patch_info target language
       asm ~binary ~patched_binary ~backend:ogre_filepath in
-  Format.printf "Placed at 0x%Lx using %Ld bytes\n%!"
-    patch.Patcher.addr patch.Patcher.len;
+  Format.printf "Placed at 0x%Lx using %d bytes\n%!"
+    patch.Patcher.addr @@ String.length patch.Patcher.data;
   Ok ()

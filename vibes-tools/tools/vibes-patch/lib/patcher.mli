@@ -5,7 +5,6 @@ type patch = {
   data : string;
   addr : int64;
   loc : int64;
-  len : int64;
 }
 
 (** [patch patch_info target language asm ~binary ~patched_binary ~backend]

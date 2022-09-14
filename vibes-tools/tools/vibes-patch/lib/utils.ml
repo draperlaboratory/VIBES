@@ -1,6 +1,5 @@
 open Core
 open Bap.Std
-open Bap_core_theory
 
 type region = {
   addr : int64;
@@ -10,17 +9,13 @@ type region = {
 
 let find_code_region
     (loc : int64)
-    (spec : Ogre.doc) : (region, KB.conflict) result =
+    (spec : Ogre.doc) : region option =
   Ogre.require ~that:(fun (addr, size, _) ->
       Int64.(addr <= loc && loc <= addr + size))
     Image.Scheme.code_region |>
   Fn.flip Ogre.eval spec |> function
-  | Ok (addr, size, offset) -> Ok {addr; size; offset}
-  | Error err ->
-    let msg = Format.asprintf
-        "Couldn't find patch point 0x%Lx: %a"
-        loc Error.pp err in
-    Error (Errors.Invalid_patch_point msg)
+  | Ok (addr, size, offset) -> Some {addr; size; offset}
+  | Error _ -> None
 
 let addr_to_offset (addr : int64) (region : region) : int64 =
   Int64.(addr - region.addr + region.offset)

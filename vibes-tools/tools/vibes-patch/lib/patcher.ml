@@ -23,11 +23,11 @@ type patch = {
   data : string;
   addr : int64;
   loc : int64;
-  len : int64;
 }
 
 let pp_patch (ppf : Format.formatter) (p : patch) : unit =
-  Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%Ld" p.addr p.loc p.len
+  Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%d"
+    p.addr p.loc @@ String.length p.data
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
@@ -73,29 +73,39 @@ let try_patch_site
     (asm : Asm.t)
     (target : target)
     (language : T.language) : (patch option, KB.conflict) result =
+  let open Int64 in
   let module Target = (val target) in
   let loc = Utils.addr_to_offset addr region in
   let to_addr loc = Utils.offset_to_addr loc region in
   let org = Target.adjusted_org addr in
   let try_ = try_patch_site_aux target asm language org to_addr loc in
-  let jmp = match ret with
-    | Some _ when extern || Target.has_inline_data asm -> ret
-    | None when extern -> assert false
+  let needs_jmp = extern || Target.has_inline_data asm in
+  let* data = try_ @@ match ret with
+    | Some _ when needs_jmp -> ret
+    | None when needs_jmp -> assert false
     | None | Some _ -> None in
-  let* data = try_ jmp in
-  let len = Int64.of_int @@ String.length data in
-  if Int64.(len = size) then
-    Ok (Some {data; addr; loc; len})
-  else if Int64.(len < size) then
-    if extern || Option.is_some jmp then
-      Ok (Some {data; addr; loc; len})
-    else
-      (* For patching at the original location, we need to insert
-         a jump to the end of the specified space. *)
-      let* data = try_ ret in
-      let len = Int64.of_int @@ String.length data in
-      Ok (Option.some_if Int64.(len <= size) {data; addr; loc; len})
-  else Ok None
+  match of_int @@ String.length data with
+  | len when len = size -> Ok (Some {data; addr; loc})
+  | len when len < size && needs_jmp -> Ok (Some {data; addr; loc})
+  | len when len < size ->
+    (* For patching at the original location, we need to insert
+       a jump to the end of the specified space. We need to check
+       that the patch still fits because inserting a jump will
+       increase the length of the patch. *)
+    let* data = try_ @@ match ret with
+      | None -> assert false
+      | Some _ -> ret in
+    Result.return begin match of_int @@ String.length data with
+      | len when len <= size -> Some {data; addr; loc}
+      | len ->
+        Log.send "Patch doesn't fit at address 0x%Lx (%Ld bytes \
+                  available, %Ld bytes needed)" addr size len;
+        None
+    end
+  | len ->
+    Log.send "Patch doesn't fit at address 0x%Lx (%Ld bytes \
+              available, %Ld bytes needed)" addr size len;
+    Ok None
 
 (* Try the provided external patch spaces. *)
 let rec try_patch_spaces
@@ -108,36 +118,47 @@ let rec try_patch_spaces
     (spec : Ogre.doc)
     (target : target)
     (language : T.language) : ((patch * patch), KB.conflict) result =
-  let module Target = (val target) in
   let open Patch_info in
+  let module Target = (val target) in
   match spaces with
   | [] ->
     Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
-    let* region = Utils.find_code_region space.address spec in
-    (* We have to make sure that the jump to the external space
-       will fit at the intended patch point. *)
-    let* trampoline =
-      let asm = Target.create_trampoline space.address in
-      try_patch_site orig_region addr size
-        None asm target language in
-    match trampoline with
+    let next () =
+      try_patch_spaces rest orig_region asm
+        addr size ret spec target language in
+    Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
+      space.address space.size;
+    match Utils.find_code_region space.address spec with
     | None ->
-      Error (Errors.No_patch_room
-               "No room for trampoline to \
-                external patch space")
-    | Some trampoline ->
-      let* patch =
-        try_patch_site region space.address
-          space.size (Some ret) asm target language
-          ~extern:true in
-      match patch with
-      | Some patch -> Ok (patch, trampoline)
+      Log.send "Code region for patch space at address \
+                0x%Lx was not found" space.address;
+      next ()
+    | Some region ->
+      (* We have to make sure that the jump to the external space
+         will fit at the intended patch point. *)
+      let* trampoline =
+        let asm = Target.create_trampoline space.address in
+        try_patch_site orig_region addr size
+          None asm target language in
+      match trampoline with
       | None ->
-        try_patch_spaces rest orig_region asm
-          addr size ret spec target language
+        Log.send "Trampoline doesn't fit";
+        next ()
+      | Some trampoline ->
+        let len = String.length trampoline.data in
+        Log.send "Trampoline fits (%d bytes)" len;
+        let* patch =
+          try_patch_site region space.address
+            space.size (Some ret) asm target language
+            ~extern:true in
+        match patch with
+        | Some patch -> Ok (patch, trampoline)
+        | None -> next ()
 
-(* Attempt to place the patch. *)
+(* Search for a space in the binary where the patch will fit. We first
+   try the provided patch point, and if it doesn't work we will try the
+   available external patch spaces that the user gave us. *)
 let place_patch
     (patch_info : Patch_info.t)
     (spec : Ogre.doc)
@@ -149,7 +170,14 @@ let place_patch
   let addr, size =
     Word.to_int64_exn patch_info.patch_point,
     patch_info.patch_size in
-  let* region = Utils.find_code_region addr spec in
+  Log.send "Attempting patch point 0x%Lx with %Ld bytes of space" addr size;
+  let* region = match Utils.find_code_region addr spec with
+    | Some region -> Ok region
+    | None ->
+      let msg = Format.sprintf
+          "Couldn't find code region for patch point 0x%Lx"
+          addr in
+      Error (Errors.Invalid_address msg) in
   let ret = Int64.(addr + size) in
   let* patch =
     try_patch_site region addr size (Some ret) asm target language in
