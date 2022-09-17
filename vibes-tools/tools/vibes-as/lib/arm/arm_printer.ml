@@ -159,5 +159,5 @@ let ir ~(is_thumb : bool) : Asm.printer = fun t ->
   let+ blocks =
     List.map ~f:(block ~is_thumb) t.blks |>
     Result.all in
-  let directives = [".syntax_unified"] in
+  let directives = [".syntax unified"] in
   Asm.Fields.create ~directives ~blocks

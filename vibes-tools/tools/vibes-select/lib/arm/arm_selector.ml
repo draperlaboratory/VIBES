@@ -62,12 +62,20 @@ end
    movw rather than mov. If it's greater than 65535, then we will use
    the ldr pseudo instruction. The assembler will store the constant
    in a literal pool at the end of our patch, and it will access this
-   constant with a PC-relative load. *)
-let mov_const (c : word) ~(is_thumb : bool) : Ir.opcode =
+   constant with a PC-relative load.
+
+   We should avoid using this pseudo-instruction if it's a negative
+   number between -1 and -257. The assembler will turn it into a mvn
+   instruction, but we can just do it here. This way, the ldrs that
+   appear will be a signpost for us that the assembler will insert
+   a constant pool (which is important for us to know in the patcher).
+*)
+let mov_const (c : word) ~(is_thumb : bool) : Ir.opcode * word =
   match Word.to_int_exn c with
-  | n when n <= 0xFF -> Ops.mov is_thumb
-  | n when n <= 0xFFFF -> Ops.movw
-  | _ -> Ops.ldr 
+  | n when n <= 0xFF -> Ops.mov is_thumb, c
+  | n when n <= 0xFFFF -> Ops.movw, c
+  | n when n >= 0xFFFF_FEFF && n <= 0xFFFF_FFFF -> Ops.mvn, Word.lnot c
+  | _ -> Ops.ldr, c
 
 let is_movcc (o : Ir.Operation.t) : bool =
   List.exists o.opcodes ~f:(fun n ->
@@ -97,8 +105,8 @@ let mov (l : Ir.Operand.t) (r : pure) ~(is_thumb : bool) : eff KB.t =
     let mov = Ir.Operation.create_simple c l [r.value] in
     !!(instr mov r.eff)
   | Var _, Const w ->
-    let c = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c l [r.value] in
+    let c, w = mov_const w ~is_thumb in
+    let mov = Ir.Operation.create_simple c l [Const w] in
     !!(instr mov r.eff)
   | Void _, Void _ when not @@ List.is_empty r.eff.data -> begin
       (* Same hack as above, but with void operands. *)
@@ -135,8 +143,8 @@ let uop
   match arg.value with
   | Const w ->
     let+ tmp = var_temp word_ty in
-    let c = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c tmp [arg.value] in
+    let c, w = mov_const w ~is_thumb in
+    let mov = Ir.Operation.create_simple c tmp [Const w] in
     let op = Ir.Operation.create_simple o res [tmp] in
     {value = res; eff = instr op (instr mov arg.eff)}
   | _ ->
@@ -155,8 +163,8 @@ let binop
     (* For binops that allow constant operands, the limit seems
        to be 12 bits according to the manual. *)
     let+ tmp = var_temp word_ty in
-    let c = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c tmp [r.value] in
+    let c, w = mov_const w ~is_thumb in
+    let mov = Ir.Operation.create_simple c tmp [Const w] in
     let op = Ir.Operation.create_simple o res [l.value; tmp] in
     let eff = l.eff @. r.eff in
     {value = res; eff = instr op (instr mov eff)}
@@ -242,8 +250,8 @@ let str
     | Const w ->
       let+ tmp = var_temp word_ty in
       let ops = [mem.value; tmp; loc.value] in
-      let c = mov_const w ~is_thumb in
-      let mov = Ir.Operation.create_simple c tmp [value.value] in
+      let c, w = mov_const w ~is_thumb in
+      let mov = Ir.Operation.create_simple c tmp [Const w] in
       let op = Ir.Operation.create_simple Ops.str res ops in
       [op; mov]
     | _ -> fail @@ Format.asprintf
@@ -270,8 +278,8 @@ let str_base_off
     | Const w ->
       let+ tmp = var_temp word_ty in
       let ops = [mem.value; tmp; base; off] in
-      let c = mov_const w ~is_thumb in
-      let mov = Ir.Operation.create_simple c tmp [value.value] in
+      let c, w = mov_const w ~is_thumb in
+      let mov = Ir.Operation.create_simple c tmp [Const w] in
       let op = Ir.Operation.create_simple Ops.str res ops in
       [op; mov]
     | _ -> fail @@ Format.asprintf
@@ -528,8 +536,8 @@ let rec select_exp
   | Load (mem, Int addr, _, size) ->
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
-    let c = mov_const addr ~is_thumb in
-    let op = Ir.Operation.create_simple c tmp [Const addr] in
+    let c, w = mov_const addr ~is_thumb in
+    let op = Ir.Operation.create_simple c tmp [Const w] in
     let a = {value = tmp; eff = instr op empty_eff} in
     let* ldr = ldr_op @@ Size.in_bits size in
     ternop ldr word_ty mem a @@ const (Word.zero 32)
@@ -548,8 +556,8 @@ let rec select_exp
   | Store (mem, Int addr, value, _, _size) ->
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
-    let c = mov_const addr ~is_thumb in
-    let op = Ir.Operation.create_simple c tmp [Const addr] in
+    let c, w = mov_const addr ~is_thumb in
+    let op = Ir.Operation.create_simple c tmp [Const w] in
     let loc = {value = tmp; eff = instr op empty_eff} in
     let* value = exp value in
     str mem value loc ~is_thumb
