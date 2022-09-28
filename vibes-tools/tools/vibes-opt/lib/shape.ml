@@ -268,16 +268,20 @@ let relax_branches
 *)
 let split_on_conditional (sub : sub term) : sub term KB.t =
   let after = Tid.Table.create () in
+  let is_cond = Fn.non Bir_helpers.is_unconditional in
   let+ sub = Term.KB.map blk_t sub ~f:(fun blk ->
-      Term.KB.map jmp_t blk ~f:(fun jmp ->
-          if Bir_helpers.is_unconditional jmp then !!jmp
-          else
-            let* jmp_tid = T.Label.fresh in
-            let+ blk_tid = T.Label.fresh in
-            let cont = Blk.create () ~tid:blk_tid ~jmps:[jmp] in
-            let cont = Term.set_attr cont Tags.split () in
-            Tid.Table.set after ~key:(Term.tid blk) ~data:cont;
-            Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid))) in
+      let jmps = Term.enum jmp_t blk |> Seq.to_list in
+      if List.exists jmps ~f:is_cond then
+        let tid = Term.tid blk in
+        let* jmp_tid = T.Label.fresh in
+        let+ blk_tid = T.Label.fresh in
+        let cont = Blk.create () ~tid:blk_tid ~jmps in
+        let cont = Term.set_attr cont Tags.split () in
+        Tid.Table.set after ~key:tid ~data:cont;
+        let defs = Term.enum def_t blk |> Seq.to_list in
+        let jmp = Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid) in
+        Blk.create () ~tid ~defs ~jmps:[jmp]
+      else !!blk) in
   Tid.Table.fold after ~init:sub
     ~f:(fun ~key:after ~data:blk sub ->
         Term.append blk_t sub blk ~after)
