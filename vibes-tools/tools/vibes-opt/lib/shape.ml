@@ -280,7 +280,9 @@ let split_on_conditional (sub : sub term) : sub term KB.t =
         Tid.Table.set after ~key:tid ~data:cont;
         let defs = Term.enum def_t blk |> Seq.to_list in
         let jmp = Jmp.create ~tid:jmp_tid @@ Goto (Direct blk_tid) in
-        Blk.create () ~tid ~defs ~jmps:[jmp]
+        let dict = Term.attrs blk in
+        let blk = Blk.create () ~tid ~defs ~jmps:[jmp] in
+        Term.with_attrs blk dict
       else !!blk) in
   Tid.Table.fold after ~init:sub
     ~f:(fun ~key:after ~data:blk sub ->
