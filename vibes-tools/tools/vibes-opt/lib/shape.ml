@@ -155,7 +155,8 @@ let collect_conservative_patch_points
         Bitvec.to_int64 bv in
       [patch_point, patch_info.patch_size]
     | spaces -> List.map spaces ~f:(fun space ->
-        (space.address, space.size)) in
+        let address = Bitvec.to_int64 @@ Word.to_bitvec space.address in
+        (address, space.size)) in
   List.map patch_spaces ~f:(fun (offset, size) ->
       Word.of_int64 ~width Int64.((offset + size) - 4L))
 

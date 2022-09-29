@@ -3,7 +3,7 @@ module Utils = Vibes_utils
 module Hvar = Vibes_higher_vars.Higher_var
 
 type space = {
-  address : int64 [@key "address"]; 
+  address : Utils.Json.Bitvector.t [@key "address"];
   size : int64 [@key "size"];
 } [@@deriving yojson]
 
