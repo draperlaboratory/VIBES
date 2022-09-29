@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "${THIS_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
 vibes-as \
-  --target bap:arm \
+  --target bap:armv7+le \
   --language llvm-armv7 \
   --vir-filepath resources/patch.vir \
   --asm-outfile resources/patch.asm \

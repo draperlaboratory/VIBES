@@ -3,9 +3,19 @@ open Bap.Std
 open Vibes_ir.Types
 
 let filter_empty_blocks (ir : t) : t =
-  let blks = List.filter ir.blks ~f:(fun b ->
-      match b.ctrl, b.data with
-      | [], [] -> false
+  let tids =
+    List.fold ir.blks ~init:Tid.Set.empty ~f:(fun acc blk ->
+        Set.add acc blk.tid) in
+  let referenced =
+    List.fold ir.blks ~init:Tid.Set.empty ~f:(fun init blk ->
+        Block.all_rhs_operands blk |>
+        List.fold ~init ~f:(fun acc -> function
+            | Operand.Label tid -> Set.add acc tid
+            | _ -> acc)) |>
+    Set.inter tids in
+  let blks = List.filter ir.blks ~f:(fun blk ->
+      match blk.ctrl, blk.data with
+      | [], [] -> Set.mem referenced blk.tid
       | _ -> true) in
   {ir with blks}
 

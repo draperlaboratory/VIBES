@@ -42,7 +42,7 @@ module Cli = struct
 
   let ogre_filepath : string option C.Term.t =
     let info = C.Arg.info ["O"; "ogre"]
-        ~docv:"OGRE_FILEPATH"
+        ~docv:"OGRE"
         ~doc:"Path/name of the optional OGRE loader file. It must \
               be an absolute filepath, e.g. ./myloader.ogre" in
     let parser = C.Arg.some' C.Arg.string in

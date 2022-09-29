@@ -33,8 +33,8 @@ module Builtin : S = struct
     }
 
     let updated_term = Value.Tag.register (module Unit)
-        ~name:"vibes-updated-term"
-        ~uuid:"98dce3a9-3831-452c-a7b7-4d26f23ad23e"
+        ~name:"vibes:updated-term"
+        ~uuid:"9c116f9f-ac35-4514-91f2-569109563b5c"
 
     let mark_updated t = Term.set_attr t updated_term ()
     let is_updated t = Option.is_some (Term.get_attr t updated_term)

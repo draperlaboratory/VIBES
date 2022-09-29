@@ -3,6 +3,7 @@
 (library
  (name vibes_as)
  (public_name vibes-as)
+ (flags -w -32)
  (libraries
    bap-core-theory
    vibes-log

@@ -95,7 +95,7 @@ module Operand = struct
     | Var v | Void v -> [v]
     | Const _ | Label _ | Offset _ -> []
 
-  let op_classes (opcodes : opcode list) (t : t) : Roles.map = match t with
+  let op_classes (opcodes : opcode list) : t -> Roles.map = function
     | Const _ | Label _ | Offset _ -> Int.Map.empty
     | Void v -> Roles.map_of_role opcodes v.id Roles.dummy
     | Var v ->
@@ -168,10 +168,7 @@ module Operation = struct
   let all_operands (t : t) : Operand.t list = t.lhs @ t.operands
   let lhs_operands (t : t) : Operand.t list = t.lhs
   let rhs_operands (t : t) : Operand.t list = t.operands
-
-  let freshen (t : t) : t = {
-    t with id = fresh_id ();
-  }
+  let freshen (t : t) : t = {t with id = fresh_id ()}
 
   let op_classes (opcodes : opcode list) (t : t) : Roles.map =
     all_operands t |> List.fold ~init:Int.Map.empty ~f:(fun acc op ->
@@ -358,7 +355,7 @@ let map_opvars (t : t) ~(f : Opvar.t -> Opvar.t) : t =
   let operand op = Operand.(match op with
       | Var v -> Var (f v)
       | Void v -> Void (f v)
-      | Const _ | Label _ | Offset _ -> op )in
+      | Const _ | Label _ | Offset _ -> op) in
   let operation o = Operation.{
       o with lhs = List.map o.lhs ~f:operand;
              operands = List.map o.operands ~f:operand;
@@ -383,12 +380,10 @@ let all_opvar_ids (t : t) : id_set =
   List.map ~f:(fun v -> v.Opvar.id) |>
   Int.Set.of_list
 
-let opvar_to_preassign (t : t) : var id_map =
+let opvar_to_preassign (t : t) : var option id_map =
   List.concat_map t.blks ~f:Block.all_operands |>
   List.concat_map ~f:Operand.var_operands |>
-  List.filter_map ~f:(fun v ->
-      Option.map v.Opvar.preassign
-        ~f:(fun p -> v.Opvar.id, p)) |>
+  List.map ~f:(fun Opvar.{id; preassign; _} -> id, preassign) |>
   Int.Map.of_alist_exn
 
 let definer_map (t : t) : Opvar.t Var.Map.t =
@@ -403,9 +398,7 @@ let users_map (t : t) : Opvar.t list Var.Map.t =
   List.fold t.blks ~init:Var.Map.empty ~f:(fun acc blk ->
       Block.users_map blk |> Map.merge acc ~f:(fun ~key:_ -> function
           | `Left a | `Right a -> Some a
-          | `Both (a, b) ->
-            Some (Utils.dedup_list_stable (a @ b)
-                    ~compare:Opvar.compare)))
+          | `Both (a, b) -> Some (a @ b)))
 
 let temp_to_block (t : t) : tid Var.Map.t =
   List.concat_map t.blks ~f:(fun blk ->

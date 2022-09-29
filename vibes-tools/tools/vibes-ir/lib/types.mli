@@ -142,7 +142,7 @@ val all_opcodes : t -> opcode list
 val definer_map : t -> Opvar.t Var.Map.t                         
 val users_map : t -> Opvar.t list Var.Map.t
 
-val opvar_to_preassign : t -> var id_map
+val opvar_to_preassign : t -> var option id_map
 val temp_to_block : t -> tid Var.Map.t
 val operation_to_opcodes : t -> opcode list id_map
 val operand_to_operation : t -> Operation.t id_map
