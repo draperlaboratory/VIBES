@@ -7,7 +7,7 @@ open Bap_core_theory
     - [size]: the size of the patch space
 *)
 type space = {
-  address : int64;
+  address : Vibes_utils.Json.Bitvector.t;
   size : int64;
 } [@@deriving yojson]
 

@@ -124,21 +124,22 @@ let rec try_patch_spaces
   | [] ->
     Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
+    let address = Bitvec.to_int64 @@ Word.to_bitvec space.address in
     let next () =
       try_patch_spaces rest orig_region asm
         addr size ret spec target language in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
-      space.address space.size;
-    match Utils.find_code_region space.address spec with
+      address space.size;
+    match Utils.find_code_region address spec with
     | None ->
       Log.send "Code region for patch space at address \
-                0x%Lx was not found" space.address;
+                0x%Lx was not found" address;
       next ()
     | Some region ->
       (* We have to make sure that the jump to the external space
          will fit at the intended patch point. *)
       let* trampoline =
-        let asm = Target.create_trampoline space.address in
+        let asm = Target.create_trampoline address in
         try_patch_site orig_region addr size
           None asm target language in
       match trampoline with
@@ -149,7 +150,7 @@ let rec try_patch_spaces
         let len = String.length trampoline.data in
         Log.send "Trampoline fits (%d bytes)" len;
         let* patch =
-          try_patch_site region space.address
+          try_patch_site region address
             space.size (Some ret) asm target language
             ~extern:true in
         match patch with
