@@ -28,11 +28,15 @@ let opt
     ~unconditional_branch_target
 
 let solve
+    ?(constraints : string option = None)
     (ir : Ir.t)
     (target : T.target)
     (language : T.language)
     (model_filepath : string) : (Ir.t, KB.conflict) result =
   let* params, info = Params.serialize ir target language in
+  let model_filepath =
+    Option.value_map constraints ~default:model_filepath
+      ~f:(Minizinc.build_constraints_file ~model_filepath) in
   let* solution_filepath = Minizinc.run_minizinc params ~model_filepath in
   let* solution = Solution.deserialize solution_filepath info in
   let ir = Solution.apply ir solution in

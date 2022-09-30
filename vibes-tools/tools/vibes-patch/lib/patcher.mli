@@ -7,15 +7,21 @@ type patch = {
   loc : int64;
 }
 
-(** [patch patch_info target language asm ~binary ~patched_binary ~backend]
-    will assemble and place a patch in the original [binary], whose contents
-    are written to the file at path [patched_binary]. *)
+type res = patch list * Vibes_patch_info.Types.spaces
+
+(** [patch target language asms ~binary ~patched_binary ~backend ?spaces] will
+    assemble and place a list of patches in the original [binary], whose contents
+    are written to the file at path [patched_binary].
+
+    The result is the list of patches applied to the binary, as well as the
+    resulting list of external spaces that are now occupied.
+*)
 val patch :
+  ?patch_spaces:Vibes_patch_info.Types.spaces ->
   ?backend:string option ->
-  Vibes_patch_info.Types.t ->
   Theory.target ->
   Theory.language ->
-  Vibes_as.Types.Assembly.t ->
+  Vibes_as.Types.Assembly.t list ->
   binary:string ->
   patched_binary:string ->
-  (patch, KB.conflict) result  
+  (res, KB.conflict) result

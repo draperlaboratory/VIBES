@@ -22,14 +22,15 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let asm_filepath : string C.Term.t =
-    let info = C.Arg.info ["f"; "asm-filepath"]
-        ~docv:"ASM_FILEPATH"
-        ~doc:"Path to file containing serialized assembly" in
-    let parser = C.Arg.some' C.Arg.file in
-    let default = None in
+  let asm_filepaths : string list C.Term.t =
+    let info = C.Arg.info ["f"; "asm-filepaths"]
+        ~docv:"ASM_FILEPATHS"
+        ~doc:"Path to files containing serialized assembly \
+              (separated by space)" in
+    let parser = C.Arg.list ~sep:' ' C.Arg.file in
+    let default = [] in
     let arg = C.Arg.opt parser default info in
-    C.Arg.required arg
+    C.Arg.non_empty arg
 
   let patched_binary : string C.Term.t =
     let info = C.Arg.info ["o"; "patched-binary"]
@@ -55,9 +56,9 @@ module Cli = struct
       (no_color : bool)
       (target : string)
       (language : string)
-      (patch_info_filepath : string)
+      (patch_spaces : string option)
       (binary : string)
-      (asm_filepath : string)
+      (asm_filepaths : string list)
       (patched_binary : string)
       (ogre_filepath : string option) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
@@ -65,9 +66,9 @@ module Cli = struct
     Runner.run
       ~target
       ~language
-      ~patch_info_filepath
+      ~patch_spaces
       ~binary
-      ~asm_filepath
+      ~asm_filepaths
       ~patched_binary
       ~ogre_filepath |> function
     | Ok () -> Ok ()
@@ -79,9 +80,9 @@ module Cli = struct
       $ Cli_opts.Verbosity.no_color
       $ Cli_opts.Target.target
       $ Cli_opts.Language.language
-      $ Cli_opts.Patch_info.filepath
+      $ Cli_opts.Patch_info.spaces
       $ binary
-      $ asm_filepath
+      $ asm_filepaths
       $ patched_binary
       $ ogre_filepath
     )

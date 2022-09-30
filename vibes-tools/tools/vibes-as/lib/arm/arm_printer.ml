@@ -6,6 +6,7 @@ module Constants = Vibes_constants.Asm
 module Ir = Vibes_ir.Types
 module Ops = Vibes_select.Arm_ops
 module Asm = Types.Assembly
+module Patch_info = Vibes_patch_info.Types
 
 type opc = (string, string * string) Either.t
 
@@ -155,9 +156,11 @@ let block
   let label = Format.asprintf "%s" @@ tid_to_asm_label t.tid in
   Asm.Fields_of_block.create ~label ~insns
 
-let ir ~(is_thumb : bool) : Asm.printer = fun t ->
+let ir ~(is_thumb : bool) : Asm.printer = fun t patch_info ->
   let+ blocks =
     List.map ~f:(block ~is_thumb) t.blks |>
     Result.all in
   let directives = [".syntax unified"] in
-  Asm.Fields.create ~directives ~blocks
+  let Patch_info.{patch_point; patch_size; _} = patch_info in
+  let patch_point = Bitvec.to_int64 @@ Word.to_bitvec patch_point in
+  Asm.Fields.create ~patch_point ~patch_size ~directives ~blocks

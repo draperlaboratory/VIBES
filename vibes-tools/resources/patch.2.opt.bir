@@ -1,20 +1,20 @@
 (program
  (patch.2.bir
-  ((%0000000b block (phi ())
+  ((%0000001b block (phi ())
     (data
-     ((%0000000d set (reg:R0 0 (imm 32) false) (int 3:32u))
-      (%0000000c set (reg:R1 0 (imm 32) false) (int 6:32u))
-      (%00000013 set (mem:call 0 (mem 32 8) false)
+     ((%0000001d set (reg:R0 0 (imm 32) false) (int 3:32u))
+      (%0000001c set (reg:R1 0 (imm 32) false) (int 6:32u))
+      (%00000023 set (mem:call 0 (mem 32 8) false)
        (var (mem 0 (mem 32 8) false)))))
     (ctrl
-     ((%00000010 call (indirect (int 0x1234:32u)) (return (direct %00000009))
+     ((%00000020 call (indirect (int 0x1234:32u)) (return (direct %00000019))
        (when (int 1:1u))))))
-   (%00000009 block (phi ())
+   (%00000019 block (phi ())
     (data
-     ((%0000000a set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
-    (ctrl ((%00000014 goto (direct %00000015) (when (int 1:1u))))))
-   (%00000015 block (phi ()) (data ()) (ctrl ()))))
+     ((%0000001a set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
+    (ctrl ((%00000024 goto (direct %00000025) (when (int 1:1u))))))
+   (%00000025 block (phi ()) (data ()) (ctrl ()))))
  (attrs
-  ((%0000000c (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
-   (%0000000d (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
-   (%00000013 (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))))
+  ((%0000001c (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%0000001d (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%00000023 (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ()))))))

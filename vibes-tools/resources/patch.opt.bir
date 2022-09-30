@@ -1,8 +1,8 @@
 (program
  (patch.bir
-  ((%00000009 block (phi ())
+  ((%00000019 block (phi ())
     (data
-     ((%0000000a set (mem 0 (mem 32 8) false)
+     ((%0000001a set (mem 0 (mem 32 8) false)
        (store (var (mem 0 (mem 32 8) false)) (int 0xBEEF:32u) (int 3:32u)
         LittleEndian 32))))
     (ctrl ()))))

@@ -11,13 +11,18 @@ module Assembly : sig
 
   (** An assembly program. *)
   type t = {
+    patch_point : int64;
+    patch_size : int64;
     directives : string list;
     blocks : block list;
   } [@@deriving fields, sexp]
 
   (** A printer will take a VIBES IR program and return the assembly
       representation if it is well-formed. *)
-  type printer = Vibes_ir.Types.t -> (t, KB.conflict) result
+  type printer =
+    Vibes_ir.Types.t ->
+    Vibes_patch_info.Types.t ->
+    (t, KB.conflict) result
 
   (** [pp ppf asm] will pretty-print the [asm] program to formatter
       [ppf]. *)

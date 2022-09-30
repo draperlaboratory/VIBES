@@ -5,6 +5,15 @@ module Filename = Stdlib.Filename
 module Proc = Vibes_utils.Proc
 module Log = Vibes_log.Stream
 
+let build_constraints_file
+    (constraints : string)
+    ~(model_filepath : string) : string =
+  let wrapper_filepath = Filename.temp_file "vibes-mzn-model" ".mzn" in
+  let outc = Out_channel.create wrapper_filepath in
+  Out_channel.fprintf outc "include \"%s\";\n%s" model_filepath constraints;
+  Out_channel.close outc;
+  wrapper_filepath
+
 let run_minizinc
     (params : Yojson.Safe.t)
     ~(model_filepath : string) : (string, KB.conflict) result =

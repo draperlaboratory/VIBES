@@ -13,6 +13,7 @@ module Bir_helpers = Vibes_bir.Helpers
 open KB.Syntax
 
 let deserialize_and_opt
+    ?(patch_spaces : Patch_info.spaces = [])
     (sexp : Sexp.t)
     ~(target : T.target)
     ~(language : T.language)
@@ -20,11 +21,12 @@ let deserialize_and_opt
     ~(func_info : Function_info.t) : sub term KB.t =
   let* sub = Serializers.Bir.deserialize sexp in
   Log.send "Deserialized BIR:\n\n%a" Sub.pp sub;
-  Bir_passes.run sub ~target ~language ~patch_info ~func_info
+  Bir_passes.run sub ~target ~language ~patch_info ~patch_spaces ~func_info
 
 (* Try to deserialize and optimize the BIR program while
    preserving the toplevel state. *)
 let try_deserialize_and_opt
+    ?(patch_spaces : Patch_info.spaces = [])
     (bir_sexp : Sexp.t)
     ~(target : T.target)
     ~(language : T.language)
@@ -33,11 +35,12 @@ let try_deserialize_and_opt
   try
     let result = Toplevel.var "vibes-opt" in
     Toplevel.put result @@ deserialize_and_opt bir_sexp
-      ~target ~language ~patch_info ~func_info;
+      ~target ~language ~patch_info ~patch_spaces ~func_info;
     Result.return @@ Toplevel.get result
   with Toplevel.Conflict err -> Error err
 
 let run
+    ?(patch_spaces : string option = None)
     ~(target : string)
     ~(language : string)
     ~(patch_info_filepath : string)
@@ -48,8 +51,10 @@ let run
   Log.send "Vibes_opt.Runner.run '%s' '%s' '%s' '%s' '%s' '%s'"
     target language patch_info_filepath
     bir_filepath func_info_filepath bir_outfile;
-  Log.send "Loading patch-info";
   let* patch_info = Patch_info.from_file patch_info_filepath in
+  let* patch_spaces = match patch_spaces with
+    | Some path -> Patch_info.spaces_from_file path
+    | None -> Ok [] in
   let* target = Utils.Core_theory.get_target target in
   let* language = Utils.Core_theory.get_language language in
   let* raw_bir_code = Utils.Files.get_file_contents_non_empty bir_filepath
@@ -62,9 +67,8 @@ let run
     | [sexp] -> Ok sexp
     | _ -> Error (Errors.Invalid_bir "Expected single S-exp") in
   let* func_info = Function_info.from_file func_info_filepath in
-  Log.send "Function info:\n%a" Function_info.pp func_info;
   let* sub = try_deserialize_and_opt bir_sexp
-      ~target ~language ~patch_info ~func_info in
+      ~target ~language ~patch_info ~patch_spaces ~func_info in
   Log.send "Serializing BIR";
   let bir_sexp = Serializers.Bir.serialize sub in
   let bir_data = Sexp.to_string_hum bir_sexp in

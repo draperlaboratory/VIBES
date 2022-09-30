@@ -64,12 +64,15 @@ let provide_function_info
                   end else !!())))
 
 let thumb_specific
+    ?(patch_spaces : Patch_info.spaces = [])
     (sub : sub term)
     ~(target : T.target)
     ~(patch_info : Patch_info.t) : sub term KB.t =
   Log.send "Relaxing branches";
   let* sub = Shape.relax_branches sub
-      ~target ~patch_info ~fwd_limit:0xFFFFE ~bwd_limit:0x100000 in
+      ~target ~patch_info ~patch_spaces
+      ~fwd_limit:0xFFFFE
+      ~bwd_limit:0x100000 in
   log_sub sub;
   Log.send "Splitting conditional jumps";
   let+ sub = Shape.split_on_conditional sub in
@@ -77,6 +80,7 @@ let thumb_specific
   sub
 
 let run
+    ?(patch_spaces : Patch_info.spaces = [])
     (sub : sub term)
     ~(target : T.target)
     ~(language : T.language)
@@ -117,7 +121,7 @@ let run
   let* sub =
     if is_thumb then begin
       Log.send "%a target detected" T.Language.pp language;
-      thumb_specific sub ~target ~patch_info
+      thumb_specific sub ~target ~patch_info ~patch_spaces
     end else !!sub in
   Log.send "Re-ordering blocks again";
   let sub = Shape.reorder_blks sub in

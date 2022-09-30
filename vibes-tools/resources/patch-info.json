@@ -2,7 +2,6 @@
   "patch-point": "0x10400:32",
   "patch-size": 2,
   "sp-align": 0,
-  "patch-spaces": [],
   "patch-vars": [
     {
       "name": "index",

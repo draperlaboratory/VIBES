@@ -144,9 +144,10 @@ let reorder_blks (sub : sub term) : sub term =
 
 (* Get the maximum address of each patch site. *)
 let collect_conservative_patch_points
+    ?(patch_spaces : Patch_info.spaces = [])
     ~(patch_info : Patch_info.t)
     ~(width : int) : word list =
-  let patch_spaces = match patch_info.patch_spaces with    
+  let patch_spaces = match patch_spaces with
     | [] ->
       (* Fall back to the default patch point. *)
       let patch_point =
@@ -168,20 +169,21 @@ let collect_conservative_patch_points
 
    Before (assume 0x123456 is too far away):
 
-   bcc 0x123456
-   b continue
+     bcc 0x123456
+     b continue
 
    After:
 
-   bcc relax
-   b continue
+     bcc relax
+     b continue
    relax:
-   b 0x123456
+     b 0x123456
 
    It's important to run this after the edge contraction optimization,
    since it will undo any kind of branch relaxation at the BIR level.
 *)
 let relax_branches
+    ?(patch_spaces : Patch_info.spaces = [])
     (sub : sub term)
     ~(target : T.target)
     ~(patch_info : Patch_info.t)
@@ -189,7 +191,7 @@ let relax_branches
     ~(bwd_limit : int) : sub term KB.t =
   let width = T.Target.code_addr_size target in
   let patch_points =
-    collect_conservative_patch_points ~patch_info ~width in
+    collect_conservative_patch_points ~patch_info ~patch_spaces ~width in
   let fwd_limit = Word.of_int ~width fwd_limit in
   let bwd_limit = Word.of_int ~width bwd_limit in
   let inserted = ref [] in

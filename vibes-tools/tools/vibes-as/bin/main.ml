@@ -41,22 +41,36 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
+  let extra_constraints_filepath : string option C.Term.t =
+    let info = C.Arg.info ["extra-constraints"]
+        ~docv:"EXTRA_CONSTRAINTS"
+        ~doc:"Optional path/name of file containing extra MiniZinc \
+              constraints" in
+    let parser = C.Arg.some' C.Arg.string in
+    let default = None in
+    let arg = C.Arg.opt parser default info in
+    C.Arg.value arg
+
   let run
       (verbose : bool)
       (no_color : bool)
       (target : string)
       (language : string)
+      (patch_info_filepath : string)
       (vir_filepath : string)
       (asm_outfile : string)
-      (model_filepath : string) : (unit, string) result =
+      (model_filepath : string)
+      (extra_constraints_filepath : string option) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-as'";
     Runner.run
       ~target
       ~language
       ~vir_filepath
+      ~patch_info_filepath
       ~asm_outfile
-      ~model_filepath |> function
+      ~model_filepath
+      ~extra_constraints_filepath |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 
@@ -66,9 +80,11 @@ module Cli = struct
       $ Cli_opts.Verbosity.no_color
       $ Cli_opts.Target.target
       $ Cli_opts.Language.language
+      $ Cli_opts.Patch_info.filepath
       $ vir_filepath
       $ asm_outfile
       $ model_filepath
+      $ extra_constraints_filepath
     )
 
   let cmd = C.Cmd.v info runner

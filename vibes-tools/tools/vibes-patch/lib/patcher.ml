@@ -31,18 +31,15 @@ let pp_patch (ppf : Format.formatter) (p : patch) : unit =
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
-    ?(trampoline : patch option = None)
-    (patch : patch)
+    (patches : patch list)
     (binary : string)
     (patched_binary : string) : unit =
   let orig_data = In_channel.read_all binary in
   Out_channel.with_file patched_binary ~f:(fun file ->
       Out_channel.output_string file orig_data;
-      Out_channel.seek file patch.loc;
-      Out_channel.output_string file patch.data;
-      Option.iter trampoline ~f:(fun {loc; data; _} ->
-          Out_channel.seek file loc;
-          Out_channel.output_string file data))
+      List.iter patches ~f:(fun patch ->
+          Out_channel.seek file patch.loc;
+          Out_channel.output_string file patch.data))
 
 (* Get the raw binary data of the patch at the specified patch site. *)
 let try_patch_site_aux
@@ -55,6 +52,7 @@ let try_patch_site_aux
     (jmp : int64 option) : (string, KB.conflict) result =
   let module Target = (val target) in
   let asm' = Target.situate asm ~loc ~to_addr ~org ~jmp in
+  Log.send "Situated assembly at 0x%Lx:\n%a" (to_addr loc) Asm.pp asm';
   let* objfile = Target.Toolchain.assemble asm' language in
   let* data = Target.Toolchain.to_binary objfile in
   (* If the origin was adjusted then shave off those bytes. *)
@@ -118,28 +116,30 @@ let rec try_patch_spaces
     (spec : Ogre.doc)
     (target : target)
     (language : T.language) : ((patch * patch), KB.conflict) result =
-  let open Patch_info in
   let module Target = (val target) in
   match spaces with
   | [] ->
     Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
-    let address = Bitvec.to_int64 @@ Word.to_bitvec space.address in
+    let jumpto = Bitvec.to_int64 @@ Word.to_bitvec space.address in
     let next () =
       try_patch_spaces rest orig_region asm
         addr size ret spec target language in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
-      address space.size;
-    match Utils.find_code_region address spec with
+      jumpto space.size;
+    match Utils.find_code_region jumpto spec with
     | None ->
       Log.send "Code region for patch space at address \
-                0x%Lx was not found" address;
+                0x%Lx was not found" jumpto;
       next ()
     | Some region ->
       (* We have to make sure that the jump to the external space
          will fit at the intended patch point. *)
+      Log.send "Found region (addr=0x%Lx, size=%Ld, offset=0x%Lx), \
+                attempting to situate trampoline"
+        region.addr region.size region.offset;
       let* trampoline =
-        let asm = Target.create_trampoline address in
+        let asm = Target.create_trampoline jumpto addr size in
         try_patch_site orig_region addr size
           None asm target language in
       match trampoline with
@@ -150,7 +150,7 @@ let rec try_patch_spaces
         let len = String.length trampoline.data in
         Log.send "Trampoline fits (%d bytes)" len;
         let* patch =
-          try_patch_site region address
+          try_patch_site region jumpto
             space.size (Some ret) asm target language
             ~extern:true in
         match patch with
@@ -161,16 +161,13 @@ let rec try_patch_spaces
    try the provided patch point, and if it doesn't work we will try the
    available external patch spaces that the user gave us. *)
 let place_patch
-    (patch_info : Patch_info.t)
+    (patch_spaces : Patch_info.spaces)
     (spec : Ogre.doc)
     (asm : Asm.t)
     (target : target)
     (language : T.language) : (patch * patch option, KB.conflict) result =
-  let open Patch_info in
   let module Target = (val target) in
-  let addr, size =
-    Word.to_int64_exn patch_info.patch_point,
-    patch_info.patch_size in
+  let addr, size = asm.patch_point, asm.patch_size in
   Log.send "Attempting patch point 0x%Lx with %Ld bytes of space" addr size;
   let* region = match Utils.find_code_region addr spec with
     | Some region -> Ok region
@@ -179,6 +176,8 @@ let place_patch
           "Couldn't find code region for patch point 0x%Lx"
           addr in
       Error (Errors.Invalid_address msg) in
+  Log.send "Found region (addr=0x%Lx, size=%Ld, offset=0x%Lx)"
+    region.addr region.size region.offset;
   let ret = Int64.(addr + size) in
   let* patch =
     try_patch_site region addr size (Some ret) asm target language in
@@ -186,26 +185,53 @@ let place_patch
   | Some patch -> Ok (patch, None)
   | None ->
     let* patch, trampoline =
-      try_patch_spaces patch_info.patch_spaces
-        region asm addr size ret spec target language in
+      try_patch_spaces patch_spaces region asm
+        addr size ret spec target language in
     Ok (patch, Some trampoline)
 
+let occupy_space
+    (patch : patch)
+    (spaces : Patch_info.spaces) : Patch_info.spaces =
+  List.map spaces ~f:(fun space ->
+      let open Int64 in
+      let Patch_info.{address; size} = space in
+      let width = Word.bitwidth address in
+      let address = Bitvec.to_int64 @@ Word.to_bitvec address in
+      if patch.addr = address then
+        let patch_size = of_int @@ String.length patch.data in
+        let address = Word.of_int64 ~width (address + patch_size) in
+        let size = size - patch_size in
+        Patch_info.{address; size}
+      else space)
+
+type res = patch list * Patch_info.spaces
+
 let patch
+    ?(patch_spaces : Patch_info.spaces = [])
     ?(backend : string option = None)
-    (patch_info : Patch_info.t)
     (target : T.target)
     (language : T.language)
-    (asm : Asm.t)
+    (asms : Asm.t list)
     ~(binary : string)
-    ~(patched_binary : string) : (patch, KB.conflict) result =
+    ~(patched_binary : string) : (res, KB.conflict) result =
   Log.send "Loading binary %s" binary;
   let* image = Loader.image binary ?backend in
   let spec = Image.spec image in
   let* target = target_info target in
   Log.send "Solving patch placement";
-  let* patch, trampoline = place_patch patch_info spec asm target language in
-  Log.send "Solved patch placement: %a" pp_patch patch;
-  Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
+  let rec apply spaces acc = function
+    | [] -> Ok (List.rev acc, spaces)
+    | asm :: asms ->
+      let* patch, trampoline =
+        place_patch spaces spec asm target language in
+      Log.send "Solved patch placement: %a" pp_patch patch;
+      Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
+      let acc = match trampoline with
+        | Some t -> t :: patch :: acc
+        | None -> patch :: acc in
+      let spaces = occupy_space patch spaces in
+      apply spaces acc asms in
+  let* patches, spaces = apply patch_spaces [] asms in
   Log.send "Writing to patched binary %s" patched_binary;
-  patch_file patch binary patched_binary ~trampoline;
-  Ok patch
+  patch_file patches binary patched_binary;
+  Ok (patches, spaces)

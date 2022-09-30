@@ -11,6 +11,15 @@ type space = {
   size : int64;
 } [@@deriving yojson]
 
+(** A list of external patch spaces. *)
+type spaces = space list [@@deriving yojson]
+
+(** Pretty-prints the patch spaces. *)
+val pp_spaces : Format.formatter -> spaces -> unit
+
+(** Attempts to deserialize the patch spaces from a JSON file. *)
+val spaces_from_file : string -> (spaces, KB.conflict) result
+
 (** The metadata for a patch.
 
     - [patch_point]: the absolute address of the program
@@ -24,15 +33,12 @@ type space = {
       subtracted from the stack pointer in order to keep
       it aligned when making function calls
 
-    - [patch_spaces]: a list of available external patch sites
-
     - [patch_vars]: higher variable information
 *)
 type t = {
   patch_point : Vibes_utils.Json.Bitvector.t;
   patch_size : int64;
   sp_align : int;
-  patch_spaces : space list;
   patch_vars : Vibes_higher_vars.Higher_var.t list;
 }
 
