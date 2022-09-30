@@ -192,17 +192,19 @@ let place_patch
 let occupy_space
     (patch : patch)
     (spaces : Patch_info.spaces) : Patch_info.spaces =
-  List.map spaces ~f:(fun space ->
+  List.filter_map spaces ~f:(fun space ->
       let open Int64 in
       let Patch_info.{address; size} = space in
       let width = Word.bitwidth address in
       let address = Bitvec.to_int64 @@ Word.to_bitvec address in
       if patch.addr = address then
         let patch_size = of_int @@ String.length patch.data in
-        let address = Word.of_int64 ~width (address + patch_size) in
         let size = size - patch_size in
-        Patch_info.{address; size}
-      else space)
+        if size > 0L then
+          let address = Word.of_int64 ~width (address + patch_size) in
+          Some Patch_info.{address; size}
+        else None
+      else Some space)
 
 type res = patch list * Patch_info.spaces
 
