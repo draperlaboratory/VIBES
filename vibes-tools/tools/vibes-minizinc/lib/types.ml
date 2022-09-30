@@ -188,17 +188,15 @@ module Params = struct
           Theory.Role.pp r in
       Error (Errors.Unsupported_role msg)
 
-  let width_of_var
-      (v : var)
-      ~(target : Theory.target) : (int, KB.conflict) result =
+  let width_of_var (v : var) : (int, KB.conflict) result =
     match Var.typ v with
-    | Imm n -> Ok (n / Theory.Target.bits target)
-    | Mem _ -> Ok 0
-    | Unk ->
+    | (Imm 0 | Unk) as t ->
       let msg = Format.asprintf
-          "Width is unimplemented for var %a of type Unk"
-          Var.pp v in
+          "Width is unimplemented for var %a of type %a"
+          Var.pp v Type.pp t in
       Error (Errors.Invalid_width msg)
+    | Imm _ -> Ok 1
+    | Mem _ -> Ok 0
 
   let key_map
       (keys : 'k list)
@@ -314,11 +312,12 @@ module Params = struct
     let* class_t =
       Ir.op_classes ir |>
       serialize_class_t opcodes operands regs gpr in
-    let* width = R.List.map temps ~f:(width_of_var ~target) in
+    let* width = R.List.map temps ~f:width_of_var in
     let preassign =
       Ir.opvar_to_preassign ir |>
-      key_map_d operands ~default:(set []) ~f:(fun v ->
-          enum_setf Var.to_string [v]) in
+      key_map_d operands ~default:(set []) ~f:(function
+          | Some v -> enum_setf Var.to_string [v]
+          | None -> set []) in
     let block_outs =
       Ir.block_to_outs ir |> key_map blocks ~f:(enumf Int.to_string) in
     let block_ins =
