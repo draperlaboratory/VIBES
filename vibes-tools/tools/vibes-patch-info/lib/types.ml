@@ -46,7 +46,7 @@ module Spaces = struct
             let size = Addr.of_int64 size ~width in
             let end_ = Addr.(pred (address + size)) in
             Map.update m address ~f:(function
-                | Some e when Addr.(end_ > e) -> end_
+                | Some e when Addr.(end_ < e) -> e
                 | Some _ | None -> end_)
           else m) in
     Map.fold m ~init:empty ~f:(fun ~key:start ~data:end_ t ->
