@@ -10,4 +10,5 @@ vibes-as \
   --vir-filepath resources/patch.vir \
   --asm-outfile resources/patch.asm \
   --model ../resources/minizinc/model.mzn  \
+  --patch-info-filepath resources/patch-info.json \
   --verbose

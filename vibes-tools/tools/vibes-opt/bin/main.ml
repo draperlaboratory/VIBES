@@ -45,6 +45,7 @@ module Cli = struct
       (target : string)
       (language : string)
       (patch_info_filepath : string)
+      (patch_spaces : string option)
       (bir_filepath : string)
       (func_info_filepath : string)
       (bir_outfile : string) : (unit, string) result =
@@ -54,6 +55,7 @@ module Cli = struct
       ~target
       ~language
       ~patch_info_filepath
+      ~patch_spaces
       ~bir_filepath
       ~func_info_filepath
       ~bir_outfile |> function
@@ -67,6 +69,7 @@ module Cli = struct
       $ Cli_opts.Target.target
       $ Cli_opts.Language.language
       $ Cli_opts.Patch_info.filepath
+      $ Cli_opts.Patch_info.spaces
       $ bir_filepath
       $ func_info_filepath
       $ bir_outfile

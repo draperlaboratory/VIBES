@@ -1,4 +1,4 @@
-((directives (".syntax unified"))
+((patch_point 66560) (patch_size 2) (directives (".syntax unified"))
  (blocks
   (((label blk0000001b)
     (insns

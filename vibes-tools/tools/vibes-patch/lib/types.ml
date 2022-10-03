@@ -19,7 +19,7 @@ module type Target = sig
     to_addr:(int64 -> int64) ->
     Asm.t
 
-  val create_trampoline : int64 -> Asm.t
+  val create_trampoline : int64 -> int64 -> int64 -> Asm.t
   val has_inline_data : Asm.t -> bool
   val adjusted_org : int64 -> int64 option
 

@@ -34,6 +34,7 @@ val reorder_blks : sub term -> sub term
     destination is targeted by an unconditional branch.
 *)
 val relax_branches :
+  ?patch_spaces:Vibes_patch_info.Types.Spaces.t ->
   sub term ->
   target:Theory.target ->
   patch_info:Vibes_patch_info.Types.t ->

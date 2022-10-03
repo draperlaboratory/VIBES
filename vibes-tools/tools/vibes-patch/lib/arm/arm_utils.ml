@@ -23,9 +23,14 @@ let trampoline (addr : int64) : Asm.block =
   let label = Format.sprintf "trampoline%Ld" addr in
   Asm.Fields_of_block.create ~label ~insns:[b]
 
-let create_trampoline (addr : int64) : Asm.t =
+let create_trampoline
+    (addr : int64)
+    (patch_point : int64)
+    (patch_size : int64) : Asm.t =
   let block = trampoline addr in
-  Asm.{directives = [".syntax unified"]; blocks = [block]}
+  Asm.Fields.create ~patch_point ~patch_size
+    ~directives:[".syntax unified"]
+    ~blocks:[block]
 
 let insert_trampoline (addr : int64) (asm : Asm.t) : Asm.t =
   let block = trampoline addr in
