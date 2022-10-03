@@ -4,7 +4,7 @@ open Bap_core_theory
 (** [run sub ~target ~language ~patch_info ~func_info ?patch_spaces]
     runs the optimization passes on the subroutine [sub]. *)
 val run :
-  ?patch_spaces:Vibes_patch_info.Types.spaces ->
+  ?patch_spaces:Vibes_patch_info.Types.Spaces.t ->
   sub term ->
   target:Theory.target ->
   language:Theory.language ->

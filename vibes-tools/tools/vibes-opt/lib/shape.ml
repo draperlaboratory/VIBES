@@ -5,6 +5,7 @@ open Bap_core_theory
 
 module T = Theory
 module Patch_info = Vibes_patch_info.Types
+module Spaces = Patch_info.Spaces
 module Bir_helpers = Vibes_bir.Helpers
 module Tags = Vibes_bir.Tags
 
@@ -144,10 +145,10 @@ let reorder_blks (sub : sub term) : sub term =
 
 (* Get the maximum address of each patch site. *)
 let collect_conservative_patch_points
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     ~(patch_info : Patch_info.t)
     ~(width : int) : word list =
-  let patch_spaces = match patch_spaces with
+  let patch_spaces = match Spaces.to_list patch_spaces with
     | [] ->
       (* Fall back to the default patch point. *)
       let patch_point =
@@ -183,7 +184,7 @@ let collect_conservative_patch_points
    since it will undo any kind of branch relaxation at the BIR level.
 *)
 let relax_branches
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     (sub : sub term)
     ~(target : T.target)
     ~(patch_info : Patch_info.t)

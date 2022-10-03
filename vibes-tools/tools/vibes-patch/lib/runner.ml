@@ -8,6 +8,7 @@ module Files = Vibes_utils.Files
 module Log = Vibes_log.Stream
 module Asm = Vibes_as.Types.Assembly
 module Patch_info = Vibes_patch_info.Types
+module Spaces = Patch_info.Spaces
 
 let (let*) x f = Result.bind x ~f
 
@@ -52,8 +53,8 @@ let run
   let* target = CT.get_target target in
   let* language = CT.get_language language in
   let* patch_spaces = match patch_spaces with
-    | Some path -> Patch_info.spaces_from_file path
-    | None -> Ok [] in
+    | Some path -> Spaces.from_file path
+    | None -> Ok Spaces.empty in
   let* () = match ogre_filepath with
     | None -> Ok ()
     | Some path -> match Sys_unix.file_exists path with
@@ -66,10 +67,6 @@ let run
     Patcher.patch target language asms
       ~binary ~patched_binary ~patch_spaces
       ~backend:ogre_filepath in
-  begin match spaces with
-    | [] -> ()
-    | _ ->
-      Log.send "Remaining patch spaces:\n%a"
-        Patch_info.pp_spaces spaces;
-  end;
+  if not @@ Spaces.is_empty spaces then
+    Log.send "Remaining patch spaces:\n%a" Spaces.pp spaces;
   Ok ()

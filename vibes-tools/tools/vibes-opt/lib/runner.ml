@@ -7,13 +7,14 @@ module Log = Vibes_log.Stream
 module Utils = Vibes_utils
 module Serializers = Vibes_serializers
 module Patch_info = Vibes_patch_info.Types
+module Spaces = Patch_info.Spaces
 module Function_info = Vibes_function_info.Types
 module Bir_helpers = Vibes_bir.Helpers
 
 open KB.Syntax
 
 let deserialize_and_opt
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     (sexp : Sexp.t)
     ~(target : T.target)
     ~(language : T.language)
@@ -26,7 +27,7 @@ let deserialize_and_opt
 (* Try to deserialize and optimize the BIR program while
    preserving the toplevel state. *)
 let try_deserialize_and_opt
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     (bir_sexp : Sexp.t)
     ~(target : T.target)
     ~(language : T.language)
@@ -53,8 +54,8 @@ let run
     bir_filepath func_info_filepath bir_outfile;
   let* patch_info = Patch_info.from_file patch_info_filepath in
   let* patch_spaces = match patch_spaces with
-    | Some path -> Patch_info.spaces_from_file path
-    | None -> Ok [] in
+    | Some path -> Spaces.from_file path
+    | None -> Ok Spaces.empty in
   let* target = Utils.Core_theory.get_target target in
   let* language = Utils.Core_theory.get_language language in
   let* raw_bir_code = Utils.Files.get_file_contents_non_empty bir_filepath

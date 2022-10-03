@@ -5,6 +5,7 @@ open Bap_core_theory
 module T = Theory
 module Constants = Vibes_constants.Asm
 module Patch_info = Vibes_patch_info.Types
+module Spaces = Patch_info.Spaces
 module Asm = Vibes_as.Types.Assembly
 module Log = Vibes_log.Stream
 
@@ -161,7 +162,7 @@ let rec try_patch_spaces
    try the provided patch point, and if it doesn't work we will try the
    available external patch spaces that the user gave us. *)
 let place_patch
-    (patch_spaces : Patch_info.spaces)
+    (patch_spaces : Patch_info.space list)
     (spec : Ogre.doc)
     (asm : Asm.t)
     (target : target)
@@ -189,9 +190,9 @@ let place_patch
         addr size ret spec target language in
     Ok (patch, Some trampoline)
 
-let occupy_space
+let consume_space
     (patch : patch)
-    (spaces : Patch_info.spaces) : Patch_info.spaces =
+    (spaces : Patch_info.space list) : Patch_info.space list =
   List.filter_map spaces ~f:(fun space ->
       let open Int64 in
       let Patch_info.{address; size} = space in
@@ -206,10 +207,10 @@ let occupy_space
         else None
       else Some space)
 
-type res = patch list * Patch_info.spaces
+type res = patch list * Spaces.t
 
 let patch
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     ?(backend : string option = None)
     (target : T.target)
     (language : T.language)
@@ -231,9 +232,9 @@ let patch
       let acc = match trampoline with
         | Some t -> t :: patch :: acc
         | None -> patch :: acc in
-      let spaces = occupy_space patch spaces in
+      let spaces = consume_space patch spaces in
       apply spaces acc asms in
-  let* patches, spaces = apply patch_spaces [] asms in
+  let* patches, spaces = apply (Spaces.to_list patch_spaces) [] asms in
   Log.send "Writing to patched binary %s" patched_binary;
   patch_file patches binary patched_binary;
-  Ok (patches, spaces)
+  Ok (patches, Spaces.of_list spaces)

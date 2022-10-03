@@ -10,6 +10,7 @@ module Hvar = Vibes_higher_vars.Higher_var
 module Subst = Vibes_higher_vars.Substituter
 module Patch_info = Vibes_patch_info.Types
 module Bir_helpers = Vibes_bir.Helpers
+module Spaces = Patch_info.Spaces
 
 open KB.Syntax
 
@@ -64,7 +65,7 @@ let provide_function_info
                   end else !!())))
 
 let thumb_specific
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     (sub : sub term)
     ~(target : T.target)
     ~(patch_info : Patch_info.t) : sub term KB.t =
@@ -80,7 +81,7 @@ let thumb_specific
   sub
 
 let run
-    ?(patch_spaces : Patch_info.spaces = [])
+    ?(patch_spaces : Spaces.t = Spaces.empty)
     (sub : sub term)
     ~(target : T.target)
     ~(language : T.language)

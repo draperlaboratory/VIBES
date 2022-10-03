@@ -11,14 +11,31 @@ type space = {
   size : int64;
 } [@@deriving yojson]
 
-(** A list of external patch spaces. *)
-type spaces = space list [@@deriving yojson]
+(** A set of patch spaces. *)
+module Spaces : sig
 
-(** Pretty-prints the patch spaces. *)
-val pp_spaces : Format.formatter -> spaces -> unit
+  type t [@@deriving yojson]
 
-(** Attempts to deserialize the patch spaces from a JSON file. *)
-val spaces_from_file : string -> (spaces, KB.conflict) result
+  (** The empty set of spaces. *)
+  val empty : t
+
+  (** Returns [true] if set of spaces is empty. *)
+  val is_empty : t -> bool
+
+  (** Converts a list of spaces into an interval tree where
+      overlapping regions are coalesced. *)
+  val of_list : space list -> t
+
+  (** Returns the interval tree as a list of spaces. *)
+  val to_list : t -> space list
+
+  (** Pretty-prints the patch metadata. *)
+  val pp : Format.formatter -> t -> unit
+
+  (** Attempts to deserialize the metadata from a JSON file. *)
+  val from_file : string -> (t, KB.conflict) result
+
+end
 
 (** The metadata for a patch.
 
