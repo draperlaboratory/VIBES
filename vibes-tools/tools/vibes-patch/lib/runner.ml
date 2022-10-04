@@ -45,7 +45,8 @@ let run
     ~(language : string)
     ~(binary : string)
     ~(asm_filepaths : string list)
-    ~(patched_binary : string) : (unit, KB.conflict) result =
+    ~(patched_binary : string) 
+     (): (unit, KB.conflict) result =
   Log.send "Vibes_patch.Runner.run '%s' '%s' '%s' '%s' '%s'"
     target language binary
     (String.concat ~sep:", " asm_filepaths)

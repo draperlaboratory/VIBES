@@ -27,7 +27,8 @@ let run
     ~(vir_filepath : string)
     ~(patch_info_filepath : string)
     ~(asm_outfile : string)
-    ~(model_filepath : string) : (unit, KB.conflict) result =
+    ~(model_filepath : string) 
+     () : (unit, KB.conflict) result =
   Log.send "Vibes_as.Runner.run '%s' '%s' '%s' '%s' '%s' '%s' '%s'"
     target language vir_filepath patch_info_filepath asm_outfile
     model_filepath (Option.value extra_constraints_filepath ~default:"(none)");

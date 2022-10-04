@@ -58,7 +58,8 @@ module Cli = struct
       ~patch_spaces
       ~bir_filepath
       ~func_info_filepath
-      ~bir_outfile |> function
+      ~bir_outfile
+      () |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 
