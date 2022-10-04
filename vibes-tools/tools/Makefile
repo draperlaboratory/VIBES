@@ -6,7 +6,8 @@ TOOLS := \
 	vibes-opt \
 	vibes-select \
 	vibes-as \
-	vibes-patch
+	vibes-patch \
+	vibes-init
 
 ###################################
 # ALL
@@ -125,3 +126,19 @@ patch.install: patch.build
 .PHONY: patch.uninstall
 patch.uninstall:
 	dune uninstall vibes-patch
+
+###################################
+# vibes-init
+###################################
+
+.PHONY: init.build
+init.build:
+	dune build vibes-init
+
+.PHONY: init.install
+init.install: init.build
+	dune install vibes-init
+
+.PHONY: init.uninstall
+init.uninstall:
+	dune uninstall vibes-init

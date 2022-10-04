@@ -39,28 +39,22 @@ module Spaces = struct
     (* Get an initial widening of spaces that start on the
        same address. We also convert the size into an end
        address (being the upper bound on the region). *)
-    let m =
-      List.fold l ~init:Addr.Map.empty ~f:(fun m {address; size} ->
-          if Int64.(size > 0L) then
-            let width = Addr.bitwidth address in
-            let size = Addr.of_int64 size ~width in
-            let end_ = Addr.(pred (address + size)) in
-            Map.update m address ~f:(function
-                | Some e when Addr.(end_ < e) -> e
-                | Some _ | None -> end_)
-          else m) in
-    Map.fold m ~init:empty ~f:(fun ~key:start ~data:end_ t ->
-        let i = start, end_ in
-        let inters = Tree.intersections t i in
-        if Seq.is_empty inters then Tree.add t i ()
-        else
-          (* For all intervals that intersect with this one, we widen the
-             current interval until it subsumes all of them. *)
-          let t, i =
-            Seq.map inters ~f:fst |>
-            Seq.fold ~init:(t, i) ~f:(fun (t, (x1, y1)) ((x2, y2) as i) ->
-                Tree.remove t i, Addr.(min x1 x2, max y1 y2)) in
-          Tree.add t i ())
+    List.fold l ~init:Addr.Map.empty ~f:(fun m {address; size} ->
+        if Int64.(size > 0L) then
+          let width = Addr.bitwidth address in
+          let size = Addr.of_int64 size ~width in
+          let end_ = Addr.(pred (address + size)) in
+          Map.update m address ~f:(function
+              | Some e when Addr.(end_ < e) -> e
+              | Some _ | None -> end_)
+        else m) |> Map.to_sequence |>
+    Seq.fold ~init:empty ~f:(fun t i ->
+        (* For all intervals that intersect with this one, we widen the
+           current interval until it subsumes all of them. *)
+        Tree.intersections t i |> Seq.map ~f:fst |>
+        Seq.fold ~init:(t, i) ~f:(fun (t, (x1, y1)) ((x2, y2) as i) ->
+            Tree.remove t i, Addr.(min x1 x2, max y1 y2)) |> fun (t, i) ->
+        Tree.add t i ())
 
   let to_list (t : t) : space list =
     Tree.to_sequence t |>

@@ -1,0 +1,11 @@
+(library
+ (name vibes_init)
+ (public_name vibes-init)
+ (flags -w -32)
+ (libraries
+   bap-core-theory
+   vibes-log
+   vibes-constants
+   vibes-patch-info
+   vibes-patch
+   vibes-utils))

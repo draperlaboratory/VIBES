@@ -1,17 +1,24 @@
 TOOLS_SRC := tools
 
+VIBES_XDG_APP_DIR := $(HOME)/.vibes
+MINIZINC_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/model.mzn
+MINIZINC_MODEL_SRC := ./../resources/minizinc/model.mzn
+
 ###################################
 # DEFAULT
 ###################################
 
 .DEFAULT_GOAL := all
 
+$(MINIZINC_MODEL_LOCAL): $(MINIZINC_MODEL_SRC)
+	mkdir -p $(VIBES_XDG_APP_DIR)
+	cp $(MINIZINC_MODEL_SRC) $(MINIZINC_MODEL_LOCAL)
 
 ###################################
 # ALL
 ###################################
 
-all:
+all: $(MINIZINC_MODEL_LOCAL)
 	$(MAKE) tools.all
 
 .PHONY: build
@@ -19,7 +26,7 @@ build:
 	$(MAKE) tools.build
 
 .PHONY: install
-install:
+install: $(MINIZINC_MODEL_LOCAL)
 	$(MAKE) tools.install
 
 .PHONY: uninstall
@@ -167,3 +174,22 @@ patch.install:
 .PHONY:
 patch.uninstall:
 	$(MAKE) -C $(TOOLS_SRC) patch.uninstall
+
+###################################
+# vibes-init
+###################################
+
+.PHONY: init
+init: init.install
+
+.PHONY: init.build
+init.build:
+	$(MAKE) -C $(TOOLS_SRC) init.build
+
+.PHONY: patch.install
+init.install:
+	$(MAKE) -C $(TOOLS_SRC) init.install
+
+.PHONY:
+init.uninstall:
+	$(MAKE) -C $(TOOLS_SRC) init.uninstall
