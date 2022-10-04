@@ -10,4 +10,5 @@ val run :
   patch_info_filepath:string ->
   asm_outfile:string ->
   model_filepath:string ->
+  unit ->
   (unit, KB.conflict) result

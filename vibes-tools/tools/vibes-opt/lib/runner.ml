@@ -47,7 +47,7 @@ let run
     ~(patch_info_filepath : string)
     ~(bir_filepath : string)
     ~(func_info_filepath : string)
-    ~(bir_outfile : string) : (unit, KB.conflict) result =
+    ~(bir_outfile : string) () : (unit, KB.conflict) result =
   let (let*) x f = Result.bind x ~f in
   Log.send "Vibes_opt.Runner.run '%s' '%s' '%s' '%s' '%s' '%s'"
     target language patch_info_filepath

@@ -147,7 +147,8 @@ let reorder_blks (sub : sub term) : sub term =
 let collect_conservative_patch_points
     ?(patch_spaces : Spaces.t = Spaces.empty)
     ~(patch_info : Patch_info.t)
-    ~(width : int) : word list =
+    ~(width : int) 
+     (): word list =
   let patch_spaces = match Spaces.to_list patch_spaces with
     | [] ->
       (* Fall back to the default patch point. *)
@@ -192,7 +193,7 @@ let relax_branches
     ~(bwd_limit : int) : sub term KB.t =
   let width = T.Target.code_addr_size target in
   let patch_points =
-    collect_conservative_patch_points ~patch_info ~patch_spaces ~width in
+    collect_conservative_patch_points ~patch_info ~patch_spaces ~width () in
   let fwd_limit = Word.of_int ~width fwd_limit in
   let bwd_limit = Word.of_int ~width bwd_limit in
   let inserted = ref [] in

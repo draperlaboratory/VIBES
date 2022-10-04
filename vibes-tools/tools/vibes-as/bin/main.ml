@@ -70,7 +70,8 @@ module Cli = struct
       ~patch_info_filepath
       ~asm_outfile
       ~model_filepath
-      ~extra_constraints_filepath |> function
+      ~extra_constraints_filepath 
+      () |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 

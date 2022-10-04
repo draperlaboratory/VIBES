@@ -9,4 +9,5 @@ val run :
   binary:string ->
   asm_filepaths:string list ->
   patched_binary:string ->
+  unit ->
   (unit, KB.conflict) result
