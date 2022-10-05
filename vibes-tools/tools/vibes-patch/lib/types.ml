@@ -22,6 +22,7 @@ module type Target = sig
 
   val create_trampoline : int64 -> int64 -> int64 -> Asm.t
   val has_inline_data : Asm.t -> bool
+  val ends_in_jump : Asm.t -> bool
   val adjusted_org : int64 -> int64 option
 
   module Toolchain : Toolchain

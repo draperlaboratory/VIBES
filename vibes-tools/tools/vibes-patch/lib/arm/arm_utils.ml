@@ -53,6 +53,12 @@ let has_ldr_large_const : Asm.t -> bool =
 let has_inline_data (asm : Asm.t) : bool =
   has_ldr_large_const asm
 
+let ends_in_jump (asm : Asm.t) : bool = match List.last asm.blocks with
+  | None -> false
+  | Some block -> match List.last block.insns with
+    | None -> false
+    | Some insn -> String.is_prefix insn ~prefix:"b "
+
 let adjusted_org (loc : int64) : int64 option =
   match Int64.rem loc 4L with
   | 0L -> None

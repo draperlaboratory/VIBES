@@ -38,10 +38,14 @@ module type Target = sig
       have inline data when assembled. *)
   val has_inline_data : Asm.t -> bool
 
+  (** Returns [true] if the assembly program ends in an unconditional
+      jump. *)
+  val ends_in_jump : Asm.t -> bool
+
   (** Returns the adjusted origin of the patch based on the patch
       location. *)
   val adjusted_org : int64 -> int64 option
-  
+
   (** The toolchain for the target. *)
   module Toolchain : Toolchain
 

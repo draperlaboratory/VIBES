@@ -104,10 +104,12 @@ let try_patch_site
     (* For patching at the original location, we need to insert
        a jump to the end of the specified space. We need to check
        that the patch still fits because inserting a jump will
-       increase the length of the patch. *)
+       increase the length of the patch. However, if the patch
+       already ends in a jump then we'll just discard the leftover
+       space since we're redirecting control flow somewhere else. *)
     let* data = try_ @@ match ret with
-      | None -> assert false
-      | Some _ -> ret in
+      | None when not (Target.ends_in_jump asm) -> assert false
+      | None | Some _ -> ret in
     Result.return begin match of_int @@ String.length data with
       | len when len <= size -> Some {data; addr; loc}
       | len ->
