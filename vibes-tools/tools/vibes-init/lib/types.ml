@@ -10,9 +10,6 @@ module JSON = Vibes_utils.Json
 
 let (let*) x f = Result.bind x ~f
 
-let default_patch_spaces : string = "patch-spaces.json"
-let default_ogre : string = "./loader.ogre"
-
 type patch = {
   patch : string;
   patch_info : string;
@@ -21,6 +18,7 @@ type patch = {
   bir_opt : string;
   vir : string;
   asm : string;
+  constraints : string;
 }
 
 type t = {
@@ -42,6 +40,7 @@ let create_patch (patch : string) : patch = {
   bir_opt = sprintf "%s.opt.bir" patch;
   vir = sprintf "%s.vir" patch;
   asm = sprintf "%s.asm" patch;
+  constraints = sprintf "%s.mzn" patch;
 }
 
 let create
@@ -83,8 +82,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
       Format.fprintf ppf "PATCH_%d_BIR_OPT := %s\n%!" i p.bir_opt;
       Format.fprintf ppf "PATCH_%d_VIR := %s\n%!" i p.vir;
       Format.fprintf ppf "PATCH_%d_ASM := %s\n%!" i p.asm;
-      Format.fprintf ppf "PATCH_%d_CONSTRAINTS := \
-                          constraints%d.mzn\n\n%!" i i);
+      Format.fprintf ppf "PATCH_%d_CONSTRAINTS := %s\n\n%!" i p.constraints);
   (* Patch targets. *)
   List.iteri t.patches ~f:(fun i p ->
       Format.fprintf ppf "# Targets for patch %d\n\n%!" i;
@@ -222,8 +220,8 @@ let dummy_patch_info : Patch_info.t = {
   }
 
 let generate_patch_files (i : int) (p : patch) : (unit, KB.conflict) result =
-  let* () = Files.write_or_error "" @@ sprintf "constraints%d.mzn" i in
   let* () = Files.write_or_error "" p.patch in
+  let* () = Files.write_or_error "" p.constraints in
   let info_data = Format.asprintf "%a" Patch_info.pp dummy_patch_info in
   let* () = Files.write_or_error info_data p.patch_info in
   Ok ()

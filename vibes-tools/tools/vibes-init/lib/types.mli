@@ -1,11 +1,5 @@
 open Bap_core_theory
 
-(** Default filename for patch spaces. *)
-val default_patch_spaces : string
-
-(** Default filename for OGRE files. *)
-val default_ogre : string
-
 (** Information for generating a patch. *)
 type patch = {
   patch : string;
@@ -15,6 +9,7 @@ type patch = {
   bir_opt : string;
   vir : string;
   asm : string;
+  constraints : string;
 }
 
 (** Information about the patch build process. *)
