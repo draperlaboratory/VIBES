@@ -28,12 +28,20 @@ let create_trampoline
     (patch_point : int64)
     (patch_size : int64) : Asm.t =
   let block = trampoline addr in
-  Asm.Fields.create ~patch_point ~patch_size
+  Asm.Fields.create ~patch_point ~patch_size ~overwrite:true
     ~directives:[".syntax unified"]
     ~blocks:[block]
 
 let insert_trampoline (addr : int64) (asm : Asm.t) : Asm.t =
   let block = trampoline addr in
+  Asm.{asm with blocks = asm.blocks @ [block]}
+
+let insert_overwritten
+    (addr : int64)
+    (asm : Asm.t)
+    (insns : string list) : Asm.t =
+  let label = Format.sprintf "overwritten%Ld" addr in
+  let block = Asm.Fields_of_block.create ~label ~insns in
   Asm.{asm with blocks = asm.blocks @ [block]}
 
 let has_ldr_large_const : Asm.t -> bool =
@@ -45,6 +53,12 @@ let has_ldr_large_const : Asm.t -> bool =
 let has_inline_data (asm : Asm.t) : bool =
   has_ldr_large_const asm
 
+let ends_in_jump (asm : Asm.t) : bool = match List.last asm.blocks with
+  | None -> false
+  | Some block -> match List.last block.insns with
+    | None -> false
+    | Some insn -> String.is_prefix insn ~prefix:"b "
+
 let adjusted_org (loc : int64) : int64 option =
   match Int64.rem loc 4L with
   | 0L -> None
@@ -53,6 +67,7 @@ let adjusted_org (loc : int64) : int64 option =
 let situate
     ?(org : int64 option = None)
     ?(jmp : int64 option = None)
+    ?(overwritten : string list = [])
     (asm : Asm.t)
     ~(loc : int64)
     ~(to_addr : int64 -> int64) : Asm.t =
@@ -70,6 +85,10 @@ let situate
     let label = Constants.patch_start_label in
     let start = Asm.Fields_of_block.create ~label ~insns:[] in
     Asm.{asm with blocks = start :: asm.blocks} in
+  let asm =
+    if not asm.Asm.overwrite then
+      insert_overwritten (to_addr loc) asm overwritten
+    else asm in
   match jmp with
   | Some jmp -> insert_trampoline jmp asm
   | None -> asm

@@ -72,6 +72,7 @@ let initialize
     ~(typeof : string -> typ option)
     ~(hvars : Hvar.t list)
     ~(target : T.target) : sub term KB.t =
+  let default_typ = Type.Imm (T.Target.bits target) in
   let* entry_tid = match Bir_helpers.entry_tid sub with
     | Error err -> KB.fail err
     | Ok tid -> !!tid in
@@ -86,19 +87,15 @@ let initialize
             | Hvar.Memory _ -> !!None
             | Hvar.Registers {at_entry = None; _} -> !!None
             | Hvar.Registers {at_entry = Some reg; _} ->
-              match typeof name with
-              | None ->
-                Log.send "Warning: unused variable '%s'" name;
-                !!None
-              | Some typ ->
-                let lhs = Var.create name typ in
-                match Naming.mark_reg_name target reg with
-                | Error msg ->
-                  KB.fail @@ Errors.Higher_var_not_substituted msg
-                | Ok name ->
-                  let rhs = Var.create name typ in
-                  let+ tid = T.Label.fresh in
-                  Some (Def.create ~tid lhs @@ Var rhs)) in
+              let typ = typeof name |> Option.value ~default:default_typ in
+              let lhs = Var.create name typ in
+              match Naming.mark_reg_name target reg with
+              | Error msg ->
+                KB.fail @@ Errors.Higher_var_not_substituted msg
+              | Ok name ->
+                let rhs = Var.create name typ in
+                let+ tid = T.Label.fresh in
+                Some (Def.create ~tid lhs @@ Var rhs)) in
         (* Order these defs after we preserve any registers that were
            spilled. *)
         let last_spill =
@@ -120,6 +117,7 @@ let finalize
     ~(typeof : string -> typ option)
     ~(hvars : Hvar.t list)
     ~(target : T.target) : sub term KB.t =
+  let default_typ = Type.Imm (T.Target.bits target) in
   Term.KB.map blk_t sub ~f:(fun blk ->
       (* The implicit exit block will have the finalizations. All other
          exit blocks are assumed to go somewhere else in the program
@@ -131,19 +129,15 @@ let finalize
             | Hvar.Memory _ -> !!None
             | Hvar.Registers {at_exit = None; _} -> !!None
             | Hvar.Registers {at_exit = Some reg; _} ->
-              match typeof name with
-              | None ->
-                Log.send "Warning: unused variable '%s'" name;
-                !!None
-              | Some typ ->
-                let rhs = Bil.var @@ Var.create name typ in
-                match Naming.mark_reg_name target reg with
-                | Error msg ->
-                  KB.fail @@ Errors.Higher_var_not_substituted msg
-                | Ok name ->
-                  let lhs = Var.create name typ in
-                  let+ tid = T.Label.fresh in
-                  Some (Def.create ~tid lhs rhs)) in
+              let typ = typeof name |> Option.value ~default:default_typ in
+              let rhs = Bil.var @@ Var.create name typ in
+              match Naming.mark_reg_name target reg with
+              | Error msg ->
+                KB.fail @@ Errors.Higher_var_not_substituted msg
+              | Ok name ->
+                let lhs = Var.create name typ in
+                let+ tid = T.Label.fresh in
+                Some (Def.create ~tid lhs rhs)) in
         (* Order these defs before we restore any registers that were
            spilled. *)
         let first_spill =
@@ -180,7 +174,8 @@ let subst_name
     | Frame (loc, off) -> match Naming.mark_reg_name target loc with
       | Error msg -> raise (Subst_err msg)
       | Ok name ->
-        let loc = Var.create name typ in
+        let width = T.Target.bits target in
+        let loc = Var.create name @@ Imm width in
         Bil.(load ~mem:(var mem) ~addr:(var loc + int off) endian size)
 
 (* This replaces a variable with either the register or the memory
@@ -225,7 +220,8 @@ let subst_def : T.target -> Hvar.t list -> def term -> def term =
           | Frame (loc, off) -> match Naming.mark_reg_name target loc with
             | Error msg -> raise (Subst_err msg)
             | Ok name ->
-              let loc = Var.create name typ in
+              let width = T.Target.bits target in
+              let loc = Var.create name @@ Imm width in
               Bil.(store ~mem:(var mem) ~addr:(var loc + int off)
                      rhs endian size) in
         let attrs = Term.attrs def in

@@ -85,6 +85,7 @@ type t = {
   patch_point : Utils.Json.Bitvector.t [@key "patch-point"];
   patch_size : int64 [@key "patch-size"];
   sp_align : int [@key "sp-align"];
+  overwrite : bool [@default true] [@key "overwrite"];
   patch_vars : Hvar.t list [@default []] [@key "patch-vars"];
 } [@@deriving yojson]
 
