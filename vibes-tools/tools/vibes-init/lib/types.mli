@@ -2,6 +2,7 @@ open Bap_core_theory
 
 (** Information for generating a patch. *)
 type patch = {
+  name : string;
   patch : string;
   patch_info : string;
   func_info : string;
@@ -28,7 +29,7 @@ type t = {
 val create :
   Theory.target ->
   Theory.language ->
-  string list ->
+  patch_names:string list ->
   model:string ->
   binary:string ->
   patched_binary:string ->

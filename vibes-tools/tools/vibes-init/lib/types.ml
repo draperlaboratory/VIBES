@@ -11,6 +11,7 @@ module JSON = Vibes_utils.Json
 let (let*) x f = Result.bind x ~f
 
 type patch = {
+  name : string;
   patch : string;
   patch_info : string;
   func_info : string;
@@ -33,6 +34,7 @@ type t = {
 }
 
 let create_patch (patch : string) : patch = {
+  name = patch;
   patch = sprintf "%s.c" patch;
   patch_info = sprintf "%s.info.json" patch;
   func_info = sprintf "%s.func.json" patch;
@@ -46,7 +48,7 @@ let create_patch (patch : string) : patch = {
 let create
     (target : T.target)
     (language : T.language)
-    (patch_names : string list)
+    ~(patch_names : string list)
     ~(model : string)
     ~(binary : string)
     ~(patched_binary : string)
@@ -74,7 +76,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   Format.fprintf ppf "OGRE := %s\n\n%!" t.ogre;
   (* Patch definitions. *)
   List.iteri t.patches ~f:(fun i p ->
-      Format.fprintf ppf "# Definitions for patch %d\n\n%!" i;
+      Format.fprintf ppf "# Definitions for patch %s (%d)\n\n%!" p.name i;
       Format.fprintf ppf "PATCH_%d := %s\n%!" i p.patch;
       Format.fprintf ppf "PATCH_%d_INFO := %s\n%!" i p.patch_info;
       Format.fprintf ppf "PATCH_%d_FUNC := %s\n%!" i p.func_info;
@@ -85,7 +87,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
       Format.fprintf ppf "PATCH_%d_CONSTRAINTS := %s\n\n%!" i p.constraints);
   (* Patch targets. *)
   List.iteri t.patches ~f:(fun i p ->
-      Format.fprintf ppf "# Targets for patch %d\n\n%!" i;
+      Format.fprintf ppf "# Targets for patch %s (%d)\n\n%!" p.name i;
       (* parse *)
       Format.fprintf ppf ".PHONY: parse%d\n%!" i;
       Format.fprintf ppf "parse%d:\n%!" i;
