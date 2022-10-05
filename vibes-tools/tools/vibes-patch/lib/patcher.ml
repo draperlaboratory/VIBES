@@ -92,24 +92,25 @@ let try_patch_site
   let try_ =
     try_patch_site_aux target asm language
       org to_addr loc overwritten in
-  let needs_jmp = extern || Target.has_inline_data asm in
+  let end_jmp = Target.ends_in_jump asm in
+  let inline_data = Target.has_inline_data asm in
+  let needs_jmp = not end_jmp && (extern || inline_data) in
   let* data = try_ @@ match ret with
     | Some _ when needs_jmp -> ret
     | None when needs_jmp -> assert false
     | None | Some _ -> None in
   match of_int @@ String.length data with
   | len when len = size -> Ok (Some {data; addr; loc})
-  | len when len < size && needs_jmp -> Ok (Some {data; addr; loc})
+  | len when len < size && (end_jmp || needs_jmp) ->
+    Ok (Some {data; addr; loc})
   | len when len < size ->
     (* For patching at the original location, we need to insert
        a jump to the end of the specified space. We need to check
        that the patch still fits because inserting a jump will
-       increase the length of the patch. However, if the patch
-       already ends in a jump then we'll just discard the leftover
-       space since we're redirecting control flow somewhere else. *)
+       increase the length of the patch. *)
     let* data = try_ @@ match ret with
-      | None when not (Target.ends_in_jump asm) -> assert false
-      | None | Some _ -> ret in
+      | None -> assert false
+      | Some _ -> ret in
     Result.return begin match of_int @@ String.length data with
       | len when len <= size -> Some {data; addr; loc}
       | len ->
