@@ -37,9 +37,9 @@ let run
     | None -> collect_ogre binary
     | Some ogre -> Ok ogre in
   let t =
-    Types.create target language patch_names
-      ~model:model_filepath ~binary ~patched_binary ~ogre
-      ~spaces:Inputs.default_patch_spaces in
+    Types.create target language ~patch_names
+      ~model:model_filepath ~binary ~patched_binary
+      ~ogre ~spaces:Inputs.default_patch_spaces in
   Log.send "Generating template files";
   let* () = Types.generate_files t in
   Log.send "Generating Makefile";
