@@ -228,51 +228,53 @@ let consume_space
 
 type res = patch list * Spaces.t
 
-let overwritten
-    (dis : dis)
+let find_mem
     (target : T.target)
     (patch_point : int64)
-    (patch_size : int64)
-    (mem : value memmap) : (string list, KB.conflict) result =
+    (memmap : value memmap) : (mem, KB.conflict) result =
   let width = T.Target.code_addr_size target in
   let from = Word.of_int64 ~width patch_point in
-  Memmap.to_sequence mem |> Seq.find_map ~f:(fun (mem, _) ->
+  Memmap.to_sequence memmap |> Seq.find_map ~f:(fun (mem, _) ->
       if Memory.contains mem from
       then Some (Memory.view_exn mem ~from)
       else None) |> function
+  | Some mem -> Ok mem
   | None ->
     let msg = Format.asprintf
         "Couldn't find patch point %a in memory"
         Word.pp from in
     Error (Errors.Invalid_address msg)
-  | Some mem ->
-    let rec aux acc mem n = match Dis.insn_of_mem dis mem with
-      | Error err ->
-        Error (Errors.Invalid_insn (Format.asprintf "%a" Error.pp err))
-      | Ok (_, None, _) ->
-        let msg = Format.asprintf "Bad instruction at %a"
-            Word.pp @@ Memory.min_addr mem in
-        Error (Errors.Invalid_insn msg)
-      | Ok (m, Some insn, `left mem) ->
-        let n = n - Memory.length m in
-        let asm = Dis.Insn.asm insn in
-        if n = 0 then Ok (List.rev (asm :: acc))
-        else if n < 0 then
-          let msg = Format.asprintf
-              "Invalid size %Ld for patch point 0x%Lx"
-              patch_size patch_point in
-          Error (Errors.Invalid_size msg)
-        else aux (asm :: acc) mem n
-      | Ok (m, Some insn, `finished) ->
-        let n = n - Memory.length m in
-        let asm = Dis.Insn.asm insn in
-        if n = 0 then Ok (List.rev (asm :: acc))
-        else
-          let msg = Format.asprintf
-              "Invalid size %Ld for patch point 0x%Lx"
-              patch_size patch_point in
-          Error (Errors.Invalid_size msg) in
-    aux [] mem @@ Int64.to_int_exn patch_size
+
+let overwritten
+    (dis : dis)
+    (target : T.target)
+    (patch_point : int64)
+    (patch_size : int64)
+    (memmap : value memmap) : (string list, KB.conflict) result =
+  let invalid_size t =
+    let msg = Format.asprintf
+        "Invalid size %Ld for patch point 0x%Lx (%d bytes disassembled)"
+        patch_size patch_point t in
+    Error (Errors.Invalid_size msg) in
+  let rec disasm acc mem t n = match Dis.insn_of_mem dis mem with
+    | Error err ->
+      let msg = Format.asprintf "Disasm error: %a" Error.pp err in
+      Error (Errors.Invalid_insn msg)
+    | Ok (_, None, _) ->
+      let a = Memory.min_addr mem in
+      let msg = Format.asprintf "Invalid instruction at %a" Word.pp a in
+      Error (Errors.Invalid_insn msg)
+    | Ok (m, Some insn, next) ->
+      let len = Memory.length m in
+      let n = n - len and t = t + len in
+      let asm = Dis.Insn.asm insn in
+      if n = 0 then Ok (List.rev (asm :: acc))
+      else match next with
+        | `finished -> invalid_size t
+        | `left _ when n < 0 -> invalid_size t
+        | `left mem -> disasm (asm :: acc) mem t n in
+  let* mem = find_mem target patch_point memmap in
+  disasm [] mem 0 @@ Int64.to_int_exn patch_size
 
 let patch
     ?(patch_spaces : Spaces.t = Spaces.empty)
@@ -284,20 +286,19 @@ let patch
     ~(patched_binary : string) : (res, KB.conflict) result =
   Log.send "Loading binary %s" binary;
   let* image = Loader.image binary ?backend in
-  let mem = Image.memory image in
+  let memmap = Image.memory image in
   let spec = Image.spec image in
   let* dis, info = target_info target language in
   Log.send "Solving patch placement";
-  let rec apply spaces acc = function
+  let rec place spaces acc = function
     | [] -> Ok (List.rev acc, spaces)
-    | asm :: asms ->
-      let point = asm.Asm.patch_point in
+    | (asm : Asm.t) :: asms ->
       let* overwritten =
-        overwritten dis target point asm.Asm.patch_size mem in
+        overwritten dis target asm.patch_point asm.patch_size memmap in
       if not @@ List.is_empty overwritten then
         Log.send "The following instructions will be \
                   overwritten at 0x%Lx:\n%s\n"
-          point @@ String.concat overwritten ~sep:"\n";
+          asm.patch_point @@ String.concat overwritten ~sep:"\n";
       let* patch, trampoline =
         place_patch spaces spec asm info language overwritten in
       Log.send "Solved patch placement: %a" pp_patch patch;
@@ -306,8 +307,8 @@ let patch
         | Some t -> t :: patch :: acc
         | None -> patch :: acc in
       let spaces = consume_space patch spaces in
-      apply spaces acc asms in
-  let* patches, spaces = apply (Spaces.to_list patch_spaces) [] asms in
+      place spaces acc asms in
+  let* patches, spaces = place (Spaces.to_list patch_spaces) [] asms in
   Log.send "Writing to patched binary %s" patched_binary;
   patch_file patches binary patched_binary;
   Ok (patches, Spaces.of_list spaces)
