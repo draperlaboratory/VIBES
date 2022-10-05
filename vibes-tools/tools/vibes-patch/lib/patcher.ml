@@ -289,10 +289,13 @@ let patch
   let rec apply spaces acc = function
     | [] -> Ok (List.rev acc, spaces)
     | asm :: asms ->
+      let point = asm.Asm.patch_point in
       let* overwritten =
-        overwritten dis target
-          asm.Asm.patch_point
-          asm.Asm.patch_size mem in
+        overwritten dis target point asm.Asm.patch_size mem in
+      if not @@ List.is_empty overwritten then
+        Log.send "The following instructions will be \
+                  overwritten at 0x%Lx:\n%s\n"
+          point @@ String.concat overwritten ~sep:"\n";
       let* patch, trampoline =
         place_patch spaces spec asm info language overwritten in
       Log.send "Solved patch placement: %a" pp_patch patch;
