@@ -93,7 +93,8 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
       Format.fprintf ppf "parse%d:\n%!" i;
       Format.fprintf ppf "\trm -f $(PATCH_%d_BIR)\n%!" i;
       Format.fprintf ppf "\t$(MAKE) $(PATCH_%d_BIR)\n\n%!" i;
-      Format.fprintf ppf "$(PATCH_%d_BIR):\n%!" i;
+      Format.fprintf ppf "$(PATCH_%d_BIR): \
+                          $(PATCH_%d) $(PATCH_%d_INFO)\n%!" i i i;
       Format.fprintf ppf "\tvibes-parse \
                           --target $(TARGET) \
                           --patch-filepath $(PATCH_%d) \
