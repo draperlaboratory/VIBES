@@ -262,7 +262,7 @@ let overwritten
       Error (Errors.Invalid_insn msg)
     | Ok (_, None, _) ->
       (* The bytes at this address failed to decode to a valid instruction,
-         but we should just assume that it's free space (i.e. inline data).
+         but we should just assume that it's free space (i.e. inline data)
          and that the user intends to overwrite this region. *)
       Ok (List.rev acc)
     | Ok (m, Some insn, next) ->
