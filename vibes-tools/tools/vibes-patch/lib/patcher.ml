@@ -261,9 +261,10 @@ let overwritten
       let msg = Format.asprintf "Disasm error: %a" Error.pp err in
       Error (Errors.Invalid_insn msg)
     | Ok (_, None, _) ->
-      let a = Memory.min_addr mem in
-      let msg = Format.asprintf "Invalid instruction at %a" Word.pp a in
-      Error (Errors.Invalid_insn msg)
+      (* The bytes at this address failed to decode to a valid instruction,
+         but we should just assume that it's free space (i.e. inline data).
+         and that the user intends to overwrite this region. *)
+      Ok (List.rev acc)
     | Ok (m, Some insn, next) ->
       let len = Memory.length m in
       let n = n - len and t = t + len in
