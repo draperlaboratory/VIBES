@@ -8,17 +8,27 @@ module Patch_info = Vibes_patch_info.Types
 module Spaces = Patch_info.Spaces
 module Asm = Vibes_as.Types.Assembly
 module Log = Vibes_log.Stream
+module Dis = Disasm_expert.Basic
+
+type dis = (Dis.asm, Dis.empty) Dis.t
 
 let (let*) x f = Result.bind x ~f
 
 type target = (module Types.Target)
 
-let target_info (target : T.target) : (target, KB.conflict) result =
-  if T.Target.belongs Arm_target.parent target then
-    Ok (module Arm_utils)
-  else
-    let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
-    Error (Errors.Unsupported_target msg)
+let target_info
+    (target : T.target)
+    (language : T.language) : (dis * target, KB.conflict) result =
+  let* info =
+    if T.Target.belongs Arm_target.parent target then
+      Ok (module Arm_utils : Types.Target)
+    else
+      let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
+      Error (Errors.Unsupported_target msg) in
+  match Dis.lookup target language with
+  | Ok dis -> Ok (Dis.store_asm dis, info)
+  | Error err ->
+    Error (Errors.No_disasm (Format.asprintf "%a" Error.pp err))
 
 type patch = {
   data : string;
@@ -50,9 +60,10 @@ let try_patch_site_aux
     (org : int64 option)
     (to_addr : int64 -> int64)
     (loc : int64)
+    (overwritten : string list)
     (jmp : int64 option) : (string, KB.conflict) result =
   let module Target = (val target) in
-  let asm' = Target.situate asm ~loc ~to_addr ~org ~jmp in
+  let asm' = Target.situate asm ~loc ~to_addr ~org ~jmp ~overwritten in
   Log.send "Situated assembly at 0x%Lx:\n%a" (to_addr loc) Asm.pp asm';
   let* objfile = Target.Toolchain.assemble asm' language in
   let* data = Target.Toolchain.to_binary objfile in
@@ -71,13 +82,16 @@ let try_patch_site
     (ret : int64 option)
     (asm : Asm.t)
     (target : target)
-    (language : T.language) : (patch option, KB.conflict) result =
+    (language : T.language)
+    (overwritten : string list) : (patch option, KB.conflict) result =
   let open Int64 in
   let module Target = (val target) in
   let loc = Utils.addr_to_offset addr region in
   let to_addr loc = Utils.offset_to_addr loc region in
   let org = Target.adjusted_org addr in
-  let try_ = try_patch_site_aux target asm language org to_addr loc in
+  let try_ =
+    try_patch_site_aux target asm language
+      org to_addr loc overwritten in
   let needs_jmp = extern || Target.has_inline_data asm in
   let* data = try_ @@ match ret with
     | Some _ when needs_jmp -> ret
@@ -116,7 +130,8 @@ let rec try_patch_spaces
     (ret : int64)
     (spec : Ogre.doc)
     (target : target)
-    (language : T.language) : ((patch * patch), KB.conflict) result =
+    (language : T.language)
+    (overwritten : string list) : ((patch * patch), KB.conflict) result =
   let module Target = (val target) in
   match spaces with
   | [] ->
@@ -124,8 +139,8 @@ let rec try_patch_spaces
   | space :: rest ->
     let jumpto = Bitvec.to_int64 @@ Word.to_bitvec space.address in
     let next () =
-      try_patch_spaces rest orig_region asm
-        addr size ret spec target language in
+      try_patch_spaces rest orig_region asm addr
+        size ret spec target language overwritten in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
       jumpto space.size;
     match Utils.find_code_region jumpto spec with
@@ -142,7 +157,7 @@ let rec try_patch_spaces
       let* trampoline =
         let asm = Target.create_trampoline jumpto addr size in
         try_patch_site orig_region addr size
-          None asm target language in
+          None asm target language [] in
       match trampoline with
       | None ->
         Log.send "Trampoline doesn't fit";
@@ -153,7 +168,7 @@ let rec try_patch_spaces
         let* patch =
           try_patch_site region jumpto
             space.size (Some ret) asm target language
-            ~extern:true in
+            overwritten ~extern:true in
         match patch with
         | Some patch -> Ok (patch, trampoline)
         | None -> next ()
@@ -166,7 +181,8 @@ let place_patch
     (spec : Ogre.doc)
     (asm : Asm.t)
     (target : target)
-    (language : T.language) : (patch * patch option, KB.conflict) result =
+    (language : T.language)
+    (overwritten : string list) : (patch * patch option, KB.conflict) result =
   let module Target = (val target) in
   let addr, size = asm.patch_point, asm.patch_size in
   Log.send "Attempting patch point 0x%Lx with %Ld bytes of space" addr size;
@@ -181,13 +197,14 @@ let place_patch
     region.addr region.size region.offset;
   let ret = Int64.(addr + size) in
   let* patch =
-    try_patch_site region addr size (Some ret) asm target language in
+    try_patch_site region addr size (Some ret)
+      asm target language overwritten in
   match patch with
   | Some patch -> Ok (patch, None)
   | None ->
     let* patch, trampoline =
-      try_patch_spaces patch_spaces region asm
-        addr size ret spec target language in
+      try_patch_spaces patch_spaces region asm addr
+        size ret spec target language overwritten in
     Ok (patch, Some trampoline)
 
 let consume_space
@@ -209,6 +226,52 @@ let consume_space
 
 type res = patch list * Spaces.t
 
+let overwritten
+    (dis : dis)
+    (target : T.target)
+    (patch_point : int64)
+    (patch_size : int64)
+    (mem : value memmap) : (string list, KB.conflict) result =
+  let width = T.Target.code_addr_size target in
+  let from = Word.of_int64 ~width patch_point in
+  Memmap.to_sequence mem |> Seq.find_map ~f:(fun (mem, _) ->
+      if Memory.contains mem from
+      then Some (Memory.view_exn mem ~from)
+      else None) |> function
+  | None ->
+    let msg = Format.asprintf
+        "Couldn't find patch point %a in memory"
+        Word.pp from in
+    Error (Errors.Invalid_address msg)
+  | Some mem ->
+    let rec aux acc mem n = match Dis.insn_of_mem dis mem with
+      | Error err ->
+        Error (Errors.Invalid_insn (Format.asprintf "%a" Error.pp err))
+      | Ok (_, None, _) ->
+        let msg = Format.asprintf "Bad instruction at %a"
+            Word.pp @@ Memory.min_addr mem in
+        Error (Errors.Invalid_insn msg)
+      | Ok (m, Some insn, `left mem) ->
+        let n = n - Memory.length m in
+        let asm = Dis.Insn.asm insn in
+        if n = 0 then Ok (List.rev (asm :: acc))
+        else if n < 0 then
+          let msg = Format.asprintf
+              "Invalid size %Ld for patch point 0x%Lx"
+              patch_size patch_point in
+          Error (Errors.Invalid_size msg)
+        else aux (asm :: acc) mem n
+      | Ok (m, Some insn, `finished) ->
+        let n = n - Memory.length m in
+        let asm = Dis.Insn.asm insn in
+        if n = 0 then Ok (List.rev (asm :: acc))
+        else
+          let msg = Format.asprintf
+              "Invalid size %Ld for patch point 0x%Lx"
+              patch_size patch_point in
+          Error (Errors.Invalid_size msg) in
+    aux [] mem @@ Int64.to_int_exn patch_size
+
 let patch
     ?(patch_spaces : Spaces.t = Spaces.empty)
     ?(backend : string option = None)
@@ -219,14 +282,19 @@ let patch
     ~(patched_binary : string) : (res, KB.conflict) result =
   Log.send "Loading binary %s" binary;
   let* image = Loader.image binary ?backend in
+  let mem = Image.memory image in
   let spec = Image.spec image in
-  let* target = target_info target in
+  let* dis, info = target_info target language in
   Log.send "Solving patch placement";
   let rec apply spaces acc = function
     | [] -> Ok (List.rev acc, spaces)
     | asm :: asms ->
+      let* overwritten =
+        overwritten dis target
+          asm.Asm.patch_point
+          asm.Asm.patch_size mem in
       let* patch, trampoline =
-        place_patch spaces spec asm target language in
+        place_patch spaces spec asm info language overwritten in
       Log.send "Solved patch placement: %a" pp_patch patch;
       Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
       let acc = match trampoline with

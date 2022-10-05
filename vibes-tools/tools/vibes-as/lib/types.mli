@@ -13,6 +13,7 @@ module Assembly : sig
   type t = {
     patch_point : int64;
     patch_size : int64;
+    overwrite : bool;
     directives : string list;
     blocks : block list;
   } [@@deriving fields, sexp]

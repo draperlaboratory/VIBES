@@ -14,6 +14,7 @@ module type Target = sig
   val situate :
     ?org:int64 option ->
     ?jmp:int64 option ->
+    ?overwritten:string list ->
     Asm.t ->
     loc:int64 ->
     to_addr:(int64 -> int64) ->

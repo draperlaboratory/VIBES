@@ -49,12 +49,16 @@ end
       subtracted from the stack pointer in order to keep
       it aligned when making function calls
 
+    - [overwrite]: the patch is allowed to overwrite existing
+      code at the patch point.
+
     - [patch_vars]: higher variable information
 *)
 type t = {
   patch_point : Vibes_utils.Json.Bitvector.t;
   patch_size : int64;
   sp_align : int;
+  overwrite : bool;
   patch_vars : Vibes_higher_vars.Higher_var.t list;
 }
 

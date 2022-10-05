@@ -218,6 +218,7 @@ let dummy_patch_info : Patch_info.t = {
     patch_point = Addr.of_string "0x1234:32";
     patch_size = 4L;
     sp_align = 0;
+    overwrite = true;
     patch_vars = [];
   }
 
