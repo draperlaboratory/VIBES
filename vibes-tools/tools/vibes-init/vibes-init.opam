@@ -1,0 +1,13 @@
+opam-version: "2.0"
+name: "vibes-init"
+version: "0.0.1"
+synopsis: "The VIBES initialization tool."
+maintainer: "Draper Laboratory"
+authors: "Draper Laboratory"
+depends: [
+  "bap"
+  "core"
+]
+build: [
+  [make]
+]

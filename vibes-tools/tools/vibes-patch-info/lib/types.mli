@@ -2,8 +2,7 @@ open Bap_core_theory
 
 (** An external patch space.
 
-    - [address]: the absolute address of the patch space
-
+    - [address]: the virtual address of the patch point
     - [size]: the size of the patch space
 *)
 type space = {
@@ -39,7 +38,7 @@ end
 
 (** The metadata for a patch.
 
-    - [patch_point]: the absolute address of the program
+    - [patch_point]: the virtual address of the program
       where the either the patch or a jump to the patch
       should be placed
 

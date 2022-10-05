@@ -3,6 +3,7 @@ open Bap_core_theory
 module C = Cmdliner
 module Log = Vibes_log.Stream
 module Versions = Vibes_constants.Versions
+module Inputs = Vibes_constants.Inputs
 module Cli_opts = Vibes_common_cli_options
 module Runner = Vibes_as.Runner
 
@@ -36,10 +37,10 @@ module Cli = struct
     let info = C.Arg.info ["m"; "model"]
         ~docv:"MZN_MODEL"
         ~doc:"Path/name of file containing the MiniZinc model" in
-    let parser = C.Arg.some' C.Arg.string in
-    let default = None in
+    let parser = C.Arg.file in
+    let default = Inputs.default_model in
     let arg = C.Arg.opt parser default info in
-    C.Arg.required arg
+    C.Arg.value arg
 
   let extra_constraints_filepath : string option C.Term.t =
     let info = C.Arg.info ["extra-constraints"]

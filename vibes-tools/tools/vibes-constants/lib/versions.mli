@@ -15,3 +15,6 @@ val vibes_as : string
 
 (** The version string for [vibes-patch]. *)
 val vibes_patch : string
+
+(** The version string for [vibes-init]. *)
+val vibes_init : string

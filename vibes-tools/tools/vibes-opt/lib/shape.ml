@@ -148,7 +148,7 @@ let collect_conservative_patch_points
     ?(patch_spaces : Spaces.t = Spaces.empty)
     ~(patch_info : Patch_info.t)
     ~(width : int) 
-     (): word list =
+    (): word list =
   let patch_spaces = match Spaces.to_list patch_spaces with
     | [] ->
       (* Fall back to the default patch point. *)

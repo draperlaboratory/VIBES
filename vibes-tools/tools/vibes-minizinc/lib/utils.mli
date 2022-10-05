@@ -9,13 +9,15 @@ val build_constraints_file :
   model_filepath:string ->
   string
 
-(** [run_minizinc params ~model_filepath] runs the MiniZinc process on
-    the parameters [params] according to the model at [model_filepath].
+(** [run_minizinc params ~model_filepath ?solver] runs the MiniZinc
+    process on the parameters [params] according to the model at
+    [model_filepath]. An alternative [solver] may be provided.
 
     On success, the filepath to the solution (a JSON file) will be
     returned.
 *)
 val run_minizinc :
+  ?solver:string ->
   Yojson.Safe.t ->
   model_filepath:string ->
   (string, KB.conflict) result
