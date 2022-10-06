@@ -232,18 +232,20 @@ type res = patch list * Spaces.t
 let find_mem
     (target : T.target)
     (patch_point : int64)
+    (patch_size : int64)
     (memmap : value memmap) : (mem, KB.conflict) result =
   let width = T.Target.code_addr_size target in
   let from = Word.of_int64 ~width patch_point in
+  let words = Int64.to_int_exn patch_size in
   Memmap.to_sequence memmap |> Seq.find_map ~f:(fun (mem, _) ->
-      if Memory.contains mem from
-      then Some (Memory.view_exn mem ~from)
+      if Memory.contains mem from then
+        Memory.view mem ~from ~words ~word_size:`r8 |> Result.ok
       else None) |> function
   | Some mem -> Ok mem
   | None ->
     let msg = Format.asprintf
-        "Couldn't find patch point %a in memory"
-        Word.pp from in
+        "Couldn't find memory of size %Ld for patch point %a"
+        patch_size Word.pp from in
     Error (Errors.Invalid_address msg)
 
 let overwritten
@@ -275,7 +277,7 @@ let overwritten
         | `finished -> invalid_size t
         | `left _ when n < 0 -> invalid_size t
         | `left mem -> disasm (asm :: acc) mem t n in
-  let* mem = find_mem target patch_point memmap in
+  let* mem = find_mem target patch_point patch_size memmap in
   disasm [] mem 0 @@ Int64.to_int_exn patch_size
 
 let patch
