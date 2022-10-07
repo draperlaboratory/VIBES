@@ -398,7 +398,8 @@ let users_map (t : t) : Opvar.t list Var.Map.t =
   List.fold t.blks ~init:Var.Map.empty ~f:(fun acc blk ->
       Block.users_map blk |> Map.merge acc ~f:(fun ~key:_ -> function
           | `Left a | `Right a -> Some a
-          | `Both (a, b) -> Some (a @ b)))
+          | `Both (a, b) ->
+            Some (Utils.dedup_list_stable (a @ b) ~compare:Opvar.compare)))
 
 let temp_to_block (t : t) : tid Var.Map.t =
   List.concat_map t.blks ~f:(fun blk ->
