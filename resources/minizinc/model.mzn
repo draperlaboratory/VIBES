@@ -143,7 +143,7 @@ constraint forall(t in temp_t)(
 % use cumulative?
 % use minizinc built-in diffn.
 % The original unison model uses many different options
-function array[int] of var int : block_array(array[temp_t] of var int : a, block_t : b) =
+function array[int] of var int : block_arr(array[temp_t] of var int : a, block_t : b) =
     [a[t] | t in temp_t where temp_block[t] == b];
 
 % [diffn_nonstrict]  https://www.minizinc.org/doc-latest/en/lib-globals.html#packing-constraints
@@ -152,11 +152,10 @@ function array[int] of var int : block_array(array[temp_t] of var int : a, block
 
 % still need to include live[t] condition
 constraint forall(blk in block_t)(
-        diffn(block_array(reg,blk),  % built in global minizinc constraint
-              block_array(start_cycle,blk),
-              block_array([width[t] * bool2int(live[t]) | t in temp_t], blk), % no this is bad
-            %block_array(width, blk),
-              [end_cycle[t] - start_cycle[t] | t in temp_t where temp_block[t] == blk])
+  diffn(block_arr(reg,blk),  % built in global minizinc constraint
+        block_arr(start_cycle,blk),
+        block_arr([width[t] * bool2int(live[t]) | t in temp_t], blk),
+        [end_cycle[t] - start_cycle[t] | t in temp_t where temp_block[t] == blk])
 );
 
 
@@ -191,27 +190,19 @@ constraint forall(p in temp_t, q in temp_t where q in congruent[p])(reg[p] = reg
 % C7.1  The issue cycle of operations that define temporaries must be before all
 %       active operations that use that temporary
 constraint forall (t in temp_t)(
-     let {operand_t : p = definer[t]} in
-        forall(q in users[t] where active[operand_operation[q]] /\ temp[q] == t)(
-            issue[operand_operation[q]] >= issue[operand_operation[p]] + latency[opcode[operand_operation[p]]]
-    )
+  let {operand_t : p = definer[t]} in
+  forall(q in users[t] where active[operand_operation[q]] /\ temp[q] == t)(
+    let {operation_t : u = operand_operation[q]} in
+    let {operation_t : d = operand_operation[p]} in
+    issue[u] >= issue[d] + latency[opcode[d]]
+  )
 );
-
-% resource consumptions contraint
-% TODO. We are not tracking resource consumption yet
-/*
-use cumulative
-
-constraint forall (b in block_ts)(
-    forall (s in Resource)
-)
-*/
 
 %% Integration Constraints
 
 % C9 The start cycle of a temporary is the issue cycle of it's defining operation
 constraint forall (t in temp_t where live[t])(
-   start_cycle[t] == issue[operand_operation[definer[t]]]
+   start_cycle[t] = issue[operand_operation[definer[t]]]
 );
 
 % Not in paper. Do we want this?
@@ -226,7 +217,7 @@ constraint forall (t in temp_t)(
 
 %C10 Then end cycle of a temporary is the last issue cycle of operations that use it.
 constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
-  end_cycle[t] == max([issue[operand_operation[p]] | p in users[t] where temp[p] == t])
+  end_cycle[t] = max([issue[operand_operation[p]] | p in users[t] where temp[p] == t])
     % shouldn't this also be contingent on whether the user is active?
     % I suppose the temporary won't be live then.
 );
@@ -235,7 +226,7 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 % Outs must be at end
 
 constraint forall (blk in block_t)(
-    issue[block_ins[blk]] == 0
+    issue[block_ins[blk]] = 0
     /\
     % worse but possibly faster
     % issue[block_outs[blk]] == MAXC
