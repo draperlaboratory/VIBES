@@ -226,7 +226,7 @@ constraint forall (t in temp_t where card(users[t]) > 0 /\ live[t])(
 % Outs must be at end
 
 constraint forall (blk in block_t)(
-    issue[block_ins[blk]] = 0
+    issue[block_ins[blk]] == 0
     /\
     % worse but possibly faster
     % issue[block_outs[blk]] == MAXC
