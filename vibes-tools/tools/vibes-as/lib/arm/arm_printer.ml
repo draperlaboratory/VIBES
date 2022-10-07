@@ -88,7 +88,7 @@ let mk_loc_list
   match op with
   | "ldr" when len = 2 && is_const (List.nth_exn args 1) ->
     Ok [Neither; Neither]
-  | "ldr" | "ldrh" | "ldrb" | "str" ->
+  | "ldr" | "ldrh" | "ldrb" | "str" | "strh" | "strb" ->
     if      len = 2 then Ok [Neither; Both]
     else if len = 3 then Ok [Neither; Open; Close]
     else if len = 4 then Ok [Neither; Open; Neither; Close]
