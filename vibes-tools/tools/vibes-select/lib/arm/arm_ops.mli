@@ -30,6 +30,8 @@ val ldr : opcode
 val ldrh : opcode
 val ldrb : opcode
 val str : opcode
+val strh : opcode
+val strb : opcode
 val cmp : opcode
 val b : ?cnd:cond option -> unit -> opcode
 val bl : ?cnd:cond option -> unit -> opcode

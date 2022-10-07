@@ -81,6 +81,8 @@ let ldr : Ir.opcode = op "ldr"
 let ldrh : Ir.opcode = op "ldrh"
 let ldrb : Ir.opcode = op "ldrb"
 let str : Ir.opcode = op "str"
+let strh : Ir.opcode = op "strh"
+let strb : Ir.opcode = op "strb"
 let cmp : Ir.opcode = op "cmp"
 
 let b ?(cnd : Cond.t option = None) () : Ir.opcode =

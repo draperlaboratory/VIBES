@@ -237,22 +237,32 @@ let ldr
   let* ldr = ldr_op bits in
   binop ldr word_ty mem loc ~is_thumb
 
+let str_op (bits : int) : Ir.opcode KB.t =
+  if bits = 32 then !!Ops.str
+  else if bits = 16 then !!Ops.strh
+  else if bits = 8 then !!Ops.strb
+  else fail @@ Format.sprintf
+      "str_op: storing a bit-width that is not \
+       8, 16, or 32 (got %d)" bits
+
 let str
+    (bits : int)
     (mem : pure)
     (value : pure)
     (loc : pure)
     ~(is_thumb : bool) : pure KB.t =
+  let* str = str_op bits in
   let* res = void_temp mem_ty in
   let+ ops = match value.value with
     | Var _ ->
       let ops = [mem.value; value.value; loc.value] in
-      !![Ir.Operation.create_simple Ops.str res ops]
+      !![Ir.Operation.create_simple str res ops]
     | Const w ->
       let+ tmp = var_temp word_ty in
       let ops = [mem.value; tmp; loc.value] in
       let c, w = mov_const w ~is_thumb in
       let mov = Ir.Operation.create_simple c tmp [Const w] in
-      let op = Ir.Operation.create_simple Ops.str res ops in
+      let op = Ir.Operation.create_simple str res ops in
       [op; mov]
     | _ -> fail @@ Format.asprintf
         "str: unsupported `value` operand %a"
@@ -553,21 +563,21 @@ let rec select_exp
     let* mem = exp mem in
     let* value = exp value in
     str_base_off mem value a Word.(-w) ~is_thumb
-  | Store (mem, Int addr, value, _, _size) ->
+  | Store (mem, Int addr, value, _, size) ->
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
     let c, w = mov_const addr ~is_thumb in
     let op = Ir.Operation.create_simple c tmp [Const w] in
     let loc = {value = tmp; eff = instr op empty_eff} in
     let* value = exp value in
-    str mem value loc ~is_thumb
-  | Store (mem, loc, value, _, _size) ->
+    str (Size.in_bits size) mem value loc ~is_thumb
+  | Store (mem, loc, value, _, size) ->
     let* mem = exp mem in
     let* loc = exp loc in
     let* value = exp value in
     (* We have to swap the arguments here, since ARM likes the value
        first, and the location second *)
-    str mem value loc ~is_thumb
+    str (Size.in_bits size) mem value loc ~is_thumb
   (* This should've been handled by the optimizer, but we will check anyway. *)
   | BinOp (PLUS, Int w, a) when Word.(w = zero 32) -> exp a
   | BinOp ((PLUS | MINUS), a, Int w) when Word.(w = zero 32) -> exp a
