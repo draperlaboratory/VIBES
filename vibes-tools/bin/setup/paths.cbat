@@ -1,0 +1,2 @@
+CBAT_URL='https://github.com/draperlaboratory/cbat_tools.git'
+LOCAL_CBAT_DIR="${HOME}/cbat_tools"
