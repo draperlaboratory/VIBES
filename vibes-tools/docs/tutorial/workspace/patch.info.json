@@ -1,0 +1,12 @@
+{
+  "patch-point": "0x103c8:32u",
+  "patch-size": 4,
+  "sp-align": 0,
+  "overwrite": true,
+  "patch-vars": [
+    {
+      "name": "x",
+      "storage-class": ["register", {"at-entry": "R0", "at-exit": "R0"}]
+    }
+  ]
+}

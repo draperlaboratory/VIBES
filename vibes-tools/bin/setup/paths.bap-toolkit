@@ -1,0 +1,2 @@
+BAP_TOOLKIT_URL='https://github.com/BinaryAnalysisPlatform/bap-toolkit.git'
+LOCAL_BAP_TOOLKIT_DIR="${HOME}/bap-toolkit"

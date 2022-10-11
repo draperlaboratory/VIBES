@@ -1,0 +1,14 @@
+binutils-arm-linux-gnueabi 
+binutils-multiarch
+clang
+cmake
+debianutils
+gcc-arm-linux-gnueabi
+libgmp-dev
+libncurses5-dev
+libzip-dev
+llvm-10-dev
+pkg-config
+qemu-user
+zlib1g-dev
+zip

@@ -1,0 +1,3 @@
+BOOLECTOR_URL="https://github.com/boolector/boolector"
+LOCAL_BOOLECTOR_DIR="${HOME}/boolector"
+LOCAL_BOOLECTOR_BIN_DIR="${LOCAL_BOOLECTOR_DIR}/build/bin"

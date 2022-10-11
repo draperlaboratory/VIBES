@@ -2,7 +2,7 @@ TOOLS_SRC := tools
 
 VIBES_XDG_APP_DIR := $(HOME)/.vibes
 MINIZINC_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/model.mzn
-MINIZINC_MODEL_SRC := ./../resources/minizinc/model.mzn
+MINIZINC_MODEL_SRC := resources/minizinc/model.mzn
 
 ###################################
 # DEFAULT

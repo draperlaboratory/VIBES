@@ -1,152 +1,143 @@
-# The VIBES Tool Suite
+# VIBES
 
-A suite of tools for the VIBES project.
+VIBES (Verified, Incremental Binary Editing with Synthesis) is a suite of command line tools that uses program synthesis and constraint programming techniques to compile a source-level patch and insert it into a preexisting binary program. VIBES uses formal verification to prove that only the intended change is made.
+
+The vibes tool chain consists of the following command line tools:
+
+* `vibes-init` - scaffolds a VIBES patching project.
+* `vibes-parse` - parses a patch written in C (or rather, a subset of C).
+* `vibes-opt` - runs optimization passes over a parsed patch.
+* `vibes-select` - selects low-level instructions for a parsed patch.
+* `vibes-as` - assembles the low-level instructions into a binary program fragment.
+* `vibes-patch` - surgically inserts the binary program fragment into the original binary.
+
+To patch a binary program, use `vibes-init` to scaffold a patching project, edit a few generated files to tell VIBES how to patch your program, and then run `make`. The Makefile will run the above tools in sequence, passing the output of each as input to the next.
+
+Each of the above tools takes its input as human-readable and editable files, so you can run any of these tools on their own, if you want to tinker. Each tool has a `--help` command that provides details about usage.
+
+For a brief overview and example of how to use VIBES, see the tutorial:
+
+* [Tutorial](docs/tutorial/Tutorial.md)
+
+VIBES is open source. If you want to contribute, see the following:
+
+* [Contributing](docs/Contributing.md)
 
 
-## The Tools
+## Acknowledgements
 
-In progress. So far, the tools that are under development are these:
-
-* `vibes-parse` ([README.md](tools/vibes-parse)) - Takes a `patch.c` file (containing C code), and produces a `patch.bir` file (containing serialized BAP IR).
-* `vibes-opt` ([README.md](tools/vibes-opt)) - Takes a `patch.bir` file, and produces a `patch.bir.opt` file (containing optimized BAP IR).
+This work is sponsored by DARPA / NAVWAR Contract N6600120C4018, as part of the DARPA Assured Micro-Patching (AMP) program. Its content does not necessarily reflect the position or policy of the US Government and no official endorsement should be inferred.
 
 
-## Building/Installing everything
+## Docker Installation
 
-To build and install the entire suite:
+To run VIBES with Docker, navigate into this directory, and build the image:
+
+```
+docker build --tag vibes:latest .
+```
+
+By default the build will utilize `nproc` jobs. If you want to limit that, specify `OPAM_JOBS` as a build argument:
+
+```
+docker build --build-arg OPAM_JOBS=3 --tag vibes:latest .
+```
+
+If you need to build behind a proxy, provide `http_proxy` and `https_proxy` variables as build arguments too:
+
+```
+docker build --build-arg http_proxy=http://myproxy.com:1234 --build-arg https_proxy=http://myproxy.com:1234 --tag vibes:latest .
+```
+
+To get a bash prompt inside the container:
+
+```
+docker run -ti vibes:latest bash
+```
+
+Once inside, you can run any of the VIBES tools, e.g.:
+
+```
+vibes-init --help
+```
+
+Normally, you want VIBES to operate on files on your local machine. To mount a local directory (e.g., your home directory) to `/external` inside the container, use Docker`s `-v` flag:
+
+```
+docker run -ti -v ${HOME}:/external -w /external vibes:latest bash
+```
+
+The container user is `opam`, with UID 1000. If you are not locally running as the user with UID 1000, then add `${HOME}` to the 1000 group, so that the container user will be able to write to it:
+
+```
+sudo chown :1000 ${HOME}
+```
+
+
+## Manual Installation
+
+For manual installation, the following instructions are for Ubuntu 20.04. First, install OCaml and create a 4.14 switch. Then navigate into this directory, run the setup script and source the `update-PATH` script:
+
+```
+bash bin/setup/ubuntu.bash
+. bin/setup/update-PATH.bash
+``` 
+
+This will install all required APT packages and all required OPAM packages, it will install BAP and CBAT, it will install minizinc and boolector, and it will update the PATH so your system can find minizinc and boolector.
+
+
+## Usage
+
+In a folder somewhere (accessible to the Docker user if you are running VIBES in a container), create a folder called `workspace`:
+
+```
+mkdir workspace
+cd workspace
+```
+
+Move the binary executable you want to patch into that directory:
+
+```
+mv /path/to/program.exe .
+```
+
+Run `vibes-init`:
+
+```
+vibes-init \
+  --patch-name=my-patch \
+  --binary=program.exe \
+  --patched-binary=program.patched.exe \
+  --target=bap:armv7+le \
+  --language=bap:llvm-armv7
+```
+
+That will generate a number of files.
+
+Open `my-patch.info.json` and adjust the patch-point and patch-size, e.g.:
+
+```
+{
+  "patch-point": "0x103c8:32u",
+  "patch-size": 4,
+  "overwrite": true,
+  "sp-align": 0,
+  "patch-vars": []
+}
+```
+
+That tells VIBES to start patching at the address `0x103c8:32u` (the `32u` says this is a 32-bit unsigned number).
+
+Open `my-patch.c` and add whatever patch code you want VIBES to insert into the original program, e.g.:
+
+```
+int x = 3;
+```
+
+Now run `make`:
 
 ```
 make
 ```
 
-Check that all tools are installed:
-
-```
-vibes-parse --help
-vibes-opt --help
-```
-
-or:
-
-```
-vibes-parse --version
-vibes-opt --version
-```
-
-To just build the suite:
-
-```
-make build
-```
-
-To install the suite:
-
-```
-make install
-```
-
-To uninstall and clean:
-
-```
-make uninstall
-make clean
-```
-
-## Toy/sample CLI
-
-There is a toy/dummy command line tool that can be used a a playground or as a template for your own tool.
-
-It lives here:
-
-* [tools/vibes-playground](tools/vibes-playground)
-
-To use it, go to [tools/vibes-playground/bin/main.ml#L21](tools/vibes-playground/bin/main.ml#L21) and start modifying/playing.
-After building, the project, try it out from the command line:
-
-```
-vibes-playground --help
-vibes-playground
-```
-
-
-## Tool scaffolding
-
-The tool suite is contained in the [tools/](tools/) subdirectory, where each tool has its own folder, like this:
-
-```
-|-- <repo root>/
-    |
-    |-- "README.md" (top level README)
-    |-- "Makefile" (top level makefile)
-    |-- ...
-    |-- "tools/"
-        |
-        |-- "README.md" (project README)
-        |-- "Makefile" (project Makefile)
-        |-- "vibes-parse/" (folder containing the vibes-parse tool)
-        |-- "vibes-opt/" (folder containing the vibes-opt tool)
-        |-- "vibes-log/" (folder containing a shared logging library)
-        |-- ...
-```
-
-Some tools are command line tools.
-Other tools are just libraries that can be used by other tools.
-Each tool has a similar scaffolding.
-It's folder contains:
-
-* A `README.md` describing the tool/library and how to build/install it
-* A `Makefile` for building the tool
-* A possible `lib` folder, containing local library files just for this tool
-* A possible `bin` folder, containing files that define the CLI just for this tool
-
-For instance, consider a command line tool called `vibes-foo`.
-It would live in its own folder called `vibes-foo/`, which would look like this:
-
-```
-|-- <repo root>/
-    |
-    |-- ...
-    |-- "tools/"
-        |
-        |-- "vibes-foo/"
-            |
-            |-- "README.md"
-            |-- "lib/"
-            |   |
-            |   |-- "dune" (defines "vibes-tools.foo", a public library)
-            |   |-- "runner.ml" (contains a "run" method, to run the library)
-            |   |-- "types.ml" (contains type definitions for this library)
-            |   |-- "module_a.ml"
-            |   |-- "module_b.ml"
-            |   |-- ...
-            |-- "bin/"
-                |
-                |-- "dune" (defines a "vibes-foo" executable)
-                |-- "main.ml" (defines the Cmdliner CLI)
-```
-
-Note that a non-public library is defined in the `lib/` folder. Regarding this `lib/` folder, note the following:
-
-* These 'lib/' files make up a library that is not public (no `.opam` file). It is not meant to be installed separately as an opam package. Rather, it is just a library to be used locally by the tool `vibes-foo`.
-* Although this local library does not need an `.opam` file, it does need a `dune` file. In that file, we name this local library `vibes_foo_lib`. The convention is to append `_lib` to the end of the tool name (hence, if the tool were called `vibes-bar`, then this library would be named `vibes_bar_lib`).
-* If the library can be "run" (as an application), then there should be a `Runner` module that contains a `run` function, so that a CLI frontend can directly "run" it by calling `Vibes_foo_lib.Runner.run`. 
-* If the library uses any shared types, they should be declared in a `types.ml` module. 
-
-Note that a `vibes-foo` executable is defined in the `bin/` folder. Regarding this `bin/` folder, note the following:
-
-* The `bin/` folder is for housing the binary executable `vibes-foo` (a command line tool).
-* The CLI should be defined (using `Cmdliner`) in a file called `main.ml`.
-* There should be a `dune` file, defining the executable with the stanza `(public_name vibes-foo)`.
-
-If a tool is just a library meant to be used by other tools (hence it has no CLI frontend of its own), then it should not have a `bin/` folder. Conversely, if a tool is just a CLI frontend that relies entirely on other shared libraries, then it need not have a `lib/` folder.
-
-Other conventions:
-
-* Functionality shared by more than one tool should be moved into its own library.
-* Other tools can import shared libraries by listing them in the `libraries` stanza of their local `dune` files. 
-* The `<repo root>/tools/vibes-log` library provides a common logger that other tools should use for logging. Messages can be sent from any application by invoking the `Vibes_log.Stream.send` function.
-* For error reporting, libraries define a `lib/errors.ml` module and extend the `KB.Conflict.t` type for compatibility with Knowledge Base computations. This way, every tool can add its own custom errors and custom error printers. In general, any entry points to a library should return a `(_, Vibes_error.Std.t) result`. That way, consumers (i.e., CLI frontends) can automatically handle errors and print them out for the user with an appropriate exit code.
-* The `<repo root>/tools/vibes-common-cli-options` library provides various command line options that multiple tools share. For instance, it provides verbosity options that other tools can import into their own CLI.
-* The `<repo root>/tools/vibes-constants` library provides constant values that other applications can use. For instance, it specifies the version numbers for the various command line tools. Those CLIs simply import their version number from this `vibes-constants` library.
-
-When in doubt about a convention, look at some of the tools (e.g., `vibes-parse` or `vibes-opt`) and copy what you see there.
+VIBES will compile your code in `my-patch.c` and insert it into the binary `program.exe` at the address `0x103c8`. It will save the new binary as `program.patched.exe`.
