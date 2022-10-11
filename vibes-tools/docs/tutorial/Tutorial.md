@@ -92,7 +92,7 @@ Here we simply set `x` to `3`. The program will then return that value.
 Finally, make a note of the target architecture and the encoding language of the binary program at the patch site. For 32-bit ARM, we can use these:
 
 * Encoding language: `bap:llvm-armv7`
-* Target: `bap:arm` (to see all available targets, run `bap list targets` from the command line)
+* Target: `bap:armv7+le` (to see all available targets, run `bap list targets` from the command line)
 
 
 ### Patch the Program, The Easy Way
@@ -106,7 +106,7 @@ vibes-init \
   --patch-names=my-patch \
   --binary=main.exe \
   --patched-binary=main.patched.exe \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --language=bap:llvm-armv7 \
   --verbose
 ```
@@ -195,7 +195,7 @@ First, create a file called `patch.info.json` with these contents:
 This tells VIBES the following things:
 
 * `patch-point` start patching at address `0x103d4:32` (the `32` indicates that the address is a 32-bit number)
-* `patch-size`: overwrite 8 bytes
+* `patch-size`: overwrite 4 bytes
 * `sp-align`: no need to make any adjustments at the patch point to align the stack pointer
 * `patch-vars`: this tells VIBES where variables live. In this case, this tells VIBES that there is only one variable that we care about, called `x`, and it lives in the register `R0` at the entrance and exit of the patch site.
 
@@ -213,7 +213,7 @@ vibes-parse \
   --patch-filepath=patch.c \
   --bir-outfile=patch.bir \
   --function-info-outfile=patch.func.json \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --verbose
 ```
 
@@ -236,7 +236,7 @@ vibes-opt \
   --function-info-filepath=patch.func.json \
   --bir-filepath=patch.bir \
   --bir-outfile=patch.opt.bir \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --language=bap:llvm-armv7 \
   --verbose
 ```
@@ -257,7 +257,7 @@ vibes-select
   --patch-info-filepath=patch.info.json \
   --bir-filepath=patch.opt.bir \
   --vir-outfile=patch.vir \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --language=bap:llvm-armv7 \
   --verbose
 ```
@@ -278,7 +278,7 @@ vibes-as \
   --patch-info-filepath=patch.info.json
   --vir-filepath=patch.vir \
   --asm-outfile=patch.asm \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --language=bap:llvm-armv7 \
   --verbose
 ```
@@ -299,7 +299,7 @@ vibes-patch \
   --asm-filepaths=patch.asm \
   --binary=main.exe \
   --patched-binary=main.patched.exe \
-  --target=bap:arm \
+  --target=bap:armv7+le \
   --language=bap:llvm-armv7 \
   --verbose 
 ```
