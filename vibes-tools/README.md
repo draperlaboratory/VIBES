@@ -76,7 +76,11 @@ sudo chown :1000 ${HOME}
 
 ## Manual Installation
 
-For manual installation, the following instructions are for Ubuntu 20.04. First, install OCaml and create a 4.14 switch. Then navigate into this directory, run the setup script and source the `update-PATH` script:
+For manual installation, the following instructions are for Ubuntu
+20.04. First, install OCaml and create a 4.14 switch. Also make sure
+you do not have directories `~/bap-toolkit` and `~/cbat_tools`. Then
+navigate into this directory, run the setup script and source the
+`update-PATH` script:
 
 ```
 bash bin/setup/ubuntu.bash
@@ -84,6 +88,11 @@ bash bin/setup/ubuntu.bash
 ``` 
 
 This will install all required APT packages and all required OPAM packages, it will install BAP and CBAT, it will install minizinc and boolector, and it will update the PATH so your system can find minizinc and boolector.
+
+Finally, run make:
+```
+make
+```
 
 
 ## Usage
