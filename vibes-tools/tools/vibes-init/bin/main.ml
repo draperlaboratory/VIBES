@@ -32,16 +32,6 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.value arg
 
-  let ogre_filepath : string option C.Term.t =
-    let info = C.Arg.info ["O"; "ogre"]
-        ~docv:"OGRE"
-        ~doc:"Path/name of the optional OGRE loader file. It must \
-              be an absolute filepath, e.g. ./myloader.ogre" in
-    let parser = C.Arg.some' C.Arg.string in
-    let default = None in
-    let arg = C.Arg.opt parser default info in
-    C.Arg.value arg
-
   let binary : string C.Term.t =
     let info = C.Arg.info ["i"; "binary"]
         ~docv:"BINARY"
@@ -67,7 +57,6 @@ module Cli = struct
       (language : string)
       (model_filepath : string)
       (patch_names : string list)
-      (ogre_filepath : string option)
       (binary : string)
       (patched_binary : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
@@ -77,7 +66,6 @@ module Cli = struct
       ~language
       ~patch_names
       ~model_filepath
-      ~ogre_filepath
       ~binary
       ~patched_binary
       () |> function
@@ -92,7 +80,6 @@ module Cli = struct
       $ Cli_opts.Language.language
       $ model_filepath
       $ patch_names
-      $ ogre_filepath
       $ binary
       $ patched_binary
     )

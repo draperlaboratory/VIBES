@@ -282,14 +282,13 @@ let overwritten
 
 let patch
     ?(patch_spaces : Spaces.t = Spaces.empty)
-    ?(backend : string option = None)
     (target : T.target)
     (language : T.language)
     (asms : Asm.t list)
     ~(binary : string)
     ~(patched_binary : string) : (res, KB.conflict) result =
   Log.send "Loading binary %s" binary;
-  let* image = Loader.image binary ?backend in
+  let* image = Loader.image binary in
   let memmap = Image.memory image in
   let spec = Image.spec image in
   let* dis, info = target_info target language in

@@ -18,7 +18,6 @@ type res = patch list * Vibes_patch_info.Types.Spaces.t
 *)
 val patch :
   ?patch_spaces:Vibes_patch_info.Types.Spaces.t ->
-  ?backend:string option ->
   Theory.target ->
   Theory.language ->
   Vibes_as.Types.Assembly.t list ->

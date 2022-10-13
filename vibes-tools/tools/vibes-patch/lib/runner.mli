@@ -3,7 +3,6 @@ open Bap_core_theory
 (** Attempts to patch the binary with the provided assembly code. *)
 val run :
   ?patch_spaces:string option ->
-  ?ogre_filepath:string option ->
   target:string ->
   language:string ->
   binary:string ->

@@ -848,7 +848,8 @@ module Main = struct
                   | Some t ->
                     return (t, Exp.with_type e1 t, Exp.with_type e2 t)
                 end
-            end          | _ -> typ_unify_error e t1 t2 in
+            end
+          | _ -> typ_unify_error e t1 t2 in
         BINARY (b, e1, e2, t)
 
   end
@@ -1132,16 +1133,29 @@ module Main = struct
       let t1 = Exp.typeof e1 in
       let* spre2, e2, spost2 = exp rhs in
       let t2 = Exp.typeof e2 in
-      match Type.unify t1 t2 with
-      | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-      | Some VOID ->
+      let* t, e1, e2 =
+        let default () = match Type.unify t1 t2 with
+          | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
+          | Some t -> return (t, Exp.with_type e1 t, Exp.with_type e2 t) in
+        match t1, t2 with
+        | INT _, INT _ -> begin
+            (* The size of a constant integer is ambiguous until
+               we use it in some kind of operation. *)
+            match e1, e2 with
+            | CONST_INT _, _ -> return (t2, Exp.with_type e1 t2, e2)
+            | _, CONST_INT _ -> return (t1, e1, Exp.with_type e2 t1)
+            | _ -> default ()
+          end
+        | _ -> default () in
+      match t with
+      | VOID ->
         let msg = if no_ptr then "Expected integral type"
           else "Expected integral or pointer type" in
         typ_error Cabs.(BINARY (b, lhs, rhs)) VOID msg
-      | Some ((PTR _) as t) when no_ptr ->
+      | (PTR _) as t when no_ptr ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
           "Pointer type is not allowed"
-      | Some t ->
+      | _ ->
         let e1 = Exp.with_type e1 t in
         let e2 = Exp.with_type e2 t in
         let f op e1 e2 t = return @@ BINARY (op, e1, e2, t) in

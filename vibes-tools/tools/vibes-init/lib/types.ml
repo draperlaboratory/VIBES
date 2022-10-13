@@ -28,7 +28,6 @@ type t = {
   model : string;
   binary : string;
   patched_binary : string;
-  ogre : string;
   patches : patch list;
   spaces : string;
 }
@@ -52,14 +51,12 @@ let create
     ~(model : string)
     ~(binary : string)
     ~(patched_binary : string)
-    ~(ogre : string)
     ~(spaces : string) : t = {
   target;
   language;
   model;
   binary;
   patched_binary;
-  ogre;
   spaces;
   patches = List.map patch_names ~f:create_patch;
 }
@@ -73,7 +70,6 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   Format.fprintf ppf "BINARY := %s\n%!" t.binary;
   Format.fprintf ppf "PATCHED_BINARY := %s\n%!" t.patched_binary;
   Format.fprintf ppf "SPACES := %s\n%!" t.spaces;
-  Format.fprintf ppf "OGRE := %s\n\n%!" t.ogre;
   (* Patch definitions. *)
   List.iteri t.patches ~f:(fun i p ->
       Format.fprintf ppf "# Definitions for patch %s (%d)\n\n%!" p.name i;
@@ -201,7 +197,6 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                       --patch-spaces $(SPACES) \
                       --asm-filepaths %s \
                       --patched-binary $(PATCHED_BINARY) \
-                      --ogre $(OGRE) \
                       --verbose\n%!" asms;
   Format.fprintf ppf "\tchmod +x $(PATCHED_BINARY)\n\n%!";
   (* clean *)

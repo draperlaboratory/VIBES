@@ -20,7 +20,6 @@ type t = {
   model : string;
   binary : string;
   patched_binary : string;
-  ogre : string;
   patches : patch list;
   spaces : string;
 }
@@ -33,7 +32,6 @@ val create :
   model:string ->
   binary:string ->
   patched_binary:string ->
-  ogre:string ->
   spaces:string ->
   t
 

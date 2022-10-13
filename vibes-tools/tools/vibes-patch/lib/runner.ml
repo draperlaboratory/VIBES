@@ -40,7 +40,6 @@ let parse_asms
 
 let run
     ?(patch_spaces : string option = None)
-    ?(ogre_filepath : string option = None)
     ~(target : string)
     ~(language : string)
     ~(binary : string)
@@ -56,18 +55,9 @@ let run
   let* patch_spaces = match patch_spaces with
     | Some path -> Spaces.from_file path
     | None -> Ok Spaces.empty in
-  let* () = match ogre_filepath with
-    | None -> Ok ()
-    | Some path -> match Sys_unix.file_exists path with
-      | `Yes -> Ok ()
-      | `No | `Unknown ->
-        let msg = Format.sprintf "OGRE file %s not found" path in
-        Error (Errors.Invalid_ogre msg) in
   let* asms = parse_asms asm_filepaths in
-  let* _, spaces =
-    Patcher.patch target language asms
-      ~binary ~patched_binary ~patch_spaces
-      ~backend:ogre_filepath in
+  let* _, spaces = Patcher.patch target language asms
+      ~binary ~patched_binary ~patch_spaces in
   if not @@ Spaces.is_empty spaces then
     Log.send "Remaining patch spaces:\n%a" Spaces.pp spaces;
   Ok ()
