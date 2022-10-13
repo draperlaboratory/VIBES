@@ -848,7 +848,8 @@ module Main = struct
                   | Some t ->
                     return (t, Exp.with_type e1 t, Exp.with_type e2 t)
                 end
-            end          | _ -> typ_unify_error e t1 t2 in
+            end
+          | _ -> typ_unify_error e t1 t2 in
         BINARY (b, e1, e2, t)
 
   end
