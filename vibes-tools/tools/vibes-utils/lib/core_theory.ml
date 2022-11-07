@@ -4,8 +4,11 @@ open Bap_core_theory
 module T = Theory
 
 let is_thumb (language : T.language) : bool = 
-  String.is_substring ~substring:"thumb" @@
-  T.Language.to_string language
+  T.Language.(language = Arm_target.llvm_t32)
+
+let is_arm32 (target : T.target) : bool =
+  T.Target.belongs Arm_target.parent target &&
+  T.Target.bits target = 32
 
 let get_target (name : string) : (T.target, KB.conflict) result =
   match T.Target.lookup name with

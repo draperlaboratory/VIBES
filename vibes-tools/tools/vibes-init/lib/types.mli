@@ -26,14 +26,13 @@ type t = {
 
 (** Creates the information for generating the patch build process. *)
 val create :
-  Theory.target ->
-  Theory.language ->
+  ?language:Theory.language option ->
   patch_names:string list ->
   model:string ->
   binary:string ->
   patched_binary:string ->
   spaces:string ->
-  t
+  (t, KB.conflict) result
 
 (** Pretty-prints the Makefile for running the pipeline. *)
 val pp_makefile : Format.formatter -> t -> unit

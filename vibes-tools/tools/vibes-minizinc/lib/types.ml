@@ -3,6 +3,7 @@ open Bap.Std
 open Monads.Std
 open Bap_core_theory
 
+module CT = Vibes_utils.Core_theory
 module Json = Vibes_utils.Json
 module Ir = Vibes_ir.Types
 module Linear = Vibes_linear_ssa.Utils
@@ -260,15 +261,14 @@ module Params = struct
       (target : Theory.target)
       (language : Theory.language) : var list * var list =
     let regs =
-      Theory.Target.regs target |>
+      Theory.Target.regs target ~exclude:Theory.Role.Register.[floating] |>
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list |>
       List.cons dummy in
     let gpr =
       let roles = Theory.Role.Register.[general; integer] in
       let roles =
-        if Theory.Target.belongs Arm_target.parent target
-        && Vibes_utils.Core_theory.is_thumb language
+        if CT.is_arm32 target && CT.is_thumb language
         then Arm_target.thumb :: roles
         else roles in
       let exclude = Theory.Role.Register.[stack_pointer] in
@@ -279,7 +279,7 @@ module Params = struct
 
   let is_copy
       (target : Theory.target) : (Ir.Operation.t -> bool, KB.conflict) result =
-    if Theory.Target.belongs Arm_target.parent target then
+    if CT.is_arm32 target then
       Result.return @@ fun (o : Ir.Operation.t) ->
       o.optional && List.exists o.opcodes ~f:(function
           | "mov" | "movs" -> begin

@@ -4,6 +4,8 @@
  (libraries
    findlib.dynload
    bap
+   bap-arm
+   bap-core-theory
    core
    yojson
    ppx_yojson_conv_lib

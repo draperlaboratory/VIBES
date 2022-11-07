@@ -3,6 +3,7 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
+module CT = Vibes_utils.Core_theory
 module Constants = Vibes_constants.Asm
 module Patch_info = Vibes_patch_info.Types
 module Spaces = Patch_info.Spaces
@@ -20,7 +21,7 @@ let target_info
     (target : T.target)
     (language : T.language) : (dis * target, KB.conflict) result =
   let* info =
-    if T.Target.belongs Arm_target.parent target then
+    if CT.is_arm32 target then
       Ok (module Arm_utils : Types.Target)
     else
       let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
@@ -288,7 +289,7 @@ let patch
     ~(binary : string)
     ~(patched_binary : string) : (res, KB.conflict) result =
   Log.send "Loading binary %s" binary;
-  let* image = Loader.image binary in
+  let* image = Vibes_utils.Loader.image binary in
   let memmap = Image.memory image in
   let spec = Image.spec image in
   let* dis, info = target_info target language in

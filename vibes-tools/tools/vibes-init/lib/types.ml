@@ -3,6 +3,7 @@ open Bap.Std
 open Bap_core_theory
 
 module T = Theory
+module CT = Vibes_utils.Core_theory
 module Files = Vibes_utils.Files
 module Patch_info = Vibes_patch_info.Types
 module Spaces = Patch_info.Spaces
@@ -44,22 +45,78 @@ let create_patch (patch : string) : patch = {
   constraints = sprintf "%s.mzn" patch;
 }
 
-let create
+let target_of_spec (spec : Ogre.doc) : T.target KB.t =
+  let open KB.Syntax in
+  KB.Object.scoped T.Unit.cls @@ fun unit ->
+  let* () = KB.provide Image.Spec.slot unit spec in
+  KB.collect T.Unit.target unit
+
+let entry_of_spec (spec : Ogre.doc) : int64 KB.t =
+  match Ogre.(eval (require Image.Scheme.entry_point) spec) with
+  | Error e -> KB.fail @@ Errors.No_entry_point "No entry point found"
+  | Ok entry -> KB.return entry
+
+let unsupported_target (target : T.target) : _ KB.t =
+  let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
+  KB.fail @@ Errors.Unsupported_target msg
+
+let language_of_spec (spec : Ogre.doc) (target : T.target) : T.language KB.t =
+  let open KB.Syntax in
+  if CT.is_arm32 target then
+    let+ entry = entry_of_spec spec in
+    if Int64.((entry land 1L) <> 0L)
+    then Arm_target.llvm_t32
+    else Arm_target.llvm_a32
+  else unsupported_target target
+
+let language_matches_target
     (target : T.target)
-    (language : T.language)
+    (language : T.language) : unit KB.t =
+  let msg = Format.asprintf "Invalid target/language combination (%a/%a)"
+      T.Target.pp target T.Language.pp language in
+  let eq = T.Language.equal language in
+  if CT.is_arm32 target then
+    if eq Arm_target.llvm_t32
+    || eq Arm_target.llvm_a32 then KB.return ()
+    else KB.fail @@ Errors.Invalid_target_lang msg
+  else unsupported_target target
+
+let target_and_lang = Toplevel.var "target-and-lang"
+
+let infer_target_and_lang
+    ?(language : T.language option = None)
+    (binary : string) : (T.target * T.language, KB.conflict) result =
+  let (let*) x f = Result.bind x ~f in
+  let* image = Vibes_utils.Loader.image binary in
+  let spec = Image.spec image in try
+    Toplevel.put target_and_lang begin
+      let open KB.Syntax in
+      let* target = target_of_spec spec in
+      let+ language = match language with
+        | None -> language_of_spec spec target
+        | Some language -> !!language in
+      target, language
+    end;
+    Ok (Toplevel.get target_and_lang)
+  with Toplevel.Conflict c -> Error c
+
+let create
+    ?(language : T.language option = None)
     ~(patch_names : string list)
     ~(model : string)
     ~(binary : string)
     ~(patched_binary : string)
-    ~(spaces : string) : t = {
-  target;
-  language;
-  model;
-  binary;
-  patched_binary;
-  spaces;
-  patches = List.map patch_names ~f:create_patch;
-}
+    ~(spaces : string) : (t, KB.conflict) result =
+  let (let+) x f = Result.map x ~f in
+  let+ target, language = infer_target_and_lang binary ~language in {
+    target;
+    language;
+    model;
+    binary;
+    patched_binary;
+    spaces;
+    patches = List.map patch_names ~f:create_patch;
+  }
 
 let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   (* Toplevel comment. *)

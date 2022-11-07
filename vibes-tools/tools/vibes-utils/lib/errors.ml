@@ -10,6 +10,7 @@ type KB.conflict +=
    | Json_deserialization_error of string
    | Unknown_target of string
    | Unknown_language of string
+   | Invalid_binary of string
 
 let printer (e : KB.conflict) : string option =
   match e with
@@ -22,6 +23,7 @@ let printer (e : KB.conflict) : string option =
   | Json_deserialization_error s -> Some s
   | Unknown_target s -> Some s
   | Unknown_language s -> Some s
+  | Invalid_binary s -> Some s
   | _ -> None
 
 let () = KB.Conflict.register_printer printer
