@@ -29,13 +29,10 @@ let mark_jmps (blk : blk term) : blk term KB.t =
       | Some alt -> match Jmp.resolve alt with
         | Second _ -> !!jmp
         | First tid ->
-          Log.send "%a\n%!" Jmp.pp jmp;
           let* name = KB.collect T.Label.name tid in
           let+ addr = KB.collect T.Label.addr tid in
           let jmp = match name with
-            | Some name ->
-              Log.send "%s\n%!" name;
-              Term.set_attr jmp Tags.name_dest name
+            | Some name -> Term.set_attr jmp Tags.name_dest name
             | None -> jmp in
           let jmp = match addr with
             | Some addr -> Term.set_attr jmp Tags.addr_dest addr
