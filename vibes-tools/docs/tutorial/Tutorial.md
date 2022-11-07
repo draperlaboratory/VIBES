@@ -106,8 +106,6 @@ vibes-init \
   --patch-names=my-patch \
   --binary=main.exe \
   --patched-binary=main.patched.exe \
-  --target=bap:armv7+le \
-  --language=bap:llvm-armv7 \
   --verbose
 ```
 
