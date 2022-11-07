@@ -5,6 +5,7 @@ open Bap_core_theory
 module T = Theory
 module Log = Vibes_log.Stream
 module Utils = Vibes_utils
+module CT = Utils.Core_theory
 module Tags = Vibes_bir.Tags
 module Ir = Vibes_ir.Types
 module Linear = Vibes_linear_ssa.Linearizer
@@ -21,8 +22,8 @@ let run
   let* sub = Linear.transform sub ~hvars in
   Log.send "Linearized BIR:\n%a" Sub.pp sub;
   let* select, preassign =
-    if T.Target.belongs Arm_target.parent target then
-      let is_thumb = Utils.Core_theory.is_thumb language in
+    if CT.is_arm32 target then
+      let is_thumb = CT.is_thumb language in
       !!(Arm_selector.select ~is_thumb, Arm_utils.preassign ~is_thumb)
     else
       let msg = Format.asprintf

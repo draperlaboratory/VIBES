@@ -53,8 +53,7 @@ module Cli = struct
   let run
       (verbose : bool)
       (no_color : bool)
-      (target : string)
-      (language : string)
+      (language : string option)
       (model_filepath : string)
       (patch_names : string list)
       (binary : string)
@@ -62,7 +61,6 @@ module Cli = struct
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-parse'";
     Runner.run
-      ~target
       ~language
       ~patch_names
       ~model_filepath
@@ -76,8 +74,7 @@ module Cli = struct
       const run
       $ Cli_opts.Verbosity.verbose
       $ Cli_opts.Verbosity.no_color
-      $ Cli_opts.Target.target
-      $ Cli_opts.Language.language
+      $ Cli_opts.Language.language_optional
       $ model_filepath
       $ patch_names
       $ binary

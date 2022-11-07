@@ -4,6 +4,7 @@ open Bap_c.Std
 open Monads.Std
 open Bap_core_theory
 
+module CT = Vibes_utils.Core_theory
 module Utils = C_utils
 module Log = Vibes_log.Stream
 module Hvar = Vibes_higher_vars.Higher_var
@@ -1636,10 +1637,8 @@ let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
   let fail () =
     fail @@ Format.asprintf "Unsupported target %a"
       Theory.Target.pp target in
-  if Theory.Target.belongs Arm_target.parent target then
-    if Theory.Target.bits target = 32
-    then KB.return Data_model.{sizes = `ILP32; schar = false}
-    else fail ()
+  if CT.is_arm32 target then
+    KB.return Data_model.{sizes = `ILP32; schar = false}
   else fail ()
 
 (* Translate a definition. *)

@@ -2,6 +2,7 @@ open Core
 open Bap_core_theory
 
 module T = Theory
+module CT = Vibes_utils.Core_theory
 module Log = Vibes_log.Stream
 module Ir = Vibes_ir.Types
 module Params = Vibes_minizinc.Types.Params
@@ -15,7 +16,7 @@ let opt
     (ir : Ir.t)
     (target : T.target) : (Ir.t, KB.conflict) result =
   let+ is_nop, unconditional_branch_target =
-    if T.Target.belongs Arm_target.parent target then
+    if CT.is_arm32 target then
       let open Arm_utils in
       Ok (is_nop, unconditional_branch_target)
     else
