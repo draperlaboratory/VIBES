@@ -7,7 +7,6 @@ cd "${ROOT_DIR}"
 vibes-opt \
   --target bap:armv7+le \
   --language llvm-armv7 \
-  --function-info-filepath resources/patch.func.info \
   --patch-info-filepath resources/patch-info.json \
   --bir-filepath resources/patch.bir \
   --bir-outfile resources/patch.opt.bir \

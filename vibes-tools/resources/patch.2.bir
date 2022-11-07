@@ -1,16 +1,23 @@
 (program
  (patch.2.bir
-  ((%00000031 block (phi ())
+  ((%00000022 block (phi ())
     (data
-     ((%0000001f set (x 0 (imm 32) false) (int 3:32u))
-      (%00000022 set (y 0 (imm 32) false) (int 6:32u))
-      (%00000025 set (reg:R0 0 (imm 32) false) (var (x 0 (imm 32) false)))
-      (%00000028 set (reg:R1 0 (imm 32) false) (var (y 0 (imm 32) false)))))
+     ((%0000000f set (x 0 (imm 32) false) (int 3:32u))
+      (%00000012 set (y 0 (imm 32) false) (int 6:32u))))
+    (ctrl ((%00000021 goto (direct %00000013) (when (int 1:1u))))))
+   (%00000013 block (phi ())
+    (data
+     ((%00000016 set (reg:R0 0 (imm 32) false) (var (x 0 (imm 32) false)))
+      (%00000019 set (reg:R1 0 (imm 32) false) (var (y 0 (imm 32) false)))))
     (ctrl
-     ((%0000002a call (direct %0000001a) (return (direct %0000002d))
+     ((%0000001b call (direct %0000000a) (return (direct %0000001e))
        (when (int 1:1u))))))
-   (%0000002d block (phi ())
+   (%0000001e block (phi ())
     (data
-     ((%0000002e set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
+     ((%0000001f set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
     (ctrl ()))))
- (attrs ()))
+ (attrs
+  ((%00000016 (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%00000019 (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%0000001b
+    (("03948bed-1e33-4587-8208-70d56adb1e56:vibes\\:name-dest" foo))))))

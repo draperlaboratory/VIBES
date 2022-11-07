@@ -1,16 +1,16 @@
 (program
- ((%0000001d
+ ((%0000000d
    (data
     ((4
       (lhs
        ((var
-         (opvar 3 ((_0000001d_reg:R0_1 0 (imm 32) false))
+         (opvar 3 ((_0000000d_reg:R0_1 0 (imm 32) false))
           ((R0 0 (imm 32) false))))))
       (opcodes (mov)) (optional false) (operands ((const 3:32u))))
      (6
       (lhs
        ((var
-         (opvar 5 ((_0000001d_reg:R1_1 0 (imm 32) false))
+         (opvar 5 ((_0000000d_reg:R1_1 0 (imm 32) false))
           ((R1 0 (imm 32) false))))))
       (opcodes (mov)) (optional false) (operands ((const 6:32u))))))
    (ctrl
@@ -18,42 +18,42 @@
       (optional false)
       (operands
        ((offset 0x1234:32u)
-        (void (opvar 8 ((_0000001d_mem 0 (mem 32 8) false)) ()))
+        (void (opvar 8 ((_0000000d_mem 0 (mem 32 8) false)) ()))
         (var
-         (opvar 9 ((_0000001d_reg:R1_1 0 (imm 32) false))
+         (opvar 9 ((_0000000d_reg:R1_1 0 (imm 32) false))
           ((R1 0 (imm 32) false))))
         (var
-         (opvar 10 ((_0000001d_reg:R0_1 0 (imm 32) false))
+         (opvar 10 ((_0000000d_reg:R0_1 0 (imm 32) false))
           ((R0 0 (imm 32) false)))))))
      (13 (lhs ((void (opvar 12 ((#1 0 (imm 1) true)) ())))) (opcodes (b))
-      (optional false) (operands ((label %0000001a))))))
-   (ins (15 ((void (opvar 26 ((_0000001d_mem 0 (mem 32 8) false)) ())))))
+      (optional false) (operands ((label %0000000a))))))
+   (ins (15 ((void (opvar 26 ((_0000000d_mem 0 (mem 32 8) false)) ())))))
    (outs
     (14
      ((var
-       (opvar 27 ((_0000001d_reg:R0_1 0 (imm 32) false))
+       (opvar 27 ((_0000000d_reg:R0_1 0 (imm 32) false))
         ((R0 0 (imm 32) false)))))))
    (frequency 1))
-  (%0000001a
+  (%0000000a
    (data
-    ((19 (lhs ((var (opvar 17 ((_0000001a_z_1 0 (imm 32) false)) ()))))
+    ((19 (lhs ((var (opvar 17 ((_0000000a_z_1 0 (imm 32) false)) ()))))
       (opcodes (mov)) (optional false)
       (operands
        ((var
-         (opvar 18 ((_0000001a_reg:R0_1 0 (imm 32) false))
+         (opvar 18 ((_0000000a_reg:R0_1 0 (imm 32) false))
           ((R0 0 (imm 32) false)))))))))
    (ctrl
     ((21 (lhs ((void (opvar 20 ((#2 0 (imm 1) true)) ())))) (opcodes (b))
-      (optional false) (operands ((label %00000019))))))
+      (optional false) (operands ((label %00000009))))))
    (ins
     (23
      ((var
-       (opvar 28 ((_0000001a_reg:R0_1 0 (imm 32) false))
+       (opvar 28 ((_0000000a_reg:R0_1 0 (imm 32) false))
         ((R0 0 (imm 32) false)))))))
    (outs (22 ())) (frequency 1))
-  (%00000019 (data ()) (ctrl ()) (ins (25 ())) (outs (24 ())) (frequency 1)))
+  (%00000009 (data ()) (ctrl ()) (ins (25 ())) (outs (24 ())) (frequency 1)))
  (congruences
-  (((_0000001a_reg:R0_1 0 (imm 32) false)
-    ((_0000001d_reg:R0_1 0 (imm 32) false)))
-   ((_0000001d_reg:R0_1 0 (imm 32) false)
-    ((_0000001a_reg:R0_1 0 (imm 32) false))))))
+  (((_0000000a_reg:R0_1 0 (imm 32) false)
+    ((_0000000d_reg:R0_1 0 (imm 32) false)))
+   ((_0000000d_reg:R0_1 0 (imm 32) false)
+    ((_0000000a_reg:R0_1 0 (imm 32) false))))))

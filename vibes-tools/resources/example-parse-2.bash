@@ -9,5 +9,4 @@ vibes-parse \
   --patch-info-filepath resources/patch-info.2.json \
   --patch-filepath resources/patch.2.c \
   --bir-outfile resources/patch.2.bir \
-  --function-info-outfile resources/patch.2.func.info \
   --verbose
