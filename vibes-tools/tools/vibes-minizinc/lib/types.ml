@@ -271,7 +271,7 @@ module Params = struct
         if CT.is_arm32 target && CT.is_thumb language
         then Arm_target.thumb :: roles
         else roles in
-      let exclude = Theory.Role.Register.[stack_pointer] in
+      let exclude = Theory.Role.Register.[stack_pointer; link] in
       Theory.Target.regs target ~exclude ~roles |>
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list in
@@ -370,7 +370,7 @@ module Params = struct
       preassign;
       congruent = serialize_congruences ir temps;
       operation_opcodes = key_map operations operation_opcodes ~f:enum_set;
-      latency = List.map opcodes ~f:(fun _ -> 1);
+      latency = List.map opcodes ~f:(fun _ -> 10);
       number_excluded = Set.length prev_solutions;
       exclude_reg = serialize_exclude_reg prev_solutions temps;
       block_outs;
