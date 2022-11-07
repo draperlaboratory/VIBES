@@ -24,3 +24,11 @@ val split : unit tag
 
 (** Returns [true] if this is an attribute that we defined for VIBES. *)
 val is_vibes_attr : value -> bool
+
+(** The attribute for [jmp] terms whose destination has an associated
+    name. *)
+val name_dest : string tag
+
+(** The attribute for [jmp] terms whose destination has an associated
+    address. *)
+val addr_dest : Bitvec.t tag

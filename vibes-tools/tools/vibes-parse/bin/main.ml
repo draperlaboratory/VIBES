@@ -31,31 +31,20 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let func_info_outfile : string C.Term.t =
-    let info = C.Arg.info ["i"; "function-info-outfile"]
-        ~docv:"FUNC_INFO_OUTFILE"
-        ~doc:"Path/name of file to output function info to" in
-    let parser = C.Arg.some' C.Arg.string in
-    let default = None in
-    let arg = C.Arg.opt parser default info in
-    C.Arg.required arg
-
   let run
       (verbose : bool)
       (no_color : bool)
       (target : string)
       (patch_info_filepath : string)
       (patch_filepath : string)
-      (bir_outfile : string)
-      (func_info_outfile : string) : (unit, string) result =
+      (bir_outfile : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-parse'";
     Runner.run
       ~target
       ~patch_info_filepath
       ~patch_filepath
-      ~bir_outfile
-      ~func_info_outfile |> function
+      ~bir_outfile |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
 
@@ -67,7 +56,6 @@ module Cli = struct
       $ Cli_opts.Patch_info.filepath
       $ patch_filepath
       $ bir_outfile
-      $ func_info_outfile
     )
 
   let cmd = C.Cmd.v info runner

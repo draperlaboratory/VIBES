@@ -168,11 +168,13 @@ module Serializer = struct
         serialize_exp exp;
       ]
 
-  let serialize_jmp (jmp : jmp term) : Sexp.t =
+  let serialize_jmp (jmp : jmp term) : Sexp.t t =
     let tid = Tid.to_string (Term.tid jmp) in
     let cond = serialize_exp @@ Jmp.cond jmp in
+    let dict = Dict.filter ~f:Tags.is_vibes_attr @@ Term.attrs jmp in
+    let+ () = update_attrs tid dict in
     match Jmp.kind jmp with
-    | Call c -> List [
+    | Call c -> Sexp.List [
         Atom tid;
         Atom "call";
         serialize_label @@ Call.target c;
@@ -184,19 +186,19 @@ module Serializer = struct
         );
         List [Atom "when"; cond];
       ]
-    | Goto label -> List [
+    | Goto label -> Sexp.List [
         Atom tid;
         Atom "goto";
         serialize_label label;
         List [Atom "when"; cond];
       ]
-    | Ret label -> List [
+    | Ret label -> Sexp.List [
         Atom tid;
         Atom "return";
         serialize_label label;
         List [Atom "when"; cond];
       ]
-    | Int (n, t) -> List [
+    | Int (n, t) -> Sexp.List [
         Atom tid;
         Atom "interrupt";
         Atom (Int.to_string n);
@@ -226,7 +228,6 @@ module Serializer = struct
   let serialize_blk (blk : blk term) : Sexp.t t =
     let tid = Tid.to_string @@ Term.tid blk in
     let serialize_phi phi = !!(serialize_phi phi) in
-    let serialize_jmp jmp = !!(serialize_jmp jmp) in
     let* phi = serialize_subterms phi_t blk ~f:serialize_phi in
     let* data = serialize_subterms def_t blk ~f:serialize_def in
     let* ctrl = serialize_subterms jmp_t blk ~f:serialize_jmp in
@@ -647,9 +648,9 @@ module Deserializer = struct
       let* tid = deserialize_tid raw_tid in
       let* target = deserialize_label raw_dst in
       let* return = deserialize_return raw_return in
-      let+ cond = deserialize_exp raw_exp  in
+      let* cond = deserialize_exp raw_exp  in
       let call = Call.create () ~target ?return in
-      Jmp.create_call call ~tid ~cond
+      set_attrs raw_tid @@ Jmp.create_call call ~tid ~cond
     | List [
         Atom raw_tid;
         Atom "goto";
@@ -658,8 +659,8 @@ module Deserializer = struct
       ] ->
       let* tid = deserialize_tid raw_tid in
       let* dst = deserialize_label raw_dst in
-      let+ cond = deserialize_exp raw_exp in
-      Jmp.create_goto dst ~tid ~cond
+      let* cond = deserialize_exp raw_exp in
+      set_attrs raw_tid @@ Jmp.create_goto dst ~tid ~cond
     | List [
         Atom raw_tid;
         Atom "return";
@@ -668,8 +669,8 @@ module Deserializer = struct
       ] ->
       let* tid = deserialize_tid raw_tid in
       let* dst = deserialize_label raw_dst in
-      let+ cond = deserialize_exp raw_exp in
-      Jmp.create_ret dst ~tid ~cond
+      let* cond = deserialize_exp raw_exp in
+      set_attrs raw_tid @@ Jmp.create_ret dst ~tid ~cond
     | List [
         Atom raw_tid;
         Atom "interrupt";
@@ -680,8 +681,8 @@ module Deserializer = struct
       let* tid = deserialize_tid raw_tid in
       let* n = deserialize_int n in
       let* t = deserialize_tid t in
-      let+ cond = deserialize_exp raw_exp in
-      Jmp.create_int n t ~tid ~cond
+      let* cond = deserialize_exp raw_exp in
+      set_attrs raw_tid @@ Jmp.create_int n t ~tid ~cond
     | sexp ->
       let msg = Format.asprintf
           "Expected call, goto, or ret jmp but got: '%a'"

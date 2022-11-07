@@ -4,60 +4,12 @@ open Bap_core_theory
 
 module T = Theory
 module Log = Vibes_log.Stream
-module Function_info = Vibes_function_info.Types
 module Hvar = Vibes_higher_vars.Higher_var
 module Naming = Vibes_higher_vars.Substituter.Naming
 module Bir_helpers = Vibes_bir.Helpers
 module Tags = Vibes_bir.Tags
 
 open KB.Syntax
-
-(* Reify the argument names into variables. *)
-let vars_of_args
-    (args : string list)
-    ~(target : T.target) : var list =
-  let s = T.Bitv.define @@ T.Target.bits target in
-  List.map args ~f:(fun arg -> Var.reify @@ T.Var.define s arg)
-
-(* Collect the args to the call, if any. *)
-let collect_args
-    (blk : blk term)
-    ~(target : T.target)
-    ~(func_info : Function_info.t) : var list option KB.t =
-  let match_jmp jmp = match Jmp.alt jmp with
-    | None -> !!None
-    | Some dst -> match Jmp.resolve dst with
-      | Second _ -> !!None
-      | First tid ->
-        (* Only direct calls are applicable. *)
-        let+ args = Function_info.find_args func_info ~tid in
-        Option.map args ~f:(vars_of_args ~target) in
-  Term.enum jmp_t blk |> KB.Seq.find_map ~f:match_jmp
-
-(* Mark the tids where the arguments to calls are defined. *)
-let mark_argument_tids
-    (sub : sub term)
-    ~(target : T.target)
-    ~(func_info : Function_info.t) : sub term KB.t =
-  let collect_func_args def (remaining, acc) =
-    let lhs = Def.lhs def in
-    if Var.Set.mem remaining lhs then
-      let new_remaining = Var.Set.remove remaining lhs in
-      let new_acc = Tid.Set.add acc @@ Term.tid def in
-      new_remaining, new_acc
-    else remaining, acc in
-  let func_args blk args =
-    Term.enum def_t blk |> Seq.to_list |> List.fold_right
-      ~init:(Var.Set.of_list args, Tid.Set.empty)
-      ~f:collect_func_args |> snd in
-  Term.KB.map blk_t sub ~f:(fun blk ->
-      let+ args = collect_args blk ~target ~func_info in
-      Option.value_map args ~default:blk ~f:(fun args ->
-          let tids = func_args blk args in
-          Term.map def_t blk ~f:(fun def ->
-              if Set.mem tids @@ Term.tid def then
-                Term.set_attr def Tags.argument ()
-              else def)))
 
 (* Create a fake memory assignment which is a signpost to the selector
    that the most recently assigned memory is a dependency (or "argument")

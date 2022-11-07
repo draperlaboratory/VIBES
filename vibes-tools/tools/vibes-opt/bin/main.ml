@@ -21,15 +21,6 @@ module Cli = struct
     let arg = C.Arg.opt parser default info in
     C.Arg.required arg
 
-  let func_info_filepath : string C.Term.t =
-    let info = C.Arg.info ["i"; "function-info-filepath"]
-        ~docv:"FUNCTION_INFO_FILEPATH"
-        ~doc:"Path to file containing patch function info" in
-    let parser = C.Arg.some' C.Arg.string in
-    let default = None in
-    let arg = C.Arg.opt parser default info in
-    C.Arg.required arg
-
   let bir_outfile : string C.Term.t =
     let info = C.Arg.info ["o"; "bir-outfile"]
         ~docv:"BIR_OUTFILE"
@@ -47,7 +38,6 @@ module Cli = struct
       (patch_info_filepath : string)
       (patch_spaces : string option)
       (bir_filepath : string)
-      (func_info_filepath : string)
       (bir_outfile : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
     Log.send "Running 'vibes-opt'";
@@ -57,7 +47,6 @@ module Cli = struct
       ~patch_info_filepath
       ~patch_spaces
       ~bir_filepath
-      ~func_info_filepath
       ~bir_outfile
       () |> function
     | Ok () -> Ok ()
@@ -72,7 +61,6 @@ module Cli = struct
       $ Cli_opts.Patch_info.filepath
       $ Cli_opts.Patch_info.spaces
       $ bir_filepath
-      $ func_info_filepath
       $ bir_outfile
     )
 

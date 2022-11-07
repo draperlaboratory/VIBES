@@ -57,8 +57,13 @@ module T = Theory
 module Hvar = Vibes_higher_vars.Higher_var
 module Substituter = Vibes_higher_vars.Substituter
 module Naming = Substituter.Naming
-module Function_info = Vibes_function_info.Types
 module Utils = Vibes_utils
+
+let package = Vibes_constants.Bap_kb.package
+
+let call_with_args : (Theory.program, Var.Set.t) KB.slot =
+  KB.Class.property T.Program.cls "call-with-args" ~package @@
+  KB.Domain.powerset (module Var.Set.Elt) "var-set-domain"
 
 module Make(CT : Theory.Core) = struct
 
@@ -388,17 +393,7 @@ module Make(CT : Theory.Core) = struct
   let empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl
   let data d = CT.blk T.Label.null d !!empty_ctrl
   let ctrl c = CT.blk T.Label.null !!empty_data c
-  let block d c = CT.blk T.Label.null d c
-
-  let new_func
-      (func_infos : Function_info.t)
-      (args : var list)
-      (dst : T.label) : Function_info.t KB.t =
-    let* name = KB.collect Theory.Label.name dst in
-    let+ addr = KB.collect Theory.Label.addr dst in
-    let arg_names = List.map args ~f:Var.name in
-    let func_info = Function_info.create_func dst arg_names ?name ?addr in
-    Function_info.append func_infos ~func_info
+  let block ?(l = T.Label.null) d c = CT.blk l d c
 
   (* Currently, we only support bitv-like return types in our C frontend.
      If we call a function that returns a value that's smaller than the
@@ -422,46 +417,48 @@ module Make(CT : Theory.Core) = struct
         else CT.var info.ret_var in
       CT.set v ret
 
+  let args_label : var list -> T.label option KB.t = function
+    | [] -> !!None
+    | args ->
+      let* l = T.Label.fresh in
+      let+ () = KB.provide call_with_args l @@ Var.Set.of_list args in
+      Some l
+  
   let rec stmt_to_eff
-      ~(info : _ interp_info)
-      ~(func_infos : Function_info.t)
-      (s : Patch_c.stmt) : (unit eff * Function_info.t) KB.t = match s with
-    | NOP -> !!(empty_blk, func_infos)
-    | BLOCK (_, s) -> stmt_to_eff s ~info ~func_infos
+      (s : Patch_c.stmt)
+      ~(info : _ interp_info) : unit eff KB.t = match s with
+    | NOP -> !!empty_blk
+    | BLOCK (_, s) -> stmt_to_eff s ~info
     | ASSIGN ((v, t), e) ->
       let s = ty_of_base_type info t in
       let v = T.Var.resort v s in
       let+ e = expr_to_pure info e in
-      data CT.(set v @@ resort s e), func_infos
+      data CT.(set v @@ resort s e)
     | CALL (f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
-      let+ func_infos = new_func func_infos args dst in
-      CT.(block setargs (goto dst)), func_infos
+      let+ setargs, args = assign_args info args in
+      let* l = args_label args in
+      CT.(block setargs (goto dst) ?l)
     | CALLASSIGN ((v, _), f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
-      let+ func_infos = new_func func_infos args dst in
-      let term =
-        CT.(seq (block setargs (goto dst))
-              (data @@ cast_call_assign v ~info)) in
-      term, func_infos
+      let+ setargs, args = assign_args info args in
+      let* l = args_label args in
+      CT.(seq (block setargs (goto dst) ?l)
+            (data @@ cast_call_assign v ~info))
     | STORE (l, r) ->
       let sr = ty_of_base_type info @@ Patch_c.Exp.typeof r in
       let* l = expr_to_pure info l in
       let+ r = expr_to_pure info r in
-      let term =
-        CT.(data
-              (set info.mem_var
-                 (storew !!(info.endian)
-                    (var info.mem_var)
-                    (resort info.word_sort l)
-                    (resort sr r)))) in
-      term, func_infos
+      CT.(data
+            (set info.mem_var
+               (storew !!(info.endian)
+                  (var info.mem_var)
+                  (resort info.word_sort l)
+                  (resort sr r))))
     | SEQUENCE (s1, s2) ->
-      let* s1, func_infos = stmt_to_eff s1 ~info ~func_infos in
-      let+ s2, func_infos = stmt_to_eff s2 ~info ~func_infos in
-      CT.seq s1 s2, func_infos
+      let* s1 = stmt_to_eff s1 ~info in
+      let+ s2 = stmt_to_eff s2 ~info in
+      CT.seq s1 s2
     | IF (cond, st, sf) ->
       let* c = expr_to_pure info cond in
       let c =
@@ -478,30 +475,30 @@ module Make(CT : Theory.Core) = struct
           let zero = CT.int scond zero in
           CT.neq (resort scond c) zero
         else resort T.Bool.t c in
-      let* st, func_infos = stmt_to_eff st ~info ~func_infos in
-      let+ sf, func_infos = stmt_to_eff sf ~info ~func_infos in
-      CT.branch c st sf, func_infos
+      let* st = stmt_to_eff st ~info in
+      let+ sf = stmt_to_eff sf ~info in
+      CT.branch c st sf
     | GOTO label when String.(is_prefix ~prefix:"L_0x" label) ->
       let label = String.(chop_prefix_exn ~prefix:"L_" label) in
-      !!(ctrl CT.(jmp (int info.word_sort Bitvec.(!$ label))), func_infos)
+      !!(ctrl CT.(jmp (int info.word_sort Bitvec.(!$ label))))
     | GOTO label ->
       let+ label = T.Label.for_name label in
-      ctrl CT.(goto label), func_infos
+      ctrl CT.(goto label)
 
   and body_to_eff
       (prog : Patch_c.t)
-      ~(info : _ interp_info) : (unit eff * Function_info.t) KB.t =
+      ~(info : _ interp_info) : unit eff KB.t =
     let _, stmt = prog.body in
-    stmt_to_eff stmt ~info ~func_infos:Function_info.empty
+    stmt_to_eff stmt ~info
 
   let compile
       (hvars : Hvar.t list)
       (target : T.target)
-      (patch : Cabs.definition) : (T.Semantics.t * Function_info.t) KB.t =
+      (patch : Cabs.definition) : T.Semantics.t KB.t =
     let* body = Patch_c.translate patch ~target in
     let* info = make_interp_info hvars target in
-    let* eff, func_infos = body_to_eff body ~info in
+    let* eff = body_to_eff body ~info in
     let+ sem = eff in
-    sem, func_infos
+    sem
 
 end

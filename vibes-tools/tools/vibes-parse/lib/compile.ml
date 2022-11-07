@@ -7,7 +7,6 @@ open KB.Syntax
 module C_toolkit = Vibes_c_toolkit
 module Hvar = Vibes_higher_vars.Higher_var
 module Constants = Vibes_constants
-module Function_info = Vibes_function_info.Types
 
 module C_semantics = struct
 
@@ -28,7 +27,7 @@ end
 let to_core
     (ast : Types.ast)
     (target : T.target)
-    (hvars : Hvar.t list) : (T.label * Function_info.t) KB.t =
+    (hvars : Hvar.t list) : T.label KB.t =
   let* label = T.Label.fresh in
   let* unit = KB.Object.create T.Unit.cls in
   let* () = KB.provide T.Unit.target unit target in
@@ -36,6 +35,6 @@ let to_core
   let* theory = T.instance () in
   let* (module Core) = T.require theory in
   let module C_compiler = C_toolkit.Core_c.Make(Core) in
-  let* sem, func_info = C_compiler.compile hvars target ast in
+  let* sem = C_compiler.compile hvars target ast in
   let+ () = KB.provide C_semantics.slot label sem in
-  label, func_info
+  label
