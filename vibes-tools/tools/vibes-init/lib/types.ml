@@ -92,7 +92,9 @@ let infer_target_and_lang
       let* target = target_of_spec spec in
       let+ language = match language with
         | None -> language_of_spec spec target
-        | Some language -> !!language in
+        | Some language ->
+          let+ () = language_matches_target target language in
+          language in
       target, language
     end;
     Ok (Toplevel.get target_and_lang)
