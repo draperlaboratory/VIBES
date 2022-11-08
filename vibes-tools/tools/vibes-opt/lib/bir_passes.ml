@@ -56,7 +56,7 @@ let provide_function_info (sub : sub term) : unit KB.t =
               let* () = match Term.get_attr jmp Tags.addr_dest with
                 | Some addr -> provide_if_none T.Label.addr alt addr
                 | None -> !!() in
-              KB.provide T.Label.is_subroutine alt @@ Some true))
+              provide_if_none T.Label.is_subroutine alt true))
 
 let thumb_specific
     ?(patch_spaces : Spaces.t = Spaces.empty)
