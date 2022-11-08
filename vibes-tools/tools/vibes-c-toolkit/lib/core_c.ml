@@ -411,13 +411,23 @@ module Make(CT : Theory.Core) = struct
         else CT.var info.ret_var in
       CT.set v ret
 
+  (* If we're passing arguments to the call, then we should do it in
+     a uniquely identifiable block so that we can do some bookkeeping
+     of the argument variables later. *)
   let args_label : var list -> T.label option KB.t = function
     | [] -> !!None
     | args ->
       let* l = T.Label.fresh in
       let+ () = KB.provide call_with_args l @@ Var.Set.of_list args in
       Some l
-  
+
+  (* This is a hack to prevent an optimization performed by the BIL IR
+     theory, where our "call" block is merged into some predecessor and
+     we lose the provenance of the arguments information. *)
+  let goto_call ?l c = match l with
+    | Some l -> CT.(seq (ctrl (goto l)) c)
+    | None -> c
+
   let rec stmt_to_eff
       (s : Patch_c.stmt)
       ~(info : _ interp_info) : unit eff KB.t = match s with
@@ -430,15 +440,16 @@ module Make(CT : Theory.Core) = struct
       data CT.(set v @@ resort s e)
     | CALL (f, args) ->
       let* dst = determine_call_dst f in
-      let+ setargs, args = assign_args info args in
-      let* l = args_label args in
-      CT.(block setargs (goto dst) ?l)
+      let* setargs, args = assign_args info args in
+      let+ l = args_label args in
+      goto_call ?l CT.(block setargs (goto dst) ?l)
     | CALLASSIGN ((v, _), f, args) ->
       let* dst = determine_call_dst f in
-      let+ setargs, args = assign_args info args in
-      let* l = args_label args in
-      CT.(seq (block setargs (goto dst) ?l)
-            (data @@ cast_call_assign v ~info))
+      let* setargs, args = assign_args info args in
+      let+ l = args_label args in
+      goto_call ?l
+        CT.(seq (block setargs (goto dst) ?l)
+              (data @@ cast_call_assign v ~info))
     | STORE (l, r) ->
       let sr = ty_of_base_type info @@ Patch_c.Exp.typeof r in
       let* l = expr_to_pure info l in
