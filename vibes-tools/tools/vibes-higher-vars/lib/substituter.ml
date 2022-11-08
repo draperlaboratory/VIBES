@@ -85,6 +85,7 @@ let initialize
             match value with
             | Hvar.Constant _ -> !!None
             | Hvar.Memory _ -> !!None
+            | Hvar.Preassign _ -> !!None
             | Hvar.Registers {at_entry = None; _} -> !!None
             | Hvar.Registers {at_entry = Some reg; _} ->
               let typ = typeof name |> Option.value ~default:default_typ in
@@ -127,6 +128,7 @@ let finalize
             match value with
             | Hvar.Constant _ -> !!None
             | Hvar.Memory _ -> !!None
+            | Hvar.Preassign _ -> !!None
             | Hvar.Registers {at_exit = None; _} -> !!None
             | Hvar.Registers {at_exit = Some reg; _} ->
               let typ = typeof name |> Option.value ~default:default_typ in
@@ -162,6 +164,14 @@ let subst_name
   match hvar.value with
   | Hvar.Constant const -> Bil.int const
   | Hvar.Registers _ -> Bil.var @@ Var.create name typ
+  | Hvar.Preassign reg ->
+    let width = T.Target.bits target in
+    let typ = Type.Imm width in
+    let v = Var.create reg typ in
+    begin match Naming.mark_reg target v with
+      | Error msg -> raise @@ Subst_err msg
+      | Ok r -> Bil.var r
+    end
   | Hvar.Memory memory ->
     let mem = get_mem target in
     let size = size_of_typ typ name in
@@ -207,6 +217,14 @@ let subst_def : T.target -> Hvar.t list -> def term -> def term =
     | Some hvar -> match hvar.value with
       | Hvar.Constant _ -> raise @@ Subst_err (bad_const name)
       | Hvar.Registers _ -> Def.with_rhs def rhs
+      | Hvar.Preassign reg ->
+        let width = T.Target.bits target in
+        let typ = Type.Imm width in
+        let v = Var.create reg typ in
+        let r = match Naming.mark_reg target v with
+          | Error msg -> raise @@ Subst_err msg
+          | Ok r -> r in
+        Def.with_lhs (Def.with_rhs def rhs) r
       | Hvar.Memory memory ->
         let mem = get_mem target in
         let lhs = mem in
