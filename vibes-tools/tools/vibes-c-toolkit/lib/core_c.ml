@@ -380,12 +380,6 @@ module Make(CT : Theory.Core) = struct
     | VARIABLE (v, _) -> call_dst_with_name @@ T.Var.name v
     | CAST (_, CONST_INT (w, _)) -> call_dst_with_addr @@ Word.to_bitvec w
     | _ ->
-      (* We currently don't support indirect calls for two reasons:
-
-         1. It's not implemented in the backend yet.
-         2. We currently associate the arguments of the call with
-            a label, but we can't use a label for an indirect call.
-      *)
       fail @@ sprintf "Unsupported indirect call: %s\n%!" @@
       Patch_c.Exp.to_string f
 
