@@ -27,7 +27,7 @@ module Cli = struct
         ~docv:"ASM_FILEPATHS"
         ~doc:"Path to files containing serialized assembly \
               (separated by space)" in
-    let parser = C.Arg.list ~sep:' ' C.Arg.file in
+    let parser = C.Arg.list C.Arg.file in
     let default = [] in
     let arg = C.Arg.opt parser default info in
     C.Arg.non_empty arg

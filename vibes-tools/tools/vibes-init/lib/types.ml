@@ -240,7 +240,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   let asms =
     List.mapi t.patches ~f:const |>
     List.map ~f:(sprintf "$(PATCH_%d_ASM)") |>
-    String.concat ~sep:" " in
+    String.concat ~sep:"," in
   Format.fprintf ppf ".PHONY: patch\n%!";
   Format.fprintf ppf "patch:\n";
   Format.fprintf ppf "\trm -f $(PATCHED_BINARY)\n%!";
