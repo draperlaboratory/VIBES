@@ -282,29 +282,6 @@ module Params = struct
       Format.asprintf "Unsupported target %a" Theory.Target.pp target in
     Error (Errors.Unsupported_target msg)
 
-  let is_copy
-      (target : Theory.target) : (Ir.Operation.t -> bool, KB.conflict) result =
-    if CT.is_arm32 target then
-      Result.return @@ fun (o : Ir.Operation.t) ->
-      o.optional && List.exists o.opcodes ~f:(function
-          | "mov" | "movs" -> begin
-              match o.lhs, o.operands with
-              | [Var _], [Var _] -> true
-              | [Void _], [Void _] -> true
-              | _ -> false
-            end
-          | _ -> false)
-    else unsupported_target target
-
-  let serialize_copy
-      (ir : Ir.t)
-      (target : Theory.target) : (operation set, KB.conflict) result =
-    let* is_copy = is_copy target in
-    List.fold ir.blks ~init:Int.Set.empty ~f:(fun init b ->
-        Ir.Block.all_operations b |> List.fold ~init ~f:(fun acc o ->
-            if is_copy o then Set.add acc o.id else acc)) |>
-    Set.to_list |> enum_setf Int.to_string |> Result.return
-
   let latency
       (target : Theory.target) : (Ir.opcode -> int, KB.conflict) result =
     if CT.is_arm32 target then Result.return @@ function
@@ -346,7 +323,6 @@ module Params = struct
     let* class_t =
       Ir.op_classes ir |>
       serialize_class_t opcodes operands regs gpr in
-    let* copy = serialize_copy ir target in
     let* width = R.List.map temps ~f:width_of_var in
     let preassign =
       Ir.opvar_to_preassign ir |>
@@ -374,7 +350,7 @@ module Params = struct
       definer;
       users;
       temp_block = key_map temps temp_block ~f:(enumf Tid.to_string);
-      copy;
+      copy = enum_set [];
       width;
       preassign;
       congruent = serialize_congruences ir temps;
