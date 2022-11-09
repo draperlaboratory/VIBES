@@ -277,6 +277,11 @@ module Params = struct
       Set.to_list in
     regs, gpr
 
+  let unsupported_target (target : Theory.target) : (_, KB.conflict) result =
+    let msg =
+      Format.asprintf "Unsupported target %a" Theory.Target.pp target in
+    Error (Errors.Unsupported_target msg)
+
   let is_copy
       (target : Theory.target) : (Ir.Operation.t -> bool, KB.conflict) result =
     if CT.is_arm32 target then
@@ -289,10 +294,7 @@ module Params = struct
               | _ -> false
             end
           | _ -> false)
-    else
-      let msg =
-        Format.asprintf "Unsupported target %a" Theory.Target.pp target in
-      Error (Errors.Unsupported_target msg)
+    else unsupported_target target
 
   let serialize_copy
       (ir : Ir.t)
@@ -302,6 +304,12 @@ module Params = struct
         Ir.Block.all_operations b |> List.fold ~init ~f:(fun acc o ->
             if is_copy o then Set.add acc o.id else acc)) |>
     Set.to_list |> enum_setf Int.to_string |> Result.return
+
+  let latency
+      (target : Theory.target) : (Ir.opcode -> int, KB.conflict) result =
+    if CT.is_arm32 target then Result.return @@ function
+      | "ldr" | "ldrh" | "ldrb" | "mul" -> 2 | _ -> 1
+    else unsupported_target target
 
   let serialize
       ?(prev_solutions : Solution.set = Solution.empty_set)
@@ -345,6 +353,7 @@ module Params = struct
       key_map_d operands ~default:(set []) ~f:(function
           | Some v -> enum_setf Var.to_string [v]
           | None -> set []) in
+    let* latency = latency target in
     let block_outs =
       Ir.block_to_outs ir |> key_map blocks ~f:(enumf Int.to_string) in
     let block_ins =
@@ -370,7 +379,7 @@ module Params = struct
       preassign;
       congruent = serialize_congruences ir temps;
       operation_opcodes = key_map operations operation_opcodes ~f:enum_set;
-      latency = List.map opcodes ~f:(fun _ -> 10);
+      latency = List.map opcodes ~f:latency;
       number_excluded = Set.length prev_solutions;
       exclude_reg = serialize_exclude_reg prev_solutions temps;
       block_outs;
