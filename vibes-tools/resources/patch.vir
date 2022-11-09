@@ -1,17 +1,40 @@
 (program
- ((%00000019
+ ((%00000009
    (data
-    ((3 (lhs ((var (opvar 2 ((#0 0 (imm 32) true)) ())))) (opcodes (movw))
+    ((3 (lhs ((var (opvar 1 ((_00000009_index_1 0 (imm 32) false)) ()))))
+      (opcodes (mov)) (optional false)
+      (operands
+       ((var
+         (opvar 2 ((_00000009_reg:R1 0 (imm 32) false))
+          ((R1 0 (imm 32) false)))))))
+     (7 (lhs ((var (opvar 6 ((#0 0 (imm 32) true)) ())))) (opcodes (movw))
       (optional false) (operands ((const 0xBEEF:32u))))
-     (6 (lhs ((var (opvar 5 ((#2 0 (imm 32) true)) ())))) (opcodes (mov))
+     (10 (lhs ((var (opvar 9 ((#2 0 (imm 32) true)) ())))) (opcodes (mov))
       (optional false) (operands ((const 3:32u))))
-     (10 (lhs ((void (opvar 0 ((_00000019_mem_1 0 (mem 32 8) false)) ()))))
+     (14 (lhs ((void (opvar 4 ((_00000009_mem_1 0 (mem 32 8) false)) ()))))
       (opcodes (str)) (optional false)
       (operands
-       ((void (opvar 7 ((_00000019_mem 0 (mem 32 8) false)) ()))
-        (var (opvar 8 ((#2 0 (imm 32) true)) ()))
-        (var (opvar 9 ((#0 0 (imm 32) true)) ())))))))
+       ((void (opvar 11 ((_00000009_mem 0 (mem 32 8) false)) ()))
+        (var (opvar 12 ((#2 0 (imm 32) true)) ()))
+        (var (opvar 13 ((#0 0 (imm 32) true)) ())))))
+     (18
+      (lhs
+       ((var
+         (opvar 16 ((_00000009_reg:R1_1 0 (imm 32) false))
+          ((R1 0 (imm 32) false))))))
+      (opcodes (mov)) (optional false)
+      (operands ((var (opvar 17 ((_00000009_index_1 0 (imm 32) false)) ())))))))
    (ctrl ())
-   (ins (12 ((void (opvar 13 ((_00000019_mem 0 (mem 32 8) false)) ())))))
-   (outs (11 ())) (frequency 1)))
+   (ins
+    (20
+     ((void (opvar 21 ((_00000009_mem 0 (mem 32 8) false)) ()))
+      (var
+       (opvar 22 ((_00000009_reg:R1 0 (imm 32) false))
+        ((R1 0 (imm 32) false)))))))
+   (outs
+    (19
+     ((var
+       (opvar 23 ((_00000009_reg:R1_1 0 (imm 32) false))
+        ((R1 0 (imm 32) false)))))))
+   (frequency 1)))
  (congruences ()))

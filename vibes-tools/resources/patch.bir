@@ -1,5 +1,5 @@
 (program
  (patch.bir
-  ((%0000001d block (phi ())
-    (data ((%0000001c set (x 0 (imm 32) false) (int 3:32u)))) (ctrl ()))))
+  ((%0000000d block (phi ())
+    (data ((%0000000c set (x 0 (imm 32) false) (int 3:32u)))) (ctrl ()))))
  (attrs ()))

@@ -5,7 +5,6 @@ type patch = {
   name : string;
   patch : string;
   patch_info : string;
-  func_info : string;
   bir : string;
   bir_opt : string;
   vir : string;

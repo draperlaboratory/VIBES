@@ -3,6 +3,14 @@ open Bap.Std
 
 module Attr = Vibes_constants.Attr
 
+module Bitvec = struct
+
+  include Bitvec
+  include Bitvec_sexp
+  include Bitvec_binprot
+
+end
+
 let spill : unit tag = Value.Tag.register (module Unit)
     ~name:(Attr.make "spilled")
     ~uuid:"a770b736-07d1-11ed-84a7-7f2a318d4806"
@@ -10,6 +18,14 @@ let spill : unit tag = Value.Tag.register (module Unit)
 let argument : unit tag = Value.Tag.register (module Unit)
     ~name:(Attr.make "argument")
     ~uuid:"2ecbeae4-a576-406c-b95c-324083406c85"
+
+let name_dest : string tag = Value.Tag.register (module String)
+    ~name:(Attr.make "name-dest")
+    ~uuid:"03948bed-1e33-4587-8208-70d56adb1e56"
+
+let addr_dest : Bitvec.t tag = Value.Tag.register (module Bitvec)
+    ~name:(Attr.make "addr-dest")
+    ~uuid:"39feaa8c-0c30-40f2-9081-da79de28bd15"
 
 module Var_set = struct
 

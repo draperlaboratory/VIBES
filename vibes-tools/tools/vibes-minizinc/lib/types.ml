@@ -271,37 +271,22 @@ module Params = struct
         if CT.is_arm32 target && CT.is_thumb language
         then Arm_target.thumb :: roles
         else roles in
-      let exclude = Theory.Role.Register.[stack_pointer] in
+      let exclude = Theory.Role.Register.[stack_pointer; link] in
       Theory.Target.regs target ~exclude ~roles |>
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list in
     regs, gpr
 
-  let is_copy
-      (target : Theory.target) : (Ir.Operation.t -> bool, KB.conflict) result =
-    if CT.is_arm32 target then
-      Result.return @@ fun (o : Ir.Operation.t) ->
-      o.optional && List.exists o.opcodes ~f:(function
-          | "mov" | "movs" -> begin
-              match o.lhs, o.operands with
-              | [Var _], [Var _] -> true
-              | [Void _], [Void _] -> true
-              | _ -> false
-            end
-          | _ -> false)
-    else
-      let msg =
-        Format.asprintf "Unsupported target %a" Theory.Target.pp target in
-      Error (Errors.Unsupported_target msg)
+  let unsupported_target (target : Theory.target) : (_, KB.conflict) result =
+    let msg =
+      Format.asprintf "Unsupported target %a" Theory.Target.pp target in
+    Error (Errors.Unsupported_target msg)
 
-  let serialize_copy
-      (ir : Ir.t)
-      (target : Theory.target) : (operation set, KB.conflict) result =
-    let* is_copy = is_copy target in
-    List.fold ir.blks ~init:Int.Set.empty ~f:(fun init b ->
-        Ir.Block.all_operations b |> List.fold ~init ~f:(fun acc o ->
-            if is_copy o then Set.add acc o.id else acc)) |>
-    Set.to_list |> enum_setf Int.to_string |> Result.return
+  let latency
+      (target : Theory.target) : (Ir.opcode -> int, KB.conflict) result =
+    if CT.is_arm32 target then Result.return @@ function
+      | "ldr" | "ldrh" | "ldrb" | "mul" -> 2 | _ -> 1
+    else unsupported_target target
 
   let serialize
       ?(prev_solutions : Solution.set = Solution.empty_set)
@@ -338,13 +323,13 @@ module Params = struct
     let* class_t =
       Ir.op_classes ir |>
       serialize_class_t opcodes operands regs gpr in
-    let* copy = serialize_copy ir target in
     let* width = R.List.map temps ~f:width_of_var in
     let preassign =
       Ir.opvar_to_preassign ir |>
       key_map_d operands ~default:(set []) ~f:(function
           | Some v -> enum_setf Var.to_string [v]
           | None -> set []) in
+    let* latency = latency target in
     let block_outs =
       Ir.block_to_outs ir |> key_map blocks ~f:(enumf Int.to_string) in
     let block_ins =
@@ -365,12 +350,12 @@ module Params = struct
       definer;
       users;
       temp_block = key_map temps temp_block ~f:(enumf Tid.to_string);
-      copy;
+      copy = enum_set [];
       width;
       preassign;
       congruent = serialize_congruences ir temps;
       operation_opcodes = key_map operations operation_opcodes ~f:enum_set;
-      latency = List.map opcodes ~f:(fun _ -> 1);
+      latency = List.map opcodes ~f:latency;
       number_excluded = Set.length prev_solutions;
       exclude_reg = serialize_exclude_reg prev_solutions temps;
       block_outs;

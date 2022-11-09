@@ -15,7 +15,6 @@ type patch = {
   name : string;
   patch : string;
   patch_info : string;
-  func_info : string;
   bir : string;
   bir_opt : string;
   vir : string;
@@ -37,7 +36,6 @@ let create_patch (patch : string) : patch = {
   name = patch;
   patch = sprintf "%s.c" patch;
   patch_info = sprintf "%s.info.json" patch;
-  func_info = sprintf "%s.func.json" patch;
   bir = sprintf "%s.bir" patch;
   bir_opt = sprintf "%s.opt.bir" patch;
   vir = sprintf "%s.vir" patch;
@@ -94,7 +92,9 @@ let infer_target_and_lang
       let* target = target_of_spec spec in
       let+ language = match language with
         | None -> language_of_spec spec target
-        | Some language -> !!language in
+        | Some language ->
+          let+ () = language_matches_target target language in
+          language in
       target, language
     end;
     Ok (Toplevel.get target_and_lang)
@@ -135,7 +135,6 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
       Format.fprintf ppf "# Definitions for patch %s (%d)\n\n%!" p.name i;
       Format.fprintf ppf "PATCH_%d := %s\n%!" i p.patch;
       Format.fprintf ppf "PATCH_%d_INFO := %s\n%!" i p.patch_info;
-      Format.fprintf ppf "PATCH_%d_FUNC := %s\n%!" i p.func_info;
       Format.fprintf ppf "PATCH_%d_BIR := %s\n%!" i p.bir;
       Format.fprintf ppf "PATCH_%d_BIR_OPT := %s\n%!" i p.bir_opt;
       Format.fprintf ppf "PATCH_%d_VIR := %s\n%!" i p.vir;
@@ -155,9 +154,8 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --target $(TARGET) \
                           --patch-filepath $(PATCH_%d) \
                           --patch-info-filepath $(PATCH_%d_INFO) \
-                          --function-info-outfile $(PATCH_%d_FUNC) \
                           --bir-outfile $(PATCH_%d_BIR) \
-                          --verbose\n\n%!" i i i i;
+                          --verbose\n\n%!" i i i;
       (* opt *)
       Format.fprintf ppf ".PHONY: opt%d\n%!" i;
       Format.fprintf ppf "opt%d:\n%!" i;
@@ -168,11 +166,10 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --target $(TARGET) \
                           --language $(LANG) \
                           --patch-info-filepath $(PATCH_%d_INFO) \
-                          --function-info-filepath $(PATCH_%d_FUNC) \
                           --patch-spaces $(SPACES) \
                           --bir-filepath $(PATCH_%d_BIR) \
                           --bir-outfile $(PATCH_%d_BIR_OPT) \
-                          --verbose\n\n%!" i i i i;
+                          --verbose\n\n%!" i i i;
       (* select *)      
       Format.fprintf ppf ".PHONY: select%d\n%!" i;
       Format.fprintf ppf "select%d:\n%!" i;
@@ -207,10 +204,9 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
       Format.fprintf ppf "\trm -f \
                           $(PATCH_%d_BIR) \
                           $(PATCH_%d_BIR_OPT) \
-                          $(PATCH_%d_FUNC) \
                           $(PATCH_%d_VIR) \
                           $(PATCH_%d_ASM) \
-                          $(PATCHED_BINARY)\n\n%!" i i i i i);
+                          $(PATCHED_BINARY)\n\n%!" i i i i);
   Format.fprintf ppf "# Main targets\n\n%!";
   (* parse *)
   let parses =
@@ -244,7 +240,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   let asms =
     List.mapi t.patches ~f:const |>
     List.map ~f:(sprintf "$(PATCH_%d_ASM)") |>
-    String.concat ~sep:" " in
+    String.concat ~sep:"," in
   Format.fprintf ppf ".PHONY: patch\n%!";
   Format.fprintf ppf "patch:\n";
   Format.fprintf ppf "\trm -f $(PATCHED_BINARY)\n%!";

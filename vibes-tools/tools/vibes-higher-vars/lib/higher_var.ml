@@ -16,12 +16,19 @@ type value =
       at_exit : string option [@yojson.option] [@key "at-exit"];
       allow_opt : bool [@default false] [@key "allow-opt"];
     } [@name "register"]
+  | Preassign of string [@name "preassign"]
   | Memory of memory [@name "memory"]
 [@@deriving yojson, equal, compare]
 
+let default_value : value = Registers {
+    at_entry = None;
+    at_exit = None;
+    allow_opt = false;
+  }
+
 type t = {
   name : string;
-  value : value [@key "storage-class"];
+  value : value [@default default_value] [@key "storage-class"];
 } [@@deriving yojson, equal, compare]
 
 let find (name : string) (vars : t list) : t option =

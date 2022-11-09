@@ -29,6 +29,10 @@ type memory =
       optimized away during dead code elimination. Note that
       it will still be stored in [at_exit] if specified.
 
+    - [Preassign]: the variable lives in a register and must
+      be substituted at all uses and definitions with this
+      register.
+
     - [Memory]: the variable lives in some memory location for
       the duration of the program.
 *)
@@ -39,6 +43,7 @@ type value =
       at_exit : string option;
       allow_opt : bool;
     } 
+  | Preassign of string
   | Memory of memory
 [@@deriving yojson, equal, compare]
 

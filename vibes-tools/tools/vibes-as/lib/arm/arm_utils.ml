@@ -40,3 +40,12 @@ let unconditional_branch_target (op : Operation.t) : tid option =
           | Label tid -> Some tid
           | _ -> None)
       | _ -> None)
+
+let is_move (op : Operation.t) : bool =
+  List.exists op.opcodes ~f:(function
+      | "mov" | "movs" -> begin
+          match op.lhs, op.operands with
+          | [Var _], [Var _] -> true
+          | _ -> false
+        end
+      | _ -> false)

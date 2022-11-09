@@ -7,4 +7,5 @@ val peephole :
   t ->
   is_nop:(Operation.t -> bool) ->
   unconditional_branch_target:(Operation.t -> tid option) ->
+  is_move:(Operation.t -> bool) ->
   t

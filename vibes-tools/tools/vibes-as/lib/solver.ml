@@ -15,10 +15,14 @@ let (let+) x f = Result.map x ~f
 let opt
     (ir : Ir.t)
     (target : T.target) : (Ir.t, KB.conflict) result =
-  let+ is_nop, unconditional_branch_target =
+  let+ is_nop,
+       unconditional_branch_target,
+       is_move =
     if CT.is_arm32 target then
       let open Arm_utils in
-      Ok (is_nop, unconditional_branch_target)
+      Ok (is_nop,
+          unconditional_branch_target,
+          is_move)
     else
       let msg = Format.asprintf
           "Unsupported target %a"
@@ -27,6 +31,7 @@ let opt
   Opt.peephole ir
     ~is_nop
     ~unconditional_branch_target
+    ~is_move
 
 let solve
     ?(constraints : string option = None)

@@ -4,15 +4,6 @@ open Bap.Std
 open Bap_core_theory
 open Vibes_higher_vars
 
-(** [mark_argument_tids sub ~target ~func_info] marks the [def] tids in
-    [sub] where, according to [func_info], the arguments to each function
-    call are defined. *)
-val mark_argument_tids :
-  sub term ->
-  target:Theory.target ->
-  func_info:Vibes_function_info.Types.t ->
-  sub term KB.t
-
 (** [insert_new_mems_at_callsites sub ~target] will insert assignments to
     a pseudo memory variable at each callsite in [sub]. Also returned is
     the set of tids for each of these assignments. This is used by the

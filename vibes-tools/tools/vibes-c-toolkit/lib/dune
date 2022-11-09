@@ -9,6 +9,5 @@
    core_unix.sys_unix
    vibes-log
    vibes-utils
-   vibes-function-info
    vibes-higher-vars)
  (preprocess (pps ppx_jane)))
