@@ -7,3 +7,6 @@ val is_nop : Operation.t -> bool
 (** If the operation is an unconditional branch, then return
     the target label, if it exists. *)
 val unconditional_branch_target : Operation.t -> tid option
+
+(** Returns [true] if the operation is a move. *)
+val is_move : Operation.t -> bool
