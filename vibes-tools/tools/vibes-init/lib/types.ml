@@ -277,21 +277,25 @@ let dummy_patch_info (target : T.target) : Patch_info.t = {
   patch_vars = [];
 }
 
+let write (data : string) (file : string) : (unit, KB.conflict) result =
+  if Caml.Sys.file_exists file then Ok ()
+  else Files.write_or_error data file
+
 let generate_patch_files
     (target : T.target)
     (i : int)
     (p : patch) : (unit, KB.conflict) result =
-  let* () = Files.write_or_error "" p.patch in
-  let* () = Files.write_or_error "" p.constraints in
+  let* () = write "" p.patch in
+  let* () = write "" p.constraints in
   let info_data =
     Format.asprintf "%a" Patch_info.pp @@
     dummy_patch_info target in
-  let* () = Files.write_or_error info_data p.patch_info in
+  let* () = write info_data p.patch_info in
   Ok ()
 
 let generate_files (t : t) : (unit, KB.conflict) result =
   let spaces_data = Format.asprintf "%a" Spaces.pp Spaces.empty in
-  let* () = Files.write_or_error spaces_data t.spaces in
+  let* () = write spaces_data t.spaces in
   let rec patch i = function
     | [] -> Ok ()
     | p :: rest ->
