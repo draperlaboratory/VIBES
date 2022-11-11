@@ -4,10 +4,9 @@ ROOT_DIR="$(cd "${THIS_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
-vibes-select \
+vibes-parse \
   --target bap:armv7+le \
-  --language llvm-armv7 \
-  --patch-info-filepath resources/patch-info.2.json \
-  --bir-filepath resources/patch.2.opt.bir \
-  --vir-outfile resources/patch.2.vir \
+  --patch-info-filepath samples/patch-info.json \
+  --patch-filepath samples/patch.c \
+  --bir-outfile samples/patch.bir \
   --verbose

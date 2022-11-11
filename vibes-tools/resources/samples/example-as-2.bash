@@ -7,8 +7,8 @@ cd "${ROOT_DIR}"
 vibes-as \
   --target bap:armv7+le \
   --language llvm-armv7 \
-  --vir-filepath resources/patch.2.vir \
-  --asm-outfile resources/patch.2.asm \
-  --model ../resources/minizinc/model.mzn  \
-  --patch-info-filepath resources/patch-info.2.json \
+  --vir-filepath samples/patch.2.vir \
+  --asm-outfile samples/patch.2.asm \
+  --model minizinc/model.mzn  \
+  --patch-info-filepath samples/patch-info.2.json \
   --verbose
