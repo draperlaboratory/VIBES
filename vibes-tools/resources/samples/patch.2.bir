@@ -1,0 +1,23 @@
+(program
+ (patch.2.bir
+  ((%00000025 block (phi ())
+    (data
+     ((%00000010 set (x 0 (imm 32) false) (int 3:32u))
+      (%00000013 set (y 0 (imm 32) false) (int 6:32u))))
+    (ctrl ((%00000015 goto (direct %0000000d) (when (int 1:1u))))))
+   (%0000000d block (phi ())
+    (data
+     ((%00000018 set (reg:R0 0 (imm 32) false) (var (x 0 (imm 32) false)))
+      (%0000001b set (reg:R1 0 (imm 32) false) (var (y 0 (imm 32) false)))))
+    (ctrl
+     ((%0000001d call (direct %0000000a) (return (direct %00000020))
+       (when (int 1:1u))))))
+   (%00000020 block (phi ())
+    (data
+     ((%00000021 set (z 0 (imm 32) false) (var (reg:R0 0 (imm 32) false)))))
+    (ctrl ()))))
+ (attrs
+  ((%00000018 (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%0000001b (("2ecbeae4-a576-406c-b95c-324083406c85:vibes\\:argument" ())))
+   (%0000001d
+    (("03948bed-1e33-4587-8208-70d56adb1e56:vibes\\:name-dest" foo))))))
