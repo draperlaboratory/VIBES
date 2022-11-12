@@ -4,21 +4,38 @@ VIBES_XDG_APP_DIR := $(HOME)/.vibes
 MINIZINC_MODEL_LOCAL := $(VIBES_XDG_APP_DIR)/model.mzn
 MINIZINC_MODEL_SRC := resources/minizinc/model.mzn
 
+BINARY_NINJA_DIR := resources/binja
+BINARY_NINJA_TARGET := $(HOME)/.binaryninja/plugins/vibes
+
 ###################################
 # DEFAULT
 ###################################
 
 .DEFAULT_GOAL := all
 
+###################################
+# MINIZINC
+###################################
+
 $(MINIZINC_MODEL_LOCAL): $(MINIZINC_MODEL_SRC)
 	mkdir -p $(VIBES_XDG_APP_DIR)
 	cp $(MINIZINC_MODEL_SRC) $(MINIZINC_MODEL_LOCAL)
+
+###################################
+# BINARY NINJA
+###################################
+
+.PHONY: binja
+binja:
+	mkdir -p $(BINARY_NINJA_TARGET)
+	cp -r $(BINARY_NINJA_DIR)/* $(BINARY_NINJA_TARGET)
 
 ###################################
 # ALL
 ###################################
 
 all: $(MINIZINC_MODEL_LOCAL)
+	$(MAKE) binja
 	$(MAKE) tools.all
 
 .PHONY: build
@@ -26,7 +43,7 @@ build:
 	$(MAKE) tools.build
 
 .PHONY: install
-install: $(MINIZINC_MODEL_LOCAL)
+install: $(MINIZINC_MODEL_LOCAL) binja
 	$(MAKE) tools.install
 
 .PHONY: uninstall
