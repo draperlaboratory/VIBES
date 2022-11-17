@@ -499,8 +499,8 @@ def prompt_patch_name():
       eprint("A patch with the name '%s' already exists" % name)
     elif not valid_patch_name(name):
       eprint("Invalid patch name '%s'" % name)
-
-    return name
+    else:
+      return name
 
 def patch_range(bv, addr, n):
   if not check_arch(bv):
