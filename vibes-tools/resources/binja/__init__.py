@@ -80,8 +80,18 @@ class HigherVar:
 
 # As a general rule of thumb, the stack pointer needs to be
 # aligned at a double word size when entering any call site.
-def sp_alignment(bv : BinaryView):
+def sp_alignment(bv):
   return bv.address_size * 2
+
+# Maximum range for a "frame" offset.
+def frame_range(bv):
+  a = bv.arch.name
+  if a == "thumb2" or a == "thumb2eb":
+    return -255, 4095
+  elif a == "armv7" or a == "armv7eb":
+    return -4095, 4095
+  else:
+    assert(False)
 
 
 # Metadata for a patch.
