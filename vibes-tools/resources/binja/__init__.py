@@ -120,6 +120,7 @@ class Patch:
     end = self.end_addr()
     f = self.function(bv)
     l = f.get_low_level_il_at(end)
+    bb_patch_ll = f.llil.get_basic_block_at(l.instr_index)
     result = {}
 
     def add(name, h):
@@ -134,40 +135,101 @@ class Patch:
           return True
       return False
 
-    # Associate HLIL variables that are live at the patch site with
-    # their low-level storage classifiers.
+    # Is basic block `dst` reachable from `src`?
+    def reachable(src, dst, src_addr, dst_addr):
+      if src.start == dst.start:
+        # Special case for when the instructions are in the
+        # same basic block.
+        return dst_addr >= src_addr
+      elif src in dst.strict_dominators:
+        return True
+      elif dst in src.dominance_frontier:
+        return True
+      else:
+        return False
+
+    # Check for variables that were spilled to the stack.
+    def spilled(v):
+      bb_patch = f.mlil.get_basic_block_at(l.mlil.instr_index)
+      for u in f.mlil.get_var_uses(v):
+        bb_use = f.mlil.get_basic_block_at(u.instr_index)
+        if not reachable(bb_use, bb_patch, u.address, self.addr):
+          continue
+        # Are we defining a stack variable?
+        d = u.dest
+        if d and \
+           isinstance(d, Variable) and \
+           d.source_type == VariableSourceType.StackVariableSourceType:
+          return d.storage
+      return None
+
+    # The stack offsets in the BN Variable class need to be adjusted
+    # for the changes in the SP at the patch point. We will ignore
+    # our `sp_align` attribute for now, since this is only needed
+    # if the patch includes function calls.
+    def stack_frame(s):
+      sp = bv.arch.stack_pointer
+      sp_val = l.get_reg_value(sp)
+      if sp_val.type == RegisterValueType.StackFrameOffset:
+        off = sp_val.value
+      else:
+        off = 0
+      return (sp.upper(), s - off)
+
+    # Is register `r` live at the patch site?
+    def reg_live(r):
+      for ssa in f.llil.ssa_regs:
+        if ssa.reg != r:
+          continue
+        # If this is `None` then the register was passed as an argument.
+        d = f.llil.get_ssa_reg_definition(ssa)
+        if d is not None:
+          bb_def_ll = f.llil.get_basic_block_at(d.instr_index)
+          if not reachable(bb_def_ll, bb_patch_ll, d.address, self.addr):
+            continue
+        for u in f.llil.get_ssa_reg_uses(ssa):
+          bb_use_ll = f.llil.get_basic_block_at(u.instr_index)
+          if reachable(bb_patch_ll, bb_use_ll, self.addr, u.address):
+            return True
+      return False
+
+    # Collect the live HLIL variables.
     vars = f.hlil.vars
     i = l.mlil.hlil.instr_index
     for v in vars:
-      # Disregard this variable if it was defined within
-      # the patch region (or at the very end).
+      # Disregard this variable if it was defined within the patch
+      # region, or at the very end.
       if defined_at_patch(v):
         continue
-      if f.hlil.is_var_live_at(v, i):
-        if v.source_type == VariableSourceType.RegisterVariableSourceType:
+      # XXX: should we consider all variables that can be accessed
+      # from this point, not just those that are live at the end
+      # of the patch?
+      if not f.hlil.is_var_live_at(v, i):
+        continue
+      if v.source_type == VariableSourceType.RegisterVariableSourceType:
+        s = spilled(v)
+        if s is not None:
+          frame = stack_frame(s)
+          add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
+        else:
           r = bv.arch.get_reg_name(v.storage).upper()
           add(v.name, HigherVar(v.name, r, HigherVar.REG_VAR))
-        elif v.source_type == VariableSourceType.StackVariableSourceType:
-          sp = bv.arch.stack_pointer
-          sp_val = l.get_reg_value(sp)
-          off = -self.sp_align
-          if sp_val.type == RegisterValueType.StackFrameOffset:
-            off += sp_val.value
-          value = (sp.upper(), v.storage - off)
-          add(v.name, HigherVar(v.name, value, HigherVar.FRAME_VAR))
+      elif v.source_type == VariableSourceType.StackVariableSourceType:
+        frame = stack_frame(v.storage)
+        add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
 
     # Relate known register values at the patch site with known
     # data symbols.
     possible_frames = []
-    regs = f.llil.regs
-    for r in regs:
+    for r in f.llil.regs:
       v = l.get_reg_value(r)
       if v.type == RegisterValueType.ConstantPointerValue:
         s = bv.get_symbol_at(v.value)
         if s and s.type == SymbolType.DataSymbol:
           reg = r.name.upper()
           possible_frames.append((reg, v.value))
-          add(s.name, HigherVar(s.name, reg, HigherVar.REG_VAR))
+          if reg_live(r):
+            add(s.name, HigherVar(s.name, reg, HigherVar.REG_VAR))
 
     # Grab all the known function and data symbols. We should
     # ignore those which were automatically named, to avoid
@@ -223,7 +285,7 @@ class PatchView:
 
     self.higher_vars_widget = QTreeWidget(self.info_widget)
     self.higher_vars_widget.setColumnCount(2)
-    self.higher_vars_widget.setHeaderLabels(["Variable", "Storage"])
+    self.higher_vars_widget.setHeaderLabels(["Variable", "Value"])
     self._refresh_higher_vars()
     info_layout.addRow("Higher variables", self.higher_vars_widget)
 
@@ -296,7 +358,6 @@ class PatchView:
     text = self.sp_align_widget.text()
     try:
       p.sp_align = int(text)
-      self._refresh_higher_vars()
     except Exception:
       eprint("Invalid SP adjustment: " + text)
       p.sp_align = old
