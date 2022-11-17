@@ -127,17 +127,18 @@ class Patch:
       else:
         result[name].append(h)
 
+    def defined_at_patch(v):
+      for d in f.hlil.get_var_definitions(v):
+        if d.address >= self.addr or d.address <= end:
+          return True
+      return False
+
     vars = f.hlil.vars
     i = l.mlil.hlil.instr_index
     for v in vars:
       # Disregard this variable if it was defined within
       # the patch region (or at the very end).
-      defined = False
-      for d in f.hlil.get_var_definitions(v):
-        if d.address >= self.addr or d.address <= end:
-          defined = True
-          break
-      if defined:
+      if defined_at_patch(v):
         continue
 
       if f.hlil.is_var_live_at(v, i):
