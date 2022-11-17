@@ -1,3 +1,5 @@
+import re
+
 from binaryninja import *
 
 import binaryninjaui
@@ -483,14 +485,22 @@ UIAction.registerAction(PATCH_EDITOR)
 UIActionHandler.globalActions().bindAction(PATCH_EDITOR, UIAction(launch_plugin))
 Menu.mainMenu('Plugins').addAction(PATCH_EDITOR, 'show')
 
+patch_name_re = re.compile("[A-Za-z]+[A-Za-z-_0-9]*")
+
+def valid_patch_name(name):
+ return patch_name_re.fullmatch(name) is not None
+
 def prompt_patch_name():
   global patches
   while True:
     name = get_text_line_input("Please provide a patch name",
                                "VIBES: new patch").decode('ASCII')
-    if name not in patches:
-      return name
-    eprint("A patch with the name '%s' already exists" % name)
+    if name in patches:
+      eprint("A patch with the name '%s' already exists" % name)
+    elif not valid_patch_name(name):
+      eprint("Invalid patch name '%s'" % name)
+
+    return name
 
 def patch_range(bv, addr, n):
   if not check_arch(bv):
