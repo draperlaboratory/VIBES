@@ -154,19 +154,32 @@ class Patch:
           value = (sp.upper(), v.storage - off)
           add(v.name, HigherVar(v.name, value, HigherVar.FRAME_VAR))
 
+    possible_frames = []
     regs = f.llil.regs
     for r in regs:
       v = l.get_reg_value(r)
       if v.type == RegisterValueType.ConstantPointerValue:
         s = bv.get_symbol_at(v.value)
         if s:
-          add(s.name, HigherVar(s.name, r.name.upper(), HigherVar.REG_VAR))
+          reg = r.name.upper()
+          possible_frames.append((reg, v.value))
+          add(s.name, HigherVar(s.name, reg, HigherVar.REG_VAR))
 
+    flow, fhigh = frame_range(bv)
     for s in bv.get_symbols():
       if s.auto:
         continue
       if s.type == SymbolType.DataSymbol:
-        add(s.name, HigherVar(s.name, s.address, HigherVar.GLOBAL_VAR))
+        a = s.address
+        add(s.name, HigherVar(s.name, a, HigherVar.GLOBAL_VAR))
+        # See if this symbol can be accessed via frame through a register
+        # with a known value.
+        for reg, val in possible_frames:
+          off = a - val
+          if a < val and off > flow:
+            add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
+          elif a > val and off < fhigh:
+            add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
       elif s.type == SymbolType.FunctionSymbol:
         add(s.name, HigherVar(s.name, s.address, HigherVar.FUNCTION_VAR))
 
