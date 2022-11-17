@@ -183,9 +183,7 @@ class Patch:
         # register with a known value.
         for reg, val in possible_frames:
           off = a - val
-          if a < val and off >= flow:
-            add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
-          elif a > val and off <= fhigh:
+          if (a < val and off >= flow) or (a > val and off <= fhigh):
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
       elif s.type == SymbolType.FunctionSymbol:
         add(s.name, HigherVar(s.name, s.address, HigherVar.FUNCTION_VAR))
