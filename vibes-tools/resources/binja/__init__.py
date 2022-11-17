@@ -249,8 +249,8 @@ class PatchView:
   def _refresh_higher_vars(self):
     global patches
     self.higher_vars_widget.clear()
-    hvars = patches[self.name].collect_higher_vars(self.bv)
-    for name, vs in hvars.items():
+    self.hvars = patches[self.name].collect_higher_vars(self.bv)
+    for name, vs in self.hvars.items():
       var = QTreeWidgetItem(self.higher_vars_widget)
       var.setText(0, name)
       for h in vs:
