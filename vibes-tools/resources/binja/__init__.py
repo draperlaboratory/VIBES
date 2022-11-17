@@ -354,6 +354,17 @@ class PatchEditor(QDialog):
 PATCH_EDITOR = 'VIBES\\Patch Editor'
 patch_editor = None
 
+supported = ["armv7", "thumb2", "armv7eb", "thumb2eb"]
+
+def check_arch(bv):
+  arch = bv.arch.name
+  if arch not in supported:
+    show_message_box("VIBES", "Unsupported architecture %s" % arch,
+                     MessageBoxButtonSet.OKButtonSet,
+                     MessageBoxIcon.ErrorIcon)
+    return False
+  return True
+
 def launch_plugin(context):
   global patch_editor
 
@@ -362,6 +373,9 @@ def launch_plugin(context):
     show_message_box("VIBES", "No binary currently in view",
                      MessageBoxButtonSet.OKButtonSet,
                      MessageBoxIcon.ErrorIcon)
+    return
+
+  if not check_arch(bv):
     return
 
   if not patch_editor:
@@ -382,6 +396,8 @@ def prompt_patch_name():
     eprint("A patch with the name '%s' already exists" % name)
 
 def patch_range(bv, addr, n):
+  if not check_arch(bv):
+    return
   global patch_editor
   name = prompt_patch_name()
   if patch_editor:
@@ -392,6 +408,8 @@ def patch_range(bv, addr, n):
     patches[name] = Patch(name, addr, n, bv)
 
 def patch_addr(bv, addr):
+  if not check_arch(bv):
+    return
   global patch_editor
   name = prompt_patch_name()
   if patch_editor:
