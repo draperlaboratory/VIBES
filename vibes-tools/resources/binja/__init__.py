@@ -219,8 +219,13 @@ class PatchView:
     self.higher_vars_widget = QTreeWidget(self.info_widget)
     self.higher_vars_widget.setColumnCount(2)
     self.higher_vars_widget.setHeaderLabels(["Variable", "Storage"])
-    self._update_higher_vars()
+    self._refresh_higher_vars()
     info_layout.addRow("Higher variables", self.higher_vars_widget)
+
+    self.refresh_higher_vars_button = QPushButton("Refresh higher variables",
+                                                  self.info_widget)
+    self.refresh_higher_vars_button.clicked.connect(self._refresh_higher_vars)
+    info_layout.addWidget(self.refresh_higher_vars_button)
 
     self.info_widget.setLayout(info_layout)
 
@@ -236,7 +241,7 @@ class PatchView:
   def c_code(self):
     return self.code_widget.document().toPlainText()
 
-  def _update_higher_vars(self):
+  def _refresh_higher_vars(self):
     global patches
     self.higher_vars_widget.clear()
     hvars = patches[self.name].collect_higher_vars(self.bv)
@@ -259,7 +264,7 @@ class PatchView:
       p.addr = int(text, base=16)
       f = p.function(self.bv)
       self.function_label.setText(f.name)
-      self._update_higher_vars()
+      self._refresh_higher_vars()
     except Exception:
       eprint("Invalid patch point: " + text)
       p.addr = old
@@ -273,7 +278,7 @@ class PatchView:
     try:
       p.size = int(text)
       assert(p.size >= 0)
-      self._update_higher_vars()
+      self._refresh_higher_vars()
     except Exception:
       eprint("Invalid patch size: " + text)
       p.size = old
@@ -286,7 +291,7 @@ class PatchView:
     text = self.sp_align_widget.text()
     try:
       p.sp_align = int(text)
-      self._update_higher_vars()
+      self._refresh_higher_vars()
     except Exception:
       eprint("Invalid SP adjustment: " + text)
       p.sp_align = old
@@ -321,7 +326,7 @@ class PatchEditor(QDialog):
       if name not in self.patches:
         self.add_patch(name, p.addr, p.size)
 
-    self.patch_delete_button = QPushButton(self.tr("Delete"))
+    self.patch_delete_button = QPushButton("Delete", self.container)
     self.patch_delete_button.clicked.connect(self._delete_patch)
 
     patch_buttons_layout = QHBoxLayout()
