@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
   QWidget,
   QPushButton,
 )
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
 
@@ -129,10 +130,12 @@ class Patch:
 
     def defined_at_patch(v):
       for d in f.hlil.get_var_definitions(v):
-        if d.address >= self.addr or d.address <= end:
+        if d.address >= self.addr and d.address <= end:
           return True
       return False
 
+    # Associate HLIL variables that are live at the patch site with
+    # their low-level storage classifiers.
     vars = f.hlil.vars
     i = l.mlil.hlil.instr_index
     for v in vars:
@@ -140,7 +143,6 @@ class Patch:
       # the patch region (or at the very end).
       if defined_at_patch(v):
         continue
-
       if f.hlil.is_var_live_at(v, i):
         if v.source_type == VariableSourceType.RegisterVariableSourceType:
           r = bv.arch.get_reg_name(v.storage).upper()
@@ -154,17 +156,22 @@ class Patch:
           value = (sp.upper(), v.storage - off)
           add(v.name, HigherVar(v.name, value, HigherVar.FRAME_VAR))
 
+    # Relate known register values at the patch site with known
+    # data symbols.
     possible_frames = []
     regs = f.llil.regs
     for r in regs:
       v = l.get_reg_value(r)
       if v.type == RegisterValueType.ConstantPointerValue:
         s = bv.get_symbol_at(v.value)
-        if s:
+        if s and s.type == SymbolType.DataSymbol:
           reg = r.name.upper()
           possible_frames.append((reg, v.value))
           add(s.name, HigherVar(s.name, reg, HigherVar.REG_VAR))
 
+    # Grab all the known function and data symbols. We should
+    # ignore those which were automatically named, to avoid
+    # cluttering the output.
     flow, fhigh = frame_range(bv)
     for s in bv.get_symbols():
       if s.auto:
@@ -172,13 +179,13 @@ class Patch:
       if s.type == SymbolType.DataSymbol:
         a = s.address
         add(s.name, HigherVar(s.name, a, HigherVar.GLOBAL_VAR))
-        # See if this symbol can be accessed via frame through a register
-        # with a known value.
+        # See if this symbol can be accessed via frame through a
+        # register with a known value.
         for reg, val in possible_frames:
           off = a - val
-          if a < val and off > flow:
+          if a < val and off >= flow:
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
-          elif a > val and off < fhigh:
+          elif a > val and off <= fhigh:
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
       elif s.type == SymbolType.FunctionSymbol:
         add(s.name, HigherVar(s.name, s.address, HigherVar.FUNCTION_VAR))
