@@ -34,6 +34,8 @@ def eprint(*args, **kwargs):
 
 patches = {}
 
+
+# Higher-level variables
 class HigherVar:
   REG_VAR = 0
   FRAME_VAR = 1
