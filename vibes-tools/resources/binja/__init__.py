@@ -214,8 +214,9 @@ class PatchInfo:
   def collect_higher_vars(self, bv):
     end = self.end_addr()
     f = self.function(bv)
-    l = f.get_low_level_il_at(end)
-    bb_patch_ll = f.llil.get_basic_block_at(l.instr_index)
+    lstart = f.get_low_level_il_at(self.addr)
+    lend = f.get_low_level_il_at(end)
+    bb_patch_ll = f.llil.get_basic_block_at(lend.instr_index)
     result = {}
 
     def add(name, h):
@@ -224,9 +225,9 @@ class PatchInfo:
       else:
         result[name].append(h)
 
-    def defined_at_patch(v):
+    def defined_after_patch(v):
       for d in f.hlil.get_var_definitions(v):
-        if d.address >= self.addr and d.address <= end:
+        if d.address == end:
           return True
       return False
 
@@ -245,7 +246,7 @@ class PatchInfo:
 
     # Check for variables that were spilled to the stack.
     def spilled(v):
-      bb_patch = f.mlil.get_basic_block_at(l.mlil.instr_index)
+      bb_patch = f.mlil.get_basic_block_at(lend.mlil.instr_index)
       for u in f.mlil.get_var_uses(v):
         bb_use = f.mlil.get_basic_block_at(u.instr_index)
         if not reachable(bb_use, bb_patch, u.address, self.addr):
@@ -265,7 +266,7 @@ class PatchInfo:
     # if the patch includes function calls.
     def stack_frame(s):
       sp = bv.arch.stack_pointer
-      sp_val = l.get_reg_value(sp)
+      sp_val = lstart.get_reg_value(sp)
       if sp_val.type == RegisterValueType.StackFrameOffset:
         off = sp_val.value
       else:
@@ -290,11 +291,11 @@ class PatchInfo:
       return False
 
     # Collect the live HLIL variables.
-    i = l.mlil.hlil.instr_index
+    i = lend.mlil.hlil.instr_index
     for v in f.hlil.vars:
       # Disregard this variable if it was defined within the patch
       # region, or at the very end.
-      if defined_at_patch(v):
+      if defined_after_patch(v):
         continue
       # XXX: should we consider all variables that can be accessed
       # from this point, not just those that are live at the end
@@ -317,7 +318,7 @@ class PatchInfo:
     # data symbols.
     possible_frames = []
     for r in f.llil.regs:
-      v = l.get_reg_value(r)
+      v = lstart.get_reg_value(r)
       if v.type == RegisterValueType.ConstantPointerValue:
         s = bv.get_symbol_at(v.value)
         if s and s.type == SymbolType.DataSymbol:
@@ -422,10 +423,18 @@ class PatchView:
     self._refresh_higher_vars()
     info_layout.addRow("Live variables", self.higher_vars_widget)
 
-    refresh_higher_vars_button = QPushButton("Refresh live variables",
-                                             self.info_widget)
+    higher_vars_buttons = QWidget(self.info_widget)
+    higher_vars_buttons_layout = QHBoxLayout()
+    add_higher_var_button = \
+      QPushButton("Add live variable", higher_vars_buttons)
+    add_higher_var_button.clicked.connect(self._add_higher_var)
+    higher_vars_buttons_layout.addWidget(add_higher_var_button)
+    refresh_higher_vars_button = \
+      QPushButton("Refresh live variables", higher_vars_buttons)
     refresh_higher_vars_button.clicked.connect(self._refresh_higher_vars)
-    info_layout.addWidget(refresh_higher_vars_button)
+    higher_vars_buttons_layout.addWidget(refresh_higher_vars_button)
+    higher_vars_buttons.setLayout(higher_vars_buttons_layout)
+    info_layout.addWidget(higher_vars_buttons)
 
     self.info_widget.setLayout(info_layout)
 
@@ -464,10 +473,11 @@ class PatchView:
     old = p.addr
     text = self.patch_point_widget.text()
     try:
-      p.addr = int(text, base=16)
+      p.addr = int(text)
       f = p.function(self.bv)
       self.function_label.setText(f.name)
       self._refresh_higher_vars()
+      self.patch_point_widget.setText("0x%x" % p.addr)
     except Exception:
       eprint("Invalid patch point: " + text)
       p.addr = old
@@ -481,6 +491,7 @@ class PatchView:
       p.size = int(text)
       assert p.size >= 0
       self._refresh_higher_vars()
+      self.patch_size_widget.setText("%d" % p.size)
     except Exception:
       eprint("Invalid patch size: " + text)
       p.size = old
@@ -492,6 +503,7 @@ class PatchView:
     text = self.sp_align_widget.text()
     try:
       p.sp_align = int(text)
+      self.sp_align_widget.setText("%d" % p.sp_align)
     except Exception:
       eprint("Invalid SP adjustment: " + text)
       p.sp_align = old
@@ -516,20 +528,42 @@ class PatchView:
     type_combo.addItem("Function", HigherVar.FUNCTION_VAR)
     type_combo.setCurrentIndex(type)
     type_combo.currentIndexChanged.connect(self._var_type_changed)
-    self._add_var_type(var, type)
+    self._add_var_type(var, value, type)
     self.patch_vars_widget.setItemWidget(var, 1, type_combo)
     self.patch_vars_widget.addTopLevelItem(var)
 
-  def _add_var_type(self, var, type):
+  def _add_higher_var(self):
+    item = self.higher_vars_widget.currentItem()
+    var = item.parent()
+    if var is None:
+      eprint("No higher var value is selected")
+      return
+    name = var.text(0)
+    p = self.current_patch()
+    if name in p.vars:
+      eprint("Variable %s already exists in the patch variables" % name)
+      return
+    hvar = self.hvars[name][var.indexOfChild(item)]
+    print(hvar.value)
+    self._add_var(p, name, hvar=hvar)
+
+  def _add_var_type(self, var, value, type):
     name = var.text(0)
     if type == HigherVar.REG_VAR:
+      regs = available_regs(self.bv)
+      try:
+        i = regs.index(value) + 1
+      except ValueError:
+        i = 0
       at_entry_combo = QComboBox(self.patch_vars_widget)
       at_entry_combo.addItem("(none)")
-      at_entry_combo.addItems(available_regs(self.bv))
+      at_entry_combo.addItems(regs)
+      at_entry_combo.setCurrentIndex(i)
       at_entry_combo.currentIndexChanged.connect(self._at_entry_changed)
       at_exit_combo = QComboBox(self.patch_vars_widget)
       at_exit_combo.addItem("(none)")
-      at_exit_combo.addItems(available_regs(self.bv))
+      at_exit_combo.addItems(regs)
+      at_exit_combo.setCurrentIndex(i)
       at_exit_combo.currentIndexChanged.connect(self._at_exit_changed)
       at_entry = QTreeWidgetItem(var)
       at_entry.setText(0, "At entry")
@@ -540,10 +574,16 @@ class PatchView:
       self.patch_vars_widget.setItemWidget(at_entry, 1, at_entry_combo)
       self.patch_vars_widget.setItemWidget(at_exit, 1, at_exit_combo)
     elif type == HigherVar.FRAME_VAR:
+      regs = available_regs(self.bv, include_sp=True)
+      try:
+        i = regs.index(value[0])
+      except ValueError:
+        i = 0
       base_combo = QComboBox(self.patch_vars_widget)
-      base_combo.addItems(available_regs(self.bv, include_sp=True))
+      base_combo.addItems(regs)
+      base_combo.setCurrentIndex(i)
       base_combo.currentIndexChanged.connect(self._base_changed)
-      offset_widget = QLineEdit(("0x%x" % 0), self.patch_vars_widget)
+      offset_widget = QLineEdit(("0x%x" % value[1]), self.patch_vars_widget)
       offset_widget.editingFinished.connect(self._hex_changed)
       self.hex_var_widget[name] = offset_widget
       base = QTreeWidgetItem(var)
@@ -556,7 +596,7 @@ class PatchView:
       self.patch_vars_widget.setItemWidget(offset, 1, offset_widget)
     elif type == HigherVar.GLOBAL_VAR or \
          type == HigherVar.FUNCTION_VAR:
-      address_widget = QLineEdit(("0x%x" % 0), self.patch_vars_widget)
+      address_widget = QLineEdit(("0x%x" % value), self.patch_vars_widget)
       address_widget.editingFinished.connect(self._hex_changed)
       self.hex_var_widget[name] = address_widget
       address = QTreeWidgetItem(var)
@@ -596,7 +636,7 @@ class PatchView:
     if name in self.hex_var_widget:
       del self.hex_var_widget[name]
     p.set_var(var.text(0), value, type)
-    self._add_var_type(var, type)
+    self._add_var_type(var, value, type)
 
   def _current_var_item(self):
     var = self.patch_vars_widget.currentItem()
@@ -610,20 +650,14 @@ class PatchView:
     var = self._current_var_item()
     if var is None:
       return
-    if i == 0:
-      reg = None
-    else:
-      reg = available_regs(self.bv)[i - 1]
+    reg = None if i == 0 else available_regs(self.bv)[i - 1]
     self.current_patch().vars[var.text(0)].set_at_entry(reg)
 
   def _at_exit_changed(self, i):
     var = self._current_var_item()
     if var is None:
       return
-    if i == 0:
-      reg = None
-    else:
-      reg = available_regs(self.bv)[i - 1]
+    reg = None if i == 0 else available_regs(self.bv)[i - 1]
     self.current_patch().vars[var.text(0)].set_at_exit(reg)
 
   def _base_changed(self, i):
@@ -640,18 +674,13 @@ class PatchView:
       return
     name = var.text(0)
     v = self.current_patch().vars[name]
-    if v.type == HigherVar.FRAME_VAR:
-      old = v.value[1]
-    else:
-      old = v.value
+    old = v.value[1] if v.type == HigherVar.FRAME_VAR else v.value
     widget = self.hex_var_widget[name]
     text = widget.text()
     try:
-      new = int(text, base=16)
-      if v.type == HigherVar.FRAME_VAR:
-        v.value = (v.value[0], new)
-      else:
-        v.value = new
+      new = int(text)
+      v.value = (v.value[0], new) if v.type == HigherVar.FRAME_VAR else new
+      widget.setText("0x%x" % new)
     except Exception:
       eprint("Invalid hex value: " + text)
       widget.setText("0x%x" % old)
