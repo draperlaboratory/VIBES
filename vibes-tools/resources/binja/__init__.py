@@ -700,7 +700,6 @@ class PatchEditor(QDialog):
     self.current_patch = None
 
     self.container = QWidget(parent)
-    layout = QHBoxLayout()
 
     self.patch_tab_widget = QTabWidget(self.container)
 
@@ -770,8 +769,295 @@ class PatchEditor(QDialog):
       self.patch_list_widget.takeItem(self.patch_list_widget.row(item))
 
 
+OGRE_DECLS = """
+(declare arch (name str))\n
+(declare bits (size int))\n
+(declare base-address (addr int))\n
+(declare entry-point (addr int))\n
+(declare is-little-endian (flag bool))\n
+(declare mapped (addr int) (size int) (off int))\n
+(declare code-region (addr int) (size int) (off int))\n
+(declare named-region (addr int) (size int) (name str))\n
+(declare segment (addr int) (size int) (r bool) (w bool) (x bool))\n
+(declare section (addr int) (size int))\n
+(declare code-start (addr int))\n
+(declare named-symbol (addr int) (name str))\n
+(declare symbol-chunk (addr int) (size int) (root int))
+"""
+
+
+def addr_to_off_seg(seg, addr):
+  return (addr - seg.start) + seg.data_offset
+
+def addr_to_off(bv, addr):
+  return addr_to_off_seg(bv.get_segment_at(addr), addr)
+
+
+class OGREAddrSizeOff:
+  def __init__(self, name, addr, size, off):
+    self.name = name
+    self.addr = addr
+    self.size = size
+    self.off = off
+
+  def __str__(self):
+    return "(%s (addr 0x%x) (size 0x%x) (off 0x%x))" % \
+      (self.name, self.addr, self.size, self.off)
+
+
+class OGREMapped(OGREAddrSizeOff):
+  def __init__(self, addr, size, off):
+    super(OGREMapped, self).__init__("mapped", addr, size, off)
+
+
+class OGRECodeRegion(OGREAddrSizeOff):
+  def __init__(self, addr, size, off):
+    super(OGRECodeRegion, self).__init__("code-region", addr, size, off)
+
+
+class OGRENamedRegion:
+  def __init__(self, addr, size, name):
+    self.addr = addr
+    self.size = size
+    self.name = name
+
+  def __str__(self):
+    return "(named-region (addr 0x%x) (size 0x%x) (name %s))" % \
+      (self.addr, self.size, self.name)
+
+
+class OGRESegment(OGREAddrSizeOff):
+  def __init__(self, addr, size, off):
+    super(OGRESegment, self).__init__("segment", addr, size, off)
+
+
+class OGRESymbolChunk:
+  def __init__(self, addr, size, root):
+    self.addr = addr
+    self.size = size
+    self.root = root
+
+  def __str__(self):
+    return "(symbol-chunk (addr 0x%x) (size 0x%x) (root 0x%x))" % \
+      (self.addr, self.size, self.root)
+
+
+class OGREFunction:
+  def __init__(self, bv, f):
+    self.name = f.name
+    self.addr = f.start
+    self.off = addr_to_off(bv, f.start)
+    self.mapped = []
+    self.code_regions = []
+    self.named_regions = []
+    self.symbol_chunks = []
+    for r in f.address_ranges:
+      name = "%s@%x" % (f.name, r.start)
+      size = r.end - r.start
+      off = addr_to_off(bv, r.start)
+      self.mapped.append(OGREMapped(r.start, size, off))
+      self.code_regions.append(OGRECodeRegion(r.start, size, off))
+      self.named_regions.append(OGRENamedRegion(r.start, size, name))
+      self.symbol_chunks.append(OGRESymbolChunk(r.start, size, f.start))
+
+  def __str__(self):
+    return "\n".join([
+      "\n".join(map(lambda x: str(x), self.mapped)),
+      "\n".join(map(lambda x: str(x), self.code_regions)),
+      "\n".join(map(lambda x: str(x), self.named_regions)),
+      "(code-start (addr 0x%x))" % self.addr,
+      "(named-symbol (addr 0x%x) (name %s))" % (self.addr, self.name),
+      "\n".join(map(lambda x: str(x), self.symbol_chunks))
+    ])
+
+
+class OGREData(OGREAddrSizeOff):
+  def __init__(self, addr, size, off):
+    super(OGREData, self).__init__("", addr, size, off)
+    self.refs = 1
+
+  def __str__(self):
+    mapped = OGREMapped(self.addr, self.size, self.off)
+    segment = OGRESegment(self.addr, self.size, self.off)
+    return "\n".join([str(mapped), str(segment)])
+
+
+def rodata_of_func(bv, f):
+  result = {}
+  for l in f.llil_instructions:
+    for r in bv.get_code_refs_from(l.address):
+      if bv.get_functions_containing(r):
+        continue
+      seg = bv.get_segment_at(r)
+      if seg is None or seg.writable:
+        continue
+      d = bv.get_data_var_at(r)
+      if d is None:
+        continue
+      size = d.type.width
+      if size <= 0:
+        continue
+      off = addr_to_off_seg(seg, r)
+      result[r] = OGREData(r, size, off)
+  return result
+
+
+class OGRE:
+  def __init__(self, bv):
+    self.bv = bv
+    if bv.arch.name.startswith("thumb2"):
+      self.arch = "thumb"
+    elif bv.arch.name.startswith("armv7"):
+      self.arch = "arm"
+    else:
+      assert False
+    self.bits = bv.address_size * 8
+    self.base_address = bv.start
+    self.is_little_endian = bv.endianness == Endianness.LittleEndian
+    self.entry_point = bv.entry_point
+    if self.arch == "thumb":
+      self.entry_point = self.entry_point & ~1
+    self.functions = {}
+    self.rodata = {}
+
+  def add_function(self, f):
+    if f.start in self.functions:
+      return False
+    self.functions[f.start] = OGREFunction(self.bv, f)
+    for r, d in rodata_of_func(self.bv, f).items():
+      if r in self.rodata:
+        self.rodata[r].refs += 1
+      else:
+        self.rodata[r] = d
+    return True
+
+  def delete_function(self, f):
+    remove = set()
+    rodata = rodata_of_func(self.bv, f)
+    for r, d in self.rodata.items():
+      if r in rodata:
+        d.refs -= 1
+        if d.refs < 1:
+          remove.add(r)
+    for r in remove:
+      del self.rodata[r]
+    del self.functions[f.start]
+
+  def __str__(self):
+    le = "true" if self.is_little_endian else "false"
+    required = "\n".join([
+      "(arch (name %s))" % self.arch,
+      "(bits (size %d))" % self.bits,
+      "(base-address (addr 0x%x))" % self.base_address,
+      "(is-little-endian (flag %s))" % le,
+      "(entry-point (addr 0x%x))" % self.entry_point
+    ])
+    entries = "\n\n".join([
+      "\n\n".join(map(lambda x: str(x), list(self.functions.values()))),
+      "\n\n".join(map(lambda x: str(x), list(self.rodata.values())))
+    ])
+    return "\n\n".join([OGRE_DECLS, required, entries])
+
+
+# The main window for holding information about the OGRE spec.
+class OGREEditor(QDialog):
+  def __init__(self, context, parent=None):
+    super(OGREEditor, self).__init__(parent)
+
+    self.data = context.binaryView
+
+    self.setWindowTitle("VIBES OGRE Editor")
+    self.currentOffset = 0
+
+    self.container = QWidget(parent)
+    list_layout = QHBoxLayout()
+
+    self.ogre = OGRE(self.data)
+    self.functions = {}
+
+    self.available_funcs_widget = QListWidget(self.container)
+    add_function_button = QPushButton("Add function", self.container)
+    add_function_button.clicked.connect(self._add_function)
+    available_funcs_layout = QVBoxLayout()
+    available_funcs_layout.addWidget(self.available_funcs_widget)
+    available_funcs_layout.addWidget(add_function_button)
+
+    self.lifted_funcs_widget = QListWidget(self.container)
+    remove_function_button = QPushButton("Remove function", self.container)
+    remove_function_button.clicked.connect(self._remove_function)
+    lifted_funcs_layout = QVBoxLayout()
+    lifted_funcs_layout.addWidget(self.lifted_funcs_widget)
+    lifted_funcs_layout.addWidget(remove_function_button)
+
+    self._update_functions()
+
+    available_funcs_group = QGroupBox("Available functions", self.container)
+    available_funcs_group.setLayout(available_funcs_layout)
+
+    lifted_funcs_group = QGroupBox("Functions to lift", self.container)
+    lifted_funcs_group.setLayout(lifted_funcs_layout)
+
+    functions_layout = QHBoxLayout()
+    functions_layout.addWidget(available_funcs_group)
+    functions_layout.addWidget(lifted_funcs_group)
+
+    functions_widget = QWidget(self.container)
+    functions_widget.setLayout(functions_layout)
+
+    update_funcs_button = QPushButton("Update functions", self.container)
+    update_funcs_button.clicked.connect(self._update_functions)
+
+    layout = QVBoxLayout()
+    layout.addWidget(functions_widget)
+    layout.addWidget(update_funcs_button)
+    self.setLayout(layout)
+
+  def _update_functions(self):
+    self.available_funcs_widget.clear()
+    for s in self.data.get_symbols():
+      if s.auto or s.type != SymbolType.FunctionSymbol:
+        continue
+      f = self.data.get_functions_containing(s.address)[0]
+      self.functions[f.name] = f
+      self.available_funcs_widget.addItem(f.name)
+    to_remove = []
+    for row in range(self.lifted_funcs_widget.count()):
+      item = self.lifted_funcs_widget.item(row)
+      if item.text() not in self.functions:
+        to_remove.append(item)
+    for item in to_remove:
+      row = self.lifted_funcs_widget.row(item)
+      self.lifted_funcs_widget.takeItem(row)
+
+  def _add_function(self):
+    item = self.available_funcs_widget.currentItem()
+    if item is None:
+      return
+    name = item.text()
+    if name not in self.functions:
+      return
+    f = self.functions[name]
+    if self.ogre.add_function(f):
+      self.lifted_funcs_widget.addItem(name)
+
+  def _remove_function(self):
+    item = self.lifted_funcs_widget.currentItem()
+    if item is None:
+      return
+    name = item.text()
+    if name not in self.functions:
+      return
+    f = self.functions[name]
+    self.ogre.delete_function(f)
+    row = self.lifted_funcs_widget.row(item)
+    self.lifted_funcs_widget.takeItem(row)
+
+
 PATCH_EDITOR = 'VIBES\\Patch Editor'
 patch_editor = None
+
+OGRE_EDITOR = 'VIBES\\OGRE Editor'
+ogre_editor = None
 
 supported = ["armv7", "thumb2", "armv7eb", "thumb2eb"]
 
@@ -784,7 +1070,7 @@ def check_arch(bv):
     return False
   return True
 
-def launch_plugin(context):
+def launch_patch_editor(context):
   global patch_editor
 
   bv = context.binaryView
@@ -802,8 +1088,33 @@ def launch_plugin(context):
   patch_editor.show()
 
 UIAction.registerAction(PATCH_EDITOR)
-UIActionHandler.globalActions().bindAction(PATCH_EDITOR, UIAction(launch_plugin))
+UIActionHandler.globalActions().bindAction(PATCH_EDITOR,
+                                           UIAction(launch_patch_editor))
+
 Menu.mainMenu('Plugins').addAction(PATCH_EDITOR, 'show')
+
+def launch_ogre_editor(context):
+  global ogre_editor
+
+  bv = context.binaryView
+  if not bv:
+    show_message_box("VIBES", "No binary currently in view",
+                     MessageBoxButtonSet.OKButtonSet,
+                     MessageBoxIcon.ErrorIcon)
+    return
+
+  if not check_arch(bv):
+    return
+
+  if not ogre_editor:
+    ogre_editor = OGREEditor(context, parent=context.widget)
+  ogre_editor.show()
+
+UIAction.registerAction(OGRE_EDITOR)
+UIActionHandler.globalActions().bindAction(OGRE_EDITOR,
+                                           UIAction(launch_ogre_editor))
+
+Menu.mainMenu('Plugins').addAction(OGRE_EDITOR, 'show')
 
 patch_name_re = re.compile("[A-Za-z]+[A-Za-z-_0-9]*")
 
