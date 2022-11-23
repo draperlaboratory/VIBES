@@ -851,9 +851,17 @@ class PatchView:
     self.code_edit.setTabStopDistance(20)
     code_widget_layout.addWidget(self.code_edit)
 
-    code_edit_save = QPushButton("Save code", self.code_widget)
+    code_edit_buttons = QWidget(self.code_widget)
+    code_edit_buttons_layout = QHBoxLayout()
+
+    code_edit_save = QPushButton("Save code", code_edit_buttons)
     code_edit_save.clicked.connect(self._save_code)
-    code_widget_layout.addWidget(code_edit_save)
+    code_edit_buttons_layout.addWidget(code_edit_save)
+    code_edit_load = QPushButton("Load code", code_edit_buttons)
+    code_edit_load.clicked.connect(self._load_code)
+    code_edit_buttons_layout.addWidget(code_edit_load)
+    code_edit_buttons.setLayout(code_edit_buttons_layout)
+    code_widget_layout.addWidget(code_edit_buttons)
 
     self.code_widget.setLayout(code_widget_layout)
 
@@ -867,6 +875,13 @@ class PatchView:
 
   def _save_code(self):
     save_patch_code(self.bv, self.name, self.c_code())
+
+  def _load_code(self):
+    filename = get_open_filename_input("filename:", "*.c")
+    if filename is None:
+      return
+    with open(filename) as f:
+      self.code_edit.document().setPlainText(f.read())
 
   def current_patch(self):
     patches = get_patches(self.bv)
