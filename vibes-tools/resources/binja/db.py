@@ -33,7 +33,7 @@ def get_patch_code(bv, name):
   except KeyError:
     ps = {name: ""}
     bv.store_metadata("vibes.patch-codes", ps)
-  return ps[name]
+  return ps.get(name, "")
 
 def save_patch_code(bv, name, code):
   ps = bv.query_metadata("vibes.patch-codes")
