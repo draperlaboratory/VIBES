@@ -707,10 +707,10 @@ class PatchInfo:
     return result
 
 
-var_name_regex = re.compile("[a-zA-Z_][a-zA-Z0-9_]*")
+var_name_re = re.compile("[a-zA-Z_][a-zA-Z0-9_]*")
 
 def valid_var_name(name):
-  return var_name_regex.fullmatch(name) is not None
+  return var_name_re.fullmatch(name) is not None
 
 def prompt_var_name(vars):
   while True:
@@ -1256,7 +1256,7 @@ UIAction.registerAction(PATCH_EDITOR)
 UIActionHandler.globalActions().bindAction(PATCH_EDITOR, UIAction(launch_editor))
 Menu.mainMenu('Plugins').addAction(PATCH_EDITOR, 'show')
 
-patch_name_re = re.compile("[A-Za-z]+[A-Za-z-_0-9]*")
+patch_name_re = re.compile("[A-Za-z][A-Za-z-_0-9]*")
 
 def valid_patch_name(name):
  return patch_name_re.fullmatch(name) is not None
