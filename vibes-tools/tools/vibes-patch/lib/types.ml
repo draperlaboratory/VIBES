@@ -9,7 +9,7 @@ module type Toolchain = sig
 
 end
 
-module type Target = sig
+module type Target_utils = sig
 
   val situate :
     ?org:int64 option ->
@@ -26,5 +26,13 @@ module type Target = sig
   val adjusted_org : int64 -> int64 option
 
   module Toolchain : Toolchain
+
+end
+
+module type Target = sig
+
+  val target : Theory.target
+
+  include Target_utils
 
 end

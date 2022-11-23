@@ -85,11 +85,15 @@ type t = {
   patch_point : Utils.Json.Bitvector.t [@key "patch-point"];
   patch_size : int64 [@key "patch-size"];
   sp_align : int [@key "sp-align"];
-  overwrite : bool [@default true] [@key "overwrite"];
   patch_vars : Hvar.t list [@default []] [@key "patch-vars"];
 } [@@deriving yojson]
 
 let pp : Format.formatter -> t -> unit = Utils.Json.pp ~yojson_of_t
 
-let from_file : string -> (t, KB.conflict) result =
-  Utils.Json.from_file ~yojson_of_t ~t_of_yojson
+let from_file (filename : string) : (t, KB.conflict) result =
+  let (let*) x f = Result.bind x ~f in
+  let* info = Utils.Json.from_file filename ~yojson_of_t ~t_of_yojson in
+  if Int64.(info.patch_size < 0L) then
+    let msg = Format.sprintf "Bad `patch-size` value %Ld" info.patch_size in
+    Error (Errors.Json_parse_error msg)
+  else Ok info

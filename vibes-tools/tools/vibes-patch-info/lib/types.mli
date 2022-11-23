@@ -40,25 +40,21 @@ end
 
     - [patch_point]: the virtual address of the program
       where the either the patch or a jump to the patch
-      should be placed
+      should be placed.
 
     - [patch_size]: the number of bytes being overwritten
-      by the patch
+      by the patch. Invalid if [< 0L].
 
     - [sp_align]: the amount (in bytes) that needs to be
       subtracted from the stack pointer in order to keep
-      it aligned when making function calls
+      it aligned when making function calls.
 
-    - [overwrite]: the patch is allowed to overwrite existing
-      code at the patch point.
-
-    - [patch_vars]: higher variable information
+    - [patch_vars]: higher variable information.
 *)
 type t = {
   patch_point : Vibes_utils.Json.Bitvector.t;
   patch_size : int64;
   sp_align : int;
-  overwrite : bool;
   patch_vars : Vibes_higher_vars.Higher_var.t list;
 }
 

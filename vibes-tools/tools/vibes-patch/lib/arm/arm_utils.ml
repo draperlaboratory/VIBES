@@ -28,7 +28,7 @@ let create_trampoline
     (patch_point : int64)
     (patch_size : int64) : Asm.t =
   let block = trampoline addr in
-  Asm.Fields.create ~patch_point ~patch_size ~overwrite:true
+  Asm.Fields.create ~patch_point ~patch_size
     ~directives:[".syntax unified"]
     ~blocks:[block]
 
@@ -86,7 +86,7 @@ let situate
     let start = Asm.Fields_of_block.create ~label ~insns:[] in
     Asm.{asm with blocks = start :: asm.blocks} in
   let asm =
-    if not asm.Asm.overwrite then
+    if Int64.(asm.Asm.patch_size = 0L) then
       insert_overwritten (to_addr loc) asm overwritten
     else asm in
   match jmp with
