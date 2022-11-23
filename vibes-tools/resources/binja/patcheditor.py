@@ -41,6 +41,9 @@ class PatchEditor(QDialog):
       if name not in self.patches:
         self.add_patch(name, p.addr, p.size)
 
+    if self.patch_list_widget.count():
+      self.patch_list_widget.setCurrentRow(0)
+
     self.patch_delete_button = QPushButton("Delete", self.container)
     self.patch_delete_button.clicked.connect(self._delete_patch)
 
