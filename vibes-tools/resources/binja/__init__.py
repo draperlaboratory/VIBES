@@ -293,7 +293,7 @@ class OGREEditor(QWidget):
     functions_widget = QWidget(self.container)
     functions_widget.setLayout(functions_layout)
 
-    update_funcs_button = QPushButton("Update functions", self.container)
+    update_funcs_button = QPushButton("Update available functions", self.container)
     update_funcs_button.clicked.connect(self._update_functions)
 
     for name in get_ogre_functions(self.data):
