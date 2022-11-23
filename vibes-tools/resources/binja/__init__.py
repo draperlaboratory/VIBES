@@ -168,6 +168,28 @@ def rodata_of_func(bv, f):
       result[r] = OGREData(r, size, off)
   return result
 
+def get_ogre_functions(bv):
+  try:
+    fs = bv.query_metadata("vibes.ogre-functions")
+  except KeyError:
+    fs = []
+    bv.store_metadata("vibes.ogre-functions", fs)
+  return fs
+
+def save_ogre_func(bv, f):
+  fs = bv.query_metadata("vibes.ogre-functions")
+  fs.append(f)
+  fs = list(set(fs))
+  bv.store_metadata("vibes.ogre-functions", fs)
+
+def remove_ogre_func(bv, f):
+  fs = bv.query_metadata("vibes.ogre-functions")
+  try:
+    fs.remove(f)
+    bv.store_metadata("vibes.ogre-functions", fs)
+  except ValueError:
+    pass
+
 
 class OGRE:
   def __init__(self, bv):
@@ -274,6 +296,10 @@ class OGREEditor(QWidget):
     update_funcs_button = QPushButton("Update functions", self.container)
     update_funcs_button.clicked.connect(self._update_functions)
 
+    for name in get_ogre_functions(self.data):
+      if not self._add_function_by_name(name, save=False):
+        remove_ogre_func(self.data, name)
+
     layout = QVBoxLayout()
     layout.addWidget(functions_widget)
     layout.addWidget(update_funcs_button)
@@ -301,11 +327,19 @@ class OGREEditor(QWidget):
     if item is None:
       return
     name = item.text()
-    if name not in self.functions:
-      return
-    f = self.functions[name]
+    self._add_function_by_name(name)
+
+  def _add_function_by_name(self, name, save=True):
+    f = self.functions.get(name)
+    if f is None:
+      return False
     if self.ogre.add_function(f):
       self.lifted_funcs_widget.addItem(name)
+      if save:
+        save_ogre_func(self.data, name)
+      return True
+    else:
+      return False
 
   def _remove_function(self):
     item = self.lifted_funcs_widget.currentItem()
@@ -318,9 +352,7 @@ class OGREEditor(QWidget):
     self.ogre.delete_function(f)
     row = self.lifted_funcs_widget.row(item)
     self.lifted_funcs_widget.takeItem(row)
-
-
-patches = {}
+    remove_ogre_func(self.data, name)
 
 
 # Higher-level variables
@@ -368,8 +400,8 @@ class HigherVar:
 
 # Patch variables
 class PatchVar(HigherVar):
-  def __init__(self, name, value, type):
-    if type == HigherVar.REG_VAR:
+  def __init__(self, name, value, type, default_reg=True):
+    if type == HigherVar.REG_VAR and default_reg:
       value = (value, value)
     super(PatchVar, self).__init__(name, value, type)
 
@@ -411,6 +443,34 @@ class PatchVar(HigherVar):
       return ["constant", "0x%x:%d" % (self.value, sz)]
     else:
       assert False
+
+  @staticmethod
+  def deserialize(d):
+    name = d["name"]
+    type, value = PatchVar._deserialize_storage_class(d["storage-class"])
+    return PatchVar(name, value, type, default_reg=False)
+
+  @staticmethod
+  def _deserialize_storage_class(d):
+    if d[0] == "register":
+      type = HigherVar.REG_VAR
+      value = (d[1].get("at-entry"), d[1].get("at-exit"))
+    elif d[0] == "memory":
+      m = d[1]
+      if m[0] == "frame":
+        type = HigherVar.FRAME_VAR
+        value = m[1], int(m[2].split(":")[0], base=16)
+      elif m[0] == "address":
+        type = HigherVar.GLOBAL_VAR
+        value = int(m[1].split(":")[0], base=16)
+      else:
+        assert False
+    elif d[0] == "constant":
+      type = HigherVar.FUNCTION_VAR
+      value = int(d[1].split(":")[0], base=16)
+    else:
+      assert False
+    return (type, value)
 
 
 # As a general rule of thumb, the stack pointer needs to be
@@ -463,14 +523,17 @@ class PatchInfo:
     self.addr = addr
     self.size = size
     self.vars = {}
-    f = self.function(bv)
-    l = f.get_low_level_il_at(addr)
-    sp = l.get_reg_value(bv.arch.stack_pointer)
-    if sp.type == RegisterValueType.StackFrameOffset:
-      a = sp_alignment(bv)
-      self.sp_align = sp.value % a
-    else:
+    if bv is None:
       self.sp_align = 0
+    else:
+      f = self.function(bv)
+      l = f.get_low_level_il_at(addr)
+      sp = l.get_reg_value(bv.arch.stack_pointer)
+      if sp.type == RegisterValueType.StackFrameOffset:
+        a = sp_alignment(bv)
+        self.sp_align = sp.value % a
+      else:
+        self.sp_align = 0
 
   def end_addr(self):
     return self.addr + self.size
@@ -492,8 +555,19 @@ class PatchInfo:
       "patch-point": point,
       "patch-size": self.size,
       "sp-align": self.sp_align,
-      "patch-vars": vars
+      "patch-vars": list(vars)
     }
+
+  @staticmethod
+  def deserialize(name, d):
+    addr = int(d["patch-point"].split(":")[0], base=16)
+    size = d["patch-size"]
+    p = PatchInfo(name, addr, size, None)
+    p.sp_align = d["sp-align"]
+    vars = map(lambda x: PatchVar.deserialize(x), d["patch-vars"])
+    for v in vars:
+      p.vars[v.name] = v
+    return p
 
   def collect_higher_vars(self, bv):
     end = self.end_addr()
@@ -654,6 +728,46 @@ def prompt_var_name(vars):
     else:
       return name
 
+patches = {}
+
+def get_patches(bv):
+  global patches
+  try:
+    ps = bv.query_metadata("vibes.patch-infos")
+  except KeyError:
+    ps = {}
+    bv.store_metadata("vibes.patch-infos", ps)
+  if not patches:
+    for k, v in ps.items():
+      patches[k] = PatchInfo.deserialize(k, v)
+  return patches
+
+def save_patch(bv, p):
+  ps = bv.query_metadata("vibes.patch-infos")
+  ps[p.name] = p.serialize(bv)
+  bv.store_metadata("vibes.patch-infos", ps)
+
+def delete_patch(bv, name):
+  ps = bv.query_metadata("vibes.patch-infos")
+  del ps[name]
+  bv.store_metadata("vibes.patch-infos", ps)
+  ps = bv.query_metadata("vibes.patch-codes")
+  del ps[name]
+  bv.store_metadata("vibes.patch-codes", ps)
+
+def get_patch_code(bv, name):
+  try:
+    ps = bv.query_metadata("vibes.patch-codes")
+  except KeyError:
+    ps = {name: ""}
+    bv.store_metadata("vibes.patch-codes", ps)
+  return ps[name]
+
+def save_patch_code(bv, name, code):
+  ps = bv.query_metadata("vibes.patch-codes")
+  ps[name] = code
+  bv.store_metadata("vibes.patch-codes", ps)
+
 
 # Container class for the GUI elements for editing a patch.
 class PatchView:
@@ -662,13 +776,15 @@ class PatchView:
     self.name = name
     self.bv = bv
 
-    global patches
+    patches = get_patches(bv)
     if name not in patches:
-      patches[name] = PatchInfo(name, addr, size, bv)
+      p = PatchInfo(name, addr, size, bv)
+      patches[name] = p
+      save_patch(bv, p)
+    else:
+      p = patches[name]
 
     self.hex_var_widget = {}
-
-    p = patches[name]
 
     self.info_widget = QWidget(parent)
     info_layout = QFormLayout()
@@ -702,6 +818,8 @@ class PatchView:
     patch_vars_buttons_layout.addWidget(new_var_button)
     patch_vars_buttons_layout.addWidget(delete_var_button)
     patch_vars_buttons.setLayout(patch_vars_buttons_layout)
+    for v in p.vars.values():
+      self._add_var_impl(v.name, v.value, v.type)
     info_layout.addWidget(patch_vars_buttons)
 
     self.higher_vars_widget = QTreeWidget(self.info_widget)
@@ -725,9 +843,19 @@ class PatchView:
 
     self.info_widget.setLayout(info_layout)
 
-    self.code_widget = QPlainTextEdit(parent)
-    self.code_widget.setFont(getMonospaceFont(self.code_widget))
-    self.code_widget.setTabStopDistance(20)
+    self.code_widget = QWidget(parent)
+    code_widget_layout = QVBoxLayout()
+
+    self.code_edit = QPlainTextEdit(get_patch_code(bv, name), self.code_widget)
+    self.code_edit.setFont(getMonospaceFont(self.code_edit))
+    self.code_edit.setTabStopDistance(20)
+    code_widget_layout.addWidget(self.code_edit)
+
+    code_edit_save = QPushButton("Save code", self.code_widget)
+    code_edit_save.clicked.connect(self._save_code)
+    code_widget_layout.addWidget(code_edit_save)
+
+    self.code_widget.setLayout(code_widget_layout)
 
   def add_to_widget(self, tab_widget):
     tab_widget.addTab(self.info_widget, "Info")
@@ -735,10 +863,13 @@ class PatchView:
     tab_widget.setCurrentIndex(self.idx)
 
   def c_code(self):
-    return self.code_widget.document().toPlainText()
+    return self.code_edit.document().toPlainText()
+
+  def _save_code(self):
+    save_patch_code(self.bv, self.name, self.c_code())
 
   def current_patch(self):
-    global patches
+    patches = get_patches(self.bv)
     return patches[self.name]
 
   def _refresh_higher_vars(self):
@@ -765,6 +896,7 @@ class PatchView:
       self.function_label.setText(f.name)
       self._refresh_higher_vars()
       self.patch_point_widget.setText("0x%x" % p.addr)
+      save_patch(self.bv, p)
     except Exception:
       eprint("Invalid patch point: " + text)
       p.addr = old
@@ -779,6 +911,7 @@ class PatchView:
       assert p.size >= 0
       self._refresh_higher_vars()
       self.patch_size_widget.setText("%d" % p.size)
+      save_patch(self.bv, p)
     except Exception:
       eprint("Invalid patch size: " + text)
       p.size = old
@@ -791,6 +924,7 @@ class PatchView:
     try:
       p.sp_align = int(text)
       self.sp_align_widget.setText("%d" % p.sp_align)
+      save_patch(self.bv, p)
     except Exception:
       eprint("Invalid SP adjustment: " + text)
       p.sp_align = old
@@ -806,6 +940,10 @@ class PatchView:
     value, type = (None, HigherVar.REG_VAR) \
       if hvar is None else (hvar.value, hvar.type)
     p.vars[name] = PatchVar(name, value, type)
+    self._add_var_impl(name, value, type)
+    save_patch(self.bv, p)
+
+  def _add_var_impl(self, name, value, type):
     var = QTreeWidgetItem(self.patch_vars_widget)
     var.setText(0, name)
     type_combo = QComboBox(self.patch_vars_widget)
@@ -837,19 +975,32 @@ class PatchView:
     name = var.text(0)
     if type == HigherVar.REG_VAR:
       regs = available_regs(self.bv)
-      try:
-        i = regs.index(value) + 1
-      except ValueError:
-        i = 0
+      if isinstance(value, str):
+        try:
+          ientry = regs.index(value) + 1
+          iexit = ientry
+        except ValueError:
+          ientry = 0
+          iexit = 0
+      elif isinstance(value, tuple) and len(value) == 2:
+        try:
+          ientry = regs.index(value[0]) + 1
+          iexit = regs.index(value[1]) + 1
+        except ValueError:
+          ientry = 0
+          iexit = 0
+      else:
+        ientry = 0
+        iexit = 0
       at_entry_combo = QComboBox(self.patch_vars_widget)
       at_entry_combo.addItem("(none)")
       at_entry_combo.addItems(regs)
-      at_entry_combo.setCurrentIndex(i)
+      at_entry_combo.setCurrentIndex(ientry)
       at_entry_combo.currentIndexChanged.connect(self._at_entry_changed)
       at_exit_combo = QComboBox(self.patch_vars_widget)
       at_exit_combo.addItem("(none)")
       at_exit_combo.addItems(regs)
-      at_exit_combo.setCurrentIndex(i)
+      at_exit_combo.setCurrentIndex(iexit)
       at_exit_combo.currentIndexChanged.connect(self._at_exit_changed)
       at_entry = QTreeWidgetItem(var)
       at_entry.setText(0, "At entry")
@@ -902,6 +1053,7 @@ class PatchView:
     p = self.current_patch()
     p.delete_var(name)
     self.patch_vars_widget.invisibleRootItem().removeChild(var)
+    save_patch(self.bv, p)
 
   def _var_type_changed(self, type):
     var = self._current_var_item()
@@ -923,6 +1075,7 @@ class PatchView:
       del self.hex_var_widget[name]
     p.set_var(var.text(0), value, type)
     self._add_var_type(var, value, type)
+    save_patch(self.bv, p)
 
   def _current_var_item(self):
     var = self.patch_vars_widget.currentItem()
@@ -937,29 +1090,36 @@ class PatchView:
     if var is None:
       return
     reg = None if i == 0 else available_regs(self.bv)[i - 1]
-    self.current_patch().vars[var.text(0)].set_at_entry(reg)
+    p = self.current_patch()
+    p.vars[var.text(0)].set_at_entry(reg)
+    save_patch(self.bv, p)
 
   def _at_exit_changed(self, i):
     var = self._current_var_item()
     if var is None:
       return
     reg = None if i == 0 else available_regs(self.bv)[i - 1]
-    self.current_patch().vars[var.text(0)].set_at_exit(reg)
+    p = self.current_patch()
+    p.vars[var.text(0)].set_at_exit(reg)
+    save_patch(self.bv, p)
 
   def _base_changed(self, i):
     var = self._current_var_item()
     if var is None:
       return
     reg = available_regs(self.bv, include_sp=True)[i]
+    p = self.current_patch
     v = self.current_patch().vars[var.text(0)]
     v.value = (reg, v.value[1])
+    save_patch(self.bv, p)
 
   def _hex_changed(self):
     var = self._current_var_item()
     if var is None:
       return
     name = var.text(0)
-    v = self.current_patch().vars[name]
+    p = self.current_patch()
+    v = p.vars[name]
     old = v.value[1] if v.type == HigherVar.FRAME_VAR else v.value
     widget = self.hex_var_widget[name]
     text = widget.text()
@@ -967,6 +1127,7 @@ class PatchView:
       new = int(text)
       v.value = (v.value[0], new) if v.type == HigherVar.FRAME_VAR else new
       widget.setText("0x%x" % new)
+      save_patch(self.bv, p)
     except Exception:
       eprint("Invalid hex value: " + text)
       widget.setText("0x%x" % old)
@@ -994,7 +1155,7 @@ class PatchEditor(QDialog):
 
     # We may have started adding patches before we constructed this
     # dialog object, so we should synchronize this data.
-    global patches
+    patches = get_patches(self.data)
     for name, p in patches.items():
       if name not in self.patches:
         self.add_patch(name, p.addr, p.size)
@@ -1055,10 +1216,11 @@ class PatchEditor(QDialog):
     if not items:
       return
     for item in items:
-      global patches
+      patches = get_patches(self.data)
       name = item.text()
       del patches[name]
       del self.patches[name]
+      delete_patch(self.data, name)
       self.patch_list_widget.takeItem(self.patch_list_widget.row(item))
 
 
@@ -1076,27 +1238,22 @@ def check_arch(bv):
     return False
   return True
 
-def launch_patch_editor(context):
+def launch_editor(context):
   global patch_editor
-
   bv = context.binaryView
   if not bv:
     show_message_box("VIBES", "No binary currently in view",
                      MessageBoxButtonSet.OKButtonSet,
                      MessageBoxIcon.ErrorIcon)
     return
-
   if not check_arch(bv):
     return
-
   if not patch_editor:
     patch_editor = PatchEditor(context, parent=context.widget)
   patch_editor.show()
 
 UIAction.registerAction(PATCH_EDITOR)
-UIActionHandler.globalActions().bindAction(PATCH_EDITOR,
-                                           UIAction(launch_patch_editor))
-
+UIActionHandler.globalActions().bindAction(PATCH_EDITOR, UIAction(launch_editor))
 Menu.mainMenu('Plugins').addAction(PATCH_EDITOR, 'show')
 
 patch_name_re = re.compile("[A-Za-z]+[A-Za-z-_0-9]*")
@@ -1104,8 +1261,8 @@ patch_name_re = re.compile("[A-Za-z]+[A-Za-z-_0-9]*")
 def valid_patch_name(name):
  return patch_name_re.fullmatch(name) is not None
 
-def prompt_patch_name():
-  global patches
+def prompt_patch_name(bv):
+  patches = get_patches(bv)
   while True:
     name = get_text_line_input("Please provide a patch name",
                                "VIBES: new patch")
@@ -1125,29 +1282,33 @@ def patch_range(bv, addr, n):
   if not check_arch(bv):
     return
   global patch_editor
-  name = prompt_patch_name()
+  name = prompt_patch_name(bv)
   if name is None:
     return
   if patch_editor:
     patch_editor.add_patch(name, addr, n)
   else:
     # Patch editor hasn't been created yet
-    global patches
-    patches[name] = PatchInfo(name, addr, n, bv)
+    p = PatchInfo(name, addr, n, bv)
+    patches = get_patches(bv)
+    patches[name] = p
+    save_patch(bv, p)
 
 def patch_addr(bv, addr):
   if not check_arch(bv):
     return
   global patch_editor
-  name = prompt_patch_name()
+  name = prompt_patch_name(bv)
   if name is None:
     return
   if patch_editor:
     patch_editor.add_patch(name, addr, 0)
   else:
     # Patch editor hasn't been created yet
-    global patches
-    patches[name] = PatchInfo(name, addr, 0, bv)
+    p = PatchInfo(name, addr, 0, bv)
+    patches = get_patches(bv)
+    patches[name] = p
+    save_patch(bv, p)
 
 PluginCommand.register_for_range("VIBES\\Patch highlighted instruction(s)", "", patch_range)
 PluginCommand.register_for_address("VIBES\\Insert patch at this address", "", patch_addr)
