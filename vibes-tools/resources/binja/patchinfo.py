@@ -134,6 +134,11 @@ class PatchInfo:
             return True
       return False
 
+    def is_ptr(type):
+      return \
+        isinstance(type, ArrayType)   or \
+        isinstance(type, PointerType)
+
     # Collect the live HLIL variables.
     i = lend.mlil.hlil.instr_index
     for v in f.hlil.vars:
@@ -169,7 +174,11 @@ class PatchInfo:
           reg = r.name.upper()
           possible_frames.append((reg, v.value))
           if reg_live(r):
-            add(s.name, HigherVar(s.name, reg, HigherVar.REG_VAR))
+            if is_ptr(bv.get_data_var_at(v.value).type):
+              name = s.name
+            else:
+              name = s.name + "__ptr"
+            add(name, HigherVar(s.name, reg, HigherVar.REG_VAR))
 
     # Grab all the known function and data symbols. We should
     # ignore those which were automatically named, to avoid
@@ -180,12 +189,15 @@ class PatchInfo:
         continue
       if s.type == SymbolType.DataSymbol:
         a = s.address
+        type = bv.get_data_var_at(a).type
         add(s.name, HigherVar(s.name, a, HigherVar.GLOBAL_VAR))
         # See if this symbol can be accessed via frame through a
         # register with a known value.
         for reg, val in possible_frames:
           off = a - val
-          if (a < val and off >= flow) or (a > val and off <= fhigh):
+          if (a < val and off >= flow)  or \
+             (a > val and off <= fhigh) or \
+             (off == 0 and not is_ptr(type)):
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
       elif s.type == SymbolType.FunctionSymbol:
         add(s.name, HigherVar(s.name, s.address, HigherVar.FUNCTION_VAR))
