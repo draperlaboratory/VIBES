@@ -854,10 +854,10 @@ class PatchView:
     code_edit_buttons = QWidget(self.code_widget)
     code_edit_buttons_layout = QHBoxLayout()
 
-    code_edit_save = QPushButton("Save code", code_edit_buttons)
+    code_edit_save = QPushButton("Save to database", code_edit_buttons)
     code_edit_save.clicked.connect(self._save_code)
     code_edit_buttons_layout.addWidget(code_edit_save)
-    code_edit_load = QPushButton("Load code", code_edit_buttons)
+    code_edit_load = QPushButton("Load C source", code_edit_buttons)
     code_edit_load.clicked.connect(self._load_code)
     code_edit_buttons_layout.addWidget(code_edit_load)
     code_edit_buttons.setLayout(code_edit_buttons_layout)
