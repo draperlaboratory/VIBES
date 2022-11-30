@@ -9,6 +9,7 @@ from binaryninja.interaction import (
 
 from . import db
 from . import ogre
+from . import patchspaces
 from . import utils
 from .patchview import PatchView
 from .patchinfo import PatchInfo
@@ -84,10 +85,12 @@ class PatchEditor(QDialog):
     splitter.setSizes([int(w / 2), w + int(w / 2)])
 
     self.ogre = ogre.OGREEditor(context, self.container)
+    self.spaces = patchspaces.PatchSpacesEditor(context, self.container)
 
     tabs = QTabWidget(self.container)
     tabs.addTab(splitter, "Patches")
     tabs.addTab(self.ogre, "OGRE")
+    tabs.addTab(self.spaces, "Patch Spaces")
 
     menu_bar = QMenuBar(self.container)
 

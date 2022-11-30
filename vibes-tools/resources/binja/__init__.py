@@ -110,5 +110,17 @@ def patch_addr(bv, addr):
     patches[name] = p
     db.save_patch(bv, p)
 
+def add_patch_space(bv, addr, n):
+  if not check_arch(bv):
+    return
+  check_bv_changed(bv)
+  global patch_editor
+  if patch_editor:
+    patch_editor.spaces.add_space(addr, n)
+  else:
+    # TODO
+    pass
+
 PluginCommand.register_for_range("VIBES\\Patch highlighted instruction(s)", "", patch_range)
 PluginCommand.register_for_address("VIBES\\Insert patch at this address", "", patch_addr)
+PluginCommand.register_for_range("VIBES\\Add patch space", "", add_patch_space)
