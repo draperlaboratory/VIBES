@@ -2,6 +2,10 @@ from .patchinfo import PatchInfo
 
 patches = {}
 
+def clear_patches():
+  global patches
+  patches.clear()
+
 def get_patches(bv):
   global patches
   try:

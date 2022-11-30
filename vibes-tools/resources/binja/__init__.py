@@ -26,6 +26,15 @@ def check_arch(bv):
     return False
   return True
 
+def check_bv_changed(bv):
+  global patch_editor
+  if patch_editor is None:
+    return
+  if patch_editor.data.file.filename == bv.file.filename:
+    return
+  patch_editor = None
+  db.clear_patches()
+
 def launch_editor(context):
   global patch_editor
   bv = context.binaryView
@@ -36,6 +45,7 @@ def launch_editor(context):
     return
   if not check_arch(bv):
     return
+  check_bv_changed(bv)
   if not patch_editor:
     patch_editor = PatchEditor(context, parent=context.widget)
   patch_editor.show()
@@ -69,6 +79,7 @@ def prompt_patch_name(bv):
 def patch_range(bv, addr, n):
   if not check_arch(bv):
     return
+  check_bv_changed(bv)
   global patch_editor
   name = prompt_patch_name(bv)
   if name is None:
@@ -85,6 +96,7 @@ def patch_range(bv, addr, n):
 def patch_addr(bv, addr):
   if not check_arch(bv):
     return
+  check_bv_changed(bv)
   global patch_editor
   name = prompt_patch_name(bv)
   if name is None:
