@@ -120,8 +120,6 @@ class PatchEditor(QDialog):
     self.current_patch.add_to_widget(self.patch_tab_widget)
 
   def _add_existing_patch(self, p):
-    patches = db.get_patches(self.data)
-    patches[p.name] = p
     db.save_patch(self.data, p)
     self.add_patch(p.name, p.addr, p.size)
 
