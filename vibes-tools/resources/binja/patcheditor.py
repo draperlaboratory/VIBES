@@ -1,16 +1,32 @@
+import os
+import json
+import subprocess
+
+from binaryninja.interaction import (
+  get_directory_name_input,
+  get_open_filename_input,
+)
+
 from . import db
 from . import ogre
+from . import utils
 from .patchview import PatchView
+from .patchinfo import PatchInfo
+
+from PySide6.QtGui import QAction
 
 from PySide6.QtWidgets import (
   QHBoxLayout,
   QListWidget,
+  QMenuBar,
   QTabWidget,
   QSplitter,
   QDialog,
   QVBoxLayout,
   QWidget,
   QPushButton,
+  QMenuBar,
+  QMessageBox,
 )
 
 
@@ -73,7 +89,25 @@ class PatchEditor(QDialog):
     tabs.addTab(splitter, "Patches")
     tabs.addTab(self.ogre, "OGRE")
 
-    layout = QHBoxLayout()
+    menu_bar = QMenuBar(self.container)
+
+    file_menu = menu_bar.addMenu("File")
+    file_import_act = QAction("Import config", file_menu)
+    file_import_act.setStatusTip("Imports a VIBES patch configuration file.")
+    file_import_act.triggered.connect(self._import)
+    file_export_act = QAction("Export", file_menu)
+    file_export_act.setStatusTip("Exports the patch information to the VIBES input format.")
+    file_export_act.triggered.connect(self._export)
+    file_menu.addAction(file_import_act)
+    file_menu.addAction(file_export_act)
+
+    help_menu = menu_bar.addMenu("Help")
+    help_about_act = QAction("About", help_menu)
+    help_about_act.triggered.connect(self._about)
+    help_menu.addAction(help_about_act)
+
+    layout = QVBoxLayout()
+    layout.addWidget(menu_bar)
     layout.addWidget(tabs)
 
     self.setLayout(layout)
@@ -84,6 +118,12 @@ class PatchEditor(QDialog):
       self.patch_list_widget.addItem(name)
     self.current_patch = self.patches[name]
     self.current_patch.add_to_widget(self.patch_tab_widget)
+
+  def _add_existing_patch(self, p):
+    patches = db.get_patches(self.data)
+    patches[p.name] = p
+    db.save_patch(self.data, p)
+    self.add_patch(p.name, p.addr, p.size)
 
   def _select_patch(self, current, previous):
     if previous:
@@ -105,4 +145,83 @@ class PatchEditor(QDialog):
       del patches[name]
       del self.patches[name]
       db.delete_patch(self.data, name)
-      self.patch_list_widget.takeItem(self.patch_list_widget.row(item))
+      row = self.patch_list_widget.row(item)
+      self.patch_list_widget.takeItem(row)
+
+  def _import(self):
+    filename = \
+      get_open_filename_input("Choose a VIBES configuration file",
+                              "*.info.json")
+    if filename is None:
+      return
+
+    with open(filename) as f:
+      name = os.path.basename(filename)[:-10]
+      if name in self.patches:
+        utils.eprint("Patch %s already exists" % name)
+        return
+      j = json.loads(f.read())
+      p = PatchInfo.deserialize(name, j)
+      self._add_existing_patch(p)
+
+  def _export(self):
+    savedir = get_directory_name_input("Choose a directory to export to")
+    if savedir is None:
+      return
+
+    def filename(name, ext):
+      return "%s/%s.%s" % (savedir, name, ext)
+
+    patches = db.get_patches(self.data)
+    for name, pview in self.patches.items():
+      p = patches[name]
+      c = pview.c_code()
+      info = json.dumps(p.serialize(self.data), indent=4)
+      with open(filename(name, "info.json"), "w") as f:
+        f.write(info)
+      with open(filename(name, "c"), "w") as f:
+        f.write(c)
+
+    ogre = self.ogre.ogre
+    if ogre.functions:
+      with open(filename("loader", "ogre"), "w") as f:
+        f.write(str(ogre))
+
+    names = []
+    for name in self.patches.keys():
+      names.append(name)
+
+    print("Running vibes-init in", savedir)
+    proc = subprocess.run([
+      "vibes-init",
+      "--binary=%s" % self.data.file.original_filename,
+      "--patched-binary=patched.exe",
+      "--patch-names=%s" % ",".join(names),
+    ], cwd=savedir, stderr=subprocess.PIPE)
+    print("vibes-init exited with code", proc.returncode)
+    if proc.returncode != 0:
+      utils.eprint(proc.stderr.decode())
+
+  def _about(self):
+    text = """
+    This is the Binary Ninja front-end plugin for VIBES.
+
+    VIBES (Verified, Incremental Binary Editing with
+    Synthesis) is a compiler for binary micro-patching,
+    developed by the Formal Methods group at The Charles
+    Stark Draper Laboratory.
+
+    This work is sponsored by DARPA / NAVWAR Contract
+    N6600120C4018, as part of the DARPA Assured
+    Micro-Patching (AMP) program. Its content does not
+    necessarily reflect the position or policy of the
+    US Government and no official endorsement should be
+    inferred.
+    """
+
+    mbox = QMessageBox()
+    mbox.setIcon(QMessageBox.Information)
+    mbox.setText(text)
+    mbox.setWindowTitle("About VIBES")
+    mbox.setStandardButtons(QMessageBox.Ok)
+    mbox.exec()
