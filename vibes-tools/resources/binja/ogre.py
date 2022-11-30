@@ -179,8 +179,6 @@ class OGREEditor(QWidget):
     super(OGREEditor, self).__init__(parent)
 
     self.data = context.binaryView
-
-    self.setWindowTitle("VIBES OGRE Editor")
     self.currentOffset = 0
 
     self.container = QWidget(parent)
