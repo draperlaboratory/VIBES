@@ -188,6 +188,10 @@ class PatchEditor(QDialog):
       with open(filename("loader", "ogre"), "w") as f:
         f.write(str(ogre))
 
+    with open(filename("patch-spaces", "json"), "w") as f:
+      spaces = self.spaces.spaces.serialize(self.data)
+      f.write(json.dumps(spaces, indent=4))
+
     names = []
     for name in self.patches.keys():
       names.append(name)
