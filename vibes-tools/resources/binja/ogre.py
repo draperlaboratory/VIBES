@@ -11,21 +11,20 @@ from PySide6.QtWidgets import (
   QPushButton,
 )
 
-OGRE_DECLS = """
-(declare arch (name str))\n
-(declare bits (size int))\n
-(declare base-address (addr int))\n
-(declare entry-point (addr int))\n
-(declare is-little-endian (flag bool))\n
-(declare mapped (addr int) (size int) (off int))\n
-(declare code-region (addr int) (size int) (off int))\n
-(declare named-region (addr int) (size int) (name str))\n
-(declare segment (addr int) (size int) (r bool) (w bool) (x bool))\n
-(declare section (addr int) (size int))\n
-(declare code-start (addr int))\n
-(declare named-symbol (addr int) (name str))\n
-(declare symbol-chunk (addr int) (size int) (root int))
-"""
+OGRE_DECLS = \
+  """(declare arch (name str))
+(declare bits (size int))
+(declare base-address (addr int))
+(declare entry-point (addr int))
+(declare is-little-endian (flag bool))
+(declare mapped (addr int) (size int) (off int))
+(declare code-region (addr int) (size int) (off int))
+(declare named-region (addr int) (size int) (name str))
+(declare segment (addr int) (size int) (r bool) (w bool) (x bool))
+(declare section (addr int) (size int))
+(declare code-start (addr int))
+(declare named-symbol (addr int) (name str))
+(declare symbol-chunk (addr int) (size int) (root int))"""
 
 
 class OGREAddrSizeOff:
