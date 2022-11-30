@@ -1,12 +1,20 @@
+from PySide6.QtGui import QIntValidator
 from . import db
 from . import utils
 from binaryninja import *
 
+from PySide6.QtCore import QRegularExpression, QRegularExpressionMatchIterator
+
+from PySide6.QtGui import (
+  QIntValidator,
+  QRegularExpressionValidator,
+)
+
 from PySide6.QtWidgets import (
   QHBoxLayout,
   QHeaderView,
+  QLineEdit,
   QTableWidget,
-  QTableWidgetItem,
   QVBoxLayout,
   QWidget,
   QPushButton,
@@ -39,7 +47,7 @@ class PatchSpaces:
   @staticmethod
   def _serialize_space(space, bv):
     return {
-      "address": "0x%x:%d" % (space.start, bv.arch.address_size),
+      "address": "0x%x:%d" % (space.start, bv.arch.address_size * 8),
       "size": space.end - space.start
     }
 
@@ -94,8 +102,16 @@ class PatchSpacesEditor(QWidget):
   def add_space(self, addr, n):
     c = self.spaces_widget.rowCount()
     self.spaces_widget.insertRow(c)
-    self.spaces_widget.setItem(c, 0, QTableWidgetItem("0x%x" % addr))
-    self.spaces_widget.setItem(c, 1, QTableWidgetItem("%d" % n))
+    addr_widget = QLineEdit(self.spaces_widget)
+    size_widget = QLineEdit(self.spaces_widget)
+    addr_widget.setText("0x%x" % addr)
+    addr_limit = self.data.arch.address_size * 2
+    addr_re = QRegularExpression("0x[0-9a-fA-F]{1,%d}" % addr_limit)
+    addr_widget.setValidator(QRegularExpressionValidator(addr_re, addr_widget))
+    size_widget.setText("%d" % n)
+    size_widget.setValidator(QIntValidator(size_widget))
+    self.spaces_widget.setCellWidget(c, 0, addr_widget)
+    self.spaces_widget.setCellWidget(c, 1, size_widget)
     self._reset_spaces()
 
   def _new_space(self):
@@ -109,20 +125,13 @@ class PatchSpacesEditor(QWidget):
         self.spaces.add(space)
       
   def _item_changed(self, item):
-    try:
-      self._reset_spaces()
-    except ValueError:
-      if item.column() == 0:
-        utils.eprint("Address %s is ill-formed (must be a hex integer)" % item.text())
-      else:
-        utils.eprint("Size %s is ill-formed (must be a decimal integer)" % item.text())
-      self.spaces_widget.removeRow(item.row())
+    self._reset_spaces()
 
   def _deserialize_row(self, row):
-    start_item = self.spaces_widget.item(row, 0)
+    start_item = self.spaces_widget.cellWidget(row, 0)
     if start_item is None:
       return None
-    size_item = self.spaces_widget.item(row, 1)
+    size_item = self.spaces_widget.cellWidget(row, 1)
     if size_item is None:
       return None
     start = int(start_item.text(), base=16)
@@ -137,10 +146,7 @@ class PatchSpacesEditor(QWidget):
 
   def _remove_space(self, row):
     self.spaces_widget.removeRow(row)
-    try:
-      space = self._deserialize_row(row)
-      if space is None:
-        return
-      self.spaces.remove(space)
-    except ValueError:
-      pass
+    space = self._deserialize_row(row)
+    if space is None:
+      return
+    self.spaces.remove(space)
