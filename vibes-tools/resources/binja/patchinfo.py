@@ -14,12 +14,15 @@ class PatchInfo:
     else:
       f = self.function(bv)
       l = f.get_low_level_il_at(addr)
-      sp = l.get_reg_value(bv.arch.stack_pointer)
-      if sp.type == RegisterValueType.StackFrameOffset:
-        a = utils.sp_alignment(bv)
-        self.sp_align = sp.value % a
-      else:
+      if l is None:
         self.sp_align = 0
+      else:
+        sp = l.get_reg_value(bv.arch.stack_pointer)
+        if sp.type == RegisterValueType.StackFrameOffset:
+          a = utils.sp_alignment(bv)
+          self.sp_align = sp.value % a
+        else:
+          self.sp_align = 0
 
   def end_addr(self):
     return self.addr + self.size
@@ -58,8 +61,17 @@ class PatchInfo:
   def collect_higher_vars(self, bv):
     end = self.end_addr()
     f = self.function(bv)
+
     lstart = f.get_low_level_il_at(self.addr)
+    if lstart is None:
+      utils.eprint("No LLIL instruction found at 0x%x" % self.addr)
+      return {}
+
     lend = f.get_low_level_il_at(end)
+    if lend is None:
+      utils.eprint("No LLIL instruction found at 0x%x, using 0x%x" % (end, self.addr))
+      lend = lstart
+
     bb_patch_ll = f.llil.get_basic_block_at(lend.instr_index)
     result = {}
 
