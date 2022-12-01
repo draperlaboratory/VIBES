@@ -93,7 +93,7 @@ class PatchVar(HigherVar):
     elif self.type == HigherVar.FUNCTION_VAR:
       return ["constant", "0x%x:%d" % (self.value, sz)]
     elif self.type == HigherVar.CONSTANT_VAR:
-      return ["constant", "0x%x:%d" % (self.value[0], self.value[1])]
+      return ["constant", "0x%x:%d" % (self.value[0], self.value[1] * 8)]
     else:
       assert False
 
@@ -127,7 +127,7 @@ class PatchVar(HigherVar):
         size_str = d[1].split(":")[1]
         if size_str.endswith("u"):
           size_str = size_str[:-1]
-        size = int(size_str)
+        size = int(size_str) / 8
         if size < 1:
           size = 1
         elif size == 3:
