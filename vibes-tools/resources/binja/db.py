@@ -1,3 +1,4 @@
+from binaryninja import AddressRange
 from .patchinfo import PatchInfo
 
 patches = {}
@@ -5,6 +6,12 @@ patches = {}
 def clear_patches():
   global patches
   patches.clear()
+
+spaces = []
+
+def clear_spaces():
+  global spaces
+  spaces.clear()
 
 def get_patches(bv):
   global patches
@@ -27,9 +34,37 @@ def delete_patch(bv, name):
   ps = bv.query_metadata("vibes.patch-infos")
   del ps[name]
   bv.store_metadata("vibes.patch-infos", ps)
-  ps = bv.query_metadata("vibes.patch-codes")
-  del ps[name]
-  bv.store_metadata("vibes.patch-codes", ps)
+  try:
+    ps = bv.query_metadata("vibes.patch-codes")
+    del ps[name]
+    bv.store_metadata("vibes.patch-codes", ps)
+  except KeyError:
+    pass
+
+def get_spaces(bv):
+  global spaces
+  try:
+    ss = bv.query_metadata("vibes.patch-spaces")
+  except KeyError:
+    ss = []
+    bv.store_metadata("vibes.patch-spaces", ss)
+  if not spaces:
+    for start, end in ss:
+      spaces.append(AddressRange(start, end))
+  return spaces
+
+def save_space(bv, space):
+  ss = bv.query_metadata("vibes.patch-spaces")
+  ss.append((space.start, space.end))
+  bv.store_metadata("vibes.patch-spaces", ss)
+
+def delete_space(bv, space):
+  ss = bv.query_metadata("vibes.patch-spaces")
+  try:
+    ss.remove(space)
+    bv.store_metadata("vibes.patch-spaces", ss)
+  except ValueError:
+    pass
 
 def get_patch_code(bv, name):
   try:

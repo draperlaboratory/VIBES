@@ -14,55 +14,36 @@ from PySide6.QtWidgets import (
   QHBoxLayout,
   QHeaderView,
   QLineEdit,
-  QTableWidget,
+  QTreeWidget,
+  QTreeWidgetItem,
   QVBoxLayout,
   QWidget,
   QPushButton,
   QHeaderView,
 )
 
+def serialize_space(space, bv):
+  return {
+    "address": "0x%x:%d" % (space.start, bv.arch.address_size * 8),
+    "size": space.end - space.start
+  }
 
-class PatchSpaces:
-  def __init__(self):
-    self.spaces = []
+def serialize(bv, spaces):
+  result = []
+  for space in spaces:
+    result.append(serialize_space(space, bv))
+  return result
 
-  def clear(self):
-    self.spaces.clear()
-    
-  def add(self, space: AddressRange):
-    self.spaces.append(space)
+def deserialize_space(d):
+  start = int(d["address"].split(":")[0], base=16)
+  size = d["size"]
+  return AddressRange(start, end=start+size)
 
-  def remove(self, space: AddressRange):
-    try:
-      self.spaces.remove(space)
-    except ValueError:
-      pass
-
-  def serialize(self, bv):
-    result = []
-    for space in self.spaces:
-      result.append(PatchSpaces._serialize_space(space, bv))
-    return result
-
-  @staticmethod
-  def _serialize_space(space, bv):
-    return {
-      "address": "0x%x:%d" % (space.start, bv.arch.address_size * 8),
-      "size": space.end - space.start
-    }
-
-  @staticmethod
-  def deserialize(spaces):
-    result = PatchSpaces()
-    for d in spaces:
-      result.add(PatchSpaces._deserialize_space(d))
-    return result
-
-  @staticmethod
-  def _deserialize_space(d):
-    start = int(d["address"].split(":")[0], base=16)
-    size = d["size"]
-    return AddressRange(start, end=start+size)
+def deserialize(spaces):
+  result = []
+  for d in spaces:
+    result.append(deserialize_space(d))
+  return result
 
 
 class PatchSpacesEditor(QWidget):
@@ -74,12 +55,14 @@ class PatchSpacesEditor(QWidget):
 
     self.container = QWidget(parent)
 
-    self.spaces = PatchSpaces()
-    
-    self.spaces_widget = QTableWidget(self.container)
+    spaces = db.get_spaces(self.data)
+
+    self.spaces_widget = QTreeWidget(self.container)
     self.spaces_widget.setColumnCount(2)
-    self.spaces_widget.setHorizontalHeaderLabels(["Address", "Size"])
-    self.spaces_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    self.spaces_widget.setHeaderLabels(["Address", "Size"])
+    self.spaces_widget.header().setSectionResizeMode(QHeaderView.Stretch)
+    for space in spaces:
+      self.add_space(space.start, space.end - space.start, reset=False)
     self.spaces_widget.itemChanged.connect(self._item_changed)
 
     add_space_button = QPushButton("Add", self.container)
@@ -99,9 +82,8 @@ class PatchSpacesEditor(QWidget):
     layout.addWidget(button_widget)
     self.setLayout(layout)
 
-  def add_space(self, addr, n):
-    c = self.spaces_widget.rowCount()
-    self.spaces_widget.insertRow(c)
+  def add_space(self, addr, n, reset=True):
+    item = QTreeWidgetItem(self.spaces_widget)
     addr_widget = QLineEdit(self.spaces_widget)
     size_widget = QLineEdit(self.spaces_widget)
     addr_widget.setText("0x%x" % addr)
@@ -109,44 +91,53 @@ class PatchSpacesEditor(QWidget):
     addr_re = QRegularExpression("0x[0-9a-fA-F]{1,%d}" % addr_limit)
     addr_widget.setValidator(QRegularExpressionValidator(addr_re, addr_widget))
     size_widget.setText("%d" % n)
-    size_widget.setValidator(QIntValidator(size_widget))
-    self.spaces_widget.setCellWidget(c, 0, addr_widget)
-    self.spaces_widget.setCellWidget(c, 1, size_widget)
-    self._reset_spaces()
+    size_widget.setValidator(QIntValidator(0, 0x1000000, size_widget))
+    self.spaces_widget.setItemWidget(item, 0, addr_widget)
+    self.spaces_widget.setItemWidget(item, 1, size_widget)
+    if reset:
+      self._reset_spaces()
 
   def _new_space(self):
     self.add_space(0, 0)
 
   def _reset_spaces(self):
-    self.spaces.clear()
-    for row in range(self.spaces_widget.rowCount()):
+    db.clear_spaces()
+    for row in range(self.spaces_widget.topLevelItemCount()):
       space = self._deserialize_row(row)
       if space is not None:
-        self.spaces.add(space)
+        db.save_space(self.data, space)
       
-  def _item_changed(self, item):
+  def _item_changed(self, _item, _column):
     self._reset_spaces()
 
   def _deserialize_row(self, row):
-    start_item = self.spaces_widget.cellWidget(row, 0)
-    if start_item is None:
+    item = self.spaces_widget.topLevelItem(row)
+    if item is None:
       return None
-    size_item = self.spaces_widget.cellWidget(row, 1)
-    if size_item is None:
+    start_item = self.spaces_widget.itemWidget(item, 0)
+    if not isinstance(start_item, QLineEdit):
+      return None
+    size_item = self.spaces_widget.itemWidget(item, 1)
+    if not isinstance(size_item, QLineEdit):
       return None
     start = int(start_item.text(), base=16)
     size = int(size_item.text())
     return AddressRange(start, end=start+size)
       
   def _remove_current_space(self):
-    row = self.spaces_widget.currentRow()
-    if row == -1:
+    item = self.spaces_widget.currentItem()
+    if item is None:
       return
+    while item.parent() is not None:
+      item = item.parent()
+    if item is None:
+      return
+    row = self.spaces_widget.indexOfTopLevelItem(item)
     self._remove_space(row)
 
   def _remove_space(self, row):
-    self.spaces_widget.removeRow(row)
     space = self._deserialize_row(row)
     if space is None:
       return
-    self.spaces.remove(space)
+    db.delete_space(self.data, space)
+    self.spaces_widget.takeTopLevelItem(row)

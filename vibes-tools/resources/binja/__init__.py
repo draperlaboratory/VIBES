@@ -34,6 +34,7 @@ def check_bv_changed(bv):
     return
   patch_editor = None
   db.clear_patches()
+  db.clear_spaces()
 
 def launch_editor(context):
   global patch_editor
@@ -118,8 +119,10 @@ def add_patch_space(bv, addr, n):
   if patch_editor:
     patch_editor.spaces.add_space(addr, n)
   else:
-    # TODO
-    pass
+    space = AddressRange(start=addr, end=addr+n)
+    spaces = db.get_spaces(bv)
+    spaces.append(space)
+    db.save_space(bv, space)
 
 PluginCommand.register_for_range("VIBES\\Patch highlighted instruction(s)", "", patch_range)
 PluginCommand.register_for_address("VIBES\\Insert patch at this address", "", patch_addr)
