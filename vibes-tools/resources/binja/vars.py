@@ -120,20 +120,24 @@ class PatchVar(HigherVar):
         assert False
     elif d[0] == "constant":
       value = int(d[1].split(":")[0], base=16)
+      size_str = d[1].split(":")[1]
+      if size_str.endswith("u"):
+          size_str = size_str[:-1]
+      size = int(size_str) / 8
       type = HigherVar.FUNCTION_VAR if \
+        size == bv.arch.address_size and \
         bv.get_functions_containing(value) \
         else HigherVar.CONSTANT_VAR
       if type == HigherVar.CONSTANT_VAR:
-        size_str = d[1].split(":")[1]
-        if size_str.endswith("u"):
-          size_str = size_str[:-1]
-        size = int(size_str) / 8
+        # clamp the size
         if size < 1:
           size = 1
         elif size == 3:
           size = 4
         elif size > 4:
           size = 8
+        maximum = (1 << (int(size) * 8)) - 1
+        value = maximum if value > maximum else value
         value = (value, size)
     else:
       assert False

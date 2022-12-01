@@ -460,6 +460,8 @@ class PatchView:
       elif v.type == HigherVar.FUNCTION_VAR:
         v.value = new
       elif v.type == HigherVar.CONSTANT_VAR:
+        maximum = (1 << (v.value[1] * 8)) - 1
+        new = maximum if new > maximum else new
         v.value = (new, v.value[1])
       else:
         assert False
