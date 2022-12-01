@@ -55,12 +55,13 @@ class PatchSpacesEditor(QWidget):
 
     self.container = QWidget(parent)
 
-    spaces = db.get_spaces(self.data)
-
     self.spaces_widget = QTreeWidget(self.container)
     self.spaces_widget.setColumnCount(2)
     self.spaces_widget.setHeaderLabels(["Address", "Size"])
     self.spaces_widget.header().setSectionResizeMode(QHeaderView.Stretch)
+    # We may have started adding patche spaces before we constructed this
+    # dialog object, so we should synchronize this data.
+    spaces = db.get_spaces(self.data)
     for space in spaces:
       self.add_space(space.start, space.end - space.start, reset=False)
     self.spaces_widget.itemChanged.connect(self._item_changed)
