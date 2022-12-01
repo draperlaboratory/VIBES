@@ -61,8 +61,19 @@ class OGRENamedRegion:
 
 
 class OGRESegment(OGREAddrSizeOff):
-  def __init__(self, addr, size, off):
-    super(OGRESegment, self).__init__("segment", addr, size, off)
+  def __init__(self, addr, size, r, w, x):
+    self.addr = addr
+    self.size = size
+    self.r = r
+    self.w = w
+    self.x = x
+
+  def __str__(self):
+    r = "true" if self.r else "false"
+    w = "true" if self.w else "false"
+    x = "true" if self.x else "false"
+    return "(segment (addr 0x%x) (size 0x%x) (r %s) (w %s) (x %s))" % \
+      (self.addr, self.size, r, w, x)
 
 
 class OGRESymbolChunk:
@@ -106,13 +117,15 @@ class OGREFunction:
 
 
 class OGREData(OGREAddrSizeOff):
-  def __init__(self, addr, size, off):
+  def __init__(self, addr, size, off, writable):
     super(OGREData, self).__init__("", addr, size, off)
+    self.writable = writable
     self.refs = 1
 
   def __str__(self):
     mapped = OGREMapped(self.addr, self.size, self.off)
-    segment = OGRESegment(self.addr, self.size, self.off)
+    segment = OGRESegment(self.addr, self.size,
+                          r=True, w=self.writable, x=False)
     return "\n".join([str(mapped), str(segment)])
 
 
@@ -142,7 +155,7 @@ class OGRE:
       if r in self.rodata:
         self.rodata[r].refs += 1
       else:
-        self.rodata[r] = OGREData(r, d[0], d[1])
+        self.rodata[r] = OGREData(r, d[0], d[1], writable=False)
     return True
 
   def delete_function(self, f):
