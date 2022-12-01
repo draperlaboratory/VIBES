@@ -10,6 +10,7 @@ from binaryninjaui import getMonospaceFont
 from PySide6.QtWidgets import (
   QFormLayout,
   QHBoxLayout,
+  QHeaderView,
   QLineEdit,
   QPlainTextEdit,
   QLabel,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
   QWidget,
   QPushButton,
   QComboBox,
+  QHeaderView,
 )
 
 var_name_re = re.compile("[a-zA-Z_][a-zA-Z0-9_]*")
@@ -81,6 +83,7 @@ class PatchView:
     self.patch_vars_widget = QTreeWidget(self.info_widget)
     self.patch_vars_widget.setColumnCount(2)
     self.patch_vars_widget.setHeaderLabels(["Variable", "Value"])
+    self.patch_vars_widget.header().setSectionResizeMode(QHeaderView.Stretch)
     info_layout.addRow("Patch variables", self.patch_vars_widget)
 
     patch_vars_buttons = QWidget(self.info_widget)
@@ -99,6 +102,7 @@ class PatchView:
     self.higher_vars_widget = QTreeWidget(self.info_widget)
     self.higher_vars_widget.setColumnCount(2)
     self.higher_vars_widget.setHeaderLabels(["Variable", "Value"])
+    self.higher_vars_widget.header().setSectionResizeMode(QHeaderView.Stretch)
     self._refresh_higher_vars()
     info_layout.addRow("Live variables", self.higher_vars_widget)
 
