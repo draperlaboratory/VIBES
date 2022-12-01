@@ -1,9 +1,12 @@
+from binaryninja import *
+
 # Higher-level variables
 class HigherVar:
   REG_VAR = 0
   FRAME_VAR = 1
   GLOBAL_VAR = 2
   FUNCTION_VAR = 3
+  CONSTANT_VAR = 4
 
   def __init__(self, name, value, type):
     self.name = name
@@ -19,6 +22,8 @@ class HigherVar:
       return "Global"
     elif self.type == HigherVar.FUNCTION_VAR:
       return "Function"
+    elif self.type == HigherVar.CONSTANT_VAR:
+      return "Constant"
     else:
       assert False
 
@@ -37,6 +42,9 @@ class HigherVar:
       return "0x%x" % self.value
     elif self.type == HigherVar.FUNCTION_VAR:
       return "0x%x" % self.value
+    elif self.type == HigherVar.CONSTANT_VAR:
+      # Higher vars shouldn't infer this
+      assert False
     else:
       assert False
 
@@ -84,17 +92,19 @@ class PatchVar(HigherVar):
       return ["memory", ["address", "0x%x:%d" % (self.value, sz)]]
     elif self.type == HigherVar.FUNCTION_VAR:
       return ["constant", "0x%x:%d" % (self.value, sz)]
+    elif self.type == HigherVar.CONSTANT_VAR:
+      return ["constant", "0x%x:%d" % (self.value[0], self.value[1])]
     else:
       assert False
 
   @staticmethod
-  def deserialize(d):
+  def deserialize(bv, d):
     name = d["name"]
-    type, value = PatchVar._deserialize_storage_class(d["storage-class"])
+    type, value = PatchVar._deserialize_storage_class(bv, d["storage-class"])
     return PatchVar(name, value, type, default_reg=False)
 
   @staticmethod
-  def _deserialize_storage_class(d):
+  def _deserialize_storage_class(bv, d):
     if d[0] == "register":
       type = HigherVar.REG_VAR
       value = (d[1].get("at-entry"), d[1].get("at-exit"))
@@ -109,8 +119,22 @@ class PatchVar(HigherVar):
       else:
         assert False
     elif d[0] == "constant":
-      type = HigherVar.FUNCTION_VAR
       value = int(d[1].split(":")[0], base=16)
+      type = HigherVar.FUNCTION_VAR if \
+        bv.get_functions_containing(value) \
+        else HigherVar.CONSTANT_VAR
+      if type == HigherVar.CONSTANT_VAR:
+        size_str = d[1].split(":")[1]
+        if size_str.endswith("u"):
+          size_str = size_str[:-1]
+        size = int(size_str)
+        if size < 1:
+          size = 1
+        elif size == 3:
+          size = 4
+        elif size > 4:
+          size = 8
+        value = (value, size)
     else:
       assert False
     return (type, value)

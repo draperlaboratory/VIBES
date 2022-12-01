@@ -48,12 +48,12 @@ class PatchInfo:
     }
 
   @staticmethod
-  def deserialize(name, d):
+  def deserialize(bv, name, d):
     addr = int(d["patch-point"].split(":")[0], base=16)
     size = d["patch-size"]
     p = PatchInfo(name, addr, size, None)
     p.sp_align = d["sp-align"]
-    vars = map(lambda x: PatchVar.deserialize(x), d["patch-vars"])
+    vars = map(lambda x: PatchVar.deserialize(bv, x), d["patch-vars"])
     for v in vars:
       p.vars[v.name] = v
     return p

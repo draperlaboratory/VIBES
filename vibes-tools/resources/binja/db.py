@@ -22,7 +22,7 @@ def get_patches(bv):
     bv.store_metadata("vibes.patch-infos", ps)
   if not patches:
     for k, v in ps.items():
-      patches[k] = PatchInfo.deserialize(k, v)
+      patches[k] = PatchInfo.deserialize(bv, k, v)
   return patches
 
 def save_patch(bv, p):

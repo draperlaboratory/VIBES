@@ -245,6 +245,7 @@ class PatchView:
     type_combo.addItem("Frame", HigherVar.FRAME_VAR)
     type_combo.addItem("Global", HigherVar.GLOBAL_VAR)
     type_combo.addItem("Function", HigherVar.FUNCTION_VAR)
+    type_combo.addItem("Constant", HigherVar.CONSTANT_VAR)
     type_combo.setCurrentIndex(type)
     type_combo.currentIndexChanged.connect(self._var_type_changed)
     self._add_var_type(var, value, type)
@@ -334,6 +335,32 @@ class PatchView:
       address.setText(0, "Address")
       var.addChild(address)
       self.patch_vars_widget.setItemWidget(address, 1, address_widget)
+    elif type == HigherVar.CONSTANT_VAR:
+      value_widget = QLineEdit(("0x%x" % value[0]), self.patch_vars_widget)
+      value_widget.editingFinished.connect(self._hex_changed)
+      if value[1] == 1:
+        i = 0
+      elif value[1] == 2:
+        i = 1
+      elif value[1] == 4:
+        i = 2
+      elif value[1] == 8:
+        i = 3
+      else:
+        assert False
+      size_combo = QComboBox(self.patch_vars_widget)
+      size_combo.addItems(["1", "2", "4", "8"])
+      size_combo.setCurrentIndex(i)
+      size_combo.currentIndexChanged.connect(self._const_size_changed)
+      self.hex_var_widget[name] = value_widget
+      value_ = QTreeWidgetItem(var)
+      value_.setText(0, "Value")
+      size = QTreeWidgetItem(var)
+      size.setText(0, "Size (in bytes)")
+      var.addChild(value_)
+      var.addChild(size)
+      self.patch_vars_widget.setItemWidget(value_, 1, value_widget)
+      self.patch_vars_widget.setItemWidget(size, 1, size_combo)
     else:
       assert False
 
@@ -362,6 +389,8 @@ class PatchView:
     elif type == HigherVar.GLOBAL_VAR or \
          type == HigherVar.FUNCTION_VAR:
       value = 0
+    elif type == HigherVar.CONSTANT_VAR:
+      value = 0, self.bv.arch.address_size
     else:
       assert False
     name = var.text(0)
@@ -414,14 +443,38 @@ class PatchView:
     name = var.text(0)
     p = self.current_patch()
     v = p.vars[name]
-    old = v.value[1] if v.type == HigherVar.FRAME_VAR else v.value
+    if v.type == HigherVar.FRAME_VAR:
+      old = v.value[1]
+    elif v.type == HigherVar.FUNCTION_VAR:
+      old = v.value
+    elif v.type == HigherVar.CONSTANT_VAR:
+      old = v.value[0]
+    else:
+      assert False
     widget = self.hex_var_widget[name]
     text = widget.text()
     try:
-      new = int(text)
-      v.value = (v.value[0], new) if v.type == HigherVar.FRAME_VAR else new
+      new = int(text, base=16)
+      if v.type == HigherVar.FRAME_VAR:
+        v.value = (v.value[0], new)
+      elif v.type == HigherVar.FUNCTION_VAR:
+        v.value = new
+      elif v.type == HigherVar.CONSTANT_VAR:
+        v.value = (new, v.value[1])
+      else:
+        assert False
       widget.setText("0x%x" % new)
       db.save_patch(self.bv, p)
     except Exception:
       utils.eprint("Invalid hex value: " + text)
       widget.setText("0x%x" % old)
+
+  def _const_size_changed(self, i):
+    var = self._current_var_item()
+    if var is None:
+      return
+    p = self.current_patch()
+    v = p.vars[var.text(0)]
+    val, _ = v.value
+    v.value = (val, 1 << i)
+    db.save_patch(self.bv, p)

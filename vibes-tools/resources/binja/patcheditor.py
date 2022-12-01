@@ -162,7 +162,7 @@ class PatchEditor(QDialog):
         utils.eprint("Patch %s already exists" % name)
         return
       j = json.loads(f.read())
-      p = PatchInfo.deserialize(name, j)
+      p = PatchInfo.deserialize(self.data, name, j)
       self._add_existing_patch(p)
 
   def _export(self):
