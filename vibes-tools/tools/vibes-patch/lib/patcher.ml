@@ -1,5 +1,6 @@
 open Core
 open Bap.Std
+open Bap_elf.Std
 open Bap_core_theory
 
 module T = Theory
@@ -15,6 +16,7 @@ type dis = (Dis.asm, Dis.empty) Dis.t
 
 let (let*) x f = Result.bind x ~f
 
+type spaces = Patch_info.space list
 type target = (module Types.Target)
 
 let target_info
@@ -39,6 +41,68 @@ type overwrite = {
   dis : dis;
   memmap : value memmap;
 }
+
+type info = {
+  spec : Ogre.doc;
+  target : target;
+  language : T.language;
+  o : overwrite;
+  code_seg_addr : int64;
+  code_seg_size : int64;
+  code_seg_end : int64;
+  code_seg_extra_space : int64;
+}
+
+let within_extra_code (info : info) (addr : int64) : bool =
+  Int64.(addr >= info.code_seg_end &&
+         addr < info.code_seg_end + info.code_seg_extra_space)
+
+let find_code_segment_alloc
+    (spec : Ogre.doc) : (int64 * int64 * int64 * int64) option =
+  let (let*) x f = Option.bind x ~f in
+  let query = Ogre.Query.(select @@ from Image.Scheme.segment) in
+  let* segs = Ogre.eval (Ogre.collect query) spec |> Or_error.ok in
+  let* code_addr, code_size = Seq.find_map segs ~f:(fun seg ->
+      let {Image.Scheme.addr; size; info=(_,_,x)} = seg in
+      if x then Some (addr, size) else None) in
+  let code_end = Int64.(code_addr + code_size) in
+  let next_addr = Seq.fold segs ~init:None ~f:(fun acc seg ->
+      let {Image.Scheme.addr; _} = seg in
+      if Int64.(addr >= code_end) then match acc with
+        | None -> Some addr
+        | Some a ->
+          if Int64.(addr - code_end < a - code_end)
+          then Some addr else acc
+      else acc) in
+  let size = match next_addr with
+    | Some a -> Int64.(a - code_end)
+    | None -> 0L in
+  Log.send "Code segment end = 0x%Lx, \
+            available space = %Ld bytes" code_end size;
+  Some (code_addr, code_size, code_end, size)
+
+let create_info
+    (spec : Ogre.doc)
+    (memmap : value memmap)
+    (target : T.target)
+    (language : T.language) : (info, KB.conflict) result =
+  let* dis, target = target_info target language in
+  match find_code_segment_alloc spec with
+  | None -> Error (Errors.No_code_segment "No code segment found")
+  | Some (code_seg_addr,
+          code_seg_size,
+          code_seg_end,
+          code_seg_extra_space) ->
+    Result.return @@ {
+      spec;
+      target;
+      language;
+      o = {dis; memmap};
+      code_seg_addr;
+      code_seg_size;
+      code_seg_end;
+      code_seg_extra_space;
+    }
 
 let find_mem
     (target : T.target)
@@ -106,32 +170,85 @@ let pp_patch (ppf : Format.formatter) (p : patch) : unit =
   Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%d"
     p.addr p.loc @@ String.length p.data
 
+let extend_code_segment
+    (elf : Elf.t)
+    (file : Out_channel.t)
+    (data : bigstring)
+    (addr : int64)
+    (size : int64) : unit =
+  let write loc (b, off) =
+    Out_channel.seek file Int64.(loc + off);
+    Out_channel.output_byte file b in
+  let to_bytes = Seq.mapi ~f:(fun i w -> Word.to_int_exn w, Int.to_int64 i) in
+  let enum_and_write loc data endian width =
+    let w = Word.of_int64 ~width data in
+    Word.enum_bytes w endian |> to_bytes |> Seq.iter ~f:(write loc) in
+  let read16le pos = Bigstring.get_int16_le data ~pos |> Int64.of_int in
+  let read32le pos = Bigstring.get_int32_t_le data ~pos |> Int64.of_int32_exn in
+  let read16be pos = Bigstring.get_int16_be data ~pos |> Int64.of_int in
+  let read32be pos = Bigstring.get_int32_t_be data ~pos |> Int64.of_int32_exn in
+  let read64le pos = Bigstring.get_int64_t_le data ~pos in
+  let read64be pos = Bigstring.get_int64_t_be data ~pos in
+  let write32le loc data = enum_and_write loc data LittleEndian 32 in
+  let write32be loc data = enum_and_write loc data BigEndian 32 in
+  let write64le loc data = enum_and_write loc data LittleEndian 64 in
+  let write64be loc data = enum_and_write loc data BigEndian 64 in
+  let read16, read, write, fs, ms, ps, po =
+    match elf.e_class, elf.e_data with
+    | ELFCLASS32, ELFDATA2LSB ->
+      read16le, read32le, write32le, 16L, 20L, 42L, 28L
+    | ELFCLASS32, ELFDATA2MSB ->
+      read16be, read32be, write32be, 16L, 20L, 42L, 28L
+    | ELFCLASS64, ELFDATA2LSB ->
+      read16le, read64le, write64le, 24L, 32L, 54L, 32L
+    | ELFCLASS64, ELFDATA2MSB ->
+      read16be, read64be, write64be, 24L, 32L, 54L, 32L in
+  Seq.find_mapi elf.e_segments ~f:(fun i seg ->
+      if Int64.(seg.p_vaddr = addr)
+      then Some (seg, i) else None) |> function
+  | None -> assert false
+  | Some (seg, i) ->
+    Log.send "Code segment is at index %d in the program header table" i;
+    Log.send "Writing new data";
+    let i = Int64.of_int i in
+    let o = Int64.(read (to_int_exn po) + i * read16 (to_int_exn ps)) in
+    write Int64.(o + fs) Int64.(seg.p_filesz + size);
+    write Int64.(o + ms) Int64.(seg.p_memsz + size)
+
 (* Copy the original binary and write the patches to it. *)
 let patch_file
+    ?(extend : int64 = 0L)
+    (code_seg_addr : int64)
     (patches : patch list)
     (binary : string)
-    (patched_binary : string) : unit =
+    (patched_binary : string) : (unit, KB.conflict) result =
   let orig_data = In_channel.read_all binary in
-  Out_channel.with_file patched_binary ~f:(fun file ->
+  let orig_data_big = Bigstring.of_string orig_data in
+  Log.send "Reading ELF headers";
+  let* elf = match Elf.from_bigstring orig_data_big with
+    | Error _ -> Error (Errors.Invalid_binary "Invalid ELF header")
+    | Ok _ as x -> x in
+  Result.return @@ Out_channel.with_file patched_binary ~f:(fun file ->
       Out_channel.output_string file orig_data;
+      if Int64.(extend > 0L) then
+        extend_code_segment elf file orig_data_big code_seg_addr extend;
       List.iter patches ~f:(fun patch ->
           Out_channel.seek file patch.loc;
           Out_channel.output_string file patch.data))
 
 (* Get the raw binary data of the patch at the specified patch site. *)
 let try_patch_site_aux
-    (target : target)
+    (info : info)
     (asm : Asm.t)
-    (language : T.language)
     (org : int64 option)
     (to_addr : int64 -> int64)
     (loc : int64)
     (overwritten : string list)
     (jmp : int64 option) : (string, KB.conflict) result =
-  let module Target = (val target) in
+  let module Target = (val info.target) in
   let asm' = Target.situate asm ~loc ~to_addr ~org ~jmp ~overwritten in
   Log.send "Situated assembly at 0x%Lx:\n%a" (to_addr loc) Asm.pp asm';
-  let* objfile = Target.Toolchain.assemble asm' language in
+  let* objfile = Target.Toolchain.assemble asm' info.language in
   let* data = Target.Toolchain.to_binary objfile in
   (* If the origin was adjusted then shave off those bytes. *)
   let data = match org with
@@ -142,22 +259,19 @@ let try_patch_site_aux
 (* Try to fit the patch into the specified patch site. *)
 let try_patch_site
     ?(extern : bool = false)
+    (info : info)
     (region : Utils.region)
     (addr : int64)
     (size : int64)
     (ret : int64 option)
     (asm : Asm.t)
-    (target : target)
-    (language : T.language)
     (overwritten : string list) : (patch option, KB.conflict) result =
   let open Int64 in
-  let module Target = (val target) in
+  let module Target = (val info.target) in
   let loc = Utils.addr_to_offset addr region in
   let to_addr loc = Utils.offset_to_addr loc region in
   let org = Target.adjusted_org addr in
-  let try_ =
-    try_patch_site_aux target asm language
-      org to_addr loc overwritten in
+  let try_ = try_patch_site_aux info asm org to_addr loc overwritten in
   let end_jmp = Target.ends_in_jump asm in
   let inline_data = Target.has_inline_data asm in
   let needs_jmp = not end_jmp && (extern || inline_data) in
@@ -200,27 +314,31 @@ let try_patch_site
 
 (* Try the provided external patch spaces. *)
 let rec try_patch_spaces
-    (spaces : Patch_info.space list)
+    (info : info)
+    (spaces : spaces)
     (orig_region : Utils.region)
     (asm : Asm.t)
     (addr : int64)
-    (size : int64)
-    (spec : Ogre.doc)
-    (target : target)
-    (language : T.language)
-    (o : overwrite) : ((patch * patch), KB.conflict) result =
-  let module Target = (val target) in
+    (size : int64) : ((patch * patch), KB.conflict) result =
+  let module Target = (val info.target) in
   match spaces with
   | [] ->
     Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
     let jumpto = Bitvec.to_int64 @@ Word.to_bitvec space.address in
-    let next () =
-      try_patch_spaces rest orig_region asm addr
-        size spec target language o in
+    let next () = try_patch_spaces info rest orig_region asm addr size in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
       jumpto space.size;
-    match Utils.find_code_region jumpto spec with
+    let region =
+      if within_extra_code info jumpto then
+        (* XXX: Is the code segment always at offset 0? *)
+        Some Utils.{
+            addr = info.code_seg_end;
+            size = info.code_seg_extra_space;
+            offset = info.code_seg_size;
+          }
+      else Utils.find_code_region jumpto info.spec in
+    match region with
     | None ->
       Log.send "Code region for patch space at address \
                 0x%Lx was not found" jumpto;
@@ -233,7 +351,7 @@ let rec try_patch_spaces
         region.addr region.size region.offset;
       let* trampoline =
         let asm = Target.create_trampoline jumpto addr size in
-        try_patch_site orig_region addr size None asm target language [] in
+        try_patch_site info orig_region addr size None asm [] in
       match trampoline with
       | None ->
         Log.send "Trampoline doesn't fit";
@@ -242,12 +360,12 @@ let rec try_patch_spaces
         let len = String.length trampoline.data in
         Log.send "Trampoline fits (%d bytes)" len;
         let* overwritten, n =
-          overwritten o Target.target addr Int64.(of_int len)
+          overwritten info.o Target.target addr Int64.(of_int len)
             ~zero:Int64.(size = 0L) in
         let ret = Int64.(addr + of_int n) in
         let* patch =
-          try_patch_site region jumpto
-            space.size (Some ret) asm target language
+          try_patch_site info region jumpto
+            space.size (Some ret) asm
             overwritten ~extern:true in
         match patch with
         | Some patch -> Ok (patch, trampoline)
@@ -257,16 +375,13 @@ let rec try_patch_spaces
    try the provided patch point, and if it doesn't work we will try the
    available external patch spaces that the user gave us. *)
 let place_patch
-    (o : overwrite)
-    (patch_spaces : Patch_info.space list)
-    (spec : Ogre.doc)
-    (asm : Asm.t)
-    (target : target)
-    (language : T.language) : (patch * patch option, KB.conflict) result =
-  let module Target = (val target) in
+    (info : info)
+    (patch_spaces : spaces)
+    (asm : Asm.t) : (patch * patch option, KB.conflict) result =
+  let module Target = (val info.target) in
   let addr, size = asm.patch_point, asm.patch_size in
   Log.send "Attempting patch point 0x%Lx with %Ld bytes of space" addr size;
-  let* region = match Utils.find_code_region addr spec with
+  let* region = match Utils.find_code_region addr info.spec with
     | Some region -> Ok region
     | None ->
       let msg = Format.sprintf
@@ -278,7 +393,7 @@ let place_patch
   let* patch =
     if Int64.(size > 0L) then
       let ret = Int64.(addr + size) in
-      try_patch_site region addr size (Some ret) asm target language []
+      try_patch_site info region addr size (Some ret) asm []
     else begin
       Log.send "Patch size is zero, need external patch space";
       Ok None
@@ -287,13 +402,10 @@ let place_patch
   | Some patch -> Ok (patch, None)
   | None ->
     let* patch, trampoline =
-      try_patch_spaces patch_spaces region asm addr
-        size spec target language o in
+      try_patch_spaces info patch_spaces region asm addr size in
     Ok (patch, Some trampoline)
 
-let consume_space
-    (patch : patch)
-    (spaces : Patch_info.space list) : Patch_info.space list =
+let consume_space (patch : patch) (spaces : spaces) : spaces =
   List.filter_map spaces ~f:(fun space ->
       let open Int64 in
       let Patch_info.{address; size} = space in
@@ -309,6 +421,28 @@ let consume_space
       else Some space)
 
 type res = patch list * Spaces.t
+type batch = patch list * spaces * Asm.t list
+
+let rec place_and_consume
+    ?(acc : patch list = [])
+    (info : info)
+    (spaces : spaces)
+    (asms : Asm.t list) : (batch, KB.conflict) result =
+  match asms with
+  | [] -> Ok (List.rev acc, spaces, [])
+  | (asm : Asm.t) :: rest ->
+    match place_patch info spaces asm with
+    | Error (Errors.No_patch_spaces _) ->
+      Ok (List.rev acc, spaces, asms)
+    | Error _ as err -> err
+    | Ok (patch, trampoline) ->
+      Log.send "Solved patch placement: %a" pp_patch patch;
+      Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
+      let acc = match trampoline with
+        | Some t -> t :: patch :: acc
+        | None -> patch :: acc in
+      let spaces = consume_space patch spaces in
+      place_and_consume info spaces rest ~acc
 
 let patch
     ?(patch_spaces : Spaces.t = Spaces.empty)
@@ -321,21 +455,32 @@ let patch
   let* image = Vibes_utils.Loader.image binary in
   let memmap = Image.memory image in
   let spec = Image.spec image in
-  let* dis, info = target_info target language in
-  let o = {dis; memmap} in
+  let* info = create_info spec memmap target language in
   Log.send "Solving patch placement";
-  let rec place spaces acc = function
-    | [] -> Ok (List.rev acc, spaces)
-    | (asm : Asm.t) :: asms ->
-      let* patch, trampoline = place_patch o spaces spec asm info language in
-      Log.send "Solved patch placement: %a" pp_patch patch;
-      Option.iter trampoline ~f:(Log.send "Trampoline: %a" pp_patch);
-      let acc = match trampoline with
-        | Some t -> t :: patch :: acc
-        | None -> patch :: acc in
-      let spaces = consume_space patch spaces in
-      place spaces acc asms in
-  let* patches, spaces = place (Spaces.to_list patch_spaces) [] asms in
-  Log.send "Writing to patched binary %s" patched_binary;
-  patch_file patches binary patched_binary;
+  let spaces = Spaces.to_list patch_spaces in
+  let* patches, spaces, remaining = place_and_consume info spaces asms in
+  let* patches, extend = match remaining with
+    | [] -> Ok (patches, 0L)
+    | _ ->
+      Log.send "Ran out of patch spaces, attempting to allocate";
+      let width = T.Target.code_addr_size target in
+      let space = Patch_info.{
+          address = Word.of_int64 ~width info.code_seg_end;
+          size = info.code_seg_extra_space;
+        } in
+      let* rest, spaces, asms = place_and_consume info [space] remaining in
+      match asms with
+      | _ :: _ ->
+        Error (Errors.No_patch_spaces "Not enough space to extend \
+                                       the code segment")
+      | [] ->
+        let remaining_space = List.hd_exn spaces in
+        let size =
+          let open Word in
+          to_int64_exn (remaining_space.address - space.address) in
+        Ok (patches @ rest, size) in
+  let* () =
+    Log.send "Writing to patched binary %s" patched_binary;
+    patch_file info.code_seg_addr patches
+      binary patched_binary ~extend in
   Ok (patches, Spaces.of_list spaces)
