@@ -161,6 +161,6 @@ let ir ~(is_thumb : bool) : Asm.printer = fun t patch_info ->
     List.map ~f:(block ~is_thumb) t.blks |>
     Result.all in
   let directives = [".syntax unified"] in
-  let Patch_info.{patch_point; patch_size; overwrite; _} = patch_info in
+  let Patch_info.{patch_point; patch_size; _} = patch_info in
   let patch_point = Bitvec.to_int64 @@ Word.to_bitvec patch_point in
-  Asm.Fields.create ~patch_point ~patch_size ~overwrite ~directives ~blocks
+  Asm.Fields.create ~patch_point ~patch_size ~directives ~blocks

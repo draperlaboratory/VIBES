@@ -269,11 +269,10 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
 let dummy_patch_info (target : T.target) : Patch_info.t = {
   patch_point =
     Addr.of_string @@
-    Format.sprintf "0x1234:%d" @@
+    Format.sprintf "0x0:%d" @@
     T.Target.code_addr_size target;
-  patch_size = 4L;
+  patch_size = 0L;
   sp_align = 0;
-  overwrite = true;
   patch_vars = [];
 }
 

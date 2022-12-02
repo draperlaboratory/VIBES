@@ -13,8 +13,7 @@ module type Toolchain = sig
 
 end
 
-(** Target-specific functionality for performing the patch. *)
-module type Target = sig
+module type Target_utils = sig
 
   (** [situate asm ~loc ?jmp] will situate the patch program [asm] at the
       location [loc]. [jmp] is the location to jump to at the end of the
@@ -48,5 +47,15 @@ module type Target = sig
 
   (** The toolchain for the target. *)
   module Toolchain : Toolchain
+
+end
+
+(** Target-specific functionality for performing the patch. *)
+module type Target = sig
+
+  (** The target. *)
+  val target : Theory.target
+
+  include Target_utils
 
 end
