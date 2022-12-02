@@ -50,23 +50,24 @@ type code_seg_alloc = {
 }
 
 let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
+  let open Int64 in
   let (let*) x f = Option.bind x ~f in
   let query = Ogre.Query.(select @@ from Image.Scheme.segment) in
   let* segs = Ogre.eval (Ogre.collect query) spec |> Or_error.ok in
   let* code_addr, code_size = Seq.find_map segs ~f:(fun seg ->
       let {Image.Scheme.addr; size; info=(_,_,x)} = seg in
-      if x then Some (addr, size) else None) in
-  let code_end = Int64.(code_addr + code_size) in
+      Option.some_if x (addr, size)) in
+  let code_end = code_addr + code_size in
+  let closer x y = x - code_end < y - code_end in
   let next_addr = Seq.fold segs ~init:None ~f:(fun acc seg ->
       let {Image.Scheme.addr; _} = seg in
-      if Int64.(addr >= code_end) then match acc with
+      if addr >= code_end then match acc with
+        | Some a when closer addr a -> Some addr
+        | Some _ -> acc
         | None -> Some addr
-        | Some a ->
-          if Int64.(addr - code_end < a - code_end)
-          then Some addr else acc
       else acc) in
   let size = match next_addr with
-    | Some a -> Int64.(a - code_end)
+    | Some a -> a - code_end
     | None -> 0L in
   Log.send "Code segment end = 0x%Lx, \
             available space = %Ld bytes" code_end size;
