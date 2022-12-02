@@ -59,6 +59,7 @@ let find_mem
     Error (Errors.Invalid_address msg)
 
 let overwritten
+    ?(zero : bool = false)
     (o : overwrite)
     (target : T.target)
     (patch_point : int64)
@@ -84,6 +85,7 @@ let overwritten
       if n = 0 then Ok (List.rev (asm :: acc), t)
       else match next with
         | `finished -> invalid_size t
+        | `left _ when n < 0 && not zero -> invalid_size t
         | `left _ when n <= 0 -> Ok (List.rev (asm :: acc), t)
         | `left mem -> disasm (asm :: acc) mem t n in
   let* mem = find_mem target patch_point patch_size o.memmap in
@@ -172,6 +174,8 @@ let try_patch_site
        a jump to the end of the specified space. We need to check
        that the patch still fits because inserting a jump will
        increase the length of the patch. *)
+    Log.send "Patch has %Ld bytes of space remaining, \
+              requires a jump" (size - len);
     let* data = try_ @@ match ret with
       | None -> assert false
       | Some _ -> ret in
@@ -229,8 +233,7 @@ let rec try_patch_spaces
         region.addr region.size region.offset;
       let* trampoline =
         let asm = Target.create_trampoline jumpto addr size in
-        try_patch_site orig_region addr size
-          None asm target language [] in
+        try_patch_site orig_region addr size None asm target language [] in
       match trampoline with
       | None ->
         Log.send "Trampoline doesn't fit";
@@ -239,7 +242,8 @@ let rec try_patch_spaces
         let len = String.length trampoline.data in
         Log.send "Trampoline fits (%d bytes)" len;
         let* overwritten, n =
-          overwritten o Target.target addr Int64.(of_int len) in
+          overwritten o Target.target addr Int64.(of_int len)
+            ~zero:Int64.(size = 0L) in
         let ret = Int64.(addr + of_int n) in
         let* patch =
           try_patch_site region jumpto
