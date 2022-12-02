@@ -176,44 +176,39 @@ let extend_code_segment
     (data : bigstring)
     (addr : int64)
     (size : int64) : unit =
+  let open Int64 in
   let write loc (b, off) =
-    Out_channel.seek file Int64.(loc + off);
+    Out_channel.seek file (loc + off);
     Out_channel.output_byte file b in
   let to_bytes = Seq.mapi ~f:(fun i w -> Word.to_int_exn w, Int.to_int64 i) in
   let enum_and_write loc data endian width =
     let w = Word.of_int64 ~width data in
     Word.enum_bytes w endian |> to_bytes |> Seq.iter ~f:(write loc) in
-  let read16le pos = Bigstring.get_int16_le data ~pos |> Int64.of_int in
-  let read32le pos = Bigstring.get_int32_t_le data ~pos |> Int64.of_int32_exn in
-  let read16be pos = Bigstring.get_int16_be data ~pos |> Int64.of_int in
-  let read32be pos = Bigstring.get_int32_t_be data ~pos |> Int64.of_int32_exn in
-  let read64le pos = Bigstring.get_int64_t_le data ~pos in
-  let read64be pos = Bigstring.get_int64_t_be data ~pos in
-  let write32le loc data = enum_and_write loc data LittleEndian 32 in
-  let write32be loc data = enum_and_write loc data BigEndian 32 in
-  let write64le loc data = enum_and_write loc data LittleEndian 64 in
-  let write64be loc data = enum_and_write loc data BigEndian 64 in
-  let read16, read, write, fs, ms, ps, po =
-    match elf.e_class, elf.e_data with
-    | ELFCLASS32, ELFDATA2LSB ->
-      read16le, read32le, write32le, 16L, 20L, 42L, 28L
-    | ELFCLASS32, ELFDATA2MSB ->
-      read16be, read32be, write32be, 16L, 20L, 42L, 28L
-    | ELFCLASS64, ELFDATA2LSB ->
-      read16le, read64le, write64le, 24L, 32L, 54L, 32L
-    | ELFCLASS64, ELFDATA2MSB ->
-      read16be, read64be, write64be, 24L, 32L, 54L, 32L in
+  let rd16le pos = Bigstring.get_int16_le data ~pos |> of_int in
+  let rd32le pos = Bigstring.get_int32_t_le data ~pos |> of_int32_exn in
+  let rd16be pos = Bigstring.get_int16_be data ~pos |> of_int in
+  let rd32be pos = Bigstring.get_int32_t_be data ~pos |> of_int32_exn in
+  let rd64le pos = Bigstring.get_int64_t_le data ~pos in
+  let rd64be pos = Bigstring.get_int64_t_be data ~pos in
+  let wr32le loc data = enum_and_write loc data LittleEndian 32 in
+  let wr32be loc data = enum_and_write loc data BigEndian 32 in
+  let wr64le loc data = enum_and_write loc data LittleEndian 64 in
+  let wr64be loc data = enum_and_write loc data BigEndian 64 in
+  let rd16, rd, wr, fs, ms, ps, po = match elf.e_class, elf.e_data with
+    | ELFCLASS32, ELFDATA2LSB -> rd16le, rd32le, wr32le, 16L, 20L, 42, 28
+    | ELFCLASS32, ELFDATA2MSB -> rd16be, rd32be, wr32be, 16L, 20L, 42, 28
+    | ELFCLASS64, ELFDATA2LSB -> rd16le, rd64le, wr64le, 24L, 32L, 54, 32
+    | ELFCLASS64, ELFDATA2MSB -> rd16be, rd64be, wr64be, 24L, 32L, 54, 32 in
   Seq.find_mapi elf.e_segments ~f:(fun i seg ->
-      if Int64.(seg.p_vaddr = addr)
-      then Some (seg, i) else None) |> function
-  | None -> assert false
+      Option.some_if (seg.p_vaddr = addr) (seg, i)) |> function
+  | None -> failwithf "Segment 0x%Lx not found in the program headers!" addr ()
   | Some (seg, i) ->
     Log.send "Code segment is at index %d in the program header table" i;
     Log.send "Writing new data";
-    let i = Int64.of_int i in
-    let o = Int64.(read (to_int_exn po) + i * read16 (to_int_exn ps)) in
-    write Int64.(o + fs) Int64.(seg.p_filesz + size);
-    write Int64.(o + ms) Int64.(seg.p_memsz + size)
+    let phentsize, phoff = rd16 ps, rd po in
+    let entry = phoff + of_int i * phentsize in
+    wr (entry + fs) (seg.p_filesz + size);
+    wr (entry + ms) (seg.p_memsz + size)
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
