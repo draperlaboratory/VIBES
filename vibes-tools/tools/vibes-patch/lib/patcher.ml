@@ -42,23 +42,14 @@ type overwrite = {
   memmap : value memmap;
 }
 
-type info = {
-  spec : Ogre.doc;
-  target : target;
-  language : T.language;
-  o : overwrite;
-  code_seg_addr : int64;
-  code_seg_size : int64;
-  code_seg_end : int64;
-  code_seg_extra_space : int64;
+type code_seg_alloc = {
+  addr : int64;
+  size : int64;
+  end_ : int64;
+  extra_space : int64;
 }
 
-let within_extra_code (info : info) (addr : int64) : bool =
-  Int64.(addr >= info.code_seg_end &&
-         addr < info.code_seg_end + info.code_seg_extra_space)
-
-let find_code_segment_alloc
-    (spec : Ogre.doc) : (int64 * int64 * int64 * int64) option =
+let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
   let (let*) x f = Option.bind x ~f in
   let query = Ogre.Query.(select @@ from Image.Scheme.segment) in
   let* segs = Ogre.eval (Ogre.collect query) spec |> Or_error.ok in
@@ -79,7 +70,25 @@ let find_code_segment_alloc
     | None -> 0L in
   Log.send "Code segment end = 0x%Lx, \
             available space = %Ld bytes" code_end size;
-  Some (code_addr, code_size, code_end, size)
+  Some {
+    addr = code_addr;
+    size = code_size;
+    end_ = code_end;
+    extra_space = size;
+  }
+
+type info = {
+  spec : Ogre.doc;
+  target : target;
+  language : T.language;
+  o : overwrite;
+  code : code_seg_alloc;
+}
+
+let within_extra_code (info : info) (addr : int64) : bool =
+  let open Int64 in
+  addr >= info.code.end_ &&
+  addr < info.code.end_ + info.code.extra_space
 
 let create_info
     (spec : Ogre.doc)
@@ -89,20 +98,7 @@ let create_info
   let* dis, target = target_info target language in
   match find_code_segment_alloc spec with
   | None -> Error (Errors.No_code_segment "No code segment found")
-  | Some (code_seg_addr,
-          code_seg_size,
-          code_seg_end,
-          code_seg_extra_space) ->
-    Result.return @@ {
-      spec;
-      target;
-      language;
-      o = {dis; memmap};
-      code_seg_addr;
-      code_seg_size;
-      code_seg_end;
-      code_seg_extra_space;
-    }
+  | Some code -> Ok {spec; target; language; o = {dis; memmap}; code}
 
 let find_mem
     (target : T.target)
@@ -328,9 +324,9 @@ let rec try_patch_spaces
       if within_extra_code info jumpto then
         (* XXX: Is the code segment always at offset 0? *)
         Some Utils.{
-            addr = info.code_seg_end;
-            size = info.code_seg_extra_space;
-            offset = info.code_seg_size;
+            addr = info.code.end_;
+            size = info.code.extra_space;
+            offset = info.code.size;
           }
       else Utils.find_code_region jumpto info.spec in
     match region with
@@ -453,15 +449,18 @@ let patch
   let* info = create_info spec memmap target language in
   Log.send "Solving patch placement";
   let spaces = Spaces.to_list patch_spaces in
+  let had_spaces = not @@ List.is_empty spaces in
   let* patches, spaces, remaining = place_and_consume info spaces asms in
   let* patches, extend = match remaining with
     | [] -> Ok (patches, 0L)
     | _ ->
-      Log.send "Ran out of patch spaces, attempting to allocate";
+      if had_spaces
+      then Log.send "Ran out of patch spaces, attempting to allocate"
+      else Log.send "No patch spaces provided, attempting to allocate";
       let width = T.Target.code_addr_size target in
       let space = Patch_info.{
-          address = Word.of_int64 ~width info.code_seg_end;
-          size = info.code_seg_extra_space;
+          address = Word.of_int64 ~width info.code.end_;
+          size = info.code.extra_space;
         } in
       let* rest, spaces, asms = place_and_consume info [space] remaining in
       match asms with
@@ -476,6 +475,5 @@ let patch
         Ok (patches @ rest, size) in
   let* () =
     Log.send "Writing to patched binary %s" patched_binary;
-    patch_file info.code_seg_addr patches
-      binary patched_binary ~extend in
+    patch_file info.code.addr patches binary patched_binary ~extend in
   Ok (patches, Spaces.of_list spaces)
