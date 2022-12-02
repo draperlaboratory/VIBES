@@ -72,7 +72,11 @@ class PatchInfo:
       utils.eprint("No LLIL instruction found at 0x%x, using 0x%x" % (end, self.addr))
       lend = lstart
 
+    mmlil = f.mapped_medium_level_il
+    available_regs = utils.available_regs(bv)
+
     bb_patch_ll = f.llil.get_basic_block_at(lend.instr_index)
+    bb_patch_ml = mmlil.get_basic_block_at(mmlil.get_instruction_start(end))
     result = {}
 
     def add(name, h):
@@ -102,10 +106,9 @@ class PatchInfo:
 
     # Check for variables that were spilled to the stack.
     def spilled(v):
-      bb_patch = f.mlil.get_basic_block_at(lend.mlil.instr_index)
-      for u in f.mlil.get_var_uses(v):
-        bb_use = f.mlil.get_basic_block_at(u.instr_index)
-        if not reachable(bb_use, bb_patch, u.address, self.addr):
+      for u in mmlil.get_var_uses(v):
+        bb_use = mmlil.get_basic_block_at(u.instr_index)
+        if not reachable(bb_use, bb_patch_ml, u.address, self.addr):
           continue
         # Are we defining a stack variable?
         if not isinstance(u, MediumLevelILSetVar):
@@ -148,11 +151,37 @@ class PatchInfo:
 
     def is_ptr(type):
       return \
-        isinstance(type, ArrayType)   or \
+        isinstance(type, ArrayType) or \
         isinstance(type, PointerType)
 
+    def handle_live_var(v):
+      if v.source_type == VariableSourceType.RegisterVariableSourceType:
+        s = spilled(v)
+        if s is not None:
+          frame = stack_frame(s)
+          add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
+        else:
+          r = bv.arch.get_reg_name(v.storage).upper()
+          if r in available_regs:
+            add(v.name, HigherVar(v.name, r, HigherVar.REG_VAR))
+      elif v.source_type == VariableSourceType.StackVariableSourceType:
+        frame = stack_frame(v.storage)
+        add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
+
+    if lend.mmlil.hlil:
+      i = lend.mmlil.hlil.instr_index
+    else:
+      # Sometimes there is no mapping all the way from LLIL to MLIL
+      # to HLIL, but it can show up in the list of HLIL instructions
+      # like so:
+      i = None
+      for insn in f.hlil.instructions:
+        if insn.address == end:
+          i = insn.instr_index
+          break
+      assert i is not None
+
     # Collect the live HLIL variables.
-    i = lend.mlil.hlil.instr_index
     for v in f.hlil.vars:
       # Disregard this variable if it was defined within the patch
       # region, or at the very end.
@@ -162,18 +191,10 @@ class PatchInfo:
       # from this point, not just those that are live at the end
       # of the patch?
       if not f.hlil.is_var_live_at(v, i):
-        continue
-      if v.source_type == VariableSourceType.RegisterVariableSourceType:
-        s = spilled(v)
-        if s is not None:
-          frame = stack_frame(s)
-          add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
-        else:
-          r = bv.arch.get_reg_name(v.storage).upper()
-          add(v.name, HigherVar(v.name, r, HigherVar.REG_VAR))
-      elif v.source_type == VariableSourceType.StackVariableSourceType:
-        frame = stack_frame(v.storage)
-        add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
+        if v in f.parameter_vars:
+          handle_live_var(v)
+      else:
+        handle_live_var(v)
 
     # Relate known register values at the patch site with known
     # data symbols.
@@ -185,7 +206,7 @@ class PatchInfo:
         if s and s.type == SymbolType.DataSymbol:
           reg = r.name.upper()
           possible_frames.append((reg, v.value))
-          if reg_live(r):
+          if reg in available_regs and reg_live(r):
             if is_ptr(bv.get_data_var_at(v.value).type):
               name = s.name
             else:

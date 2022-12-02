@@ -245,7 +245,7 @@ class OGREEditor(QWidget):
     for s in self.data.get_symbols():
       if s.auto or s.type != SymbolType.FunctionSymbol:
         continue
-      f = self.data.get_functions_containing(s.address)[0]
+      f = self.data.get_function_at(s.address)
       self.functions[f.name] = f
       self.available_funcs_widget.addItem(f.name)
     to_remove = []
