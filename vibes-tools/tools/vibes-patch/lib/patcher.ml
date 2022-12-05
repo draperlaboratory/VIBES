@@ -89,11 +89,6 @@ type info = {
   code : code_seg_alloc;
 }
 
-let within_extra_code (info : info) (addr : int64) : bool =
-  let open Int64 in
-  addr >= info.code.end_ &&
-  addr < info.code.end_ + info.code.room
-
 let create_info
     (spec : Ogre.doc)
     (memmap : value memmap)
@@ -315,6 +310,39 @@ let try_patch_site
               available, %Ld bytes needed)" addr size len;
     Ok None
 
+let extern_region (info : info) (addr : int64) : Utils.region option =
+  let open Int64 in
+  if addr >= info.code.end_
+  && addr  < info.code.end_ + info.code.room then Some Utils.{
+      addr = info.code.end_;
+      size = info.code.room;
+      offset = info.code.off + info.code.size;
+    } else Utils.find_code_region addr info.spec
+
+let collect_overwritten
+    (info : info)
+    (patch : patch)
+    (addr : int64)
+    (size : int64) : (string list * int64, KB.conflict) result =
+  let open Int64 in
+  let module Target = (val info.target) in
+  (* Bytes required for the patch. *)
+  let len = of_int @@ String.length patch.data in
+  Log.send "Trampoline fits (%Ld bytes)" len;
+  (* If the patch is bigger than the number of bytes
+     we intended to replace, then we need to disassemble
+     the remaining instructions that would have been
+     overwritten. *)
+  let osize = len - size in
+  if osize > 0L then
+    (* Start at the end of the instructions that we intended
+       to overwrite. *)
+    let oaddr = addr + size in
+    Log.send "%Ld bytes remain, need to disassemble at 0x%Lx"
+      osize oaddr;
+    overwritten info.o Target.target oaddr osize
+  else Ok ([], size)
+
 (* Try the provided external patch spaces. *)
 let rec try_patch_spaces
     (info : info)
@@ -330,12 +358,7 @@ let rec try_patch_spaces
     let next () = try_patch_spaces info orig_region asm addr size rest in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
       jumpto space.size;
-    let region = if within_extra_code info jumpto then Some Utils.{
-        addr = info.code.end_;
-        size = info.code.room;
-        offset = info.code.off + info.code.size;
-      } else Utils.find_code_region jumpto info.spec in
-    match region with
+    match extern_region info jumpto with
     | None ->
       Log.send "Code region for patch space at address \
                 0x%Lx was not found" jumpto;
@@ -355,23 +378,7 @@ let rec try_patch_spaces
         Log.send "Trampoline doesn't fit";
         next ()
       | Some trampoline ->
-        let* overwritten, n =
-          (* Bytes required for the trampoline. *)
-          let len = of_int @@ String.length trampoline.data in
-          Log.send "Trampoline fits (%Ld bytes)" len;
-          (* If the trampoline is bigger than the number of bytes
-             we intended to replace, then we need to disassemble
-             the remaining instructions that would have been
-             overwritten. *)
-          let osize = len - size in
-          if osize > 0L then
-            (* Start at the end of the instructions that we intended
-               to overwrite. *)
-            let oaddr = addr + size in
-            Log.send "%Ld bytes remain, need to disassemble at 0x%Lx"
-              osize oaddr;
-            overwritten info.o Target.target oaddr osize
-          else Ok ([], size) in
+        let* overwritten, n = collect_overwritten info trampoline addr size in
         let* patch =
           try_patch_site info region jumpto
             space.size (Some (addr + n))
