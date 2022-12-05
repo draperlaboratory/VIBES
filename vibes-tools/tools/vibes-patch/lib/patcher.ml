@@ -333,13 +333,14 @@ let extern_region (info : info) (addr : int64) : Utils.region option =
 let collect_overwritten
     (info : info)
     (patch : patch)
+    (patch_name : string)
     (addr : int64)
     (size : int64) : (string list * int64, KB.conflict) result =
   let open Int64 in
   let module Target = (val info.target) in
   (* Bytes required for the patch. *)
   let len = of_int @@ String.length patch.data in
-  Log.send "Trampoline fits (%Ld bytes)" len;
+  Log.send "%s fits (%Ld bytes)" patch_name len;
   (* If the patch is bigger than the number of bytes
      we intended to replace, then we need to disassemble
      the remaining instructions that would have been
@@ -389,7 +390,8 @@ let rec try_patch_spaces
         Log.send "Trampoline doesn't fit";
         next ()
       | Some trampoline ->
-        let* overwritten, n = collect_overwritten info trampoline addr size in
+        let* overwritten, n =
+          collect_overwritten info trampoline "Trampoline" addr size in
         let* patch =
           try_patch_site info region jumpto
             space.size (Some (addr + n))
