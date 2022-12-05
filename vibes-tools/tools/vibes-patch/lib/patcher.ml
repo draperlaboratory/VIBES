@@ -185,8 +185,8 @@ module Elf = struct
     let rd64be pos = Bigstring.get_int64_t_be data ~pos in
     let wr32le pos v = Bigstring.set_int32_t_le data ~pos @@ to_int32_trunc v in
     let wr32be pos v = Bigstring.set_int32_t_be data ~pos @@ to_int32_trunc v in
-    let wr64le pos v = Bigstring.set_int64_t_le data ~pos v in
-    let wr64be pos v = Bigstring.set_int64_t_be data ~pos v in
+    let wr64le pos = Bigstring.set_int64_t_le data ~pos in
+    let wr64be pos = Bigstring.set_int64_t_be data ~pos in
     let rd16, rd, wr, fs, ms, ps, po = match elf.e_class, elf.e_data with
       | ELFCLASS32, ELFDATA2LSB -> rd16le, rd32le, wr32le, 16L, 20L, 42, 28
       | ELFCLASS32, ELFDATA2MSB -> rd16be, rd32be, wr32be, 16L, 20L, 42, 28
@@ -197,7 +197,7 @@ module Elf = struct
     let phentsize, phoff = rd16 ps, rd po in
     let entry = phoff + of_int i * phentsize in
     wr (to_int_exn (entry + fs)) (seg.p_filesz + size);
-    wr (to_int_exn (entry + ms)) (seg.p_memsz + size)
+    wr (to_int_exn (entry + ms)) (seg.p_memsz  + size)
 
   let is_pt_load (seg : segment) : bool = match seg.p_type with
     | PT_LOAD -> true
