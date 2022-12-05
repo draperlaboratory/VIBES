@@ -310,10 +310,18 @@ let try_patch_site
               available, %Ld bytes needed)" addr size len;
     Ok None
 
+(* The available space after the code segment won't be marked by BAP
+   as a valid code region, so we will pretend it exists.
+
+   We look for code regions in the OGRE doc under the assumption that
+   not all mapped regions will be code (or even executable), therefore
+   if the user tried to place a patch in a non-code region we would
+   end up with a broken binary.
+*)
 let extern_region (info : info) (addr : int64) : Utils.region option =
   let open Int64 in
   if addr >= info.code.end_
-  && addr  < info.code.end_ + info.code.room then Some Utils.{
+  && addr < info.code.end_ + info.code.room then Some Utils.{
       addr = info.code.end_;
       size = info.code.room;
       offset = info.code.off + info.code.size;
