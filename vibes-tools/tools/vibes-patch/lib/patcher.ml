@@ -449,18 +449,16 @@ let consume_space (patch : patch) (spaces : spaces) : spaces =
         else None
       else Some space)
 
+type asms = Asm.t list
 type res = patch list * Spaces.t
-type batch = patch list * spaces * Asm.t list
+type batch = patch list * spaces * asms
 
 let rec place_and_consume
     ?(acc : patch list = [])
     (info : info)
-    (spaces : spaces)
-    (asms : Asm.t list) : (batch, KB.conflict) result =
-  match asms with
+    (spaces : spaces) : asms -> (batch, KB.conflict) result = function
   | [] -> Ok (List.rev acc, spaces, [])
-  | (asm : Asm.t) :: rest ->
-    match place_patch info spaces asm with
+  | ((asm : Asm.t) :: rest) as asms -> match place_patch info spaces asm with
     | Error (Errors.No_patch_spaces _) ->
       Ok (List.rev acc, spaces, asms)
     | Error _ as err -> err
