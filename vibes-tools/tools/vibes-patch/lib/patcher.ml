@@ -208,7 +208,7 @@ let is_pf_exec (seg : Elf.segment) : bool =
 
 let find_elf_segment
     (elf : Elf.t)
-    (addr : int64) : (Elf.segment * int, KB.conflict) result =
+    (addr : int64) : (elf_seg, KB.conflict) result =
   Seq.find_mapi elf.e_segments ~f:(fun i seg ->
       if Int64.(seg.p_vaddr = addr)
       && is_pt_load seg && is_pf_exec seg
