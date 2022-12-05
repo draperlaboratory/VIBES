@@ -151,8 +151,7 @@ let overwritten
   let* mem = find_mem target addr size o.memmap in
   let* insns, n = disasm [] mem 0L size in
   if not @@ List.is_empty insns then
-    Log.send "The following instructions will be \
-              overwritten at 0x%Lx:\n%s\n"
+    Log.send "The following instructions will be overwritten at 0x%Lx:\n%s\n"
       addr @@ String.concat insns ~sep:"\n";
   Ok (insns, n)
 
@@ -166,58 +165,62 @@ let pp_patch (ppf : Format.formatter) (p : patch) : unit =
   Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%d"
     p.addr p.loc @@ String.length p.data
 
-type elf_seg = Elf.segment * int
+module Elf = struct
 
-let extend_elf_code_segment
-    (elf : Elf.t)
-    ((seg, i) : elf_seg)
-    (data : bigstring)
-    (size : int64) : unit =
-  let open Int64 in
-  let rd16le pos = Bigstring.get_int16_le data ~pos |> of_int in
-  let rd16be pos = Bigstring.get_int16_be data ~pos |> of_int in
-  let rd32le pos = Bigstring.get_int32_t_le data ~pos |> of_int32 in
-  let rd32be pos = Bigstring.get_int32_t_be data ~pos |> of_int32 in
-  let rd64le pos = Bigstring.get_int64_t_le data ~pos in
-  let rd64be pos = Bigstring.get_int64_t_be data ~pos in
-  let wr32le pos v = Bigstring.set_int32_t_le data ~pos @@ to_int32_trunc v in
-  let wr32be pos v = Bigstring.set_int32_t_be data ~pos @@ to_int32_trunc v in
-  let wr64le pos v = Bigstring.set_int64_t_le data ~pos v in
-  let wr64be pos v = Bigstring.set_int64_t_be data ~pos v in
-  let rd16, rd, wr, fs, ms, ps, po = match elf.e_class, elf.e_data with
-    | ELFCLASS32, ELFDATA2LSB -> rd16le, rd32le, wr32le, 16L, 20L, 42, 28
-    | ELFCLASS32, ELFDATA2MSB -> rd16be, rd32be, wr32be, 16L, 20L, 42, 28
-    | ELFCLASS64, ELFDATA2LSB -> rd16le, rd64le, wr64le, 24L, 32L, 54, 32
-    | ELFCLASS64, ELFDATA2MSB -> rd16be, rd64be, wr64be, 24L, 32L, 54, 32 in
-  Log.send "Extending segment 0x%Lx at index %d by %Ld bytes"
-    seg.p_vaddr i size;
-  let phentsize, phoff = rd16 ps, rd po in
-  let entry = phoff + of_int i * phentsize in
-  wr (to_int_exn (entry + fs)) (seg.p_filesz + size);
-  wr (to_int_exn (entry + ms)) (seg.p_memsz + size)
+  include Elf
 
-let is_pt_load (seg : Elf.segment) : bool = match seg.p_type with
-  | Elf.PT_LOAD -> true
-  | _ -> false
+  type iseg = int * Elf.segment
 
-let is_pf_exec (seg : Elf.segment) : bool =
-  List.exists seg.p_flags ~f:(function
-      | Elf.PF_X -> true
-      | _ -> false)
+  let extend_seg
+      (elf : Elf.t)
+      ((i, seg) : iseg)
+      (data : bigstring)
+      (size : int64) : unit =
+    let open Int64 in
+    let rd16le pos = Bigstring.get_int16_le data ~pos |> of_int in
+    let rd16be pos = Bigstring.get_int16_be data ~pos |> of_int in
+    let rd32le pos = Bigstring.get_int32_t_le data ~pos |> of_int32 in
+    let rd32be pos = Bigstring.get_int32_t_be data ~pos |> of_int32 in
+    let rd64le pos = Bigstring.get_int64_t_le data ~pos in
+    let rd64be pos = Bigstring.get_int64_t_be data ~pos in
+    let wr32le pos v = Bigstring.set_int32_t_le data ~pos @@ to_int32_trunc v in
+    let wr32be pos v = Bigstring.set_int32_t_be data ~pos @@ to_int32_trunc v in
+    let wr64le pos v = Bigstring.set_int64_t_le data ~pos v in
+    let wr64be pos v = Bigstring.set_int64_t_be data ~pos v in
+    let rd16, rd, wr, fs, ms, ps, po = match elf.e_class, elf.e_data with
+      | ELFCLASS32, ELFDATA2LSB -> rd16le, rd32le, wr32le, 16L, 20L, 42, 28
+      | ELFCLASS32, ELFDATA2MSB -> rd16be, rd32be, wr32be, 16L, 20L, 42, 28
+      | ELFCLASS64, ELFDATA2LSB -> rd16le, rd64le, wr64le, 24L, 32L, 54, 32
+      | ELFCLASS64, ELFDATA2MSB -> rd16be, rd64be, wr64be, 24L, 32L, 54, 32 in
+    Log.send "Extending segment 0x%Lx at index %d by %Ld bytes"
+      seg.p_vaddr i size;
+    let phentsize, phoff = rd16 ps, rd po in
+    let entry = phoff + of_int i * phentsize in
+    wr (to_int_exn (entry + fs)) (seg.p_filesz + size);
+    wr (to_int_exn (entry + ms)) (seg.p_memsz + size)
 
-let find_elf_segment
-    (elf : Elf.t)
-    (addr : int64) : (elf_seg, KB.conflict) result =
-  Seq.find_mapi elf.e_segments ~f:(fun i seg ->
-      if Int64.(seg.p_vaddr = addr)
-      && is_pt_load seg && is_pf_exec seg
-      then Some (seg, i) else None) |> function
-  | Some x -> Ok x
-  | None ->
-    let msg = Format.sprintf
-        "Segment at 0x%Lx was not found in the binary"
-        addr in
-    Error (Errors.Invalid_binary msg)
+  let is_pt_load (seg : segment) : bool = match seg.p_type with
+    | PT_LOAD -> true
+    | _ -> false
+
+  let is_pf_exec (seg : segment) : bool =
+    List.exists seg.p_flags ~f:(function
+        | PF_X -> true
+        | _ -> false)
+
+  let find_seg (elf : t) (addr : int64) : (iseg, KB.conflict) result =
+    let open Int64 in
+    Seq.find_mapi elf.e_segments ~f:(fun i seg ->
+        if seg.p_vaddr = addr && is_pt_load seg && is_pf_exec seg
+        then Some (i, seg) else None) |> function
+    | Some x -> Ok x
+    | None ->
+      let msg = Format.sprintf
+          "Segment at 0x%Lx was not found in the binary"
+          addr in
+      Error (Errors.Invalid_binary msg)
+
+end
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
@@ -226,16 +229,16 @@ let patch_file
     (patches : patch list)
     (binary : string)
     (patched_binary : string) : (unit, KB.conflict) result =
+  let open Int64 in
   let data = Bigstring.of_string @@ In_channel.read_all binary in
   Log.send "Reading ELF headers";
   let* elf, seg = match Elf.from_bigstring data with
     | Error _ -> Error (Errors.Invalid_binary "Invalid ELF header")
     | Ok elf ->
-      let* seg = find_elf_segment elf code_seg_addr in
+      let* seg = Elf.find_seg elf code_seg_addr in
       Ok (elf, seg) in
   Result.return @@ Out_channel.with_file patched_binary ~f:(fun file ->
-      if Int64.(extend > 0L) then
-        extend_elf_code_segment elf seg data extend;
+      if extend > 0L then Elf.extend_seg elf seg data extend;
       Out_channel.output_string file @@ Bigstring.to_string data;
       List.iter patches ~f:(fun patch ->
           Out_channel.seek file patch.loc;
