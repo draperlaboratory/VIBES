@@ -46,7 +46,8 @@ type code_seg_alloc = {
   addr : int64;
   size : int64;
   end_ : int64;
-  extra_space : int64;
+  off  : int64;
+  room : int64;
 }
 
 let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
@@ -57,6 +58,7 @@ let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
   let* code_addr, code_size = Seq.find_map segs ~f:(fun seg ->
       let {Image.Scheme.addr; size; info=(_,_,x)} = seg in
       Option.some_if x (addr, size)) in
+  let* region = Utils.find_mapped_region code_addr spec in
   let code_end = code_addr + code_size in
   let closer x y = x - code_end < y - code_end in
   let next_addr = Seq.fold segs ~init:None ~f:(fun acc seg ->
@@ -69,13 +71,14 @@ let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
   let size = match next_addr with
     | Some a -> a - code_end
     | None -> 0L in
-  Log.send "Code segment end = 0x%Lx, \
-            available space = %Ld bytes" code_end size;
+  Log.send "Code segment end = 0x%Lx, available space = %Ld bytes"
+    code_end size;
   Some {
     addr = code_addr;
     size = code_size;
     end_ = code_end;
-    extra_space = size;
+    off  = region.offset;
+    room = size;
   }
 
 type info = {
@@ -89,7 +92,7 @@ type info = {
 let within_extra_code (info : info) (addr : int64) : bool =
   let open Int64 in
   addr >= info.code.end_ &&
-  addr < info.code.end_ + info.code.extra_space
+  addr < info.code.end_ + info.code.room
 
 let create_info
     (spec : Ogre.doc)
@@ -321,29 +324,23 @@ let try_patch_site
 (* Try the provided external patch spaces. *)
 let rec try_patch_spaces
     (info : info)
-    (spaces : spaces)
     (orig_region : Utils.region)
     (asm : Asm.t)
     (addr : int64)
-    (size : int64) : ((patch * patch), KB.conflict) result =
-  let module Target = (val info.target) in
-  match spaces with
-  | [] ->
-    Error (Errors.No_patch_spaces "No suitable patch spaces found")
+    (size : int64) : spaces -> ((patch * patch), KB.conflict) result = function
+  | [] -> Error (Errors.No_patch_spaces "No suitable patch spaces found")
   | space :: rest ->
+    let open Int64 in
+    let module Target = (val info.target) in
     let jumpto = Bitvec.to_int64 @@ Word.to_bitvec space.address in
-    let next () = try_patch_spaces info rest orig_region asm addr size in
+    let next () = try_patch_spaces info orig_region asm addr size rest in
     Log.send "Attempting patch space 0x%Lx with %Ld bytes of space"
       jumpto space.size;
-    let region =
-      if within_extra_code info jumpto then
-        (* XXX: Is the code segment always at offset 0? *)
-        Some Utils.{
-            addr = info.code.end_;
-            size = info.code.extra_space;
-            offset = info.code.size;
-          }
-      else Utils.find_code_region jumpto info.spec in
+    let region = if within_extra_code info jumpto then Some Utils.{
+        addr = info.code.end_;
+        size = info.code.room;
+        offset = info.code.off + info.code.size;
+      } else Utils.find_code_region jumpto info.spec in
     match region with
     | None ->
       Log.send "Code region for patch space at address \
@@ -366,13 +363,12 @@ let rec try_patch_spaces
         let len = String.length trampoline.data in
         Log.send "Trampoline fits (%d bytes)" len;
         let* overwritten, n =
-          overwritten info.o Target.target addr Int64.(of_int len)
-            ~zero:Int64.(size = 0L) in
-        let ret = Int64.(addr + of_int n) in
+          let len = of_int len and zero = size = 0L in
+          overwritten info.o Target.target addr len ~zero in
         let* patch =
           try_patch_site info region jumpto
-            space.size (Some ret) asm
-            overwritten ~extern:true in
+            space.size (Some (addr + of_int n))
+            asm overwritten ~extern:true in
         match patch with
         | Some patch -> Ok (patch, trampoline)
         | None -> next ()
@@ -408,7 +404,7 @@ let place_patch
   | Some patch -> Ok (patch, None)
   | None ->
     let* patch, trampoline =
-      try_patch_spaces info patch_spaces region asm addr size in
+      try_patch_spaces info region asm addr size patch_spaces in
     Ok (patch, Some trampoline)
 
 let consume_space (patch : patch) (spaces : spaces) : spaces =
@@ -470,12 +466,13 @@ let patch
     | [] -> Ok (patches, 0L)
     | _ ->
       if had_spaces
-      then Log.send "Ran out of patch spaces, attempting to allocate"
-      else Log.send "No patch spaces provided, attempting to allocate";
+      then Log.send "Ran out of patch spaces"
+      else Log.send "No patch spaces provided";
+      Log.send "Attempting to create space";
       let width = T.Target.code_addr_size target in
       let space = Patch_info.{
           address = Word.of_int64 ~width info.code.end_;
-          size = info.code.extra_space;
+          size = info.code.room;
         } in
       let* rest, spaces, asms = place_and_consume info [space] remaining in
       match asms with
@@ -483,10 +480,9 @@ let patch
         Error (Errors.No_patch_spaces "Not enough space to extend \
                                        the code segment")
       | [] ->
-        let remaining_space = List.hd_exn spaces in
-        let size =
-          let open Word in
-          to_int64_exn (remaining_space.address - space.address) in
+        let open Int64 in
+        let used = List.hd_exn spaces in
+        let size = Word.to_int64_exn used.address - info.code.end_ in
         Ok (patches @ rest, size) in
   let* () =
     Log.send "Writing to patched binary %s" patched_binary;

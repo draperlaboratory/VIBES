@@ -9,6 +9,10 @@ type region = {
     contains [addr]. *)
 val find_code_region : int64 -> Ogre.doc -> region option
 
+(** [find_mapped_region addr spec] looks up the mapped region in [spec] that
+    contains [addr]. *)
+val find_mapped_region : int64 -> Ogre.doc -> region option
+
 (** Converts a virtual address into a file offset. Assumes that the address
     is contained within the region. *)
 val addr_to_offset : int64 -> region -> int64
