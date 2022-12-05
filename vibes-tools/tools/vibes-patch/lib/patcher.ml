@@ -359,12 +359,11 @@ let rec try_patch_spaces
           (* Bytes required for the trampoline. *)
           let len = of_int @@ String.length trampoline.data in
           Log.send "Trampoline fits (%Ld bytes)" len;
-          (* Bytes that will be replaced by the trampoline. *)
-          let osize = len - size in
           (* If the trampoline is bigger than the number of bytes
              we intended to replace, then we need to disassemble
              the remaining instructions that would have been
              overwritten. *)
+          let osize = len - size in
           if osize > 0L then
             (* Start at the end of the instructions that we intended
                to overwrite. *)
@@ -372,7 +371,7 @@ let rec try_patch_spaces
             Log.send "%Ld bytes remain, need to disassemble at 0x%Lx"
               osize oaddr;
             overwritten info.o Target.target oaddr osize
-          else Ok ([], len) in
+          else Ok ([], size) in
         let* patch =
           try_patch_site info region jumpto
             space.size (Some (addr + n))
