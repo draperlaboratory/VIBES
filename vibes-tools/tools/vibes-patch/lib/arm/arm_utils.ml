@@ -10,8 +10,10 @@ module Filename = Stdlib.Filename
 
 let (let*) x f = Result.bind x ~f
 
-let assembler = "/usr/bin/arm-linux-gnueabi-as"
-let objcopy = "/usr/bin/arm-linux-gnueabi-objcopy"
+let assembler : string = "/usr/bin/arm-linux-gnueabi-as"
+let objcopy : string = "/usr/bin/arm-linux-gnueabi-objcopy"
+
+let max_insn_length : int = 4
 
 let trampoline (addr : int64) : Asm.block =
   let op = Ops.b () in

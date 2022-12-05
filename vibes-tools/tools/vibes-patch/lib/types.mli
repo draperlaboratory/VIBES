@@ -45,6 +45,9 @@ module type Target_utils = sig
       location. *)
   val adjusted_org : int64 -> int64 option
 
+  (** The maximum number of bytes that an instruction can occupy. *)
+  val max_insn_length : int
+
   (** The toolchain for the target. *)
   module Toolchain : Toolchain
 

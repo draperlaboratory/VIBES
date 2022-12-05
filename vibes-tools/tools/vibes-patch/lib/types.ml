@@ -24,6 +24,7 @@ module type Target_utils = sig
   val has_inline_data : Asm.t -> bool
   val ends_in_jump : Asm.t -> bool
   val adjusted_org : int64 -> int64 option
+  val max_insn_length : int
 
   module Toolchain : Toolchain
 

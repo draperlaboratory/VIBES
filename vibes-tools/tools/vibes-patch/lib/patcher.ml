@@ -106,32 +106,34 @@ let create_info
 
 let find_mem
     (target : T.target)
-    (patch_point : int64)
-    (patch_size : int64)
+    (addr : int64)
+    (size : int64)
     (memmap : value memmap) : (mem, KB.conflict) result =
+  let open Int64 in
+  let len_ok mem = size <= of_int (Memory.length mem) in
   let width = T.Target.code_addr_size target in
-  let from = Word.of_int64 ~width patch_point in
+  let from = Word.of_int64 ~width addr in
   Memmap.to_sequence memmap |> Seq.find_map ~f:(fun (mem, _) ->
-      if Memory.contains mem from then
+      if Memory.contains mem from && len_ok mem then
         Memory.view mem ~from |> Result.ok
       else None) |> function
   | Some mem -> Ok mem
   | None ->
     let msg = Format.asprintf
         "Couldn't find memory of at least size %Ld for patch point %a"
-        patch_size Word.pp from in
+        size Word.pp from in
     Error (Errors.Invalid_address msg)
 
 let overwritten
-    ?(zero : bool = false)
     (o : overwrite)
     (target : T.target)
-    (patch_point : int64)
-    (patch_size : int64) : (string list * int, KB.conflict) result =
+    (addr : int64)
+    (size : int64) : (string list * int64, KB.conflict) result =
+  let open Int64 in
   let invalid_size t =
     let msg = Format.asprintf
-        "Invalid size %Ld for patch point 0x%Lx (%d bytes disassembled)"
-        patch_size patch_point t in
+        "Invalid size %Ld at 0x%Lx (%Ld bytes disassembled)"
+        addr size t in
     Error (Errors.Invalid_size msg) in
   let rec disasm acc mem t n = match Dis.insn_of_mem o.dis mem with
     | Error err ->
@@ -143,21 +145,20 @@ let overwritten
          and that the user intends to overwrite this region. *)
       Ok (List.rev acc, t)
     | Ok (m, Some insn, next) ->
-      let len = Memory.length m in
+      let len = of_int @@ Memory.length m in
       let n = n - len and t = t + len in
       let asm = Dis.Insn.asm insn in
-      if n = 0 then Ok (List.rev (asm :: acc), t)
+      if n = 0L then Ok (List.rev (asm :: acc), t)
       else match next with
         | `finished -> invalid_size t
-        | `left _ when n < 0 && not zero -> invalid_size t
-        | `left _ when n <= 0 -> Ok (List.rev (asm :: acc), t)
+        | `left _ when n < 0L -> Ok (List.rev (asm :: acc), t)
         | `left mem -> disasm (asm :: acc) mem t n in
-  let* mem = find_mem target patch_point patch_size o.memmap in
-  let* insns, n = disasm [] mem 0 @@ Int64.to_int_exn patch_size in
+  let* mem = find_mem target addr size o.memmap in
+  let* insns, n = disasm [] mem 0L size in
   if not @@ List.is_empty insns then
     Log.send "The following instructions will be \
               overwritten at 0x%Lx:\n%s\n"
-      patch_point @@ String.concat insns ~sep:"\n";
+      addr @@ String.concat insns ~sep:"\n";
   Ok (insns, n)
 
 type patch = {
@@ -310,16 +311,9 @@ let try_patch_site
         None
     end
   | len ->
-    if Int64.(size = 0L) && end_jmp && not extern then
-      (* Assume that a patch size of 0 means we can't overwrite
-         anything, and that this patch is the trampoline to our
-         external patch site. *)
-      Ok (Some {data; addr; loc})
-    else begin
-      Log.send "Patch doesn't fit at address 0x%Lx (%Ld bytes \
-                available, %Ld bytes needed)" addr size len;
-      Ok None
-    end
+    Log.send "Patch doesn't fit at address 0x%Lx (%Ld bytes \
+              available, %Ld bytes needed)" addr size len;
+    Ok None
 
 (* Try the provided external patch spaces. *)
 let rec try_patch_spaces
@@ -353,21 +347,35 @@ let rec try_patch_spaces
                 attempting to situate trampoline"
         region.addr region.size region.offset;
       let* trampoline =
+        let maxlen = of_int Target.max_insn_length in
         let asm = Target.create_trampoline jumpto addr size in
-        try_patch_site info orig_region addr size None asm [] in
+        try_patch_site info orig_region addr maxlen None asm [] in
       match trampoline with
       | None ->
         Log.send "Trampoline doesn't fit";
         next ()
       | Some trampoline ->
-        let len = String.length trampoline.data in
-        Log.send "Trampoline fits (%d bytes)" len;
         let* overwritten, n =
-          let len = of_int len and zero = size = 0L in
-          overwritten info.o Target.target addr len ~zero in
+          (* Bytes required for the trampoline. *)
+          let len = of_int @@ String.length trampoline.data in
+          Log.send "Trampoline fits (%Ld bytes)" len;
+          (* Bytes that will be replaced by the trampoline. *)
+          let osize = len - size in
+          (* If the trampoline is bigger than the number of bytes
+             we intended to replace, then we need to disassemble
+             the remaining instructions that would have been
+             overwritten. *)
+          if osize > 0L then
+            (* Start at the end of the instructions that we intended
+               to overwrite. *)
+            let oaddr = addr + size in
+            Log.send "%Ld bytes remain, need to disassemble at 0x%Lx"
+              osize oaddr;
+            overwritten info.o Target.target oaddr osize
+          else Ok ([], len) in
         let* patch =
           try_patch_site info region jumpto
-            space.size (Some (addr + of_int n))
+            space.size (Some (addr + n))
             asm overwritten ~extern:true in
         match patch with
         | Some patch -> Ok (patch, trampoline)
