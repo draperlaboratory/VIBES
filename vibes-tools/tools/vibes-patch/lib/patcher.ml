@@ -394,6 +394,7 @@ let place_patch
     (info : info)
     (patch_spaces : spaces)
     (asm : Asm.t) : (patch * patch option, KB.conflict) result =
+  let open Int64 in
   let module Target = (val info.target) in
   let addr, size = asm.patch_point, asm.patch_size in
   Log.send "Attempting patch point 0x%Lx with %Ld bytes of space" addr size;
@@ -407,9 +408,8 @@ let place_patch
   Log.send "Found region (addr=0x%Lx, size=%Ld, offset=0x%Lx)"
     region.addr region.size region.offset;
   let* patch =
-    if Int64.(size > 0L) then
-      let ret = Int64.(addr + size) in
-      try_patch_site info region addr size (Some ret) asm []
+    if size > 0L then
+      try_patch_site info region addr size (Some (addr + size)) asm []
     else begin
       Log.send "Patch size is zero, need external patch space";
       Ok None
