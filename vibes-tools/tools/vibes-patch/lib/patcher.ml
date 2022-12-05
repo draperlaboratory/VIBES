@@ -167,45 +167,58 @@ let pp_patch (ppf : Format.formatter) (p : patch) : unit =
   Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%d"
     p.addr p.loc @@ String.length p.data
 
-let extend_code_segment
+type elf_seg = Elf.segment * int
+
+let extend_elf_code_segment
     (elf : Elf.t)
-    (file : Out_channel.t)
+    ((seg, i) : elf_seg)
     (data : bigstring)
-    (addr : int64)
     (size : int64) : unit =
   let open Int64 in
-  let write loc (b, off) =
-    Out_channel.seek file (loc + off);
-    Out_channel.output_byte file b in
-  let to_bytes = Seq.mapi ~f:(fun i w -> Word.to_int_exn w, Int.to_int64 i) in
-  let enum_and_write loc data endian width =
-    let w = Word.of_int64 ~width data in
-    Word.enum_bytes w endian |> to_bytes |> Seq.iter ~f:(write loc) in
   let rd16le pos = Bigstring.get_int16_le data ~pos |> of_int in
-  let rd32le pos = Bigstring.get_int32_t_le data ~pos |> of_int32_exn in
   let rd16be pos = Bigstring.get_int16_be data ~pos |> of_int in
-  let rd32be pos = Bigstring.get_int32_t_be data ~pos |> of_int32_exn in
+  let rd32le pos = Bigstring.get_int32_t_le data ~pos |> of_int32 in
+  let rd32be pos = Bigstring.get_int32_t_be data ~pos |> of_int32 in
   let rd64le pos = Bigstring.get_int64_t_le data ~pos in
   let rd64be pos = Bigstring.get_int64_t_be data ~pos in
-  let wr32le loc data = enum_and_write loc data LittleEndian 32 in
-  let wr32be loc data = enum_and_write loc data BigEndian 32 in
-  let wr64le loc data = enum_and_write loc data LittleEndian 64 in
-  let wr64be loc data = enum_and_write loc data BigEndian 64 in
+  let wr32le pos v = Bigstring.set_int32_t_le data ~pos @@ to_int32_trunc v in
+  let wr32be pos v = Bigstring.set_int32_t_be data ~pos @@ to_int32_trunc v in
+  let wr64le pos v = Bigstring.set_int64_t_le data ~pos v in
+  let wr64be pos v = Bigstring.set_int64_t_be data ~pos v in
   let rd16, rd, wr, fs, ms, ps, po = match elf.e_class, elf.e_data with
     | ELFCLASS32, ELFDATA2LSB -> rd16le, rd32le, wr32le, 16L, 20L, 42, 28
     | ELFCLASS32, ELFDATA2MSB -> rd16be, rd32be, wr32be, 16L, 20L, 42, 28
     | ELFCLASS64, ELFDATA2LSB -> rd16le, rd64le, wr64le, 24L, 32L, 54, 32
     | ELFCLASS64, ELFDATA2MSB -> rd16be, rd64be, wr64be, 24L, 32L, 54, 32 in
+  Log.send "Extending segment 0x%Lx at index %d by %Ld bytes"
+    seg.p_vaddr i size;
+  let phentsize, phoff = rd16 ps, rd po in
+  let entry = phoff + of_int i * phentsize in
+  wr (to_int_exn (entry + fs)) (seg.p_filesz + size);
+  wr (to_int_exn (entry + ms)) (seg.p_memsz + size)
+
+let is_pt_load (seg : Elf.segment) : bool = match seg.p_type with
+  | Elf.PT_LOAD -> true
+  | _ -> false
+
+let is_pf_exec (seg : Elf.segment) : bool =
+  List.exists seg.p_flags ~f:(function
+      | Elf.PF_X -> true
+      | _ -> false)
+
+let find_elf_segment
+    (elf : Elf.t)
+    (addr : int64) : (Elf.segment * int, KB.conflict) result =
   Seq.find_mapi elf.e_segments ~f:(fun i seg ->
-      Option.some_if (seg.p_vaddr = addr) (seg, i)) |> function
-  | None -> failwithf "Segment 0x%Lx not found in the program headers!" addr ()
-  | Some (seg, i) ->
-    Log.send "Code segment is at index %d in the program header table" i;
-    Log.send "Writing new data";
-    let phentsize, phoff = rd16 ps, rd po in
-    let entry = phoff + of_int i * phentsize in
-    wr (entry + fs) (seg.p_filesz + size);
-    wr (entry + ms) (seg.p_memsz + size)
+      if Int64.(seg.p_vaddr = addr)
+      && is_pt_load seg && is_pf_exec seg
+      then Some (seg, i) else None) |> function
+  | Some x -> Ok x
+  | None ->
+    let msg = Format.sprintf
+        "Segment at 0x%Lx was not found in the binary"
+        addr in
+    Error (Errors.Invalid_binary msg)
 
 (* Copy the original binary and write the patches to it. *)
 let patch_file
@@ -214,16 +227,17 @@ let patch_file
     (patches : patch list)
     (binary : string)
     (patched_binary : string) : (unit, KB.conflict) result =
-  let orig_data = In_channel.read_all binary in
-  let orig_data_big = Bigstring.of_string orig_data in
+  let data = Bigstring.of_string @@ In_channel.read_all binary in
   Log.send "Reading ELF headers";
-  let* elf = match Elf.from_bigstring orig_data_big with
+  let* elf, seg = match Elf.from_bigstring data with
     | Error _ -> Error (Errors.Invalid_binary "Invalid ELF header")
-    | Ok _ as x -> x in
+    | Ok elf ->
+      let* seg = find_elf_segment elf code_seg_addr in
+      Ok (elf, seg) in
   Result.return @@ Out_channel.with_file patched_binary ~f:(fun file ->
-      Out_channel.output_string file orig_data;
       if Int64.(extend > 0L) then
-        extend_code_segment elf file orig_data_big code_seg_addr extend;
+        extend_elf_code_segment elf seg data extend;
+      Out_channel.output_string file @@ Bigstring.to_string data;
       List.iter patches ~f:(fun patch ->
           Out_channel.seek file patch.loc;
           Out_channel.output_string file patch.data))
