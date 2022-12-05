@@ -5,6 +5,7 @@
  (public_name vibes-patch)
  (libraries
    bap
+   bap-elf
    bap-core-theory
    str
    vibes-log
