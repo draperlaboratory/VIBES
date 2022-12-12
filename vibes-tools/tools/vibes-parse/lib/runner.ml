@@ -18,10 +18,10 @@ let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
   Log.send "Parsing C code";
   match C_toolkit.Parse_c.parse raw_code with
   | Error msg -> Error (Errors.Invalid_C msg)
-  | Ok ast ->
-    Log.send "Parsed:\n%s" @@
-    C_toolkit.C_utils.print_c Cprint.print_def ast;
-    Ok ast
+  | Ok ast as a ->
+    let s = C_toolkit.C_utils.print_c Cprint.print_def ast in
+    Log.send "Parsed:\n%s" s;
+    a
 
 let mark_jmps (blk : blk term) : blk term KB.t =
   Term.KB.map jmp_t blk ~f:(fun jmp -> match Jmp.alt jmp with
@@ -71,9 +71,6 @@ let compile
     Ok (Toplevel.get result)
   with Toplevel.Conflict err -> Error err
 
-let no_patch_code filename =
-  Errors.No_patch_code (Format.sprintf "No patch code in file: '%s'" filename)
-
 let run
     ~(target : string)
     ~(patch_info_filepath : string)
@@ -86,8 +83,7 @@ let run
   let* patch_info = Patch_info.from_file patch_info_filepath in
   let hvars = patch_info.patch_vars in
   let* target = Utils.Core_theory.get_target target in
-  let* raw_code = Utils.Files.get_file_contents_non_empty
-      patch_filepath ~error:no_patch_code in
+  let* raw_code = Utils.Files.get_file_contents patch_filepath in
   let* ast = parse_c_code raw_code in
   let bir_name = Filename.basename bir_outfile in
   let* bir = compile bir_name ast target hvars in
