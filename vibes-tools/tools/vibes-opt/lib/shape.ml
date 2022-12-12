@@ -156,7 +156,12 @@ let collect_conservative_patch_points
         let word = patch_info.patch_point in
         let bv = Word.to_bitvec word in
         Bitvec.to_int64 bv in
-      [patch_point, patch_info.patch_size]
+      (* Obviously, if we're purely inserting new code then we need to
+         jump to an external space. *)
+      begin match patch_info.patch_size with
+        | 0L -> []
+        | size -> [patch_point, size]
+      end
     | spaces -> List.map spaces ~f:(fun space ->
         let address = Bitvec.to_int64 @@ Word.to_bitvec space.address in
         (address, space.size)) in
@@ -210,8 +215,7 @@ let relax_branches
           else match Jmp.kind jmp with
             | Goto (Indirect (Int addr)) as kind -> begin
                 match Addr.Table.find table addr with
-                | Some tid ->
-                  !!(Jmp.with_kind jmp @@ Goto (Direct tid))
+                | Some tid -> !!(Jmp.with_kind jmp @@ Goto (Direct tid))
                 | None when can_fit addr -> !!jmp
                 | None ->
                   let* blk_tid = T.Label.fresh in
