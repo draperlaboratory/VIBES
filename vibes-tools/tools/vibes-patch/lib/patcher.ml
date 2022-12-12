@@ -506,9 +506,10 @@ let patch
                                        the code segment")
       | [] ->
         let open Int64 in
-        let used = List.hd_exn spaces in
-        let size = Word.to_int64_exn used.address - info.code.end_ in
-        Ok (patches @ rest, size) in
+        let extend = match spaces with
+          | [] -> info.code.room
+          | s :: _ -> Word.to_int64_exn s.address - info.code.end_ in
+        Ok (patches @ rest, extend) in
   let* () =
     Log.send "Writing to patched binary %s" patched_binary;
     patch_file info.code.addr patches binary patched_binary ~extend in
