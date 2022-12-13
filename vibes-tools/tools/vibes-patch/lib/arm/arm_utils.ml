@@ -161,7 +161,9 @@ module Relax = struct
         let flabel = "f" ^ b.label in
         let rlabel = "r" ^ b.label in
         (* Assume that the blocks are in a normal form where there
-           are at most two branch instructions as terminators. *)
+           are at most two branch instructions as terminators.
+           More specifically, we have at most one conditional branch
+           and at most one unconditional branch. *)
         let insns = List.concat_map b.insns ~f:(fun i ->
             match String.split i ~on:' ' with
             | op :: o :: rest when is_nonlocal_bcc op o ->
