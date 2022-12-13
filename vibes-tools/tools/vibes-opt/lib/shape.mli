@@ -23,25 +23,6 @@ val adjust_exits : sub term -> sub term KB.t
     postorder. *)
 val reorder_blks : sub term -> sub term
 
-(** For architectures with a limited range for conditional branches
-    (as specified by [fwd_limit] and [bwd_limit]), we will make a
-    conservative estimate based on the available patch spaces in
-    [patch_info] as to whether such branches need to be relaxed
-    in order to satisfy the range requirement.
-
-    If they need to be relaxed, the translation will create a new
-    block for this conditional branch to target, where the real branch
-    destination is targeted by an unconditional branch.
-*)
-val relax_branches :
-  ?patch_spaces:Vibes_patch_info.Types.Spaces.t ->
-  sub term ->
-  target:Theory.target ->
-  patch_info:Vibes_patch_info.Types.t ->
-  fwd_limit:int ->
-  bwd_limit:int ->
-  sub term KB.t
-
 (** Moves conditional branches to their own blocks.
 
     This remedies a shortcoming of the instruction selector, which

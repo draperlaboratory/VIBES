@@ -166,7 +166,6 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --target $(TARGET) \
                           --language $(LANG) \
                           --patch-info-filepath $(PATCH_%d_INFO) \
-                          --patch-spaces $(SPACES) \
                           --bir-filepath $(PATCH_%d_BIR) \
                           --bir-outfile $(PATCH_%d_BIR_OPT) \
                           --verbose\n\n%!" i i i;
