@@ -105,11 +105,6 @@ let situate
    wider range. *)
 module Relax = struct
 
-  (* Check the error messages from the assembler. *)
-  let conditional_branch_out_of_range (err : string list) : bool =
-    let substring = "conditional branch out of range" in
-    List.exists err ~f:(String.is_substring ~substring)
-
   let rec interleave_pairs = function
     | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
     | [] | [_] -> []
@@ -204,6 +199,10 @@ end
 
 module Toolchain = struct
 
+  let conditional_branch_out_of_range (err : string list) : bool =
+    let substring = "conditional branch out of range" in
+    List.exists err ~f:(String.is_substring ~substring)
+
   let with_thumb
       (args : string list)
       (language : Theory.language) : string list =
@@ -220,7 +219,7 @@ module Toolchain = struct
     let _, err, failed = Proc.run_with_error assembler args in
     let* () =
       if failed then
-        if Relax.conditional_branch_out_of_range err then
+        if conditional_branch_out_of_range err then
           let asm = Relax.go asm in
           let data = Format.asprintf "%a" Asm.pp asm in
           Log.send "Relaxing branches:\n%s\n" data;
