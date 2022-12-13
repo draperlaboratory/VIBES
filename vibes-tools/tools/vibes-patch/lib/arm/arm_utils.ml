@@ -127,6 +127,10 @@ module Relax = struct
     String.length op >= 3 &&
     String.is_prefix o ~prefix:start_prefix
 
+  (* Same as above, but unconditional. *)
+  let is_nonlocal_b (op : string) (o : string) : bool =
+    String.(op = "b") && String.is_prefix o ~prefix:start_prefix
+
   (* Potential fallthrough blocks. *)
   let collect_afters (asm : Asm.t) : string String.Map.t =
     let open Asm in
@@ -134,22 +138,20 @@ module Relax = struct
     List.fold ~init:String.Map.empty ~f:(fun m (x, y) ->
         Map.set m ~key:x.label ~data:y.label)
 
-  (* Local successors in the CFG, as a result of a local branch target. *)
-  let collect_local_targets (asm : Asm.t) : string list String.Map.t =
-    List.fold asm.blocks ~init:String.Map.empty ~f:(fun init b ->
-        List.fold b.insns ~init ~f:(fun m i ->
+  (* Collect the blocks with unconditional branches. *)
+  let collect_unconds (asm : Asm.t) : String.Set.t =
+    List.fold asm.blocks ~init:String.Set.empty ~f:(fun init b ->
+        List.fold b.insns ~init ~f:(fun s i ->
             match String.split i ~on:' ' with
-            | [op; o] when is_local_b op o ->
-              Map.update m b.label ~f:(function
-                  | Some os -> o :: os
-                  | None -> [o])
-            | _ -> m))
+            | op :: o :: _ when is_nonlocal_b op o -> Set.add s b.label
+            | [op; o] when is_local_b op o -> Set.add s b.label
+            | _ -> s))
 
   (* Attempt to relax the conditional branches. *)
   let go (asm : Asm.t) : Asm.t =
     let open Asm in
     let afters = collect_afters asm in
-    let tgt = collect_local_targets asm in
+    let uncond = collect_unconds asm in
     let blocks = List.concat_map asm.blocks ~f:(fun b ->
         let redir = ref None in
         let fall = ref false in
@@ -164,29 +166,28 @@ module Relax = struct
             | op :: o :: rest when is_nonlocal_bcc op o ->
               (* Relax this conditional branch. *)
               redir := Some (String.concat ("b" :: o :: rest) ~sep:" ");
-              (* See if this block targets any other blocks. *)
-              begin match Map.find tgt b.label with
-                | Some _ ->
-                  (* Don't check for fallthroughs. *)
-                  [String.concat [op; rlabel] ~sep:" "]
-                | None ->
-                  (* There is an implied fallthrough here. We need to
-                     insert an unconditional branch to that location,
-                     and perhaps also insert a block if it doesn't
-                     exist. *)
-                  let r = String.concat [op; rlabel] ~sep:" " in
-                  let f = match Map.find afters b.label with
-                    | Some l -> "b " ^ l
-                    | None ->
-                      let f = "b " ^ flabel in
-                      fall := true;
-                      f in
-                  [r; f]
-              end
+              (* See if this block has any unconditional branches. If so,
+                 then we don't need to handle fallthroughs. *)
+              if Set.mem uncond b.label then
+                [String.concat [op; rlabel] ~sep:" "]
+              else
+                (* There is an implied fallthrough here. We need to
+                   insert an unconditional branch to that location,
+                   and perhaps also insert a block if it doesn't
+                   exist. *)
+                let r = String.concat [op; rlabel] ~sep:" " in
+                let f = match Map.find afters b.label with
+                  | Some l -> "b " ^ l
+                  | None ->
+                    let f = "b " ^ flabel in
+                    fall := true;
+                    f in
+                [r; f]
             | _ -> [i]) in
         match !redir with
         | None -> [b]
         | Some i ->
+          (* Insert the blocks. *)
           let b = {b with insns} in
           let br = {label = rlabel; insns = [i]} in
           if !fall then
