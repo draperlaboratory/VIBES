@@ -153,8 +153,8 @@ module Relax = struct
     let blocks = List.concat_map asm.blocks ~f:(fun b ->
         let redir = ref None in
         let fall = ref false in
-        let flabel = "f" ^ b.label in
-        let rlabel = "r" ^ b.label in
+        let rlabel = b.label ^ "_redir" in
+        let flabel = b.label ^ "_fall" in
         (* Assume that the blocks are in a normal form where there
            are at most two branch instructions as terminators.
            More specifically, we have at most one conditional branch
