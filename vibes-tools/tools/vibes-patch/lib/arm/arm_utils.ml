@@ -7,6 +7,7 @@ module Ops = Vibes_select.Arm_ops
 module Asm = Vibes_as.Types.Assembly
 module Proc = Vibes_utils.Proc
 module Filename = Stdlib.Filename
+module Log = Vibes_log.Stream
 
 let (let*) x f = Result.bind x ~f
 
@@ -96,6 +97,109 @@ let situate
   | Some jmp -> insert_trampoline jmp asm
   | None -> asm
 
+(* Sometimes we will end up with conditional branches that target
+   a concrete address that is out of range relative to where we
+   situated the patch. This is a (hacky) step to relax such branches
+   such that they target a local block containing an unconditional
+   branch to such a target, since unconditional branches have a much
+   wider range. *)
+module Relax = struct
+
+  (* Check the error messages from the assembler. *)
+  let conditional_branch_out_of_range (err : string list) : bool =
+    let substring = "conditional branch out of range" in
+    List.exists err ~f:(String.is_substring ~substring)
+
+  let rec interleave_pairs = function
+    | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
+    | [] | [_] -> []
+
+  (* If we're targeting a concrete address, then this will be the
+     sole operand. *)
+  let start_prefix : string =
+    Format.sprintf "(%s" Constants.patch_start_label
+
+  (* Check if the branch targets a local block. *)
+  let is_local_b (op : string) (o : string) : bool =
+    String.is_prefix op ~prefix:"b" &&
+    String.is_prefix o ~prefix:"blk"
+
+  (* Check if the branch is conditional and it targets a concrete
+     address. The conditional branches have an opcode length of
+     at least 3. *)
+  let is_nonlocal_bcc (op : string) (o : string) : bool =
+    String.is_prefix op ~prefix:"b" &&
+    String.length op >= 3 &&
+    String.is_prefix o ~prefix:start_prefix
+
+  (* Potential fallthrough blocks. *)
+  let collect_afters (asm : Asm.t) : string String.Map.t =
+    let open Asm in
+    interleave_pairs asm.blocks |>
+    List.fold ~init:String.Map.empty ~f:(fun m (x, y) ->
+        Map.set m ~key:x.label ~data:y.label)
+
+  (* Local successors in the CFG, as a result of a local branch target. *)
+  let collect_local_targets (asm : Asm.t) : string list String.Map.t =
+    List.fold asm.blocks ~init:String.Map.empty ~f:(fun init b ->
+        List.fold b.insns ~init ~f:(fun m i ->
+            match String.split i ~on:' ' with
+            | [op; o] when is_local_b op o ->
+              Map.update m b.label ~f:(function
+                  | Some os -> o :: os
+                  | None -> [o])
+            | _ -> m))
+
+  (* Attempt to relax the conditional branches. *)
+  let go (asm : Asm.t) : Asm.t =
+    let open Asm in
+    let afters = collect_afters asm in
+    let tgt = collect_local_targets asm in
+    let blocks = List.concat_map asm.blocks ~f:(fun b ->
+        let redir = ref None in
+        let fall = ref false in
+        let flabel = "f" ^ b.label in
+        let rlabel = "r" ^ b.label in
+        (* Assume that the blocks are in a normal form where there
+           are at most two branch instructions as terminators. *)
+        let insns = List.concat_map b.insns ~f:(fun i ->
+            match String.split i ~on:' ' with
+            | op :: o :: rest when is_nonlocal_bcc op o ->
+              (* Relax this conditional branch. *)
+              redir := Some (String.concat ("b" :: o :: rest) ~sep:" ");
+              (* See if this block targets any other blocks. *)
+              begin match Map.find tgt b.label with
+                | Some _ ->
+                  (* Don't check for fallthroughs. *)
+                  [String.concat [op; rlabel] ~sep:" "]
+                | None ->
+                  (* There is an implied fallthrough here. We need to
+                     insert an unconditional branch to that location,
+                     and perhaps also insert a block if it doesn't
+                     exist. *)
+                  let r = String.concat [op; rlabel] ~sep:" " in
+                  let f = match Map.find afters b.label with
+                    | Some l -> "b " ^ l
+                    | None ->
+                      let f = "b " ^ flabel in
+                      fall := true;
+                      f in
+                  [r; f]
+              end
+            | _ -> [i]) in
+        match !redir with
+        | None -> [b]
+        | Some i ->
+          let b = {b with insns} in
+          let br = {label = rlabel; insns = [i]} in
+          if !fall then
+            let bf = {label = flabel; insns = []} in
+            [b; br; bf]
+          else [b; br]) in
+    {asm with blocks}
+
+end
+
 module Toolchain = struct
 
   let with_thumb
@@ -111,7 +215,20 @@ module Toolchain = struct
     let data = Format.asprintf "%a" Asm.pp asm in
     Out_channel.write_all asmfile ~data;
     let args = with_thumb ["-o"; objfile; asmfile] language in
-    let* _ = Proc.run assembler args in
+    let _, err, failed = Proc.run_with_error assembler args in
+    let* () =
+      if failed then
+        if Relax.conditional_branch_out_of_range err then
+          let asm = Relax.go asm in
+          let data = Format.asprintf "%a" Asm.pp asm in
+          Log.send "Relaxing branches:\n%s\n" data;
+          Out_channel.write_all asmfile ~data;
+          Proc.run assembler args |> Result.map ~f:ignore
+        else
+          let err = String.concat err ~sep:"\n" in
+          let msg = Format.sprintf "Assembler failed:\n%s" err in
+          Error (Errors.Invalid_asm msg)
+      else Ok () in
     Ok objfile
 
   let to_binary (objfile : string) : (string, KB.conflict) result =
