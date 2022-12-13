@@ -12,7 +12,7 @@ module Asm = Vibes_as.Types.Assembly
 module Log = Vibes_log.Stream
 module Dis = Disasm_expert.Basic
 
-type dis = (Dis.asm, Dis.empty) Dis.t
+type dis = (Dis.asm, Dis.kinds) Dis.t
 
 let (let*) x f = Result.bind x ~f
 
@@ -33,12 +33,12 @@ let target_info
       let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
       Error (Errors.Unsupported_target msg) in
   match Dis.lookup target language with
-  | Ok dis -> Ok (Dis.store_asm dis, info)
+  | Ok dis -> Ok (Dis.(store_asm @@ store_kinds dis), info)
   | Error err ->
     Error (Errors.No_disasm (Format.asprintf "%a" Error.pp err))
 
 type overwrite = {
-  dis : dis;
+  dis    : dis;
   memmap : value memmap;
 }
 
@@ -82,11 +82,11 @@ let find_code_segment_alloc (spec : Ogre.doc) : code_seg_alloc option =
   }
 
 type info = {
-  spec : Ogre.doc;
-  target : target;
+  spec     : Ogre.doc;
+  target   : target;
   language : T.language;
-  o : overwrite;
-  code : code_seg_alloc;
+  o        : overwrite;
+  code     : code_seg_alloc;
 }
 
 let create_info
@@ -156,14 +156,23 @@ let overwritten
   Ok (insns, n)
 
 type patch = {
-  data : string;
-  addr : int64;
-  loc : int64;
+  data       : string;
+  addr       : int64;
+  loc        : int64;
+  inline     : int;
+  root       : int64;
+  trampoline : bool;
 }
 
 let pp_patch (ppf : Format.formatter) (p : patch) : unit =
-  Format.fprintf ppf "addr=0x%Lx, offset=0x%Lx, len=%d"
-    p.addr p.loc @@ String.length p.data
+  let len = String.length p.data in
+  Format.fprintf ppf "addr=0x%Lx, \
+                      offset=0x%Lx, \
+                      len=%d, \
+                      inline=%d, \
+                      root=0x%Lx, \
+                      trampoline=%b"
+    p.addr p.loc len p.inline p.root p.trampoline
 
 module Elf = struct
 
@@ -252,20 +261,21 @@ let try_patch_site_aux
     (to_addr : int64 -> int64)
     (loc : int64)
     (overwritten : string list)
-    (jmp : int64 option) : (string, KB.conflict) result =
+    (jmp : int64 option) : (string * int, KB.conflict) result =
   let module Target = (val info.target) in
   let asm' = Target.situate asm ~loc ~to_addr ~org ~jmp ~overwritten in
   Log.send "Situated assembly at 0x%Lx:\n%a" (to_addr loc) Asm.pp asm';
-  let* objfile = Target.Toolchain.assemble asm' info.language in
+  let* objfile, inline_data = Target.Toolchain.assemble asm' info.language in
   let* data = Target.Toolchain.to_binary objfile in
   (* If the origin was adjusted then shave off those bytes. *)
   let data = match org with
     | Some org -> String.drop_prefix data @@ Int64.to_int_exn org
     | None -> data in
-  Ok data
+  Ok (data, inline_data)
 
 (* Try to fit the patch into the specified patch site. *)
 let try_patch_site
+    ?(trampoline : bool = false)
     ?(extern : bool = false)
     (info : info)
     (region : Utils.region)
@@ -276,6 +286,7 @@ let try_patch_site
     (overwritten : string list) : (patch option, KB.conflict) result =
   let open Int64 in
   let module Target = (val info.target) in
+  let root = asm.patch_point in
   let loc = Utils.addr_to_offset addr region in
   let to_addr loc = Utils.offset_to_addr loc region in
   let org = Target.adjusted_org addr in
@@ -283,14 +294,15 @@ let try_patch_site
   let end_jmp = Target.ends_in_jump asm in
   let inline_data = Target.has_inline_data asm in
   let needs_jmp = not end_jmp && (extern || inline_data) in
-  let* data = try_ @@ match ret with
+  let* data, inline = try_ @@ match ret with
     | Some _ when needs_jmp -> ret
     | None when needs_jmp -> assert false
     | None | Some _ -> None in
   match of_int @@ String.length data with
-  | len when len = size -> Ok (Some {data; addr; loc})
+  | len when len = size ->
+    Ok (Some {data; addr; loc; inline; root; trampoline})
   | len when len < size && (end_jmp || needs_jmp) ->
-    Ok (Some {data; addr; loc})
+    Ok (Some {data; addr; loc; inline; root; trampoline})
   | len when len < size ->
     (* For patching at the original location, we need to insert
        a jump to the end of the specified space. We need to check
@@ -298,11 +310,12 @@ let try_patch_site
        increase the length of the patch. *)
     Log.send "Patch has %Ld bytes of space remaining, \
               requires a jump" (size - len);
-    let* data = try_ @@ match ret with
+    let* data, inline = try_ @@ match ret with
       | None -> assert false
       | Some _ -> ret in
     Result.return begin match of_int @@ String.length data with
-      | len when len <= size -> Some {data; addr; loc}
+      | len when len <= size ->
+        Some {data; addr; loc; inline; root; trampoline}
       | len ->
         Log.send "Patch doesn't fit at address 0x%Lx (%Ld bytes \
                   available, %Ld bytes needed)" addr size len;
@@ -384,7 +397,8 @@ let rec try_patch_spaces
       let* trampoline =
         let maxlen = of_int Target.max_insn_length in
         let asm = Target.create_trampoline jumpto addr size in
-        try_patch_site info orig_region addr maxlen None asm [] in
+        try_patch_site info orig_region addr maxlen None asm []
+          ~trampoline:true in
       match trampoline with
       | None ->
         Log.send "Trampoline doesn't fit";
@@ -450,8 +464,13 @@ let consume_space (patch : patch) (spaces : spaces) : spaces =
       else Some space)
 
 type asms = Asm.t list
-type res = patch list * Spaces.t
 type batch = patch list * spaces * asms
+
+type res = {
+  patches : patch list;
+  spaces : Spaces.t;
+  new_ogre : Ogre.doc option;
+}
 
 let rec place_and_consume
     ?(acc : patch list = [])
@@ -472,6 +491,7 @@ let rec place_and_consume
       place_and_consume info spaces rest ~acc
 
 let patch
+    ?(ogre : Ogre.doc option = None)
     ?(patch_spaces : Spaces.t = Spaces.empty)
     (target : T.target)
     (language : T.language)
@@ -513,4 +533,4 @@ let patch
   let* () =
     Log.send "Writing to patched binary %s" patched_binary;
     patch_file info.code.addr patches binary patched_binary ~extend in
-  Ok (patches, Spaces.of_list spaces)
+  Ok {patches; spaces = Spaces.of_list spaces; new_ogre = ogre}

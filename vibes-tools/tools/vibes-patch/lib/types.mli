@@ -5,8 +5,9 @@ module Asm = Vibes_as.Types.Assembly
 (** Abstraction behild the toolchain in order to perform the patch. *)
 module type Toolchain = sig
 
-  (** Assembles the program and returns the path to the object file. *)
-  val assemble : Asm.t -> Theory.language -> (string, KB.conflict) result
+  (** Assembles the program and returns the path to the object file,
+      along with the number of bytes of inline data that was discovered. *)
+  val assemble : Asm.t -> Theory.language -> (string * int, KB.conflict) result
 
   (** Obtains the raw binary code of the object file. *)
   val to_binary : string -> (string, KB.conflict) result
