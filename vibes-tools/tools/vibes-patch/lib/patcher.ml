@@ -548,12 +548,18 @@ module Extend_ogre = struct
 
   let provide
       (patch : patch)
+      (region : Utils.named_region)
       (name : string)
       (root : int64) : unit Ogre.t =
-    Ogre.sequence [
-      provide_code patch name root;
-      provide_data patch;
-    ]
+    let code =
+      (* If we're not using an external patch space then we
+         won't need to include the code information about it,
+         since it already exists in the spec. However, the
+         patch may have still included some inline data, so
+         we should be sure to provide that information. *)
+      if not_extern patch region then Ogre.return ()
+      else provide_code patch name root in
+    Ogre.sequence [code; provide_data patch]
 
   let one (ogre : Ogre.doc) (patch : patch) : res =
     match Utils.find_named_region patch.root ogre with
@@ -562,7 +568,6 @@ module Extend_ogre = struct
           "No named region for patch 0x%Lx, root 0x%Lx"
           patch.addr patch.root in
       Error (Errors.Invalid_ogre msg)
-    | Some region when not_extern patch region -> Ok ogre
     | Some region -> match Utils.find_named_symbol region.addr ogre with
       | None ->
         let msg = Format.asprintf
@@ -571,7 +576,7 @@ module Extend_ogre = struct
         Error (Errors.Invalid_ogre msg)
       | Some name ->
         let name = Format.sprintf "%s@%Lx" name patch.addr in
-        match Ogre.exec (provide patch name region.addr) ogre with
+        match Ogre.exec (provide patch region name region.addr) ogre with
         | Ok _ as res -> res
         | Error err ->
           let msg = Format.asprintf
