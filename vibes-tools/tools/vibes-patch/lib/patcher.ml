@@ -510,6 +510,84 @@ module Placement = struct
 
 end
 
+module Extend_ogre = struct
+
+  type res = (Ogre.doc, KB.conflict) result
+
+  let not_extern (patch : patch) (region : Utils.named_region) : bool =
+    Int64.(patch.addr >= region.addr &&
+           patch.addr < region.addr + region.size)
+
+  let provide_code
+      (patch : patch)
+      (name : string)
+      (root : int64) : unit Ogre.t =
+    let module S = Image.Scheme in
+    let len = Int64.of_int @@ String.length patch.data in
+    Ogre.sequence [
+      Ogre.provide S.mapped patch.addr len patch.loc;
+      Ogre.provide S.code_region patch.addr len patch.loc;
+      Ogre.provide S.named_region patch.addr len name;
+      Ogre.provide S.symbol_chunk patch.addr len root;
+    ]
+
+  let provide_data (patch : patch) : unit Ogre.t =
+    let open Int64 in
+    let module S = Image.Scheme in
+    let len = of_int @@ String.length patch.data in
+    let data_len = of_int patch.inline in
+    let code_len = len - data_len in
+    if len > code_len then
+      let addr = patch.addr + code_len in
+      let loc = patch.loc + code_len in
+      Ogre.sequence [
+        Ogre.provide S.mapped addr data_len loc;
+        Ogre.provide S.segment addr data_len true false false;
+      ]
+    else Ogre.return ()
+
+  let provide
+      (patch : patch)
+      (name : string)
+      (root : int64) : unit Ogre.t =
+    Ogre.sequence [
+      provide_code patch name root;
+      provide_data patch;
+    ]
+
+  let one (ogre : Ogre.doc) (patch : patch) : res =
+    match Utils.find_named_region patch.root ogre with
+    | None ->
+      let msg = Format.asprintf
+          "No named region for patch 0x%Lx, root 0x%Lx"
+          patch.addr patch.root in
+      Error (Errors.Invalid_ogre msg)
+    | Some region when not_extern patch region -> Ok ogre
+    | Some region -> match Utils.find_named_symbol region.addr ogre with
+      | None ->
+        let msg = Format.asprintf
+            "No named symbol matching region %s, addr 0x%Lx"
+            region.name region.addr in
+        Error (Errors.Invalid_ogre msg)
+      | Some name ->
+        let name = Format.sprintf "%s@%Lx" name patch.addr in
+        match Ogre.exec (provide patch name region.addr) ogre with
+        | Error err ->
+          let msg = Format.asprintf
+              "Failed to extend OGRE file for patch 0x%Lx, root 0x%Lx: %a"
+              patch.addr patch.root Error.pp err in
+          Error (Errors.Invalid_ogre msg)
+        | Ok _ as res -> res
+
+  let rec go (ogre : Ogre.doc) : patch list -> res = function
+    | [] -> Ok ogre
+    | p :: rest when p.trampoline -> go ogre rest
+    | p :: rest ->
+      let* ogre = one ogre p in
+      go ogre rest
+
+end
+
 type t = {
   patches  : patch list;
   spaces   : Spaces.t;
@@ -583,6 +661,12 @@ let patch
       else
         let msg = "Not enough space to extend the code segment" in
         Error (Errors.No_patch_spaces msg) in
+  let* new_ogre = match ogre with
+    | None -> Ok None
+    | Some ogre ->
+      Log.send "Extending the OGRE specification";
+      let* ogre = Extend_ogre.go ogre patches in
+      Ok (Some ogre) in
   Log.send "Writing to patched binary %s" patched_binary;
   let* () = write info.code.addr patches binary patched_binary ~extend in
-  Ok {patches; spaces = Spaces.of_list spaces; new_ogre = ogre}
+  Ok {patches; spaces = Spaces.of_list spaces; new_ogre}
