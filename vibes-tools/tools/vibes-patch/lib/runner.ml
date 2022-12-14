@@ -54,10 +54,11 @@ let run
     patched_binary;
   let* target = CT.get_target target in
   let* language = CT.get_language language in
-  let had_spaces = Option.is_some patch_spaces in
-  let* patch_spaces = match patch_spaces with
-    | Some path -> Spaces.from_file path
-    | None -> Ok Spaces.empty in
+  let* patch_spaces, had_spaces = match patch_spaces with
+    | None -> Ok (Spaces.empty, false)
+    | Some path ->
+      let* spaces = Spaces.from_file path in
+      Ok (spaces, not @@ Spaces.is_empty spaces) in
   let* ogre = match ogre with
     | None -> Ok None
     | Some path -> match Ogre.Doc.from_file path with
