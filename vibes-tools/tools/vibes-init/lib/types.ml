@@ -30,6 +30,7 @@ type t = {
   patched_binary : string;
   patches : patch list;
   spaces : string;
+  ogre : string option;
 }
 
 let create_patch (patch : string) : patch = {
@@ -101,6 +102,7 @@ let infer_target_and_lang
   with Toplevel.Conflict c -> Error c
 
 let create
+    ?(ogre : string option = None)
     ?(language : T.language option = None)
     ~(patch_names : string list)
     ~(model : string)
@@ -116,6 +118,7 @@ let create
     patched_binary;
     spaces;
     patches = List.map patch_names ~f:create_patch;
+    ogre;
   }
 
 let pp_makefile (ppf : Format.formatter) (t : t) : unit =
@@ -129,6 +132,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   Format.fprintf ppf "MODEL := %s\n%!" t.model;
   Format.fprintf ppf "BINARY := %s\n%!" t.binary;
   Format.fprintf ppf "PATCHED_BINARY := %s\n%!" t.patched_binary;
+  Option.iter t.ogre ~f:(Format.fprintf ppf "OGRE := %s\n%!");
   Format.fprintf ppf "SPACES := %s\n\n%!" t.spaces;
   (* Patch definitions. *)
   List.iteri t.patches ~f:(fun i p ->
@@ -244,15 +248,29 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   Format.fprintf ppf "patch:\n";
   Format.fprintf ppf "\trm -f $(PATCHED_BINARY)\n%!";
   Format.fprintf ppf "\t$(MAKE) $(PATCHED_BINARY)\n\n%!";
-  Format.fprintf ppf "$(PATCHED_BINARY): %s\n%!" asms;
-  Format.fprintf ppf "\tvibes-patch \
-                      --target $(TARGET) \
-                      --language $(LANG) \
-                      --binary $(BINARY) \
-                      --patch-spaces $(SPACES) \
-                      --asm-filepaths %s \
-                      --patched-binary $(PATCHED_BINARY) \
-                      --verbose\n%!" asms;
+  begin match t.ogre with
+    | None ->
+      Format.fprintf ppf "$(PATCHED_BINARY): %s\n%!" asms;
+      Format.fprintf ppf "\tvibes-patch \
+                          --target $(TARGET) \
+                          --language $(LANG) \
+                          --binary $(BINARY) \
+                          --patch-spaces $(SPACES) \
+                          --asm-filepaths %s \
+                          --patched-binary $(PATCHED_BINARY) \
+                          --verbose\n%!" asms
+    | Some ogre ->
+      Format.fprintf ppf "$(PATCHED_BINARY): %s %s\n%!" asms ogre;
+      Format.fprintf ppf "\tvibes-patch \
+                          --target $(TARGET) \
+                          --language $(LANG) \
+                          --binary $(BINARY) \
+                          --patch-spaces $(SPACES) \
+                          --asm-filepaths %s \
+                          --patched-binary $(PATCHED_BINARY) \
+                          --ogre $(OGRE) \
+                          --verbose\n%!" asms
+  end;
   Format.fprintf ppf "\tchmod +x $(PATCHED_BINARY)\n\n%!";
   (* clean *)
   let cleans =

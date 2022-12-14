@@ -21,10 +21,12 @@ type t = {
   patched_binary : string;
   patches : patch list;
   spaces : string;
+  ogre : string option;
 }
 
 (** Creates the information for generating the patch build process. *)
 val create :
+  ?ogre:string option ->
   ?language:Theory.language option ->
   patch_names:string list ->
   model:string ->

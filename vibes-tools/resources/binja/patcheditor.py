@@ -183,11 +183,6 @@ class PatchEditor(QDialog):
       with open(filename(name, "c"), "w") as f:
         f.write(c)
 
-    ogre = self.ogre.ogre
-    if ogre.functions:
-      with open(filename("loader", "ogre"), "w") as f:
-        f.write(str(ogre))
-
     with open(filename("patch-spaces", "json"), "w") as f:
       spaces = db.get_spaces(self.data)
       s = patchspaces.serialize(self.data, spaces)
@@ -198,13 +193,22 @@ class PatchEditor(QDialog):
     for name in self.patches.keys():
       names.append(name)
 
-    print("Running vibes-init in", savedir)
-    proc = subprocess.run([
+    args = [
       "vibes-init",
       "--binary=%s" % self.data.file.original_filename,
       "--patched-binary=patched.exe",
       "--patch-names=%s" % ",".join(names),
-    ], cwd=savedir, stderr=subprocess.PIPE)
+    ]
+
+    ogre = self.ogre.ogre
+    if ogre.functions:
+      name = filename("loader", "ogre")
+      with open(name, "w") as f:
+        f.write(str(ogre))
+        args.append("--ogre=%s" % name)
+
+    print("Running vibes-init in", savedir)
+    proc = subprocess.run(args, cwd=savedir, stderr=subprocess.PIPE)
     print("vibes-init exited with code", proc.returncode)
     if proc.returncode != 0:
       utils.eprint(proc.stderr.decode())
