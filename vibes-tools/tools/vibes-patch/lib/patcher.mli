@@ -10,7 +10,8 @@ type patch = {
   trampoline : bool;
 }
 
-type res = {
+(** The result. *)
+type t = {
   patches  : patch list;
   spaces   : Vibes_patch_info.Types.Spaces.t;
   new_ogre : Ogre.doc option;
@@ -35,4 +36,4 @@ val patch :
   Vibes_as.Types.Assembly.t list ->
   binary:string ->
   patched_binary:string ->
-  (res, KB.conflict) result
+  (t, KB.conflict) result
