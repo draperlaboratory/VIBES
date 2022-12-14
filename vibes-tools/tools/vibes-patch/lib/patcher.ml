@@ -537,7 +537,7 @@ module Extend_ogre = struct
     let len = of_int @@ String.length patch.data in
     let data_len = of_int patch.inline in
     let code_len = len - data_len in
-    if len > code_len then
+    if data_len > 0L then
       let addr = patch.addr + code_len in
       let loc = patch.loc + code_len in
       Ogre.sequence [
