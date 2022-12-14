@@ -514,35 +514,45 @@ module Extend_ogre = struct
 
   type res = (Ogre.doc, KB.conflict) result
 
+  type len = {
+    total : int64;
+    data  : int64;
+    code  : int64;
+  }
+
   let not_extern (patch : patch) (region : Utils.named_region) : bool =
     Int64.(patch.addr >= region.addr &&
            patch.addr < region.addr + region.size)
 
+  let length (patch : patch) : len =
+    let open Int64 in
+    let total = of_int @@ String.length patch.data in
+    let data = of_int patch.inline in
+    let code = total - data in
+    {total; data; code}
+
   let provide_code
       (patch : patch)
       (name : string)
-      (root : int64) : unit Ogre.t =
+      (root : int64)
+      (len : len) : unit Ogre.t =
     let module S = Image.Scheme in
-    let len = Int64.of_int @@ String.length patch.data in
     Ogre.sequence [
-      Ogre.provide S.mapped patch.addr len patch.loc;
-      Ogre.provide S.code_region patch.addr len patch.loc;
-      Ogre.provide S.named_region patch.addr len name;
-      Ogre.provide S.symbol_chunk patch.addr len root;
+      Ogre.provide S.mapped patch.addr len.code patch.loc;
+      Ogre.provide S.code_region patch.addr len.code patch.loc;
+      Ogre.provide S.named_region patch.addr len.code name;
+      Ogre.provide S.symbol_chunk patch.addr len.code root;
     ]
 
-  let provide_data (patch : patch) : unit Ogre.t =
+  let provide_data (patch : patch) (len : len) : unit Ogre.t =
     let open Int64 in
-    let module S = Image.Scheme in
-    let len = of_int @@ String.length patch.data in
-    let data_len = of_int patch.inline in
-    let code_len = len - data_len in
-    if data_len > 0L then
-      let addr = patch.addr + code_len in
-      let loc = patch.loc + code_len in
+    if len.data > 0L then
+      let module S = Image.Scheme in
+      let addr = patch.addr + len.code in
+      let loc = patch.loc + len.code in
       Ogre.sequence [
-        Ogre.provide S.mapped addr data_len loc;
-        Ogre.provide S.segment addr data_len true false false;
+        Ogre.provide S.mapped addr len.data loc;
+        Ogre.provide S.segment addr len.data true false false;
       ]
     else Ogre.return ()
 
@@ -551,6 +561,7 @@ module Extend_ogre = struct
       (region : Utils.named_region)
       (name : string)
       (root : int64) : unit Ogre.t =
+    let len = length patch in
     let code =
       (* If we're not using an external patch space then we
          won't need to include the code information about it,
@@ -558,8 +569,8 @@ module Extend_ogre = struct
          patch may have still included some inline data, so
          we should be sure to provide that information. *)
       if not_extern patch region then Ogre.return ()
-      else provide_code patch name root in
-    Ogre.sequence [code; provide_data patch]
+      else provide_code patch name root len in
+    Ogre.sequence [code; provide_data patch len]
 
   let one (ogre : Ogre.doc) (patch : patch) : res =
     match Utils.find_named_region patch.root ogre with
