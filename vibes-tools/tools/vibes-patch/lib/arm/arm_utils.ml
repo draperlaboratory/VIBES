@@ -13,6 +13,7 @@ let (let*) x f = Result.bind x ~f
 
 let assembler : string = "/usr/bin/arm-linux-gnueabi-as"
 let objcopy : string = "/usr/bin/arm-linux-gnueabi-objcopy"
+let objdump : string = "/usr/bin/arm-linux-gnueabi-objdump"
 
 let max_insn_length : int = 4
 
@@ -209,9 +210,29 @@ module Toolchain = struct
       (language : Theory.language) : string list =
     if CT.is_thumb language then "-mthumb" :: args else args
 
+  let short_re : Str.regexp =
+    Str.regexp {| +[1-9a-f]+: +[0-9a-f]+ +\.short +0x[0-9a-f]+|}
+
+  let word_re : Str.regexp =
+    Str.regexp {| +[1-9a-f]+: +[0-9a-f]+ +\.word +0x[0-9a-f]+|}
+
+  (* This is a bit hacky, but we want to avoid the complexity of disassembling
+     the file ourselves. *)
+  let calculate_inline_data (objfile : string) : (int, KB.conflict) result =
+    Log.send "Calculating inline data for %s" objfile;
+    let* out, _ = Proc.run objdump ["-S"; objfile] in
+    let n = List.fold out ~init:0 ~f:(fun n s ->
+        let s = String.map s ~f:(function
+            | '\t' -> ' ' | c -> c) in
+        if Str.string_match short_re s 0 then n + 2
+        else if Str.string_match word_re s 0 then n + 4
+        else n) in
+    Log.send "Found %d bytes of data" n;
+    Ok n
+
   let assemble
       (asm : Asm.t)
-      (language : Theory.language) : (string, KB.conflict) result =
+      (language : Theory.language) : (string * int, KB.conflict) result =
     let asmfile = Filename.temp_file "vibes" ".asm" in
     let objfile = Filename.temp_file "vibes" ".o" in
     let data = Format.asprintf "%a" Asm.pp asm in
@@ -231,7 +252,8 @@ module Toolchain = struct
           let msg = Format.sprintf "Assembler failed:\n%s" err in
           Error (Errors.Invalid_asm msg)
       else Ok () in
-    Ok objfile
+    let* data_size = calculate_inline_data objfile in
+    Ok (objfile, data_size)
 
   let to_binary (objfile : string) : (string, KB.conflict) result =
     let binfile = Filename.temp_file "vibes" ".bin" in    

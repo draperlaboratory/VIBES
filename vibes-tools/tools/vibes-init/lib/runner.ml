@@ -12,20 +12,20 @@ module Inputs = Vibes_constants.Inputs
 let (let*) x f = Result.bind x ~f
 
 let run
+    ?(ogre : string option = None)
     ?(language : string option = None)
     ~(patch_names : string list)
     ~(model_filepath : string)
     ~(binary : string)
     ~(patched_binary : string)
     () : (unit, KB.conflict) result =
-  Log.send "Vibes_init.Runner.run '%s' '%s' '%s' '%s' '%s'"
+  Log.send "Vibes_init.Runner.run '%s' '%s' '%s' '%s'"
     (String.concat patch_names ~sep:", ") model_filepath binary
-    patched_binary (Option.value language ~default:"(none)");
+    patched_binary;
   let* language = match language with
-    | None -> Ok None
-    | Some language ->
-      Result.(CT.get_language language >>| Option.some) in
-  let* t = Types.create ~language ~patch_names
+    | Some language -> Result.(CT.get_language language >>| Option.some)
+    | None -> Ok None in
+  let* t = Types.create ~language ~patch_names ~ogre
       ~model:model_filepath ~binary ~patched_binary
       ~spaces:Inputs.default_patch_spaces in
   Log.send "Generating template files";

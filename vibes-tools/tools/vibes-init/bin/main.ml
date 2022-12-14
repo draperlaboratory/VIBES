@@ -54,6 +54,7 @@ module Cli = struct
       (verbose : bool)
       (no_color : bool)
       (language : string option)
+      (ogre : string option)
       (model_filepath : string)
       (patch_names : string list)
       (binary : string)
@@ -66,6 +67,7 @@ module Cli = struct
       ~model_filepath
       ~binary
       ~patched_binary
+      ~ogre
       () |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
@@ -75,6 +77,7 @@ module Cli = struct
       $ Cli_opts.Verbosity.verbose
       $ Cli_opts.Verbosity.no_color
       $ Cli_opts.Language.language_optional
+      $ Cli_opts.Ogre.ogre
       $ model_filepath
       $ patch_names
       $ binary

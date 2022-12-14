@@ -47,6 +47,7 @@ module Cli = struct
       (target : string)
       (language : string)
       (patch_spaces : string option)
+      (ogre : string option)
       (binary : string)
       (asm_filepaths : string list)
       (patched_binary : string) : (unit, string) result =
@@ -59,6 +60,7 @@ module Cli = struct
       ~binary
       ~asm_filepaths
       ~patched_binary
+      ~ogre
       () |> function
     | Ok () -> Ok ()
     | Error e -> Error (KB.Conflict.to_string e)
@@ -70,6 +72,7 @@ module Cli = struct
       $ Cli_opts.Target.target
       $ Cli_opts.Language.language
       $ Cli_opts.Patch_info.spaces
+      $ Cli_opts.Ogre.ogre
       $ binary
       $ asm_filepaths
       $ patched_binary

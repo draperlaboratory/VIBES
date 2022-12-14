@@ -4,7 +4,7 @@ module Asm = Vibes_as.Types.Assembly
 
 module type Toolchain = sig
 
-  val assemble : Asm.t -> Theory.language -> (string, KB.conflict) result
+  val assemble : Asm.t -> Theory.language -> (string * int, KB.conflict) result
   val to_binary : string -> (string, KB.conflict) result
 
 end

@@ -22,7 +22,7 @@ module Spaces : sig
   val is_empty : t -> bool
 
   (** Converts a list of spaces into an interval tree where
-      overlapping regions are coalesced. *)
+      overlapping and adjacent regions are coalesced. *)
   val of_list : space list -> t
 
   (** Returns the interval tree as a list of spaces. *)
