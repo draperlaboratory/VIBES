@@ -259,8 +259,8 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --asm-filepaths %s \
                           --patched-binary $(PATCHED_BINARY) \
                           --verbose\n%!" asms
-    | Some ogre ->
-      Format.fprintf ppf "$(PATCHED_BINARY): %s %s\n%!" asms ogre;
+    | Some _ ->
+      Format.fprintf ppf "$(PATCHED_BINARY): %s $(OGRE)\n%!" asms;
       Format.fprintf ppf "\tvibes-patch \
                           --target $(TARGET) \
                           --language $(LANG) \
