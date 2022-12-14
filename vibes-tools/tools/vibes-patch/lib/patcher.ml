@@ -572,12 +572,12 @@ module Extend_ogre = struct
       | Some name ->
         let name = Format.sprintf "%s@%Lx" name patch.addr in
         match Ogre.exec (provide patch name region.addr) ogre with
+        | Ok _ as res -> res
         | Error err ->
           let msg = Format.asprintf
               "Failed to extend OGRE file for patch 0x%Lx, root 0x%Lx: %a"
               patch.addr patch.root Error.pp err in
           Error (Errors.Invalid_ogre msg)
-        | Ok _ as res -> res
 
   let rec go (ogre : Ogre.doc) : patch list -> res = function
     | [] -> Ok ogre
