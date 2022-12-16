@@ -638,6 +638,17 @@ module Transl = struct
           | None -> what name []
           | Some t -> t
       }
+
+  let add_type (key : string) (data : typ) : unit t =
+    update @@ fun env -> {
+      env with gamma = Map.set env.gamma ~key ~data;
+    }
+
+  let add_tag (key : string) (data : typ) : unit t =
+    update @@ fun env -> {
+      env with tags = Map.set env.tags ~key ~data;
+    }
+
 end
 
 (* The main pass for elaboration and typechecking *)
@@ -915,6 +926,23 @@ module Main = struct
 
   end
 
+  let resolver lookup = object(self)
+    inherit [unit] C.Type.Mapper.base
+
+    method! map_union = self#resolve
+    method! map_structure = self#resolve
+
+    method private resolve t = match t with
+      | {C.Type.Compound.fields = []; _} -> self#lookup t
+      | _ -> t
+
+    method private lookup {C.Type.Compound.fields; name} =
+      match lookup name with
+      | Some `Structure {C.Type.Spec.t; _}
+      | Some `Union {C.Type.Spec.t; _} -> C.Type.Compound.{t with name}
+      | _ -> {C.Type.Compound.fields; name}
+  end
+
   (* Translate a scoped statement. *)
   let rec go_body ((defs, stmt) : Cabs.body) : body transl =
     let* {tenv; csize; _} = get () in
@@ -923,18 +951,43 @@ module Main = struct
         ~f:(fun (tenv, inits) -> function
             | DECDEF (_t, _storage, names) ->
               Transl.List.fold names ~init:(tenv, inits)
-                ~f:(fun (tenv, inits) (v, t, _, e) ->
-                    let+ t = go_type t in
+                ~f:(fun (tenv, inits) (name, t, _attrs, e) ->
+                    let* t = go_type t in
+                    let+ () = Transl.add_type name t in
                     let size = Option.value_exn (csize#bits t) in
                     let s = Theory.Bitv.define size in
-                    let tenv = Map.set tenv ~key:v ~data:t in
-                    let v = Theory.Var.(forget @@ define s v) in
-                    tenv, ((v, t), e) :: inits)
+                    let tenv = Map.set tenv ~key:name ~data:t in
+                    let v = Theory.Var.define s name in
+                    tenv, ((Theory.Var.forget v, t), e) :: inits)
+            | TYPEDEF ((_t, _storage, names), _attrs) ->
+              let+ () =
+                Transl.List.iter names ~f:(fun (name, t, _attrs, _e) ->
+                    let* t = go_type t in
+                    Transl.add_type name t) in
+              tenv, inits
+            | ONLYTYPEDEF (t, _storage, names) ->
+              let* () = match t with
+                | STRUCT (name, _) | UNION (name, _) | ENUM (name, _) ->
+                  let* t = go_type t in
+                  Transl.add_tag name t
+                | _ -> return () in
+              let+ () =
+                Transl.List.iter names ~f:(fun (name, t, _attrs, _e) ->
+                    let* t = go_type t in
+                    Transl.add_type name t) in
+              tenv, inits
             | def ->
-              let s = Utils.print_c Cprint.print_def def in
-              fail (
-                sprintf "Patch_c.go_body: unexpected definition:\n\n%s\n\n\
-                         expected a declaration" s)) in
+              let msg = Format.sprintf
+                  "Patch_c.go_body: unsupported definition:\n\n%s\n\n" @@
+                Utils.print_c Cprint.print_def def in
+              fail msg) in
+    let* () = update @@ fun env ->
+      let resolve = (resolver @@ Map.find env.tags)#run in
+      let gamma =
+        String.Map.to_sequence env.gamma |>
+        Seq.map ~f:(fun (name, t) -> name, resolve t) |>
+        String.Map.of_sequence_exn in
+      {env with gamma} in
     let* inits = go_inits @@ List.rev inits in
     let* () = update @@ fun env -> {env with tenv = new_tenv} in
     let* s = go_statement stmt in
