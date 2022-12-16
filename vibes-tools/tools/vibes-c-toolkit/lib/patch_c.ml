@@ -946,7 +946,7 @@ module Main = struct
 
   (* Translate a scoped statement. *)
   let rec go_body ((defs, stmt) : Cabs.body) : body transl =
-    let* {tenv; csize; _} = get () in
+    let* {tenv; gamma; tags; csize; _} = get () in
     let* new_tenv, inits =
       Transl.List.fold defs ~init:(tenv, [])
         ~f:(fun (tenv, inits) -> function
@@ -982,13 +982,12 @@ module Main = struct
                   "Patch_c.go_body: unsupported definition:\n\n%s\n\n" @@
                 Utils.print_c Cprint.print_def def in
               fail msg) in
+    let* inits = go_inits @@ List.rev inits in
     let* () = update @@ fun env ->
       let resolve = (resolver @@ Map.find env.tags)#run in
-      {env with gamma = Map.map env.gamma ~f:resolve} in
-    let* inits = go_inits @@ List.rev inits in
-    let* () = update @@ fun env -> {env with tenv = new_tenv} in
+      {env with tenv = new_tenv; gamma = Map.map env.gamma ~f:resolve} in
     let* s = go_statement stmt in
-    let+ () = update @@ fun env -> {env with tenv} in
+    let+ () = update @@ fun env -> {env with tenv; gamma; tags} in
     new_tenv, SEQUENCE (inits, s)
 
   (* Initialize the declared variables. *)
