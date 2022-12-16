@@ -17,7 +17,7 @@ open KB.Syntax
 let parse_c_code (raw_code : string) : (Types.ast, KB.conflict) result =
   Log.send "Parsing C code";
   match C_toolkit.Parse_c.parse raw_code with
-  | Error msg -> Error (Errors.Invalid_C msg)
+  | Error _ as e -> e
   | Ok ast as a ->
     let s = C_toolkit.C_utils.print_c Cprint.print_def ast in
     Log.send "Parsed:\n%s" s;
