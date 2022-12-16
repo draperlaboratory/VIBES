@@ -51,6 +51,7 @@
 
 open Core
 open Bap.Std
+open Bap_c.Std
 open Bap_core_theory
 
 module T = Theory
@@ -58,6 +59,7 @@ module Hvar = Vibes_higher_vars.Higher_var
 module Substituter = Vibes_higher_vars.Substituter
 module Naming = Substituter.Naming
 module Utils = Vibes_utils
+module Data_model = Patch_c.Data_model
 
 let package = Vibes_constants.Bap_kb.package
 
@@ -73,14 +75,17 @@ module Make(CT : Theory.Core) = struct
 
   (* If `endian` evaluates to `b1` (true), then we are big-endian. *)
   type ('a, 'b) interp_info = {
-    target    : T.target;
-    word_sort : 'a T.Bitv.t T.Value.sort;
-    byte_sort : 'b T.Bitv.t T.Value.sort;
-    mem_var   : ('a, 'b) T.Mem.t T.var;
-    endian    : T.Bool.t T.value;
-    ret_var   : unit T.var;
-    arg_vars  : unit T.var list;
-    hvars     : Hvar.t list;
+    target      : T.target;
+    word_sort   : 'a T.Bitv.t T.Value.sort;
+    byte_sort   : 'b T.Bitv.t T.Value.sort;
+    mem_var     : ('a, 'b) T.Mem.t T.var;
+    endian      : T.Bool.t T.value;
+    ret_var     : unit T.var;
+    arg_vars    : unit T.var list;
+    hvars       : Hvar.t list;
+    data        : Data_model.t;
+    csize       : C.Size.base;
+    as_unsigned : C.Type.t -> C.Type.t;
   } [@@deriving fields]
 
   let make_reg (target : T.target) (v : unit T.var) : unit T.var KB.t =
@@ -103,34 +108,47 @@ module Make(CT : Theory.Core) = struct
     let e = T.Target.endianness target in
     if T.Endianness.(e = eb) then CT.b1 else CT.b0
 
+  let as_unsigned (data : Data_model.t) : C.Type.t -> C.Type.t =
+    let obj = object
+      inherit [C.Type.t] C.Type.Mapper.base
+      method! map_integer = function
+        | `char       -> if Data_model.schar data then `uchar else `char
+        | `schar      -> `uchar
+        | `sshort     -> `ushort
+        | `sint       -> `uint
+        | `slong      -> `ulong
+        | `slong_long -> `ulong_long
+        | i           -> i
+    end in obj#run
+  
   let make_interp_info
       (hvars : Hvar.t list)
-      (target : T.target) : ('a, 'b) interp_info KB.t =
+      (target : T.target)
+      (data : Data_model.t)
+      (csize : C.Size.base) : ('a, 'b) interp_info KB.t =
     let word_sort = T.(Bitv.define @@ Target.bits target) in
     let byte_sort = T.(Bitv.define @@ Target.byte target) in
     let mem_var = T.Target.data target in
     let* endian = make_endian target in
     let* ret_var = make_ret_var target in
     let+ arg_vars = make_arg_vars target in
+    let as_unsigned = as_unsigned data in
     Fields_of_interp_info.create
       ~target ~word_sort ~byte_sort ~mem_var
       ~endian ~ret_var ~arg_vars ~hvars
-
-  let as_unsigned (t : Patch_c.typ) : Patch_c.typ = match t with
-    | INT (size, _) -> INT (size, UNSIGNED)
-    | _ -> t
+      ~data ~csize ~as_unsigned
 
   let ty_of_base_type
       (info : _ interp_info)
       (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort =
-    T.Bitv.define @@ Patch_c.Type.size info.target c_ty
+    T.Bitv.define @@ Option.value_exn (info.csize#bits c_ty)
 
   let ty_op_pointer_type
       (info : _ interp_info)
       (c_ty : Patch_c.typ) : _ T.Bitv.t T.Value.sort KB.t =
     match c_ty with
-    | PTR ty -> !!(ty_of_base_type info ty)
-    | FUN _ -> !!(ty_of_base_type info c_ty)
+    | `Pointer {C.Type.Spec.t = ty; _} -> !!(ty_of_base_type info ty)
+    | `Function _ -> !!(ty_of_base_type info c_ty)
     | _ -> fail "Core_c.ty_op_pointer_type: expected pointer type"
 
   let is_boolean_op (op : Patch_c.binop) : bool = match op with
@@ -174,63 +192,52 @@ module Make(CT : Theory.Core) = struct
     | SUB -> !!(lift_bitv CT.sub)
     | MUL -> !!(lift_bitv CT.mul)
     | DIV -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, _ | _, None ->
-          fail "DIV requires a signedness on both operands"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.div)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.sdiv)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.div)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.sdiv)
       end
     | MOD -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, _ | _, None ->
-          fail "MOD requires a signedness on both operands"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.modulo)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.smodulo)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.modulo)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.smodulo)
       end
     | LAND -> !!(lift_bitv CT.logand)
     | LOR -> !!(lift_bitv CT.logor)
     | XOR -> !!(lift_bitv CT.logxor)
     | SHL -> !!(lift_bitv CT.lshift)
     | SHR  -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | Some SIGNED, Some _ -> !!(lift_bitv CT.arshift)
-        | Some UNSIGNED, Some _ -> !!(lift_bitv CT.rshift)
-        | None, _ | _, None ->
-          fail "SHR requires a signedness on both operands"
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | SIGNED, _ -> !!(lift_bitv CT.arshift)
+        | UNSIGNED, _ -> !!(lift_bitv CT.rshift)
       end
     | EQ  -> !!(lift_bitv CT.eq)
     | NE  -> !!(lift_bitv CT.neq)
     | LT -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, None -> !!(lift_bitv CT.ult)
-        | None, _ | _, None ->
-          fail "LT requires a signedness on both operands or on none"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.ult)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.slt)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ult)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.slt)
       end
     | GT -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, None -> !!(lift_bitv CT.ugt)
-        | None, _ | _, None ->
-          fail "GT requires a signedness on both operands or on none"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.ugt)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.sgt)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ugt)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.sgt)
       end
     | LE -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, None -> !!(lift_bitv CT.ule)
-        | None, _ | _, None ->
-          fail "LE requires a signedness on both operands or on none"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.ule)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.sle)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ule)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.sle)
       end
     | GE -> begin
-        match Patch_c.Type.sign ty_a, Patch_c.Type.sign ty_b with
-        | None, None -> !!(lift_bitv CT.uge)
-        | None, _ | _, None ->
-          fail "GE requires a signedness on both operands or on none"
-        | Some UNSIGNED, _ | _, Some UNSIGNED -> !!(lift_bitv CT.uge)
-        | Some SIGNED, Some SIGNED -> !!(lift_bitv CT.sge)
+        match Patch_c.Type.sign info.data ty_a,
+              Patch_c.Type.sign info.data ty_b with
+        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.uge)
+        | SIGNED, SIGNED -> !!(lift_bitv CT.sge)
       end
 
   type 'a bitv = 'a T.bitv
@@ -293,20 +300,20 @@ module Make(CT : Theory.Core) = struct
          the strict typing discipline of Core Theory, so we need to insert
          explicit casts where necessary. *)
       if is_boolean_exp e then
-        let t = as_unsigned t in
-        aux @@ CAST (t, Patch_c.Exp.coerce_type e t)
+        let t = info.as_unsigned t in
+        aux @@ CAST (t, Patch_c.Exp.coerce_type info.data info.csize e t)
       else aux e in
     match e with
     | UNARY (ADDROF, VARIABLE (v, _), _) -> addr_of_var info @@ T.Var.name v
     | UNARY (ADDROF, UNARY (MEMOF, a, _), _) -> aux a
     | UNARY (op, a, _) ->
-      let ty_a = Patch_c.Exp.typeof a in
+      let ty_a = Patch_c.Exp.typeof info.data a in
       let* a = aux_bool ty_a a in
       let* o = unop_to_pure info op ty_a in
       o !!a
     | BINARY (op, a, b, _) ->
-      let ty_a = Patch_c.Exp.typeof a in
-      let ty_b = Patch_c.Exp.typeof b in
+      let ty_a = Patch_c.Exp.typeof info.data a in
+      let ty_b = Patch_c.Exp.typeof info.data b in
       let* a, b =
         if not @@ is_boolean_op op then
           let* a = aux_bool ty_a a and* b = aux_bool ty_b b in
@@ -321,9 +328,9 @@ module Make(CT : Theory.Core) = struct
       let+ i = CT.int info.word_sort @@ Word.to_bitvec w in
       T.Value.forget i
     | CAST (t, e) ->
-      let t' = Patch_c.Exp.typeof e in
-      let sz = Patch_c.Type.size info.target t in
-      let sz' = Patch_c.Type.size info.target t' in
+      let t' = Patch_c.Exp.typeof info.data e in
+      let sz = Option.value_exn (info.csize#bits t) in
+      let sz' = Option.value_exn (info.csize#bits t') in
       let* e' = aux e in
       if sz = sz' && not @@ is_boolean_exp e then !!e'
       else
@@ -337,13 +344,12 @@ module Make(CT : Theory.Core) = struct
             (* Apply the integral promotion rules. Based on the signedness of
                each type, figure out if we need a sign extension or a zero
                extension. *)
-            match Patch_c.Type.sign t, Patch_c.Type.sign t' with
-            | Some SIGNED,   Some SIGNED   -> CT.signed   s e
-            | Some SIGNED,   Some UNSIGNED -> CT.unsigned s e
-            | Some UNSIGNED, Some SIGNED   -> CT.signed   s e
-            | Some UNSIGNED, Some UNSIGNED -> CT.unsigned s e
-            (* Assume unsigned. *)
-            | None, _ | _, None -> CT.unsigned s e in
+            match Patch_c.Type.sign info.data t,
+                  Patch_c.Type.sign info.data t' with
+            | SIGNED,   SIGNED   -> CT.signed   s e
+            | SIGNED,   UNSIGNED -> CT.unsigned s e
+            | UNSIGNED, SIGNED   -> CT.signed   s e
+            | UNSIGNED, UNSIGNED -> CT.unsigned s e in
         T.Value.forget c
 
   type 'a eff = 'a T.eff
@@ -451,7 +457,9 @@ module Make(CT : Theory.Core) = struct
         CT.(seq (block setargs (goto dst) ?l)
               (data @@ cast_call_assign v ~info))
     | STORE (l, r) ->
-      let sr = ty_of_base_type info @@ Patch_c.Exp.typeof r in
+      let sr =
+        ty_of_base_type info @@
+        Patch_c.Exp.typeof info.data r in
       let* l = expr_to_pure info l in
       let+ r = expr_to_pure info r in
       CT.(data
@@ -472,11 +480,11 @@ module Make(CT : Theory.Core) = struct
            like to translate to the stricter Core Theory semantics such that
            the truth values are well-sorted. *)
         if not @@ is_boolean_exp cond then
-          let tcond = Patch_c.Exp.typeof cond in
+          let tcond = Patch_c.Exp.typeof info.data cond in
           let scond = ty_of_base_type info tcond in
           let zero = Word.(
               to_bitvec @@ zero @@
-              Patch_c.Type.size info.target tcond) in
+              Option.value_exn (info.csize#bits tcond)) in
           let zero = CT.int scond zero in
           CT.neq (resort scond c) zero
         else resort T.Bool.t c in
@@ -501,7 +509,7 @@ module Make(CT : Theory.Core) = struct
       (target : T.target)
       (patch : Cabs.definition) : T.Semantics.t KB.t =
     let* body = Patch_c.translate patch ~target in
-    let* info = make_interp_info hvars target in
+    let* info = make_interp_info hvars target body.data body.csize in
     let* eff = body_to_eff body ~info in
     let+ sem = eff in
     sem

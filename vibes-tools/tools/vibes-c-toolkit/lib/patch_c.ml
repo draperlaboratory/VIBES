@@ -26,8 +26,8 @@ module Data_model = struct
 
   (* Same across all data models. *)
   let char_size : int = 8 [@@warning "-32"]
-  let short_size : int = 16
-  let long_long_size : int = 64
+  let short_size : int = 16 [@@warning "-32"]
+  let long_long_size : int = 64 [@@warning "-32"]
 
   let int_size (data : t) : int = match data.sizes with
     | `LP32 -> 16
@@ -58,29 +58,19 @@ module Size = struct
     | n -> invalid_argf "Patch_c.size_of_int_exn: \
                          invalid size integer %d" n ()
 
-  let equal (a : t) (b : t) : bool =
-    Size.equal (a :> size) (b :> size)
-
-  let compare (a : t) (b : t) : int =
-    Size.compare (a :> size) (b :> size)
-
-  let in_bits (s : t) : int = Size.in_bits (s :> size)
-  let in_bytes (s : t) : int = Size.in_bytes (s :> size)
-
 end
 
 type size = Size.t
-
-let equal_size = Size.equal
-
 type sign = SIGNED | UNSIGNED [@@deriving equal]
+type typ = C.Type.t [@@deriving compare]
 
-type typ =
-  | VOID
-  | INT of size * sign
-  | PTR of typ
-  | FUN of typ * typ list
-[@@deriving equal]
+let equal_typ (a : typ) (b : typ) : bool = compare_typ a b = 0
+
+let typ_sign (data : Data_model.t) : typ -> sign = function
+  | `Basic {C.Type.Spec.t = `char; _} when data.schar -> SIGNED
+  | `Basic {C.Type.Spec.t = `char; _} -> UNSIGNED
+  | t when C.Type.is_signed t -> SIGNED
+  | _ -> UNSIGNED
 
 type binop =
   | ADD
@@ -112,6 +102,24 @@ type tenv = typ String.Map.t [@@deriving equal]
 
 type var = Theory.Var.Top.t * typ [@@deriving equal]
 
+let int_typ (data : Data_model.t) (size : size) (sign : sign) : typ =
+  let i32 s =
+    if Data_model.int_size data = 32 then
+      if s then `sint else `uint
+    else if Data_model.long_size data = 32 then
+      if s then `slong else `ulong
+    else failwith "Data model doesn't support 32-bit" in
+  let b = match size, sign with
+    | `r8,  SIGNED   -> `schar
+    | `r8,  UNSIGNED -> `uchar
+    | `r16, SIGNED   -> `sshort
+    | `r16, UNSIGNED -> `ushort     
+    | `r32, SIGNED   -> i32 true
+    | `r32, UNSIGNED -> i32 false
+    | `r64, SIGNED   -> `slong_long
+    | `r64, UNSIGNED -> `ulong_long in
+  C.Type.basic b
+
 let equal_word = Word.equal
 
 type exp =
@@ -137,8 +145,9 @@ and stmt =
 and body = tenv * stmt [@@deriving equal]
 
 type t = {
-  data : Data_model.t;
-  body: body;
+  data  : Data_model.t;
+  csize : C.Size.base;
+  body  : body;
 }
 
 (* Helper for generating a sequence from a list of statements. *)
@@ -175,29 +184,11 @@ module Cabs = struct
     | LE   -> Cabs.LE
     | GE   -> Cabs.GE
 
-  let rec of_typ : typ -> base_type = function
-    | VOID                 -> Cabs.VOID
-    | INT (`r8, SIGNED)    -> Cabs.(CHAR SIGNED)
-    | INT (`r8, UNSIGNED)  -> Cabs.(CHAR UNSIGNED)
-    | INT (`r16, SIGNED)   -> Cabs.(INT (SHORT, SIGNED))
-    | INT (`r16, UNSIGNED) -> Cabs.(INT (SHORT, UNSIGNED))
-    | INT (`r32, SIGNED)   -> Cabs.(INT (LONG, SIGNED))
-    | INT (`r32, UNSIGNED) -> Cabs.(INT (LONG, UNSIGNED))
-    | INT (`r64, SIGNED)   -> Cabs.(INT (LONG_LONG, SIGNED))
-    | INT (`r64, UNSIGNED) -> Cabs.(INT (LONG_LONG, UNSIGNED))
-    | PTR t                -> Cabs.PTR (of_typ t)
-    | FUN (ret, args) ->
-      let names = List.map args ~f:(fun t ->
-          let t = of_typ t in
-          t, Cabs.NO_STORAGE, ("", t, Cabs.[GNU_NONE], Cabs.NOTHING)) in
-      let ret = of_typ ret in
-      Cabs.PROTO (ret, names, false)
-
   let rec of_exp : exp -> expression = function
     | UNARY (u, e, _) -> Cabs.(UNARY (of_unop u, of_exp e))
     | BINARY (b, e1, e2, _) ->
       Cabs.(BINARY (of_binop b, of_exp e1, of_exp e2))
-    | CAST (t, e) -> Cabs.(CAST (of_typ t, of_exp e))
+    | CAST (t, e) -> Cabs.(CAST (Ctype.To_cabs.go t, of_exp e))
     | CONST_INT (i, _) ->
       Cabs.(CONSTANT (CONST_INT (Bitvec.to_string @@ Word.to_bitvec i)))
     | VARIABLE (v, _) -> Cabs.VARIABLE (Theory.Var.name v)
@@ -279,27 +270,31 @@ module Exp = struct
     Utils.print_c Cprint.print_statement @@ COMPUTATION (Cabs.of_exp e)
 
   (* Extract the embedded type of an expression. *)
-  let typeof : t -> typ = function
+  let typeof (data : Data_model.t) : t -> typ = function
     | UNARY (_, _, t) -> t
     | BINARY (_, _, _, t) -> t
     | CAST (t, _) -> t
     | CONST_INT (i, sign) ->
       let w = Word.bitwidth i in
-      INT (Size.of_int_exn w, sign)
+      int_typ data (Size.of_int_exn w) sign
     | VARIABLE (_, t) -> t
 
   (* Convert to a particular type. *)
-  let rec with_type (e : t) (t : typ) : t = match e with
+  let rec with_type
+      (data : Data_model.t)
+      (csize : C.Size.base)
+      (e : t) (t : typ) : t = match e with
     | UNARY _ | BINARY _ | VARIABLE _ -> CAST (t, e)
     | CAST (t', e) -> begin
-        match with_type e t' with
-        | CONST_INT _ as e -> with_type e t
+        match with_type data csize e t' with
+        | CONST_INT _ as e -> with_type data csize e t
         | e -> CAST (t, e)
       end
     | CONST_INT (i, sign) -> begin 
         match t with
-        | INT (size', sign') ->
-          let sz = Size.in_bits size' in
+        | `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
+          let sign' = typ_sign data t in
+          let sz = Option.value_exn (csize#bits t) in
           let ext = Bitvector.extract_exn in
           let i = match sign' with
             | UNSIGNED -> ext ~hi:Int.(sz - 1) i
@@ -314,11 +309,14 @@ module Exp = struct
         | _ -> CAST (t, e)
       end
 
-  let coerce_type (e : t) (t : typ) : t = match e with
+  let coerce_type
+      (data : Data_model.t)
+      (csize : C.Size.base)
+      (e : t) (t : typ) : t = match e with
     | UNARY (u, e, _) -> UNARY (u, e, t)
     | BINARY (b, x, y, _) -> BINARY (b, x, y, t)
     | CAST (_, e) -> CAST (t, e)
-    | CONST_INT _ -> with_type e t
+    | CONST_INT _ -> with_type data csize e t
     | VARIABLE (v, _) -> VARIABLE (v, t)
 
 end
@@ -336,120 +334,114 @@ module Type = struct
 
   type t = typ [@@deriving equal]
 
-  let to_string (data : Data_model.t) (t : t) : string =
-    let rec aux = function
-      | VOID -> "void"
-      | INT (`r8, SIGNED) -> "signed char"
-      | INT (`r8, UNSIGNED) -> "unsigned char"
-      | INT (`r16, SIGNED) -> "short"
-      | INT (`r16, UNSIGNED) -> "unsigned short"
-      | INT (`r32, SIGNED) -> begin
-          match data.sizes with
-          | `LP32 -> "long"
-          | `ILP32 | `LLP64 | `LP64 -> "int"
-          | `ILP64 -> failwith "ILP64 has no 32-bit integer types"
-        end
-      | INT (`r32, UNSIGNED) -> begin
-          match data.sizes with
-          | `LP32 -> "unsigned long"
-          | `ILP32 | `LLP64 | `LP64 -> "unsigned int"
-          | `ILP64 -> failwith "ILP64 has no 32-bit integer types"
-        end
-      | INT (`r64, SIGNED) -> begin
-          match data.sizes with
-          | `LP32 | `ILP32 | `LLP64 | `LP64 -> "long long"
-          | `ILP64 -> "long"
-        end
-      | INT (`r64, UNSIGNED) ->  begin
-          match data.sizes with
-          | `LP32 | `ILP32 | `LLP64 | `LP64 -> "unsigned long long"
-          | `ILP64 -> "unsigned long"
-        end
-      | PTR t -> sprintf "%s*" @@ aux t
-      | FUN (ret, args) ->
-        sprintf "%s (*)(%s)"
-          (aux ret)
-          (String.concat ~sep:", " @@ List.map args ~f:aux) in
-    aux t
-
-  let size (target : Theory.target) : t -> int = function
-    | VOID -> 8
-    | INT (size, _) -> Size.in_bits size
-    | PTR _ -> Theory.Target.data_addr_size target
-    | FUN _ -> Theory.Target.code_addr_size target
-
-  let sign : t -> sign option = function
-    | VOID -> None
-    | INT (_, s) -> Some s
-    | PTR _ | FUN _ -> None
+  let to_string : t -> string = Format.asprintf "%a" C.Type.pp
+  let sign (data : Data_model.t) (t : t) : sign = typ_sign data t
 
   (* See whether the elements of the pointer te can unify. *)
   let rec unify_ptr (t1 : t) (t2 : t) : t option =
     match t1, t2 with
-    | PTR t1, PTR t2 -> Option.(unify_ptr t1 t2 >>| fun t -> PTR t)
-    | VOID, _ -> Some t2
-    | _, VOID -> Some t1
+    | `Pointer {C.Type.Spec.t = t1; _},
+      `Pointer {C.Type.Spec.t = t2; _} ->
+      Option.(unify_ptr t1 t2 >>| C.Type.pointer)
+    | `Void, _ -> Some t2
+    | _, `Void -> Some t1
     | _ -> if equal t1 t2 then Some t1 else None
 
   (* Perform the conversions for pure expressions. *)
-  let unify (t1 : t) (t2 : t) : t option =
+  let unify
+      (data : Data_model.t)
+      (csize : C.Size.base)
+      (t1 : t)
+      (t2 : t) : t option =
     match t1, t2 with
-    | VOID, VOID -> Some VOID
-    | VOID, _ | _, VOID -> None
-    | INT _, PTR _ | PTR _, INT _ -> None
-    | _, FUN _ | FUN _, _ -> None
-    | PTR t1', PTR t2' ->
-      Option.(unify_ptr t1' t2' >>| fun t -> PTR t)
-    | INT (size1, sign1), INT (size2, sign2) ->
-      match Size.compare size1 size2 with
-      | n when n < 0 -> Some t2
-      | n when n > 0 -> Some t1
-      | _ -> match sign1, sign2 with
-        | SIGNED, UNSIGNED | UNSIGNED, SIGNED ->
-          Some (INT (size1, UNSIGNED))
-        | _ -> Some t1
+    | `Void, `Void -> Some `Void
+    | `Void, _ | _, `Void -> None
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+      `Pointer _
+    | `Pointer _,
+      `Basic {C.Type.Spec.t = #C.Type.integer; _} -> None
+    | _, `Function _ | `Function _, _ -> None
+    | `Pointer {C.Type.Spec.t = t1'; _},
+      `Pointer {C.Type.Spec.t = t2'; _} ->
+      Option.(unify_ptr t1' t2' >>| C.Type.pointer)
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+      `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
+      let size1 = Option.value_exn (csize#bits t1) in
+      let size2 = Option.value_exn (csize#bits t2) in
+      begin match compare size1 size2 with
+        | n when n < 0 -> Some t2
+        | n when n > 0 -> Some t1
+        | _ -> match sign data t1, sign data t2 with
+          | SIGNED, UNSIGNED | UNSIGNED, SIGNED ->
+            Some (int_typ data (Size.of_int_exn size1) UNSIGNED)
+          | _ -> Some t1
+      end
+    | _ -> None
 
-  (* Unify pointer tes to integers. *)
-  let rec unify_ptr_to_int (bits : int) (t1 : t) (t2 : typ) : typ option =
-    match t1, t2 with
-    | PTR _, INT (_, _) -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-    | INT (_, _), PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-    | PTR _, PTR _ -> Some (INT (Size.of_int_exn bits, UNSIGNED))
-    | (INT _ | PTR _), FUN (ret, _) -> unify_ptr_to_int bits t1 ret
-    | FUN (ret, _), (INT _ | PTR _) -> unify_ptr_to_int bits ret t2
-    | INT _, INT _ -> unify t1 t2
+  (* Unify pointer types to integers. *)
+  let rec unify_ptr_to_int
+      (data : Data_model.t)
+      (csize : C.Size.base)
+      (bits : int)
+      (t1 : t) (t2 : t) : t option = match t1, t2 with
+    | `Pointer _, `Basic {C.Type.Spec.t = #C.Type.integer; _}
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _}, `Pointer _
+    | `Pointer _, `Pointer _ ->
+      Some (int_typ data (Size.of_int_exn bits) UNSIGNED)
+    | (`Basic {C.Type.Spec.t = #C.Type.integer; _} | `Pointer _),
+      `Function {C.Type.Spec.t = {C.Type.Proto.return; _}; _} ->
+      unify_ptr_to_int data csize bits t1 return
+    | `Function {C.Type.Spec.t = {C.Type.Proto.return; _}; _},
+      (`Basic {C.Type.Spec.t = #C.Type.integer; _} | `Pointer _) ->
+      unify_ptr_to_int data csize bits return t2
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+      `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
+      unify data csize t1 t2
     | _ -> None
 
   (* Same as `unify_ptr` but favor the lhs. *)
   let rec cast_ptr_assign (t1 : t) (t2 : typ) : typ option =
     match t1, t2 with
-    | PTR t1, PTR t2 -> cast_ptr_assign t1 t2
-    | VOID, _ | _, VOID -> Some t1
-    | _ -> if equal t1 t2 then Some t1 else None
+    | `Pointer {C.Type.Spec.t = t1; _},
+      `Pointer {C.Type.Spec.t = t2; _} ->
+      cast_ptr_assign t1 t2
+    | `Void, _ | _, `Void -> Some t1
+    | _ -> Option.some_if (equal t1 t2) t1
 
   (* Perform the conversions for an assignment. Returns the unified type
      and the expression with an explicit cast. *)
-  let cast_assign (tl : t) (tr : typ) (r : exp) : (typ * exp) option =
+  let cast_assign
+      (data : Data_model.t)
+      (csize : C.Size.base)
+      (tl : t) (tr : typ)
+      (r : exp) : (typ * exp) option =
     match tl, tr with
-    | VOID, _ | _, VOID -> None
-    | INT _, PTR _ | PTR _, INT _ -> None
-    | FUN (rl, al), FUN (rr, ar) -> begin
-        match unify rl rr with
+    | `Void, _ | _, `Void -> None
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _}, `Pointer _
+    | `Pointer _, `Basic {C.Type.Spec.t = #C.Type.integer; _} -> None
+    | `Function {C.Type.Spec.t = pl; _},
+      `Function {C.Type.Spec.t = pr; _} -> begin
+        match unify data csize pl.return pr.return with
         | None -> None
-        | Some ret ->
-          try
-            let a = List.zip_exn al ar |> List.map ~f:(fun (l, r) ->
-                let t = unify l r in
-                Option.value_exn t) in
-            Some (FUN (ret, a), r)
-          with _ -> None
+        | Some return -> Option.try_with @@ fun () ->
+          let args =
+            List.zip_exn pl.args pr.args |>
+            List.map ~f:(fun ((nl, l), (_nr, r)) ->
+                nl, Option.value_exn (unify data csize l r)) in
+          C.Type.function_ ~return args, r
       end
-    | FUN _, _ | _, FUN _ -> None
-    | PTR t1', PTR t2' ->
-      Option.(cast_ptr_assign t1' t2' >>| fun _ -> tl, Exp.with_type r tl)
-    | INT (sizel, signl), INT (sizer, signr) ->
-      if equal_size sizel sizer && equal_sign signl signr
-      then Some (tl, r) else Some (tl, Exp.with_type r tl)
+    | `Function _, _ | _, `Function _ -> None
+    | `Pointer {C.Type.Spec.t = t1'; _},
+      `Pointer {C.Type.Spec.t = t2'; _} ->
+      cast_ptr_assign t1' t2' |> Option.map ~f:(fun _ ->
+          tl, Exp.with_type data csize r tl)
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+      `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
+      let sizel = Option.value_exn (csize#bits tl) in
+      let sizer = Option.value_exn (csize#bits tr) in
+      if sizel = sizer && equal_sign (sign data tl) (sign data tr)
+      then Some (tl, r) else Some (tl, Exp.with_type data csize r tl)
+    | _ -> None
 
 end
 
@@ -457,7 +449,7 @@ let to_string (prog : t) : string =
   let tenv, s = prog.body in
   let vars =
     Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
-        sprintf "%s %s;" (Type.to_string prog.data t) v) |>
+        sprintf "%s %s;" (Type.to_string t) v) |>
     String.concat ~sep:"\n" in
   let stmt = Utils.print_c Cprint.print_statement @@ Cabs.of_stmt s in
   sprintf "%s\n%s" vars stmt
@@ -505,24 +497,25 @@ module Opt = struct
   module Cast = struct
 
     (* Remove unnecessary casts from expressions. *)
-    let rec exp : exp -> exp = function
-      | UNARY (u, e, t) -> UNARY (u, exp e, t)
+    let rec exp (data : Data_model.t) : exp -> exp = function
+      | UNARY (u, e, t) -> UNARY (u, exp data e, t)
       | BINARY (b, l, r, t) ->
-        BINARY (b, exp l, exp r, t)
+        BINARY (b, exp data l, exp data r, t)
       | CAST (t, e) ->
-        let e = exp e in
-        if equal_typ t @@ Exp.typeof e then e else CAST (t, e)
+        let e = exp data e in
+        if equal_typ t @@ Exp.typeof data e then e else CAST (t, e)
       | (CONST_INT _ | VARIABLE _) as e -> e
 
-    and go : stmt -> stmt = function
+    and go (data : Data_model.t) : stmt -> stmt = function
       | NOP -> NOP
-      | BLOCK (tenv, s) -> BLOCK (tenv, go s)
-      | ASSIGN (v, e) -> ASSIGN (v, exp e)
-      | CALL (f, args) -> CALL (exp f, List.map args ~f:exp)
-      | CALLASSIGN (v, f, args) -> CALLASSIGN (v, exp f, List.map args ~f:exp)
-      | STORE (l, r) -> STORE (exp l, exp r)
-      | SEQUENCE (s1, s2) -> SEQUENCE (go s1, go s2)
-      | IF (cond, st, sf) -> IF (exp cond, go st, go sf)
+      | BLOCK (tenv, s) -> BLOCK (tenv, go data s)
+      | ASSIGN (v, e) -> ASSIGN (v, exp data e)
+      | CALL (f, args) -> CALL (exp data f, List.map args ~f:(exp data))
+      | CALLASSIGN (v, f, args) ->
+        CALLASSIGN (v, exp data f, List.map args ~f:(exp data))
+      | STORE (l, r) -> STORE (exp data l, exp data r)
+      | SEQUENCE (s1, s2) -> SEQUENCE (go data s1, go data s2)
+      | IF (cond, st, sf) -> IF (exp data cond, go data st, go data sf)
       | GOTO _ as s -> s
 
   end
@@ -598,12 +591,32 @@ module Transl = struct
 
     type t = {
       target : Theory.target;
-      data : Data_model.t;
-      tenv : tenv;
+      data   : Data_model.t;
+      csize  : C.Size.base;
+      tenv   : tenv;
+      gamma  : tenv;
+      tags   : tenv;
     }
 
-    let create ~(target : Theory.target) ~(data : Data_model.t) () =
-      {target; data; tenv = String.Map.empty}
+    let initial_gamma (data : Data_model.t) : tenv =
+      List.map Parse_c.builtin_typenames ~f:(fun b ->
+          let size = Size.of_int_exn b.size in
+          let sign = if b.signed then SIGNED else UNSIGNED in
+          b.name, int_typ data size sign) |>
+      String.Map.of_alist_exn
+
+    let create
+        ~(target : Theory.target)
+        ~(data : Data_model.t)
+        ~(csize : C.Size.base)
+        () = {
+      target;
+      data;
+      csize;
+      tenv = String.Map.empty;
+      gamma = initial_gamma data;
+      tags = String.Map.empty;
+    }
 
     let typeof (var : string) (env : t) : typ option =
       Map.find env.tenv var
@@ -615,6 +628,16 @@ module Transl = struct
 
   let fail (msg : string) : 'a t = lift @@ KB.fail @@ Errors.Patch_c msg
 
+  let gamma : Ctype.gamma t =
+    let+ {gamma; _} = get () in
+    fun name -> Map.find gamma name |> Option.value ~default:`Void
+
+  let tag : Ctype.tag t =
+    let+ {tags; _} = get () in Ctype.{
+        lookup = fun what name -> match Map.find tags name with
+          | None -> what name []
+          | Some t -> t
+      }
 end
 
 (* The main pass for elaboration and typechecking *)
@@ -633,80 +656,63 @@ module Main = struct
 
   (* Create a fresh temporary variable. *)
   let new_tmp (t : typ) : var transl =
-    let* {target; _} = get () in
-    let s = Theory.Bitv.define @@ Type.size target t in
+    let* {csize; _} = get () in
+    let size = Option.value_exn (csize#bits t) in
+    let s = Theory.Bitv.define size in
     let* v = lift @@ Theory.Var.fresh s in
     let v = Theory.Var.forget v in
+    let key = Theory.Var.name v in
     let+ () = update @@ fun env -> {
-        env with tenv = Map.set env.tenv ~key:(Theory.Var.name v) ~data:t;
+        env with tenv = Map.set env.tenv ~key ~data:t;
       } in
     v, t
 
-  (* Translate a base type. *)
-  let rec go_type
-      ?(msg : string = "")
-      (t : Cabs.base_type) : typ transl = match t with
-    | Cabs.VOID -> return VOID
-    | Cabs.BOOL -> return @@ INT (`r8, UNSIGNED)
-    | Cabs.CHAR sign -> begin
-        (* NOTE: The C standard says that whether `char` is equivalent to
-           either `signed char` or `unsigned char` is implementation-defined.
+  let unsupported ?(msg : string = "") (name : string) (t : typ) : _ transl =
+    let msg = Format.asprintf
+        "%s type %a is unsupported:\n%s"
+        name C.Type.pp t msg in
+    fail msg
 
-           GCC seems to take this approach when compiling to ARM, but not
-           when compiling to x86. Go figure.
-        *)
-        let+ default = gets @@ fun {data; _} ->
-          if data.schar then SIGNED else UNSIGNED in
-        match sign with
-        | Cabs.SIGNED -> INT (`r8, SIGNED)
-        | Cabs.UNSIGNED -> INT (`r8, UNSIGNED)
-        | Cabs.NO_SIGN -> INT (`r8, default)
-      end
-    | Cabs.(INT (size, sign)) ->
-      let+ data = gets @@ fun {data; _} -> data in
-      let size = match size with
-        | Cabs.NO_SIZE -> Data_model.int_size data
-        | Cabs.LONG -> Data_model.long_size data
-        | Cabs.SHORT -> Data_model.short_size
-        | Cabs.LONG_LONG -> Data_model.long_long_size in
-      let sign = match sign with
-        | Cabs.(NO_SIGN | SIGNED) -> SIGNED
-        | Cabs.UNSIGNED -> UNSIGNED in
-      INT (Size.of_int_exn size, sign)
-    | Cabs.PTR t ->
-      let+ t = go_type t ~msg in
-      PTR t
-    | Cabs.PROTO (_, _, true) ->
-      let s = Utils.print_c (Cprint.print_type Fn.id) t in
-      fail (
-        sprintf "Patch_c.go_type: %sVariadic functions are \
-                 unsupported:\n\n%s\n" msg s)
-    | Cabs.PROTO (ret, names, false) ->
-      let* ret = go_type ret ~msg in
-      let+ args =
-        Transl.List.map names ~f:(fun (_, _, (_, t, _, _)) ->
-            go_type t ~msg) in
-      FUN (ret, args)
-    | _ ->
-      let s = Utils.print_c (Cprint.print_type Fn.id) t in
-      fail (
-        sprintf "Patch_c.go_type: %sunsupported type:\n\n%s" msg s)
+  (* Disallow use of types that our compiler doesn't support yet. *)
+  let rec check_supported ?(msg : string = "") : typ -> unit transl = function
+    | `Void -> return ()
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _} -> return ()
+    | `Basic {C.Type.Spec.t = #C.Type.floating; _} as t ->
+      unsupported "Floating point" t ~msg
+    | `Pointer {C.Type.Spec.t; _} -> check_supported t ~msg
+    | `Array _ as t -> unsupported "Array" t ~msg
+    | `Structure _ as t -> unsupported "Structure" t ~msg
+    | `Union _ as t -> unsupported "Union" t ~msg
+    | `Function {C.Type.Spec.t = proto; _} as t when proto.variadic ->
+      unsupported "Variadic function" t ~msg
+    | `Function {C.Type.Spec.t = proto; _} ->
+      let* () = check_supported proto.return ~msg in
+      Transl.List.iter proto.args ~f:(fun (_, t) -> check_supported t ~msg)
+
+  (* Translate a base type. *)
+  let go_type
+      ?(msg : string = "")
+      (t : Cabs.base_type) : typ transl =
+    let* gamma = Transl.gamma in
+    let* tag = Transl.tag in
+    let t = Ctype.ctype gamma tag t in
+    let+ () = check_supported t ~msg in
+    t
 
   let typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
     fun e t1 t2 ->
-    let* data = gets @@ fun {data; _} -> data in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-    let s1 = Type.to_string data t1 in
-    let s2 = Type.to_string data t2 in
-    fail (
-      sprintf "Failed to unify types %s and %s in expression:\n\n%s\n" s1 s2 s)
+    let msg = Format.asprintf
+        "Failed to unify types %a and %a in expression:\n\n%s\n"
+        C.Type.pp t1 C.Type.pp t2 s in
+    fail msg
 
   let typ_error (e : Cabs.expression) (t : typ) (msg : string) : 'a transl =
-    let* data = gets @@ fun {data; _} -> data in
     let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-    let t = Type.to_string data t in
-    fail (
-      sprintf "Expression:\n\n%s\n\nunified to type %s. %s\n" s t msg)
+    let msg = Format.asprintf
+        "Expression:\n\n%s\n\nunified to type %a. %s\n"
+        s C.Type.pp t msg in
+    fail msg
 
   (* An elaborated expression. *)
   type eexp = stmt * exp option * stmt
@@ -729,7 +735,8 @@ module Main = struct
       | NOP, NOP -> return @@ First e
       | _, NOP -> return @@ Second (pre, e, post)
       | _ ->
-        let+ tmp = new_tmp @@ Exp.typeof e in
+        let* {data; _} = get () in
+        let+ tmp = new_tmp @@ Exp.typeof data e in
         let pre = sequence [pre; ASSIGN (tmp, e)] in
         Second (pre, VARIABLE tmp, post)
 
@@ -776,41 +783,50 @@ module Main = struct
         let+ e = f op e1 e2 t in
         eff, Some e, NOP
 
+    let increment_rvalue_error (e : Cabs.expression) (t : typ) : 'a transl =
+      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+      let msg = Format.asprintf
+          "Patch_c.increment: expression:\n\n%s\n\nhas type %a, which \
+           is not an l-value" s C.Type.pp t in
+      fail msg
+
     (* Increment value based on the type. *)
     let increment (e : Cabs.expression) (t : typ) : exp transl =
       let* width = gets @@ fun {target; _} ->
         Theory.Target.data_addr_size target in
       match t with
-      | PTR (INT (size, _)) ->
-        (* Pointer to some element type, use the element size. *)
-        let i = Word.of_int ~width @@ Size.in_bytes size in
-        return @@ CONST_INT (i, UNSIGNED)
-      | PTR (PTR _ | FUN _ | VOID) ->
-        (* Pointer to a pointer: use the word size. *)
-        let i = Word.of_int ~width (width lsr 3) in
-        return @@ CONST_INT (i, UNSIGNED)
-      | FUN _ | VOID ->
-        let* data = gets @@ fun {data; _} -> data in
-        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-        let t = Type.to_string data t in
-        fail (
-          sprintf "Patch_c.increment: expression:\n\n%s\n\n\
-                   has type %s. Cannot be an l-value." s t)
-      | INT (_, sign) ->
+      | `Pointer {C.Type.Spec.t = t'; _} -> begin
+          match t' with
+          | `Basic {C.Type.Spec.t = b; _} ->
+            let+ {csize; _} = get () in
+            let size = csize#basic b in
+            let i = Word.of_int ~width @@ Bap.Std.Size.in_bytes size in
+            CONST_INT (i, UNSIGNED)
+          | `Void | `Pointer _ | `Function _ ->
+            (* Pointer to a pointer: use the word size. *)
+            let i = Word.of_int ~width (width lsr 3) in
+            return @@ CONST_INT (i, UNSIGNED)
+          | _ -> assert false
+        end
+      | `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
+        let+ {data; _} = get () in
+        let sign = Type.sign data t in
         let i = Word.one width in
         let i = if equal_sign sign SIGNED then Word.signed i else i in
-        return @@ CONST_INT (i, sign)
+        CONST_INT (i, sign)
+      | _ -> increment_rvalue_error e t
 
     (* Do type checking and either generate an assignment or a store. *)
     let make_assign
         ?(is_store : bool = false)
         ?(e : Cabs.expression = NOTHING)
         (e1 : exp) (e2 : exp) : stmt transl =
-      let t1 = Exp.typeof e1 in
-      let t2 = Exp.typeof e2 in
-      match Type.cast_assign t1 t2 e2 with
+      let* {data; csize; _} = get () in
+      let t1 = Exp.typeof data e1 in
+      let t2 = Exp.typeof data e2 in
+      match Type.cast_assign data csize t1 t2 e2 with
       | None ->
-        let t1 = if is_store then PTR t1 else t1 in
+        let t1 = if is_store then C.Type.pointer t1 else t1 in
         typ_unify_error e t1 t2
       | Some (_, e2) -> match e1 with
         | VARIABLE var -> return @@ ASSIGN (var, e2)
@@ -823,31 +839,39 @@ module Main = struct
         ?(no_ptr : bool = false)
         ?(e : Cabs.expression = Cabs.NOTHING)
         (b : binop) (e1 : exp) (e2 : exp) : exp transl =
-      let t1 = Exp.typeof e1 in
-      let t2 = Exp.typeof e2 in
+      let* {data; csize; _} = get () in
+      let t1 = Exp.typeof data e1 in
+      let t2 = Exp.typeof data e2 in
       match t1, t2 with
-      | PTR VOID, _ | _, PTR VOID -> typ_unify_error e t1 t2
-      | (PTR _, _ | _, PTR _) when no_ptr -> typ_unify_error e t1 t2
-      | PTR _, PTR _ -> typ_unify_error e t1 t2
+      | `Pointer {C.Type.Spec.t = `Void; _}, _
+      | _, `Pointer {C.Type.Spec.t = `Void; _} ->
+        typ_unify_error e t1 t2
+      | (`Pointer _, _ | _, `Pointer _) when no_ptr ->
+        typ_unify_error e t1 t2
+      | `Pointer _, `Pointer _ ->
+        typ_unify_error e t1 t2
       | _ ->
         let+ t, e1, e2 = match t1, t2 with
-          | PTR _, INT _ ->
+          | `Pointer _, `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
             let+ inc = increment NOTHING t1 in
             t1, e1, BINARY (MUL, e2, inc, t2)
-          | INT _, PTR _ ->
+          | `Basic {C.Type.Spec.t = #C.Type.integer; _}, `Pointer _ ->
             let+ inc = increment NOTHING t2 in
             t2, BINARY (MUL, e1, inc, t1), e2
-          | INT _, INT _ -> begin
+          | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+            `Basic {C.Type.Spec.t = #C.Type.integer; _} -> begin
               (* The size of a constant integer is ambiguous until
                  we use it in some kind of operation. *)
               match e1, e2 with
-              | CONST_INT _, _ -> return (t2, Exp.with_type e1 t2, e2)
-              | _, CONST_INT _ -> return (t1, e1, Exp.with_type e2 t1)
+              | CONST_INT _, _ -> return (t2, Exp.with_type data csize e1 t2, e2)
+              | _, CONST_INT _ -> return (t1, e1, Exp.with_type data csize e2 t1)
               | _ -> begin
-                  match Type.unify t1 t2 with
+                  match Type.unify data csize t1 t2 with
                   | None -> typ_unify_error e t1 t2
                   | Some t ->
-                    return (t, Exp.with_type e1 t, Exp.with_type e2 t)
+                    let e1 = Exp.with_type data csize e1 t in
+                    let e2 = Exp.with_type data csize e2 t in
+                    return (t, e1, e2)
                 end
             end
           | _ -> typ_unify_error e t1 t2 in
@@ -857,7 +881,7 @@ module Main = struct
 
   (* Translate a scoped statement. *)
   let rec go_body ((defs, stmt) : Cabs.body) : body transl =
-    let* {target; tenv; _} = get () in
+    let* {tenv; csize; _} = get () in
     let* new_tenv, inits =
       Transl.List.fold defs ~init:(tenv, [])
         ~f:(fun (tenv, inits) -> function
@@ -865,7 +889,8 @@ module Main = struct
               Transl.List.fold names ~init:(tenv, inits)
                 ~f:(fun (tenv, inits) (v, t, _, e) ->
                     let+ t = go_type t in
-                    let s = Theory.Bitv.define @@ Type.size target t in
+                    let size = Option.value_exn (csize#bits t) in
+                    let s = Theory.Bitv.define size in
                     let tenv = Map.set tenv ~key:v ~data:t in
                     let v = Theory.Var.(forget @@ define s v) in
                     tenv, ((v, t), e) :: inits)
@@ -968,8 +993,9 @@ module Main = struct
         let* t = Transl.(gets @@ Env.typeof v) in
         match t with
         | Some t ->
-          let+ {target; _} = get () in
-          let s = Theory.Bitv.define @@ Type.size target t in
+          let+ {csize; _} = get () in
+          let size = Option.value_exn (csize#bits t) in
+          let s = Theory.Bitv.define size in
           let v = Theory.Var.define s v |> Theory.Var.forget in
           let e = if computation then None else Some (VARIABLE (v, t)) in
           NOP, e, NOP
@@ -981,20 +1007,21 @@ module Main = struct
     | Cabs.EXPR_SIZEOF e ->
       let* _, e, _ =
         go_expression_strict "go_expression (EXPR_SIZEOF)" e in
-      let+ {target; _} = get () in
+      let+ {target; data; csize; _} = get () in
       let width = Theory.Target.data_addr_size target in
-      let size = Type.size target @@ Exp.typeof e in
+      let t = Exp.typeof data e in
+      let size = Option.value_exn (csize#bits t) in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.TYPE_SIZEOF t ->
       let s = Utils.print_c Cprint.print_base_type t in
       let* t = go_type t ~msg:(sprintf "go_expression (TYPE_SIZEOF) %s: " s) in
-      let+ {target; _} = get () in
+      let+ {target; csize; _} = get () in
       let width = Theory.Target.data_addr_size target in
-      let size = Type.size target t in
+      let size = Option.value_exn (csize#bits t) in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.INDEX (ptr, idx) ->
       let+ (spre, e, spost), t = go_index ptr idx in
-      spre, Some (UNARY (MEMOF, CAST (PTR t, e), t)), spost
+      spre, Some (UNARY (MEMOF, CAST (C.Type.pointer t, e), t)), spost
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       fail (
@@ -1031,33 +1058,35 @@ module Main = struct
       (e : Cabs.expression) : eexp transl =
     let lval = go_expression_lvalue "go_unary_operator" in
     let exp = go_expression_strict "go_unary_operator" in
+    let* {data; csize; _} = get () in
     match u with
     | Cabs.MINUS ->
       let+ spre, e, spost = exp e in
-      spre, Some (UNARY (MINUS, e, Exp.typeof e)), spost
+      spre, Some (UNARY (MINUS, e, Exp.typeof data e)), spost
     | Cabs.PLUS ->
       let+ spre, e, spost = exp e in
       spre, Some e, spost
     | Cabs.NOT ->
-      let* spre, e, spost = exp e in
-      let+ {target; _} = get () in
-      let width = Type.size target @@ Exp.typeof e in
+      let+ spre, e, spost = exp e in
+      let t = Exp.typeof data e in
+      let width = Option.value_exn (csize#bits t) in
       let i = Word.zero width in
-      spre, Some (BINARY (EQ, e, CONST_INT (i, UNSIGNED), Exp.typeof e)), spost
+      spre, Some (BINARY (EQ, e, CONST_INT (i, UNSIGNED), t)), spost
     | Cabs.BNOT ->
       let+ spre, e, spost = exp e in
-      spre, Some (UNARY (LNOT, e, Exp.typeof e)), spost
+      spre, Some (UNARY (LNOT, e, Exp.typeof data e)), spost
     | Cabs.MEMOF -> begin
         let* spre, e', spost = exp e in
-        match Exp.typeof e' with
-        | PTR VOID ->
+        match Exp.typeof data e' with
+        | `Pointer {C.Type.Spec.t = `Void; _} ->
           let s =
             Utils.print_c Cprint.print_statement
               Cabs.(COMPUTATION (UNARY (u, e))) in
           fail (
             sprintf "Patch_c.go_unary_operator: in expression\
                      \n\n%s\n\ncannot dereference a value of type void*" s)
-        | PTR t -> return (spre, Some (UNARY (MEMOF, e', t)), spost)
+        | `Pointer {C.Type.Spec.t; _} ->
+          return (spre, Some (UNARY (MEMOF, e', t)), spost)
         | _ ->
           let s =
             Utils.print_c Cprint.print_statement
@@ -1068,7 +1097,8 @@ module Main = struct
       end
     | Cabs.ADDROF ->
       let+ spre, e', spost = lval e in
-      spre, Some (UNARY (ADDROF, e', PTR (Exp.typeof e'))), spost
+      let t = C.Type.pointer (Exp.typeof data e') in
+      spre, Some (UNARY (ADDROF, e', t)), spost
     | Cabs.PREINCR ->
       let* spre, e', spost, expanded = go_increment_operand u e in
       if expanded then return (spre, Some e', spost)
@@ -1131,34 +1161,41 @@ module Main = struct
     let exp = go_expression_strict "go_binary_operator" in
     let default ?(no_ptr = false) op =
       let* spre1, e1, spost1 = exp lhs in
-      let t1 = Exp.typeof e1 in
+      let* {data; csize; _} = get () in
+      let t1 = Exp.typeof data e1 in
       let* spre2, e2, spost2 = exp rhs in
-      let t2 = Exp.typeof e2 in
+      let t2 = Exp.typeof data e2 in
       let* t, e1, e2 =
-        let default () = match Type.unify t1 t2 with
+        let default () = match Type.unify data csize t1 t2 with
           | None -> typ_unify_error Cabs.(BINARY (b, lhs, rhs)) t1 t2
-          | Some t -> return (t, Exp.with_type e1 t, Exp.with_type e2 t) in
+          | Some t ->
+            let e1 = Exp.with_type data csize e1 t in
+            let e2 = Exp.with_type data csize e2 t in
+            return (t, e1, e2) in
         match t1, t2 with
-        | INT _, INT _ -> begin
+        | `Basic {C.Type.Spec.t = #C.Type.integer; _},
+          `Basic {C.Type.Spec.t = #C.Type.integer; _} -> begin
             (* The size of a constant integer is ambiguous until
                we use it in some kind of operation. *)
             match e1, e2 with
-            | CONST_INT _, _ -> return (t2, Exp.with_type e1 t2, e2)
-            | _, CONST_INT _ -> return (t1, e1, Exp.with_type e2 t1)
+            | CONST_INT _, _ ->
+              return (t2, Exp.with_type data csize e1 t2, e2)
+            | _, CONST_INT _ ->
+              return (t1, e1, Exp.with_type data csize e2 t1)
             | _ -> default ()
           end
         | _ -> default () in
       match t with
-      | VOID ->
+      | `Void ->
         let msg = if no_ptr then "Expected integral type"
           else "Expected integral or pointer type" in
-        typ_error Cabs.(BINARY (b, lhs, rhs)) VOID msg
-      | (PTR _) as t when no_ptr ->
+        typ_error Cabs.(BINARY (b, lhs, rhs)) t msg
+      | (`Pointer _) as t when no_ptr ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
           "Pointer type is not allowed"
       | _ ->
-        let e1 = Exp.with_type e1 t in
-        let e2 = Exp.with_type e2 t in
+        let e1 = Exp.with_type data csize e1 t in
+        let e2 = Exp.with_type data csize e2 t in
         let f op e1 e2 t = return @@ BINARY (op, e1, e2, t) in
         Helper.binary_tmp_or_simple op
           spre1 e1 spost1
@@ -1203,14 +1240,15 @@ module Main = struct
     let* width = gets @@ fun {target; _} ->
       Theory.Target.data_addr_size target in
     let* spre1, e1, spost1 = exp lhs in
-    let t1 = Exp.typeof e1 in
+    let* {data; csize; _} = get () in
+    let t1 = Exp.typeof data e1 in
     let* spre2, e2, spost2 = exp rhs in
-    let t2 = Exp.typeof e2 in
-    match Type.unify_ptr_to_int width t1 t2 with
+    let t2 = Exp.typeof data e2 in
+    match Type.unify_ptr_to_int data csize width t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (AND, lhs, rhs)) t1 t2
     | Some t ->
-      let e1 = Exp.with_type e1 t in
-      let e2 = Exp.with_type e2 t in
+      let e1 = Exp.with_type data csize e1 t in
+      let e2 = Exp.with_type data csize e2 t in
       let+ tmp = new_tmp t in
       let eff = sequence [
           spre1;
@@ -1235,14 +1273,15 @@ module Main = struct
     let* width = gets @@ fun {target; _} ->
       Theory.Target.data_addr_size target in
     let* spre1, e1, spost1 = exp lhs in
-    let t1 = Exp.typeof e1 in
+    let* {data; csize; _} = get () in
+    let t1 = Exp.typeof data e1 in
     let* spre2, e2, spost2 = exp rhs in
-    let t2 = Exp.typeof e2 in
-    match Type.unify_ptr_to_int width t1 t2 with
+    let t2 = Exp.typeof data e2 in
+    match Type.unify_ptr_to_int data csize width t1 t2 with
     | None -> typ_unify_error Cabs.(BINARY (OR, lhs, rhs)) t1 t2
     | Some t ->
-      let e1 = Exp.with_type e1 t in
-      let e2 = Exp.with_type e2 t in
+      let e1 = Exp.with_type data csize e1 t in
+      let e2 = Exp.with_type data csize e2 t in
       let+ tmp = new_tmp t in
       let eff = sequence [
           spre1;
@@ -1292,7 +1331,7 @@ module Main = struct
     Helper.binary_tmp_or_simple b
       spre1 e1 spost1
       spre2 e2 spost2
-      VOID ~f
+      `Void ~f
 
   (* Compile an assignment expression. *)
   and go_assign
@@ -1357,12 +1396,13 @@ module Main = struct
     let* scondpre, cond, scondpost = exp cond in
     let* sthenpre, ethen, sthenpost = exp then_ in
     let* selsepre, eelse, selsepost = exp else_ in
-    let t1 = Exp.typeof ethen in
-    let t2 = Exp.typeof eelse in
-    match Type.unify t1 t2 with
+    let* {data; csize; _} = get () in
+    let t1 = Exp.typeof data ethen in
+    let t2 = Exp.typeof data eelse in
+    match Type.unify data csize t1 t2 with
     | None -> typ_unify_error e t1 t2
-    | Some VOID ->
-      let+ dummy = new_tmp VOID in
+    | Some `Void ->
+      let+ dummy = new_tmp `Void in
       let pre = sequence [
           scondpre;
           IF (
@@ -1380,8 +1420,8 @@ module Main = struct
         ] in
       pre, Some (VARIABLE dummy), NOP
     | Some t ->
-      let ethen = Exp.with_type ethen t in
-      let eelse = Exp.with_type eelse t in
+      let ethen = Exp.with_type data csize ethen t in
+      let eelse = Exp.with_type data csize eelse t in
       let+ v = match assign with
         | Some v -> return v
         | None -> new_tmp t in
@@ -1412,24 +1452,22 @@ module Main = struct
     match List.zip args targs with
     | Ok l ->
       (* Evaluated left to right. *)
+      let* {data; csize; _} = get () in
       Transl.List.fold_right l ~init:[] ~f:(fun (arg, t) acc ->
           let* spre, a, spost = exp arg in
-          let ta = Exp.typeof a in
-          match Type.cast_assign t ta a with
+          let ta = Exp.typeof data a in
+          match Type.cast_assign data csize t ta a with
           | None ->
-            let s =
-              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-            let a =
+            let s, a =
+              Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e),
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
-            let* data = gets @@ fun {data; _} -> data in
-            let t = Type.to_string data t in
-            let ta = Type.to_string data ta in
-            fail (
-              sprintf "Patch_c.go_call_args:\n\n%s\
-                       \n\nargument %s has type %s but type %s was \
-                       expected" s a ta t)
+            let msg = Format.asprintf
+                "Patch_c.go_call_args:\n\n%s\
+                 \n\nargument %s has type %a but type %a was \
+                 expected" s a C.Type.pp ta C.Type.pp t in
+            fail msg
           | Some (t, a) ->
-            let a = Exp.with_type a t in
+            let a = Exp.with_type data csize a t in
             return ((spre, a, spost) :: acc))
     | Unequal_lengths ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
@@ -1447,8 +1485,11 @@ module Main = struct
     let e = Cabs.CALL (f, args) in
     let exp = go_expression_strict "go_call" in
     let* sfpre, f', sfpost = exp f in
-    match Exp.typeof f' with
-    | PTR (FUN (tret, targs)) | FUN (tret, targs) ->
+    let* {data; csize; _} = get () in
+    match Exp.typeof data f' with
+    | `Pointer {C.Type.Spec.t = `Function {C.Type.Spec.t = proto; _}; _}
+    | `Function {C.Type.Spec.t = proto; _} ->
+      let targs = List.map proto.args ~f:snd in
       let* args = go_call_args args targs ~e in
       let* eff, args' =
         (* Sequence the effects of each arg expression. *)
@@ -1462,44 +1503,40 @@ module Main = struct
                 sequence [pre; post; spre], e, spost in
             aux (eff, e :: args, spost) rest in
         aux (sfpre, [], sfpost) args in
-      let is_void = match Type.unify tret VOID with
-        | Some VOID -> true
+      let is_void = match Type.unify data csize proto.return `Void with
+        | Some `Void -> true
         | Some _ -> false
         | None -> false in
-      if computation
-      then return (sequence [eff; CALL (f', args')], None)
+      if computation then
+        return (sequence [eff; CALL (f', args')], None)
       else if is_void then
-        let+ dummy = new_tmp VOID in
+        let+ dummy = new_tmp `Void in
         sequence [eff; CALL (f', args')], Some (VARIABLE dummy)
       else
         (* Do we already know who we're assigning to? *)
         let+ v = match assign with
-          | None -> new_tmp tret
+          | None -> new_tmp proto.return
           | Some (v, t) ->
             (* Type checking. Use a dummy RHS since calls are not
                expressions. *)
             let dummy = CONST_INT (Word.of_int ~width:8 42, UNSIGNED) in
-            match Type.cast_assign t tret dummy with
+            match Type.cast_assign data csize t proto.return dummy with
             | Some _ -> return (v, t)
             | None ->
               let s =
                 Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-              let* data = gets @@ fun {data; _} -> data in
-              let t = Type.to_string data t in
-              let tret = Type.to_string data tret in
-              fail (
-                sprintf "Patch_c.go_call:\n\n%s\n\n\
-                         has return type %s, cannot unify with var %s of \
-                         type %s"
-                  s tret (Theory.Var.name v) t) in
+              let msg = Format.asprintf
+                  "Patch_c.go_call:\n\n%s\n\nhas return type %a, cannot \
+                   unify with var %a of type %a"
+                  s C.Type.pp proto.return Theory.Var.pp v C.Type.pp t in
+              fail msg in
         sequence [eff; CALLASSIGN (v, f', args')], Some (VARIABLE v)
     | t ->
-      let* data = gets @@ fun {data; _} -> data in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let t = Type.to_string data t in
-      fail (
-        sprintf "Patch_c.go_call:\n\n%s\n\n\
-                 has type %s, expected function type" s t)
+      let msg = Format.asprintf
+          "Patch_c.go_call:\n\n%s\n\nhas type %a, expected function type"
+          s C.Type.pp t in
+      fail msg
 
   (* This function returns the side effects, the pointer to the element in the
      array (as an integer), and the element type. *)
@@ -1509,10 +1546,12 @@ module Main = struct
     let exp = go_expression_strict "go_index" in
     let* sptrpre, eptr, sptrpost = exp ptr in
     let* sidxpre, eidx, sidxpost = exp idx in
-    let tptr = Exp.typeof eptr in
-    let tidx = Exp.typeof eidx in
+    let* {target; data; csize; _} = get () in
+    let tptr = Exp.typeof data eptr in
+    let tidx = Exp.typeof data eidx in
     match tptr, tidx with
-    | PTR t, INT _ ->
+    | `Pointer {C.Type.Spec.t; _},
+      `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
       (* Translate to the pointer arithmetic of an array lookup.
 
          NOTE: we're not supporting array types currently. A multidimensional
@@ -1557,11 +1596,11 @@ module Main = struct
          We multiply by 4 since that is the size of an `int` 
          on the 32-bit ARM target.
       *)
-      let+ {target; _} = get () in
       let width = Theory.Target.data_addr_size target in
-      let scale = Word.of_int ~width (Type.size target t lsr 3) in
-      let tidx = INT (Size.of_int_exn width, UNSIGNED) in
-      let eidx = Exp.with_type eidx tidx in
+      let size = Option.value_exn (csize#bits t) in
+      let scale = Word.of_int ~width (size lsr 3) in
+      let tidx = int_typ data (Size.of_int_exn width) UNSIGNED in
+      let eidx = Exp.with_type data csize eidx tidx in
       let e =
         BINARY (
           ADD,
@@ -1574,23 +1613,21 @@ module Main = struct
           tidx) in
       let eexp =
         sequence [sptrpre; sidxpre], e, sequence [sptrpost; sidxpost] in
-      eexp, t
-    | PTR _, _ ->
+      return (eexp, t)
+    | `Pointer _, _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let* data = gets @@ fun {data; _} -> data in
-      let t = Type.to_string data tidx in
-      fail (
-        sprintf "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
-                 has type %s. Expected integer.\n" s t)
+      let msg = Format.asprintf
+          "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
+           has type %a. Expected integer.\n" s C.Type.pp tidx in
+      fail msg
     | _, _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let* data = gets @@ fun {data; _} -> data in
-      let t = Type.to_string data tptr in
-      fail (
-        sprintf "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
-                 has type %s. Expected pointer.\n" s t)
+      let msg = Format.asprintf
+          "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
+           has type %a. Expected pointer.\n" s C.Type.pp tptr in
+      fail msg
 
   (* Translate a statement. *)
   and go_statement (s : Cabs.statement) : stmt transl = match s with
@@ -1600,7 +1637,8 @@ module Main = struct
         match e with
         | None -> return @@ sequence [spre; spost]
         | Some e ->
-          let+ v = new_tmp @@ Exp.typeof e in
+          let* {data; _} = get () in
+          let+ v = new_tmp @@ Exp.typeof data e in
           sequence [spre; ASSIGN (v, e); spost]
       end
     | Cabs.BLOCK body ->
@@ -1645,6 +1683,7 @@ let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
 let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
   let open KB.Let in
   let* data = data_of_tgt target in
+  let csize = new C.Size.base data.sizes in
   let* body = match patch with
     | FUNDEF (_, b) -> KB.return b
     | _ ->
@@ -1653,12 +1692,14 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
                        expected a single function definition" s in
   (* Perform type-checking and elaboration. *)
   let* (tenv, s), _ =
-    Transl.(Env.create ~target ~data () |> run (Main.go_body body)) in
+    let open Transl in
+    Env.create ~target ~data ~csize () |>
+    run (Main.go_body body) in
   (* Perform some simplification passes. *)
-  let s = Opt.Cast.go s in
+  let s = Opt.Cast.go data s in
   let s = Opt.Unused.remove s in
   let s = Opt.Nops.go s in
   (* Success! *)
-  let prog = {data; body = tenv, s} in
+  let prog = {data; csize; body = tenv, s} in
   Log.send "Translated to the following PatchC program:\n%s" @@ to_string prog;
   KB.return prog
