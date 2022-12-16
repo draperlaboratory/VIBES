@@ -926,6 +926,7 @@ module Main = struct
 
   end
 
+  (* Resolve the names of struct and union types. *)
   let resolver lookup = object(self)
     inherit [unit] C.Type.Mapper.base
 
