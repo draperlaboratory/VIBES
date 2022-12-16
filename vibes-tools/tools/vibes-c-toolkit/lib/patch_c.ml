@@ -668,26 +668,62 @@ module Main = struct
     v, t
 
   let unsupported ?(msg : string = "") (name : string) (t : typ) : _ transl =
-    let msg = Format.asprintf
-        "%s type %a is unsupported:\n%s"
-        name C.Type.pp t msg in
+    let msg =
+      if String.is_empty msg then
+        Format.asprintf "%s type %a is unsupported"
+          name C.Type.pp t
+      else
+        Format.asprintf "%s type %a is unsupported:\n%s"
+          name C.Type.pp t msg in
     fail msg
+
+  let check_no_cv
+      ?(msg : string = "")
+      (name : string)
+      (t : typ)
+      (cv : C.Type.cv C.Type.qualifier) : unit transl =
+    if not (cv.const || cv.volatile) then return ()
+    else unsupported name t ~msg
+
+  let check_no_cvr
+      ?(msg : string = "")
+      (name : string)
+      (t : typ)
+      (cvr : C.Type.cvr C.Type.qualifier) : unit transl =
+    if not (cvr.const || cvr.volatile || cvr.restrict) then return ()
+    else unsupported name t ~msg
+
+  let check_no_attrs
+      ?(msg : string = "")
+      (name : string)
+      (t : typ)
+      (attrs : C.Type.attr list) : unit transl =
+    if List.is_empty attrs then return ()
+    else unsupported name t ~msg
 
   (* Disallow use of types that our compiler doesn't support yet. *)
   let rec check_supported ?(msg : string = "") : typ -> unit transl = function
     | `Void -> return ()
-    | `Basic {C.Type.Spec.t = #C.Type.integer; _} -> return ()
+    | `Basic {C.Type.Spec.qualifier; t = #C.Type.integer; attrs} as t ->
+      let* () = check_no_cv "Integer" t qualifier ~msg in
+      check_no_attrs "Integer" t attrs ~msg
     | `Basic {C.Type.Spec.t = #C.Type.floating; _} as t ->
       unsupported "Floating point" t ~msg
-    | `Pointer {C.Type.Spec.t; _} -> check_supported t ~msg
+    | `Pointer {C.Type.Spec.qualifier; t; attrs} ->
+      let* () = check_supported t ~msg in
+      let* () = check_no_cvr "Pointer" t qualifier ~msg in
+      check_no_attrs "Pointer" t attrs ~msg
     | `Array _ as t -> unsupported "Array" t ~msg
     | `Structure _ as t -> unsupported "Structure" t ~msg
     | `Union _ as t -> unsupported "Union" t ~msg
     | `Function {C.Type.Spec.t = proto; _} as t when proto.variadic ->
       unsupported "Variadic function" t ~msg
-    | `Function {C.Type.Spec.t = proto; _} ->
+    | `Function {C.Type.Spec.t = proto; attrs; _} as t ->
       let* () = check_supported proto.return ~msg in
-      Transl.List.iter proto.args ~f:(fun (_, t) -> check_supported t ~msg)
+      let* () =
+        List.map proto.args ~f:snd |>
+        Transl.List.iter ~f:(check_supported ~msg) in
+      check_no_attrs "Function" t attrs ~msg
 
   (* Translate a base type. *)
   let go_type
