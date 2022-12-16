@@ -984,11 +984,7 @@ module Main = struct
               fail msg) in
     let* () = update @@ fun env ->
       let resolve = (resolver @@ Map.find env.tags)#run in
-      let gamma =
-        String.Map.to_sequence env.gamma |>
-        Seq.map ~f:(fun (name, t) -> name, resolve t) |>
-        String.Map.of_sequence_exn in
-      {env with gamma} in
+      {env with gamma = Map.map env.gamma ~f:resolve} in
     let* inits = go_inits @@ List.rev inits in
     let* () = update @@ fun env -> {env with tenv = new_tenv} in
     let* s = go_statement stmt in
