@@ -1,7 +1,6 @@
 (* This is adapted from BAP's FrontC parser plugin. *)
 
 open Core
-(* open Bap.Std *)
 open Bap_c.Std
 
 let int (size : Cabs.size) (sign : Cabs.sign) : C.Type.basic = 
