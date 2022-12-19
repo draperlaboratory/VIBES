@@ -860,12 +860,13 @@ module Main = struct
 
     (* Helper for binary operators where the sequencing of side-effects
        for the operands is important. *)
-    let binary_tmp_or_simple
-        (op : binop)
-        (pre1 : stmt) (e1 : exp) (post1 : stmt)
-        (pre2 : stmt) (e2 : exp) (post2 : stmt)
-        (t : typ)
-        ~(f : binop -> exp -> exp -> typ -> exp transl) : eexp transl =
+    let binary_tmp_or_simple :
+      'op. 'op ->
+      stmt -> exp -> stmt ->
+      stmt -> exp -> stmt ->
+      typ ->
+      f:('op -> exp -> exp -> typ -> exp transl) ->
+      eexp transl = fun op pre1 e1 post1 pre2 e2 post2 t ~f ->
       (* Evaluate left to right. *)
       let* te1 = new_tmp_or_simple pre1 e1 post1 in
       let* te2 = new_tmp_or_simple pre2 e2 post2 in
@@ -1176,8 +1177,13 @@ module Main = struct
       let size = Option.value_exn (csize#bits t) in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.INDEX (ptr, idx) ->
-      let+ spre, e, t = go_index ptr idx in
-      spre, Some (UNARY (MEMOF, CAST (C.Type.pointer t, e), t)), NOP
+      let+ (spre, e, spost), t = go_index ptr idx in
+      begin match e with
+        | None -> spre, None, spost
+        | Some e ->
+          let e = UNARY (MEMOF, CAST (C.Type.pointer t, e), t) in
+          spre, Some e, spost
+      end
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       fail (
@@ -1702,11 +1708,12 @@ module Main = struct
 
      When indexing into a one-or-multidimensional array, the memory layout is
      assumed to be flat, whereas a pointer (or multi-pointer) is accessed
-     through the layers of memory indirection.
+     through the layers of memory indirection. Currently, we only support the
+     latter form.
   *)
   and go_index
       (ptr : Cabs.expression)
-      (idx : Cabs.expression) : (stmt * exp * typ) transl =
+      (idx : Cabs.expression) : (eexp * typ) transl =
     let exp = go_expression_strict "go_index" in
     let* sptrpre, eptr, sptrpost = exp ptr in
     let* sidxpre, eidx, sidxpost = exp idx in
@@ -1716,50 +1723,28 @@ module Main = struct
     let tidx = Exp.typeof data eidx in
     match tidx with
     | `Basic {C.Type.Spec.t = #C.Type.integer; _} -> begin
-        (* The side effects for the operands happen in order, and before
-           the actual pointer to the array element is calculated. *)
-        let* eptr = Helper.new_tmp_or_simple sptrpre eptr sptrpost in
-        let* eidx = Helper.new_tmp_or_simple sidxpre eidx sidxpost in
-        let* effs, eptr, eidx = match eptr, eidx with
-          | First eptr, First eidx -> return (NOP, eptr, eidx)
-          | First eptr, Second (sidxpre, eidx, sidxpost) ->
-            let+ vptr = new_tmp tptr in
-            let effs = sequence [ASSIGN (vptr, eptr); sidxpre; sidxpost] in
-            effs, VARIABLE vptr, eidx
-          | Second (sptrpre, eptr, sptrpost), First eidx ->
-            return (sequence [sptrpre; sptrpost], eptr, eidx)
-          | Second (sptrpre, eptr, NOP),
-            Second (sidxpre, eidx, sidxpost) ->
-            let+ vptr = new_tmp tptr in
-            let effs = sequence [
-                sptrpre;
-                ASSIGN (vptr, eptr);
-                sptrpost;
-                sidxpre;
-                sidxpost;
-              ] in
-            effs, VARIABLE vptr, eidx
-          | Second (sptrpre, eptr, sptrpost),
-            Second (sidxpre, eidx, sidxpost) ->
-            let effs = sequence [sptrpre; sptrpost; sidxpre; sidxpost] in
-            return (effs, eptr, eidx) in
+        let make_ptr scale () eptr eidx tidx =
+          BINARY (
+            ADD,
+            CAST (tidx, eptr),
+            BINARY (
+              MUL,
+              CONST_INT (scale, UNSIGNED),
+              eidx,
+              tidx),
+            tidx) |>
+          return in
         match tptr with
         | `Pointer {C.Type.Spec.t; _} ->
           let size = Option.value_exn (csize#bits t) in
           let scale = Word.of_int ~width (size lsr 3) in
           let tidx = int_typ data (Size.of_int_exn width) UNSIGNED in
           let eidx = Exp.with_type data csize eidx tidx in
-          let e =
-            BINARY (
-              ADD,
-              CAST (tidx, eptr),
-              BINARY (
-                MUL,
-                CONST_INT (scale, UNSIGNED),
-                eidx,
-                tidx),
-              tidx) in
-          return (effs, e, t)
+          let+ e = Helper.binary_tmp_or_simple ()
+              sptrpre eptr sptrpost
+              sidxpre eidx sidxpost
+              tidx ~f:(make_ptr scale) in
+          e, t
         | _ -> 
           let e = Cabs.(INDEX (ptr, idx)) in
           let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
