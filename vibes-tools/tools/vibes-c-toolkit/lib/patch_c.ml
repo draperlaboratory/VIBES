@@ -1201,8 +1201,8 @@ module Main = struct
           spre, Some e, spost
       end
     | Cabs.MEMBEROF (ptr, field) ->
-      let e = Cabs.MEMBEROFPTR (UNARY (ADDROF, ptr), field) in
-      go_expression e ~assign ~computation
+      let ptr = Cabs.UNARY (ADDROF, ptr) in
+      go_memberof ptr field
     | Cabs.MEMBEROFPTR (ptr, field) -> go_memberof ptr field
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
