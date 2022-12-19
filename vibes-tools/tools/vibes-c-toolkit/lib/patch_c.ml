@@ -678,7 +678,10 @@ module Main = struct
       } in
     v, t
 
-  let unsupported ?(msg : string = "") (name : string) (t : typ) : _ transl =
+  let unsupported_typ
+      ?(msg : string = "")
+      (name : string)
+      (t : typ) : _ transl =
     let msg =
       if String.is_empty msg then
         Format.asprintf "%s type %a is unsupported"
@@ -694,7 +697,7 @@ module Main = struct
       (t : typ)
       (cv : C.Type.cv C.Type.qualifier) : unit transl =
     if not (cv.const || cv.volatile) then return ()
-    else unsupported name t ~msg
+    else unsupported_typ name t ~msg
 
   let check_no_cvr
       ?(msg : string = "")
@@ -702,7 +705,7 @@ module Main = struct
       (t : typ)
       (cvr : C.Type.cvr C.Type.qualifier) : unit transl =
     if not (cvr.const || cvr.volatile || cvr.restrict) then return ()
-    else unsupported name t ~msg
+    else unsupported_typ name t ~msg
 
   let check_no_attrs
       ?(msg : string = "")
@@ -710,40 +713,39 @@ module Main = struct
       (t : typ)
       (attrs : C.Type.attr list) : unit transl =
     if List.is_empty attrs then return ()
-    else unsupported name t ~msg
+    else unsupported_typ name t ~msg
 
   (* Disallow use of types that our compiler doesn't support yet. *)
-  let rec check_supported ?(msg : string = "") : typ -> unit transl = function
+  let rec check_supported_typ ?(msg : string = "") : typ -> unit transl = function
     | `Void -> return ()
     | `Basic {C.Type.Spec.qualifier; t = #C.Type.integer; attrs} as t ->
       let* () = check_no_cv "Integer" t qualifier ~msg in
       check_no_attrs "Integer" t attrs ~msg
     | `Basic {C.Type.Spec.t = #C.Type.floating; _} as t ->
-      unsupported "Floating point" t ~msg
+      unsupported_typ "Floating point" t ~msg
     | `Pointer {C.Type.Spec.qualifier; t; attrs} ->
-      let* () = check_supported t ~msg in
+      let* () = check_supported_typ t ~msg in
       let* () = check_no_cvr "Pointer" t qualifier ~msg in
       check_no_attrs "Pointer" t attrs ~msg
-    | `Array _ as t -> unsupported "Array" t ~msg
-    | `Structure _ as t -> unsupported "Structure" t ~msg
-    | `Union _ as t -> unsupported "Union" t ~msg
+    | `Array _ as t -> unsupported_typ "Array" t ~msg
+    | `Structure _ as t -> unsupported_typ "Structure" t ~msg
+    | `Union _ as t -> unsupported_typ "Union" t ~msg
     | `Function {C.Type.Spec.t = proto; _} as t when proto.variadic ->
-      unsupported "Variadic function" t ~msg
+      unsupported_typ "Variadic function" t ~msg
     | `Function {C.Type.Spec.t = proto; attrs; _} as t ->
-      let* () = check_supported proto.return ~msg in
+      let* () = check_supported_typ proto.return ~msg in
       let* () =
         List.map proto.args ~f:snd |>
-        Transl.List.iter ~f:(check_supported ~msg) in
+        Transl.List.iter ~f:(check_supported_typ ~msg) in
       check_no_attrs "Function" t attrs ~msg
 
   (* Translate a base type. *)
   let go_type
       ?(msg : string = "")
       (t : Cabs.base_type) : typ transl =
-    let* gamma = Transl.gamma in
-    let* tag = Transl.tag in
+    let* gamma = Transl.gamma and* tag = Transl.tag in
     let t = Ctype.ctype gamma tag t in
-    let+ () = check_supported t ~msg in
+    let+ () = check_supported_typ t ~msg in
     t
 
   let typ_unify_error : 'a. Cabs.expression -> typ -> typ -> 'a transl =
@@ -1394,8 +1396,9 @@ module Main = struct
     let exp = go_expression_strict "go_compound" in
     match lhs with
     | Cabs.QUESTION (c, l, r) when Cabs.is_lvalue lhs ->
-      go_question c
-        Cabs.(BINARY (b', l, rhs)) Cabs.(BINARY (b', r, rhs))
+      let l = Cabs.(BINARY (b', l, rhs)) in
+      let r = Cabs.(BINARY (b', r, rhs)) in
+      go_question c l r
     | _ ->
       let* spre1, e1, spost1 = lval lhs in
       let* spre2, e2, spost2 = exp rhs in
@@ -1451,10 +1454,11 @@ module Main = struct
       | VARIABLE (_, _) -> return false
       | UNARY (MEMOF, _, _) -> return true
       | _ ->
-        let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
-        fail (
-          sprintf "Patch_c.go_assign: expected an l-value \
-                   for LHS of assignment, got:\n\n%s\n" s) in
+        let msg = Format.sprintf
+            "Patch_c.go_assign: expected an l-value for LHS \
+             of assignment, got:\n\n%s\n" @@
+          Utils.print_c Cprint.print_statement Cabs.(COMPUTATION lhs) in
+        fail msg in
     (* We follow order of evaluation as right-to-left. *)
     let* te2 = Helper.new_tmp_or_simple spre2 e2 spost2 in
     match te2 with
@@ -1542,6 +1546,9 @@ module Main = struct
           let* spre, a, spost = exp arg in
           let ta = Exp.typeof data a in
           match Type.cast_assign data csize t ta a with
+          | Some (t, a) ->
+            let a = Exp.with_type data csize a t in
+            return ((spre, a, spost) :: acc)
           | None ->
             let s, a =
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e),
@@ -1550,17 +1557,13 @@ module Main = struct
                 "Patch_c.go_call_args:\n\n%s\
                  \n\nargument %s has type %a but type %a was \
                  expected" s a C.Type.pp ta C.Type.pp t in
-            fail msg
-          | Some (t, a) ->
-            let a = Exp.with_type data csize a t in
-            return ((spre, a, spost) :: acc))
+            fail msg)
     | Unequal_lengths ->
-      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let l1 = List.length targs in
-      let l2 = List.length args in
-      fail (
-        sprintf "Patch_c.go_call_args:\n\n%s\n\n\
-                 expected %d arguments, got %d" s l1 l2)
+      let msg = Format.sprintf
+          "Patch_c.go_call_args: expected %d arguments, got %d:\n\n%s\n"
+          (List.length targs) (List.length args) @@
+        Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+      fail msg
 
   and go_call
       ?(assign : var option = None)
@@ -1747,9 +1750,10 @@ module Main = struct
       ]
     | Cabs.GOTO lbl -> return @@ GOTO lbl
     | _ ->
-      let s = Utils.print_c Cprint.print_statement s in
-      fail (
-        sprintf "Patch_c.go_statement: unsupported:\n\n%s\n" s)
+      let msg = Format.sprintf
+          "Patch_c.go_statement: unsupported:\n\n%s\n" @@
+        Utils.print_c Cprint.print_statement s in
+      fail msg
 
 end
 
