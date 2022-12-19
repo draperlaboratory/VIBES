@@ -1273,10 +1273,12 @@ module Main = struct
           end
         | _ -> default () in
       match t with
+      | `Void when no_ptr ->
+        typ_error Cabs.(BINARY (b, lhs, rhs)) t
+          "Expected integral type"
       | `Void ->
-        let msg = if no_ptr then "Expected integral type"
-          else "Expected integral or pointer type" in
-        typ_error Cabs.(BINARY (b, lhs, rhs)) t msg
+        typ_error Cabs.(BINARY (b, lhs, rhs)) t
+          "Expected integral or pointer type"
       | (`Pointer _) as t when no_ptr ->
         typ_error Cabs.(BINARY (b, lhs, rhs)) t
           "Pointer type is not allowed"
@@ -1554,8 +1556,8 @@ module Main = struct
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e),
               Utils.print_c Cprint.print_statement Cabs.(COMPUTATION arg) in
             let msg = Format.asprintf
-                "Patch_c.go_call_args:\n\n%s\
-                 \n\nargument %s has type %a but type %a was \
+                "Patch_c.go_call_args:\n\n%s\n\n\
+                 argument %s has type %a but type %a was \
                  expected" s a C.Type.pp ta C.Type.pp t in
             fail msg)
     | Unequal_lengths ->
