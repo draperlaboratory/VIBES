@@ -168,7 +168,7 @@ module To_cabs = struct
     | `Basic {C.Type.Spec.qualifier; t; _} ->
       apply_cv_qualifier (basic t) qualifier
     | `Pointer {C.Type.Spec.qualifier; t; _} ->
-      apply_cvr_qualifier (go t) qualifier
+      apply_cvr_qualifier (Cabs.PTR (go t)) qualifier
     | `Array {C.Type.Spec.qualifier; t; _} ->
       apply_cvr_qualifier (array t) qualifier
     | `Structure {C.Type.Spec.t; _} -> structure t
