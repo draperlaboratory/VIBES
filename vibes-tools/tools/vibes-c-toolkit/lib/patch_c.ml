@@ -142,13 +142,42 @@ and stmt =
   | GOTO of string
 [@@deriving equal]
 
-and body = tenv * stmt [@@deriving equal]
+and body = {
+  tenv  : tenv;
+  stmt  : stmt;
+  label : string option;
+} [@@deriving equal]
 
 type t = {
   data  : Data_model.t;
   csize : C.Size.base;
   body  : body;
 }
+
+let label_env (t : t) : (String.Set.t, KB.conflict) result =
+  let (let*) x f = Result.bind x ~f in
+  let rec aux acc = function
+    | NOP -> Ok acc
+    | BLOCK {stmt; label; _} ->
+      let* acc = match label with
+        | Some l when Set.mem acc l ->
+          let msg = Format.sprintf "Duplicate label %s" l in
+          Error (Errors.Patch_c msg)
+        | Some l -> Ok (Set.add acc l)
+        | None -> Ok acc in
+      aux acc stmt
+    | ASSIGN _ -> Ok acc
+    | CALL _ -> Ok acc
+    | CALLASSIGN _ -> Ok acc
+    | STORE _ -> Ok acc
+    | SEQUENCE (s1, s2) ->
+      let* acc = aux acc s1 in
+      aux acc s2
+    | IF (_, st, sf) ->
+      let* acc = aux acc st in
+      aux acc sf
+    | GOTO _ -> Ok acc in
+  aux String.Set.empty t.body.stmt
 
 (* Helper for generating a sequence from a list of statements. *)
 let sequence : stmt list -> stmt =
@@ -195,7 +224,8 @@ module Cabs = struct
 
   and of_stmt : stmt -> statement = function
     | NOP -> Cabs.NOP
-    | BLOCK (_, s) -> Cabs.BLOCK ([], of_stmt s)
+    | BLOCK {stmt; label = None; _} -> Cabs.BLOCK ([], of_stmt stmt)
+    | BLOCK {stmt; label = Some l; _} -> Cabs.LABEL (l, of_stmt stmt)
     | ASSIGN ((v, _), e) ->
       Cabs.(
         COMPUTATION (
@@ -446,13 +476,17 @@ module Type = struct
 end
 
 let to_string (prog : t) : string =
-  let tenv, s = prog.body in
   let vars =
-    Map.to_alist tenv |> List.map ~f:(fun (v, t) ->
+    Map.to_alist prog.body.tenv |> List.map ~f:(fun (v, t) ->
         sprintf "%s %s;" (Type.to_string t) v) |>
     String.concat ~sep:"\n" in
-  let stmt = Utils.print_c Cprint.print_statement @@ Cabs.of_stmt s in
-  sprintf "%s\n%s" vars stmt
+  let stmt = Cabs.of_stmt prog.body.stmt in
+  let stmt =
+    Utils.print_c Cprint.print_statement @@
+    match prog.body.label with
+    | Some l -> Cabs.LABEL (l, stmt)
+    | None -> stmt in
+  Format.sprintf "%s\n%s" vars stmt
 
 (* Optimization and simplification passes. *)
 module Opt = struct
@@ -461,36 +495,70 @@ module Opt = struct
      pretty-printing quite ugly. This pass removes them. *)
   module Nops = struct
 
-    let rec go (s : stmt) : stmt = match s with
-      | NOP -> NOP
-      | BLOCK (tenv, s) -> begin
-          match go s with
-          | NOP -> NOP
-          | s -> BLOCK (tenv, s)
-        end
-      | ASSIGN ((v1, _), VARIABLE (v2, _)) when Theory.Var.Top.(v1 = v2) -> NOP
-      | ASSIGN _ -> s
-      | CALL _ -> s
-      | CALLASSIGN _ -> s
-      | STORE _ -> s
-      | SEQUENCE (NOP, s) -> go s
-      | SEQUENCE (s, NOP) -> go s
-      | SEQUENCE (s1, s2) -> begin
-          let s1 = go s1 in
-          let s2 = go s2 in
-          match s1, s2 with
-          | NOP, _ -> s2
-          | _, NOP -> s1
-          | _ -> SEQUENCE (s1, s2)
-        end
-      | IF (cond, st, sf) -> begin
-          let st = go st in
-          let sf = go sf in
-          match st, sf with
-          | NOP, NOP -> NOP
-          | _ -> IF (cond, st, sf)
-        end
-      | GOTO _ -> s
+    module Env = struct
+
+      type t = String.Set.t
+
+      let use (v : string) (env : t) : t = Set.add env v
+
+    end
+
+    include Monad.State.T1(Env)(Monad.Ident)
+    include Monad.State.Make(Env)(Monad.Ident)
+
+    let rec collect_label : stmt -> unit t = function
+      | NOP -> return ()
+      | BLOCK {stmt; _} -> collect_label stmt
+      | ASSIGN _ -> return ()
+      | CALL _ -> return ()
+      | CALLASSIGN _ -> return ()
+      | STORE _ -> return ()
+      | SEQUENCE (s1, s2) ->
+        let* () = collect_label s1 in
+        collect_label s2
+      | IF (_, st, sf) ->
+        let* () = collect_label st in
+        collect_label sf
+      | GOTO l -> update @@ Env.use l
+
+    let go (s : stmt) : stmt =
+      let rec aux used s = match s with
+        | NOP -> NOP
+        | BLOCK {tenv; stmt; label} -> begin
+            match aux used stmt with
+            | NOP -> begin
+                match label with
+                | Some l when Set.mem used l ->
+                  BLOCK {tenv; stmt = NOP; label}
+                | Some _ | None -> NOP
+              end
+            | stmt -> BLOCK {tenv; stmt; label}
+          end
+        | ASSIGN ((v1, _), VARIABLE (v2, _)) when Theory.Var.Top.(v1 = v2) -> NOP
+        | ASSIGN _ -> s
+        | CALL _ -> s
+        | CALLASSIGN _ -> s
+        | STORE _ -> s
+        | SEQUENCE (NOP, s) -> aux used s
+        | SEQUENCE (s, NOP) -> aux used s
+        | SEQUENCE (s1, s2) -> begin
+            let s1 = aux used s1 in
+            let s2 = aux used s2 in
+            match s1, s2 with
+            | NOP, _ -> s2
+            | _, NOP -> s1
+            | _ -> SEQUENCE (s1, s2)
+          end
+        | IF (cond, st, sf) -> begin
+            let st = aux used st in
+            let sf = aux used sf in
+            match st, sf with
+            | NOP, NOP -> NOP
+            | _ -> IF (cond, st, sf)
+          end
+        | GOTO _ -> s in
+      let used = Monad.State.exec (collect_label s) String.Set.empty in
+      aux used s
 
   end
 
@@ -508,7 +576,7 @@ module Opt = struct
 
     and go (data : Data_model.t) : stmt -> stmt = function
       | NOP -> NOP
-      | BLOCK (tenv, s) -> BLOCK (tenv, go data s)
+      | BLOCK {tenv; stmt; label} -> BLOCK {tenv; stmt = go data stmt; label}
       | ASSIGN (v, e) -> ASSIGN (v, exp data e)
       | CALL (f, args) -> CALL (exp data f, List.map args ~f:(exp data))
       | CALLASSIGN (v, f, args) ->
@@ -545,7 +613,7 @@ module Opt = struct
 
     and collect_stmt : stmt -> unit t = function
       | NOP -> return ()
-      | BLOCK (_, s) -> collect_stmt s
+      | BLOCK {stmt; _} -> collect_stmt stmt
       | ASSIGN (_, e) -> collect_exp e
       | CALL (f, args) | CALLASSIGN (_, f, args) ->
         let* () = collect_exp f in
@@ -565,7 +633,8 @@ module Opt = struct
     let remove (s : stmt) : stmt =
       let rec aux used = function
         | NOP -> NOP
-        | BLOCK (tenv, s) -> BLOCK (tenv, aux used s)
+        | BLOCK {tenv; stmt; label} ->
+          BLOCK {tenv; stmt = aux used stmt; label}
         | ASSIGN ((v, _), _)
           when Theory.Var.is_virtual v
             && not (Set.mem used @@ Theory.Var.name v) -> NOP
@@ -990,7 +1059,7 @@ module Main = struct
       {env with tenv = new_tenv; gamma = Map.map env.gamma ~f:resolve} in
     let* s = go_statement stmt in
     let+ () = update @@ fun env -> {env with tenv; gamma; tags} in
-    new_tenv, SEQUENCE (inits, s)
+    {tenv = new_tenv; stmt = SEQUENCE (inits, s); label = None}
 
   (* Initialize the declared variables. *)
   and go_inits (inits : (var * Cabs.expression) list) : stmt transl =
@@ -1107,8 +1176,8 @@ module Main = struct
       let size = Option.value_exn (csize#bits t) in
       NOP, Some (CONST_INT (Word.of_int ~width (size lsr 3), UNSIGNED)), NOP
     | Cabs.INDEX (ptr, idx) ->
-      let+ (spre, e, spost), t = go_index ptr idx in
-      spre, Some (UNARY (MEMOF, CAST (C.Type.pointer t, e), t)), spost
+      let+ spre, e, t = go_index ptr idx in
+      spre, Some (UNARY (MEMOF, CAST (C.Type.pointer t, e), t)), NOP
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       fail (
@@ -1629,94 +1698,82 @@ module Main = struct
       fail msg
 
   (* This function returns the side effects, the pointer to the element in the
-     array (as an integer), and the element type. *)
+     array (as an integer), and the element type.
+
+     When indexing into a one-or-multidimensional array, the memory layout is
+     assumed to be flat, whereas a pointer (or multi-pointer) is accessed
+     through the layers of memory indirection.
+  *)
   and go_index
       (ptr : Cabs.expression)
-      (idx : Cabs.expression) : (eexp_strict * typ) transl =
+      (idx : Cabs.expression) : (stmt * exp * typ) transl =
     let exp = go_expression_strict "go_index" in
     let* sptrpre, eptr, sptrpost = exp ptr in
     let* sidxpre, eidx, sidxpost = exp idx in
     let* {target; data; csize; _} = get () in
+    let width = Theory.Target.data_addr_size target in
     let tptr = Exp.typeof data eptr in
     let tidx = Exp.typeof data eidx in
-    match tptr, tidx with
-    | `Pointer {C.Type.Spec.t; _},
-      `Basic {C.Type.Spec.t = #C.Type.integer; _} ->
-      (* Translate to the pointer arithmetic of an array lookup.
-
-         NOTE: we're not supporting array types currently. A multidimensional
-         lookup, if the type is an array, must assume that the memory layout
-         is flat. The semantics of a multidimensional lookup of a pointer type
-         is captured here.
-
-         Example:
-
-         int f(int **x) {
-           return x[1][2];
-         }
-
-         This function is compiled to the following ARM code by GCC:
-
-         ldr     r3, [r0, #4]
-         ldr     r0, [r3, #8]
-         bx      lr
-
-         Whereas the following function:
-
-         int f(int x[8][8]) {
-           return x[1][2];
-         }
-
-         is compiled to:
-
-         ldr     r0, [r0, #40]
-         bx      lr
-
-         The math behind it is:
-
-         i = x + y * w 
-
-         So for this example:
-
-         x = 2 * 4
-         y = 1 * 4
-         w = 8
-         i = (2 * 4) + (1 * 4 * 8) = 8 + 32 = 40
-
-         We multiply by 4 since that is the size of an `int` 
-         on the 32-bit ARM target.
-      *)
-      let width = Theory.Target.data_addr_size target in
-      let size = Option.value_exn (csize#bits t) in
-      let scale = Word.of_int ~width (size lsr 3) in
-      let tidx = int_typ data (Size.of_int_exn width) UNSIGNED in
-      let eidx = Exp.with_type data csize eidx tidx in
-      let e =
-        BINARY (
-          ADD,
-          CAST (tidx, eptr),
-          BINARY (
-            MUL,
-            CONST_INT (scale, UNSIGNED),
-            eidx,
-            tidx),
-          tidx) in
-      let eexp =
-        sequence [sptrpre; sidxpre], e, sequence [sptrpost; sidxpost] in
-      return (eexp, t)
-    | `Pointer _, _ ->
+    match tidx with
+    | `Basic {C.Type.Spec.t = #C.Type.integer; _} -> begin
+        (* The side effects for the operands happen in order, and before
+           the actual pointer to the array element is calculated. *)
+        let* eptr = Helper.new_tmp_or_simple sptrpre eptr sptrpost in
+        let* eidx = Helper.new_tmp_or_simple sidxpre eidx sidxpost in
+        let* effs, eptr, eidx = match eptr, eidx with
+          | First eptr, First eidx -> return (NOP, eptr, eidx)
+          | First eptr, Second (sidxpre, eidx, sidxpost) ->
+            let+ vptr = new_tmp tptr in
+            let effs = sequence [ASSIGN (vptr, eptr); sidxpre; sidxpost] in
+            effs, VARIABLE vptr, eidx
+          | Second (sptrpre, eptr, sptrpost), First eidx ->
+            return (sequence [sptrpre; sptrpost], eptr, eidx)
+          | Second (sptrpre, eptr, NOP),
+            Second (sidxpre, eidx, sidxpost) ->
+            let+ vptr = new_tmp tptr in
+            let effs = sequence [
+                sptrpre;
+                ASSIGN (vptr, eptr);
+                sptrpost;
+                sidxpre;
+                sidxpost;
+              ] in
+            effs, VARIABLE vptr, eidx
+          | Second (sptrpre, eptr, sptrpost),
+            Second (sidxpre, eidx, sidxpost) ->
+            let effs = sequence [sptrpre; sptrpost; sidxpre; sidxpost] in
+            return (effs, eptr, eidx) in
+        match tptr with
+        | `Pointer {C.Type.Spec.t; _} ->
+          let size = Option.value_exn (csize#bits t) in
+          let scale = Word.of_int ~width (size lsr 3) in
+          let tidx = int_typ data (Size.of_int_exn width) UNSIGNED in
+          let eidx = Exp.with_type data csize eidx tidx in
+          let e =
+            BINARY (
+              ADD,
+              CAST (tidx, eptr),
+              BINARY (
+                MUL,
+                CONST_INT (scale, UNSIGNED),
+                eidx,
+                tidx),
+              tidx) in
+          return (effs, e, t)
+        | _ -> 
+          let e = Cabs.(INDEX (ptr, idx)) in
+          let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+          let msg = Format.asprintf
+              "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
+               has type %a. Expected pointer.\n" s C.Type.pp tptr in
+          fail msg
+      end
+    | _ ->
       let e = Cabs.(INDEX (ptr, idx)) in
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       let msg = Format.asprintf
           "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
            has type %a. Expected integer.\n" s C.Type.pp tidx in
-      fail msg
-    | _, _ ->
-      let e = Cabs.(INDEX (ptr, idx)) in
-      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
-      let msg = Format.asprintf
-          "Patch_c.go_index: in expression:\n\n%s\n\nArray operand \
-           has type %a. Expected pointer.\n" s C.Type.pp tptr in
       fail msg
 
   (* Translate a statement. *)
@@ -1750,6 +1807,10 @@ module Main = struct
           sequence [scondpost; then_],
           sequence [scondpost; else_]);
       ]
+    | Cabs.LABEL (l, s) ->
+      let* {tenv; _} = get () in
+      let+ stmt = go_statement s in
+      BLOCK {tenv; stmt; label = Some l}
     | Cabs.GOTO lbl -> return @@ GOTO lbl
     | _ ->
       let msg = Format.sprintf
@@ -1782,15 +1843,15 @@ let translate (patch : Cabs.definition) ~(target : Theory.target) : t KB.t =
       fail @@ sprintf "Patch_c.translate: unexpected patch shape:\n\n%s\n\n\
                        expected a single function definition" s in
   (* Perform type-checking and elaboration. *)
-  let* (tenv, s), _ =
+  let* body, _ =
     let open Transl in
     Env.create ~target ~data ~csize () |>
     run (Main.go_body body) in
   (* Perform some simplification passes. *)
-  let s = Opt.Cast.go data s in
+  let s = Opt.Cast.go data body.stmt in
   let s = Opt.Unused.remove s in
   let s = Opt.Nops.go s in
   (* Success! *)
-  let prog = {data; csize; body = tenv, s} in
+  let prog = {data; csize; body = {body with stmt = s}} in
   Log.send "Translated to the following PatchC program:\n%s" @@ to_string prog;
   KB.return prog

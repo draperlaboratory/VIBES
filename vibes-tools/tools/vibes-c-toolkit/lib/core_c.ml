@@ -86,6 +86,7 @@ module Make(CT : Theory.Core) = struct
     data        : Data_model.t;
     csize       : C.Size.base;
     as_unsigned : C.Type.t -> C.Type.t;
+    label_env   : String.Set.t;
   } [@@deriving fields]
 
   let make_reg (target : T.target) (v : unit T.var) : unit T.var KB.t =
@@ -125,7 +126,8 @@ module Make(CT : Theory.Core) = struct
       (hvars : Hvar.t list)
       (target : T.target)
       (data : Data_model.t)
-      (csize : C.Size.base) : ('a, 'b) interp_info KB.t =
+      (csize : C.Size.base)
+      (label_env : String.Set.t) : ('a, 'b) interp_info KB.t =
     let word_sort = T.(Bitv.define @@ Target.bits target) in
     let byte_sort = T.(Bitv.define @@ Target.byte target) in
     let mem_var = T.Target.data target in
@@ -136,7 +138,7 @@ module Make(CT : Theory.Core) = struct
     Fields_of_interp_info.create
       ~target ~word_sort ~byte_sort ~mem_var
       ~endian ~ret_var ~arg_vars ~hvars
-      ~data ~csize ~as_unsigned
+      ~data ~csize ~as_unsigned ~label_env
 
   let ty_of_base_type
       (info : _ interp_info)
@@ -390,7 +392,7 @@ module Make(CT : Theory.Core) = struct
       Patch_c.Exp.to_string f
 
   let empty_ctrl = T.Effect.(empty Sort.fall)
-  let empty_blk = CT.blk T.Label.null !!empty_data !!empty_ctrl
+  let empty_blk ?(l = T.Label.null) () = CT.blk l !!empty_data !!empty_ctrl
   let data d = CT.blk T.Label.null d !!empty_ctrl
   let ctrl c = CT.blk T.Label.null !!empty_data c
   let block ?(l = T.Label.null) d c = CT.blk l d c
@@ -437,8 +439,13 @@ module Make(CT : Theory.Core) = struct
   let rec stmt_to_eff
       (s : Patch_c.stmt)
       ~(info : _ interp_info) : unit eff KB.t = match s with
-    | NOP -> !!empty_blk
-    | BLOCK (_, s) -> stmt_to_eff s ~info
+    | NOP -> !!(empty_blk ())
+    | BLOCK {stmt; label = None; _} -> stmt_to_eff stmt ~info
+    | BLOCK {stmt; label = Some l; _} ->
+      let* l = T.Label.for_name l in
+      let* b = empty_blk ~l () in
+      let+ s = stmt_to_eff stmt ~info in
+      CT.seq !!b s
     | ASSIGN ((v, t), e) ->
       let s = ty_of_base_type info t in
       let v = T.Var.resort v s in
@@ -495,22 +502,22 @@ module Make(CT : Theory.Core) = struct
       let label = String.(chop_prefix_exn ~prefix:"L_" label) in
       !!(ctrl CT.(jmp (int info.word_sort Bitvec.(!$ label))))
     | GOTO label ->
+      let* () =
+        if Set.mem info.label_env label then !!()
+        else fail @@ Format.sprintf "Undefined label %s" label in
       let+ label = T.Label.for_name label in
       ctrl CT.(goto label)
-
-  and body_to_eff
-      (prog : Patch_c.t)
-      ~(info : _ interp_info) : unit eff KB.t =
-    let _, stmt = prog.body in
-    stmt_to_eff stmt ~info
 
   let compile
       (hvars : Hvar.t list)
       (target : T.target)
       (patch : Cabs.definition) : T.Semantics.t KB.t =
-    let* body = Patch_c.translate patch ~target in
-    let* info = make_interp_info hvars target body.data body.csize in
-    let* eff = body_to_eff body ~info in
+    let* p = Patch_c.translate patch ~target in
+    let* label_env = match Patch_c.label_env p with
+      | Error err -> KB.fail err
+      | Ok env -> !!env in
+    let* info = make_interp_info hvars target p.data p.csize label_env in
+    let* eff = stmt_to_eff p.body.stmt ~info in
     let+ sem = eff in
     sem
 

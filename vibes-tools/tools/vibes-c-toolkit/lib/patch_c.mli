@@ -129,7 +129,11 @@ and stmt =
   | GOTO of string
 
 (** A scope where statements may occur under a typing environment. *)
-and body = tenv * stmt
+and body = {
+  tenv  : tenv;
+  stmt  : stmt;
+  label : string option;
+}
 
 (** A PatchC definition is a scoped statement. We also include the
     data model for sizing of integers. *)
@@ -138,6 +142,10 @@ type t = {
   csize : C.Size.base;
   body  : body;
 }
+
+(** Returns the set of labels defined in the program, or an error
+    if there was a duplicate label. *)
+val label_env : t -> (String.Set.t, KB.conflict) result
 
 module Exp : sig
 
