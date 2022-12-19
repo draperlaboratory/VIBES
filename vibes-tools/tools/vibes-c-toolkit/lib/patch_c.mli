@@ -36,12 +36,9 @@ type size = [`r8 | `r16 | `r32 | `r64]
 (** Subset of [Cabs.sign], where now signedness is explicit. *)
 type sign = SIGNED | UNSIGNED
 
-(** Subset of [Cabs.base_type] for types supported by VIBES. *)
-type typ =
-  | VOID
-  | INT of size * sign
-  | PTR of typ
-  | FUN of typ * typ list
+(** Same as BAP C's types. Not all are currently supported by
+    the compiler. *)
+type typ = C.Type.t
 
 (** Compares two types for equality. *)
 val equal_typ : typ -> typ -> bool
@@ -52,11 +49,8 @@ module Type : sig
 
   val equal : t -> t -> bool
 
-  (** Returns the size of the type in bits. *)
-  val size : Theory.target -> typ -> int
-
   (** Returns the signedness of the type. *)
-  val sign : typ -> sign option
+  val sign : Data_model.t -> typ -> sign
 
 end
 
@@ -135,14 +129,23 @@ and stmt =
   | GOTO of string
 
 (** A scope where statements may occur under a typing environment. *)
-and body = tenv * stmt
+and body = {
+  tenv  : tenv;
+  stmt  : stmt;
+  label : string option;
+}
 
 (** A PatchC definition is a scoped statement. We also include the
     data model for sizing of integers. *)
 type t = {
-  data : Data_model.t;
-  body: body;
+  data  : Data_model.t;
+  csize : C.Size.base;
+  body  : body;
 }
+
+(** Returns the set of labels defined in the program, or an error
+    if there was a duplicate label. *)
+val label_env : t -> (String.Set.t, KB.conflict) result
 
 module Exp : sig
 
@@ -151,11 +154,11 @@ module Exp : sig
   val to_string : t -> string
 
   (** Returns the type embedded in an expression. *)
-  val typeof : t -> typ
+  val typeof : Data_model.t -> t -> typ
 
   (** Force an expression to carry a new type. This operation is
       unsafe unless you know what you're doing! *)
-  val coerce_type : t -> typ -> t
+  val coerce_type : Data_model.t -> C.Size.base -> t -> typ -> t
 
 end
 
