@@ -259,7 +259,9 @@ module Cabs = struct
       (* We can use increment inside of a memory operation, while
          still having the expression result in an l-value. *)
       | Cabs.(UNARY (MEMOF, e))
-      | Cabs.(INDEX (e, _)) -> aux e ~mem:true
+      | Cabs.(INDEX (e, _))
+      | Cabs.(MEMBEROF (e, _))
+      | Cabs.(MEMBEROFPTR (e, _)) -> aux e ~mem:true
       (* Operand of increment must be an l-value regardless of
          whether we're inside of a MEMOF or not. *)
       | Cabs.(UNARY (POSINCR, e))
