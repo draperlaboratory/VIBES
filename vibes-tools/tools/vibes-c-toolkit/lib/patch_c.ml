@@ -471,20 +471,18 @@ module Type = struct
 
   let field_offset
       (csize : C.Size.base)
-      (t : typ)
-      (name : string) : word option =
-    if C.Type.is_structure t then
-      match C.Abi.layout csize t with
-      | {layout = C.Data.Seq data} ->
-        let init = 0 and finish _ = None in
-        let width = csize#pointer |> Bap.Std.Size.in_bits in
-        List.fold_until data ~init ~finish ~f:(fun acc -> function
-            | Imm (_, Field (f, _)) when String.(name = f) -> Stop (Some acc)
-            | Imm (s, _) -> Continue (acc + s)
-            | _ -> Stop None) |>
-        Option.map ~f:(fun off -> Word.of_int (off lsr 3) ~width)
-      | _ -> None
-    else None
+      (name : string)
+      (t : t) : word option =
+    match C.Abi.layout csize t with
+    | {layout = C.Data.Seq data} ->
+      let init = 0 and finish _ = None in
+      let width = csize#pointer |> Bap.Std.Size.in_bits in
+      List.fold_until data ~init ~finish ~f:(fun acc -> function
+          | Imm (_, Field (f, _)) when String.(name = f) -> Stop (Some acc)
+          | Imm (s, _) -> Continue (acc + s)
+          | _ -> Stop None) |>
+      Option.map ~f:(fun off -> Word.of_int (off lsr 3) ~width)
+    | _ -> None
 
 end
 
@@ -1793,7 +1791,7 @@ module Main = struct
     | `Pointer {C.Type.Spec.t; _} -> begin
         match t with
         | `Structure {C.Type.Spec.t = compound; _} -> begin
-            match Type.field_offset csize t field with
+            match Type.field_offset csize field t with
             | Some off ->
               let _, tfield =
                 List.find_exn compound.fields ~f:(fun (name, _) ->
