@@ -359,6 +359,7 @@ module Make(CT : Theory.Core) = struct
   let empty_data : T.data T.effect = T.Effect.(empty @@ Sort.data "C_NOP")
 
   let assign_args
+      (call : Patch_c.stmt)
       (info : _ interp_info)
       (args : Patch_c.exp list) : (T.data eff * var list) KB.t =
     try
@@ -377,7 +378,14 @@ module Make(CT : Theory.Core) = struct
         ~f:(fun (assn, r) (acc_eff, acc_args) ->
             !!(CT.seq assn acc_eff, r :: acc_args))
     with _ ->
-      fail "Maximum number of arguments for function call was exceeded"
+      (* Currently, we only support passing arguments by registers, which
+         are in limited number. *)
+      let call = Patch_c.Stmt.to_string call in
+      let len = List.length info.arg_vars in
+      let msg = Format.sprintf
+          "At function call:\n\n%s:\n\nmaximum number of \
+           arguments (%d) was exceeded" call len in
+      fail msg
 
   let call_dst_with_name (name : string) : T.label KB.t =
     let* dst = T.Label.fresh in
@@ -460,12 +468,12 @@ module Make(CT : Theory.Core) = struct
       data CT.(set v @@ resort s e)
     | CALL (f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
+      let* setargs, args = assign_args s info args in
       let+ l = args_label args in
       goto_call ?l CT.(block setargs (goto dst) ?l)
     | CALLASSIGN ((v, _), f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
+      let* setargs, args = assign_args s info args in
       let+ l = args_label args in
       goto_call ?l
         CT.(seq (block setargs (goto dst) ?l)
