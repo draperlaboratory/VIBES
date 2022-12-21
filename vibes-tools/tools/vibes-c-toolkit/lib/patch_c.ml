@@ -1201,6 +1201,9 @@ module Main = struct
           spre, Some e, spost
       end
     | Cabs.MEMBEROF (ptr, field) ->
+      (* TODO: if the entire struct fits inside of a register, then can we
+         optimize this to just use bitwise operations to extract the
+         corresponding element? *)
       let ptr = Cabs.UNARY (ADDROF, ptr) in
       go_memberof ptr field
     | Cabs.MEMBEROFPTR (ptr, field) -> go_memberof ptr field
