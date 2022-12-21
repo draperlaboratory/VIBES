@@ -277,8 +277,10 @@ module Make(CT : Theory.Core) = struct
   let addr_of_var (info : _ interp_info) (v : string) : unit pure =
     match Hvar.find v info.hvars with
     | None ->
-      fail @@ sprintf "laddr_of_var: missing higher var %s for ADDROF \
-                       expression, storage classification is required" v
+      let msg = Format.sprintf
+          "addr_of_var: missing higher var %s for ADDROF \
+           expression, storage classification is required" v in
+      fail msg
     | Some {value; _} -> match value with
       | Hvar.(Memory (Frame (reg, off))) ->
         let* reg = try_mark_reg info reg in
@@ -290,8 +292,10 @@ module Make(CT : Theory.Core) = struct
         let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
         T.Value.forget a
       | _ ->
-        fail @@ sprintf "addr_of_var: higher var %s for ADDROF expression \
-                         is not stored in a memory location." v
+        let msg = Format.sprintf
+            "addr_of_var: higher var %s for ADDROF expression \
+             is not stored in a memory location." v in
+        fail msg
 
   let rec expr_to_pure
       (info : _ interp_info)
