@@ -38,12 +38,6 @@ module Data_model = struct
     | `LP32 | `ILP32 | `LLP64 -> 32
     | `ILP64 | `LP64 -> 64
 
-  (* Size of pointers. *)
-  let addr_size (data : t) : int = match data.sizes with
-    | #C.Data.model32 -> 32
-    | #C.Data.model64 -> 64
-  [@@warning "-32"]
-
 end
 
 module Size = struct
@@ -265,7 +259,9 @@ module Cabs = struct
       (* We can use increment inside of a memory operation, while
          still having the expression result in an l-value. *)
       | Cabs.(UNARY (MEMOF, e))
-      | Cabs.(INDEX (e, _)) -> aux e ~mem:true
+      | Cabs.(INDEX (e, _))
+      | Cabs.(MEMBEROF (e, _))
+      | Cabs.(MEMBEROFPTR (e, _)) -> aux e ~mem:true
       (* Operand of increment must be an l-value regardless of
          whether we're inside of a MEMOF or not. *)
       | Cabs.(UNARY (POSINCR, e))
@@ -471,6 +467,21 @@ module Type = struct
       let sizer = Option.value_exn (csize#bits tr) in
       if sizel = sizer && equal_sign (sign data tl) (sign data tr)
       then Some (tl, r) else Some (tl, Exp.with_type data csize r tl)
+    | _ -> None
+
+  let field_offset
+      (csize : C.Size.base)
+      (name : string)
+      (t : t) : word option =
+    match C.Abi.layout csize t with
+    | {layout = C.Data.Seq data} ->
+      let init = 0 and finish _ = None in
+      let width = csize#pointer |> Bap.Std.Size.in_bits in
+      List.fold_until data ~init ~finish ~f:(fun acc -> function
+          | Imm (_, Field (f, _)) when String.(name = f) -> Stop (Some acc)
+          | Imm (s, _) -> Continue (acc + s)
+          | _ -> Stop None) |>
+      Option.map ~f:(fun off -> Word.of_int (off lsr 3) ~width)
     | _ -> None
 
 end
@@ -797,7 +808,10 @@ module Main = struct
       let* () = check_no_cvr "Pointer" t qualifier ~msg in
       check_no_attrs "Pointer" t attrs ~msg
     | `Array _ as t -> unsupported_typ "Array" t ~msg
-    | `Structure _ as t -> unsupported_typ "Structure" t ~msg
+    | `Structure {C.Type.Spec.t = compound; attrs; _} as t ->
+      let* () = Transl.List.iter compound.fields ~f:(fun (_, t) ->
+          check_supported_typ t ~msg) in
+      check_no_attrs "Structure" t attrs ~msg
     | `Union _ as t -> unsupported_typ "Union" t ~msg
     | `Function {C.Type.Spec.t = proto; _} as t when proto.variadic ->
       unsupported_typ "Variadic function" t ~msg
@@ -1184,6 +1198,13 @@ module Main = struct
           let e = UNARY (MEMOF, CAST (C.Type.pointer t, e), t) in
           spre, Some e, spost
       end
+    | Cabs.MEMBEROF (ptr, field) ->
+      (* TODO: if the entire struct fits inside of a register, then can we
+         optimize this to just use bitwise operations to extract the
+         corresponding element? *)
+      let ptr = Cabs.UNARY (ADDROF, ptr) in
+      go_memberof ptr field
+    | Cabs.MEMBEROFPTR (ptr, field) -> go_memberof ptr field
     | _ ->
       let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
       fail (
@@ -1759,6 +1780,59 @@ module Main = struct
       let msg = Format.asprintf
           "Patch_c.go_index: in expression:\n\n%s\n\nIndex operand \
            has type %a. Expected integer.\n" s C.Type.pp tidx in
+      fail msg
+
+  and go_memberof (ptr : Cabs.expression) (field : string) : eexp transl =
+    let exp = go_expression_strict "go_memberof" in
+    let* sptrpre, eptr, sptrpost = exp ptr in
+    let* {data; csize; _} = get () in
+    let tptr = Exp.typeof data eptr in
+    match tptr with
+    | `Pointer {C.Type.Spec.t; _} -> begin
+        match t with
+        | `Structure {C.Type.Spec.t = compound; _} -> begin
+            match Type.field_offset csize field t with
+            | Some off ->
+              let _, tfield =
+                List.find_exn compound.fields ~f:(fun (name, _) ->
+                    String.equal name field) in
+              let tfield' = C.Type.pointer tfield in
+              let tarith = int_typ data (csize#pointer :> size) UNSIGNED in
+              let eptr = Exp.with_type data csize eptr tarith in
+              let e =
+                UNARY (
+                  MEMOF,
+                  CAST (
+                    tfield',
+                    BINARY (
+                      ADD,
+                      eptr,
+                      CONST_INT (off, UNSIGNED),
+                      tarith)),
+                  tfield) in
+              return (sptrpre, Some e, sptrpost)
+            | None ->
+              let e = Cabs.(MEMBEROFPTR (ptr, field)) in
+              let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+              let msg = Format.sprintf
+                  "Patch_c.go_memberof: in expression:\n\n%s\n\nstruct %s \
+                   has no such field %s\n" s compound.name field in
+              fail msg
+          end
+        | _ ->
+          let e = Cabs.(MEMBEROFPTR (ptr, field)) in
+          let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+          let msg = Format.asprintf
+              "Patch_c.go_memberof: in expression:\n\n%s\n\nexpected \
+               struct, got %a\n" s C.Type.pp tptr in
+          fail msg
+      end
+    | _ ->
+      let e = Cabs.(MEMBEROFPTR (ptr, field)) in
+      let s = Utils.print_c Cprint.print_statement Cabs.(COMPUTATION e) in
+      let msg = Format.asprintf
+          "Patch_c.go_memberof: in expression:\n\n%s\n\nexpected \
+           pointer, got %a\n" s C.Type.pp tptr in
       fail msg
 
   (* Translate a statement. *)

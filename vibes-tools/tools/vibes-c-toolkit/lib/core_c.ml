@@ -121,7 +121,7 @@ module Make(CT : Theory.Core) = struct
         | `slong_long -> `ulong_long
         | i           -> i
     end in obj#run
-  
+
   let make_interp_info
       (hvars : Hvar.t list)
       (target : T.target)
@@ -189,58 +189,30 @@ module Make(CT : Theory.Core) = struct
       lift_binop op
         (ty_of_base_type info ty_a)
         (ty_of_base_type info ty_b) in
+    let sa = Patch_c.Type.sign info.data ty_a in
+    let sb = Patch_c.Type.sign info.data ty_b in
+    let signed uop sop = match sa, sb with
+      | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv uop)
+      | SIGNED, SIGNED -> !!(lift_bitv sop) in
     match op with
-    | ADD -> !!(lift_bitv CT.add)
-    | SUB -> !!(lift_bitv CT.sub)
-    | MUL -> !!(lift_bitv CT.mul)
-    | DIV -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.div)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sdiv)
-      end
-    | MOD -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.modulo)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.smodulo)
-      end
+    | ADD  -> !!(lift_bitv CT.add)
+    | SUB  -> !!(lift_bitv CT.sub)
+    | MUL  -> !!(lift_bitv CT.mul)
+    | DIV  -> signed CT.div CT.sdiv
+    | MOD  -> signed CT.modulo CT.smodulo
     | LAND -> !!(lift_bitv CT.logand)
-    | LOR -> !!(lift_bitv CT.logor)
-    | XOR -> !!(lift_bitv CT.logxor)
-    | SHL -> !!(lift_bitv CT.lshift)
-    | SHR  -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | SIGNED, _ -> !!(lift_bitv CT.arshift)
-        | UNSIGNED, _ -> !!(lift_bitv CT.rshift)
-      end
-    | EQ  -> !!(lift_bitv CT.eq)
-    | NE  -> !!(lift_bitv CT.neq)
-    | LT -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ult)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.slt)
-      end
-    | GT -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ugt)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sgt)
-      end
-    | LE -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ule)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sle)
-      end
-    | GE -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.uge)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sge)
-      end
+    | LOR  -> !!(lift_bitv CT.logor)
+    | XOR  -> !!(lift_bitv CT.logxor)
+    | SHL  -> !!(lift_bitv CT.lshift)
+    | EQ   -> !!(lift_bitv CT.eq)
+    | NE   -> !!(lift_bitv CT.neq)
+    | LT   -> signed CT.ult CT.slt
+    | GT   -> signed CT.ugt CT.sgt
+    | LE   -> signed CT.ule CT.sle
+    | GE   -> signed CT.uge CT.sge
+    | SHR  -> match sa, sb with
+      | SIGNED,   _ -> !!(lift_bitv CT.arshift)
+      | UNSIGNED, _ -> !!(lift_bitv CT.rshift)
 
   type 'a bitv = 'a T.bitv
 
@@ -277,8 +249,10 @@ module Make(CT : Theory.Core) = struct
   let addr_of_var (info : _ interp_info) (v : string) : unit pure =
     match Hvar.find v info.hvars with
     | None ->
-      fail @@ sprintf "laddr_of_var: missing higher var %s for ADDROF \
-                       expression, storage classification is required" v
+      let msg = Format.sprintf
+          "addr_of_var: missing higher var %s for ADDROF \
+           expression, storage classification is required" v in
+      fail msg
     | Some {value; _} -> match value with
       | Hvar.(Memory (Frame (reg, off))) ->
         let* reg = try_mark_reg info reg in
@@ -290,8 +264,10 @@ module Make(CT : Theory.Core) = struct
         let+ a = CT.int info.word_sort (Word.to_bitvec addr) in
         T.Value.forget a
       | _ ->
-        fail @@ sprintf "addr_of_var: higher var %s for ADDROF expression \
-                         is not stored in a memory location." v
+        let msg = Format.sprintf
+            "addr_of_var: higher var %s for ADDROF expression \
+             is not stored in a memory location." v in
+        fail msg
 
   let rec expr_to_pure
       (info : _ interp_info)
@@ -359,10 +335,18 @@ module Make(CT : Theory.Core) = struct
   let empty_data : T.data T.effect = T.Effect.(empty @@ Sort.data "C_NOP")
 
   let assign_args
+      (call : Patch_c.stmt)
       (info : _ interp_info)
       (args : Patch_c.exp list) : (T.data eff * var list) KB.t =
     try
-      let* args = KB.List.map args ~f:(expr_to_pure info) in
+      let* args = KB.List.map args ~f:(fun arg ->
+          match Patch_c.Exp.typeof info.data arg with
+          | `Structure _ ->
+            let msg = Format.sprintf
+                "Unsupported: cannot pass struct %s as a \
+                 function argument" @@ Patch_c.Exp.to_string arg in
+            fail msg
+          | _ -> expr_to_pure info arg) in
       List.mapi args ~f:(fun i a ->
           let r = List.nth_exn info.arg_vars i in
           CT.set r !!a, Var.reify r) |>
@@ -370,7 +354,14 @@ module Make(CT : Theory.Core) = struct
         ~f:(fun (assn, r) (acc_eff, acc_args) ->
             !!(CT.seq assn acc_eff, r :: acc_args))
     with _ ->
-      fail "Maximum number of arguments for function call was exceeded"
+      (* Currently, we only support passing arguments by registers, which
+         are in limited number. *)
+      let call = Patch_c.Stmt.to_string call in
+      let len = List.length info.arg_vars in
+      let msg = Format.sprintf
+          "At function call:\n\n%s:\n\nmaximum number of \
+           arguments (%d) was exceeded" call len in
+      fail msg
 
   let call_dst_with_name (name : string) : T.label KB.t =
     let* dst = T.Label.fresh in
@@ -453,12 +444,12 @@ module Make(CT : Theory.Core) = struct
       data CT.(set v @@ resort s e)
     | CALL (f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
+      let* setargs, args = assign_args s info args in
       let+ l = args_label args in
       goto_call ?l CT.(block setargs (goto dst) ?l)
     | CALLASSIGN ((v, _), f, args) ->
       let* dst = determine_call_dst f in
-      let* setargs, args = assign_args info args in
+      let* setargs, args = assign_args s info args in
       let+ l = args_label args in
       goto_call ?l
         CT.(seq (block setargs (goto dst) ?l)
