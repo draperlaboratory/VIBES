@@ -121,7 +121,7 @@ module Make(CT : Theory.Core) = struct
         | `slong_long -> `ulong_long
         | i           -> i
     end in obj#run
-  
+
   let make_interp_info
       (hvars : Hvar.t list)
       (target : T.target)
@@ -362,7 +362,14 @@ module Make(CT : Theory.Core) = struct
       (info : _ interp_info)
       (args : Patch_c.exp list) : (T.data eff * var list) KB.t =
     try
-      let* args = KB.List.map args ~f:(expr_to_pure info) in
+      let* args = KB.List.map args ~f:(fun arg ->
+          match Patch_c.Exp.typeof info.data arg with
+          | `Structure _ ->
+            let msg = Format.sprintf
+                "Unsupported: cannot pass struct %s as a \
+                 function argument" @@ Patch_c.Exp.to_string arg in
+            fail msg
+          | _ -> expr_to_pure info arg) in
       List.mapi args ~f:(fun i a ->
           let r = List.nth_exn info.arg_vars i in
           CT.set r !!a, Var.reify r) |>
