@@ -189,58 +189,30 @@ module Make(CT : Theory.Core) = struct
       lift_binop op
         (ty_of_base_type info ty_a)
         (ty_of_base_type info ty_b) in
+    let sa = Patch_c.Type.sign info.data ty_a in
+    let sb = Patch_c.Type.sign info.data ty_b in
+    let signed uop sop = match sa, sb with
+      | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv uop)
+      | SIGNED, SIGNED -> !!(lift_bitv sop) in
     match op with
-    | ADD -> !!(lift_bitv CT.add)
-    | SUB -> !!(lift_bitv CT.sub)
-    | MUL -> !!(lift_bitv CT.mul)
-    | DIV -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.div)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sdiv)
-      end
-    | MOD -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.modulo)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.smodulo)
-      end
+    | ADD  -> !!(lift_bitv CT.add)
+    | SUB  -> !!(lift_bitv CT.sub)
+    | MUL  -> !!(lift_bitv CT.mul)
+    | DIV  -> signed CT.div CT.sdiv
+    | MOD  -> signed CT.modulo CT.smodulo
     | LAND -> !!(lift_bitv CT.logand)
-    | LOR -> !!(lift_bitv CT.logor)
-    | XOR -> !!(lift_bitv CT.logxor)
-    | SHL -> !!(lift_bitv CT.lshift)
-    | SHR  -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | SIGNED, _ -> !!(lift_bitv CT.arshift)
-        | UNSIGNED, _ -> !!(lift_bitv CT.rshift)
-      end
-    | EQ  -> !!(lift_bitv CT.eq)
-    | NE  -> !!(lift_bitv CT.neq)
-    | LT -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ult)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.slt)
-      end
-    | GT -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ugt)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sgt)
-      end
-    | LE -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.ule)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sle)
-      end
-    | GE -> begin
-        match Patch_c.Type.sign info.data ty_a,
-              Patch_c.Type.sign info.data ty_b with
-        | UNSIGNED, _ | _, UNSIGNED -> !!(lift_bitv CT.uge)
-        | SIGNED, SIGNED -> !!(lift_bitv CT.sge)
-      end
+    | LOR  -> !!(lift_bitv CT.logor)
+    | XOR  -> !!(lift_bitv CT.logxor)
+    | SHL  -> !!(lift_bitv CT.lshift)
+    | EQ   -> !!(lift_bitv CT.eq)
+    | NE   -> !!(lift_bitv CT.neq)
+    | LT   -> signed CT.ult CT.slt
+    | GT   -> signed CT.ugt CT.sgt
+    | LE   -> signed CT.ule CT.sle
+    | GE   -> signed CT.uge CT.sge
+    | SHR  -> match sa, sb with
+      | SIGNED,   _ -> !!(lift_bitv CT.arshift)
+      | UNSIGNED, _ -> !!(lift_bitv CT.rshift)
 
   type 'a bitv = 'a T.bitv
 
