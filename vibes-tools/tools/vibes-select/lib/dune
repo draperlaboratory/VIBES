@@ -4,7 +4,6 @@
  (name vibes_select)
  (public_name vibes-select)
  (libraries
-   bap
    vibes-ir
    vibes-log
    vibes-linear-ssa

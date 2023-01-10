@@ -2,8 +2,8 @@
  (name vibes_bir)
  (public_name vibes-bir)
  (libraries
+   bap-std
    findlib.dynload
-   bap
    vibes-constants
    vibes-log)
  (preprocess (pps ppx_compare ppx_sexp_conv ppx_bin_prot)))

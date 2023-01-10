@@ -3,6 +3,7 @@
  (public_name vibes-opt)
  (libraries
    findlib.dynload
+   threads
    vibes-log
    vibes-utils
    vibes-patch-info

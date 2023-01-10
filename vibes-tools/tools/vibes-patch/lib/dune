@@ -4,10 +4,11 @@
  (name vibes_patch)
  (public_name vibes-patch)
  (libraries
-   bap
    bap-elf
    bap-core-theory
+   findlib.dynload
    str
+   threads
    vibes-log
    vibes-constants
    vibes-utils

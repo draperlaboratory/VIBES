@@ -3,7 +3,6 @@
  (public_name vibes-linear-ssa)
  (libraries
    findlib.dynload
-   bap
    core
    monads
    vibes-log

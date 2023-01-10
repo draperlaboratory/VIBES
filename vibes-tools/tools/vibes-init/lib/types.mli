@@ -33,7 +33,7 @@ val create :
   binary:string ->
   patched_binary:string ->
   spaces:string ->
-  (t, KB.conflict) result
+  unit -> (t, KB.conflict) result
 
 (** Pretty-prints the Makefile for running the pipeline. *)
 val pp_makefile : Format.formatter -> t -> unit

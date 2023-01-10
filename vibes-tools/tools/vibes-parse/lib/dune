@@ -3,6 +3,8 @@
  (public_name vibes-parse)
  (libraries
    bap-core-theory
+   findlib.dynload
+   threads
    vibes-log
    vibes-constants
    vibes-utils

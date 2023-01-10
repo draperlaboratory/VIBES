@@ -2,7 +2,6 @@
  (name vibes_minizinc)
  (public_name vibes-minizinc)
  (libraries
-   bap
    bap-arm
    vibes-ir
    vibes-log

@@ -25,9 +25,9 @@ let run
   let* language = match language with
     | Some language -> Result.(CT.get_language language >>| Option.some)
     | None -> Ok None in
-  let* t = Types.create ~language ~patch_names ~ogre
-      ~model:model_filepath ~binary ~patched_binary
-      ~spaces:Inputs.default_patch_spaces in
+  let* t = Types.create ()
+      ~language ~patch_names ~ogre ~binary ~patched_binary
+      ~model:model_filepath ~spaces:Inputs.default_patch_spaces in
   Log.send "Generating template files";
   let* () = Types.generate_files t in
   Log.send "Generating Makefile";
