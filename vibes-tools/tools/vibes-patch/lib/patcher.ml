@@ -550,9 +550,11 @@ module Extend_ogre = struct
       let module S = Image.Scheme in
       let addr = patch.addr + len.code in
       let loc = patch.loc + len.code in
+      let name = Format.sprintf "data_%Lx" addr in
       Ogre.sequence [
         Ogre.provide S.mapped addr len.data loc;
         Ogre.provide S.segment addr len.data true false false;
+        Ogre.provide S.named_region addr len.data name;
       ]
     else Ogre.return ()
 
