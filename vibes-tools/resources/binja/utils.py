@@ -67,5 +67,9 @@ def rodata_of_func(bv, f):
       if size <= 0:
         continue
       off = addr_to_off_seg(seg, r)
-      result[r] = (size, off)
+      if d.name is None:
+        name = "data_%x" % r
+      else:
+        name = d.name
+      result[r] = (size, off, name)
   return result

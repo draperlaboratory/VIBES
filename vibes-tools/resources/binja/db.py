@@ -26,13 +26,17 @@ def get_patches(bv):
   return patches
 
 def save_patch(bv, p):
+  global patches
   ps = bv.query_metadata("vibes.patch-infos")
   ps[p.name] = p.serialize(bv)
+  patches[p.name] = p
   bv.store_metadata("vibes.patch-infos", ps)
 
 def delete_patch(bv, name):
+  global patches
   ps = bv.query_metadata("vibes.patch-infos")
   del ps[name]
+  del patches[name]
   bv.store_metadata("vibes.patch-infos", ps)
   try:
     ps = bv.query_metadata("vibes.patch-codes")
@@ -54,17 +58,21 @@ def get_spaces(bv):
   return spaces
 
 def save_space(bv, space):
+  global spaces
   ss = bv.query_metadata("vibes.patch-spaces")
   ss.append((space.start, space.end))
+  spaces.append(space)
   bv.store_metadata("vibes.patch-spaces", ss)
 
 def delete_space(bv, space):
-  ss = bv.query_metadata("vibes.patch-spaces")
   try:
-    ss.remove(space)
-    bv.store_metadata("vibes.patch-spaces", ss)
+    global spaces
+    spaces.remove(space)
   except ValueError:
     pass
+  ss = filter(lambda s: s[0] != space.start or s[1] != space.end,
+              bv.query_metadata("vibes.patch-spaces"))
+  bv.store_metadata("vibes.patch-spaces", list(ss))
 
 def get_patch_code(bv, name):
   try:
