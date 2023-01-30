@@ -1,0 +1,8 @@
+(tests
+ (names test_arm)
+ (libraries
+   bap_wp
+   vibes-as
+   findlib.dynload
+   threads
+   ounit2))
