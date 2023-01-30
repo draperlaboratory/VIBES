@@ -26,8 +26,8 @@ let assert_parse_eq ?(hvars = []) c bil =
       c KB.Conflict.pp e
   | Ok ast ->
     let state = Toplevel.current () in
-    let result = Toplevel.var "core-c" in
     Toplevel.reset ();
+    let result = Toplevel.var "core-c" in
     Toplevel.put result begin
       let* theory = Theory.instance () in
       let* (module Core) = Theory.require theory in
