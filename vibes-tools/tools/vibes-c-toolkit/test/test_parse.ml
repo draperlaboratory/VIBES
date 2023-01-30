@@ -67,61 +67,60 @@ let assert_eq (s : string) (p : Patch_c.stmt) : unit =
     Toplevel.get result;
     Toplevel.set state
 
-
-let test_void_ptr_implicit_downcast _ =
+let test_void_ptr_implicit_downcast (_ : test_ctxt) =
   assert_ok
     "int *x;
      void* (*malloc)(int);
      x = malloc(42);"
 
-let test_void_ptr_implicit_upcast _ =
+let test_void_ptr_implicit_upcast (_ : test_ctxt) =
   assert_ok
     "void *x;
      int* (*f)(int);
      x = f(5);"
 
-let test_bad_ptr_cast _ =
+let test_bad_ptr_cast (_ : test_ctxt) =
   assert_error
     "int *x;
      char* (*f)();
      x = f();"
 
-let test_bad_arg_arity _ =
+let test_bad_arg_arity (_ : test_ctxt) =
   assert_error
     "void (*f)(int, int);
      f(1, 2, 3);"
 
-let test_bad_arg_types _ =
+let test_bad_arg_types (_ : test_ctxt) =
   assert_error
     "void (*f)(int, int);
      f(1, (int*)2);"
 
-let test_discard _ =
+let test_discard (_ : test_ctxt) =
   assert_ok
     "int (*maybe_effectful)(int);
      (void)maybe_effectful(5);"
 
-let test_bad_discard _ =
+let test_bad_discard (_ : test_ctxt) =
   assert_error
     "int x, y;
      x = (void)(y = 5);"
 
-let test_ptr_arith _ =
+let test_ptr_arith (_ : test_ctxt) =
   assert_ok
     "int x, *y, z;
      z = *(y + x);"
 
-let test_bad_ptr_arith _ =
+let test_bad_ptr_arith (_ : test_ctxt) =
   assert_error
     "int x, *y, z;
      z = *(y / x);"
 
-let test_bad_lvalue_posincr _ =
+let test_bad_lvalue_posincr (_ : test_ctxt) =
   assert_error
     "int x, y;
      x++ = y;"
 
-let test_char_assign _ =
+let test_char_assign (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 8 in
@@ -132,7 +131,7 @@ let test_char_assign _ =
     ASSIGN ((v, t), CONST_INT (c, UNSIGNED)) in
   assert_eq "char x; x = 'a';" p
 
-let test_char_assign_ext _ =
+let test_char_assign_ext (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 32 in
@@ -143,7 +142,7 @@ let test_char_assign_ext _ =
     ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
   assert_eq "int x; x = 'a';" p
 
-let test_int_assign _ =
+let test_int_assign (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 32 in
@@ -154,7 +153,7 @@ let test_int_assign _ =
     ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
   assert_eq "int x; x = 255;" p
 
-let test_char_assign_signed_ext _ =
+let test_char_assign_signed_ext (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 32 in
@@ -165,7 +164,7 @@ let test_char_assign_signed_ext _ =
     ASSIGN ((v, t), CONST_INT (c, SIGNED)) in
   assert_eq "int x; x = (signed char)255;" p
 
-let test_char_assign_unsigned_ext _ =
+let test_char_assign_unsigned_ext (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 32 in
@@ -182,7 +181,7 @@ let test_char_assign_unsigned_ext _ =
    See example 9 in:
    https://people.eecs.berkeley.edu/~necula/cil/cil016.html
 *)
-let test_cast_precedence _ =
+let test_cast_precedence (_ : test_ctxt) =
   let p =
     let open Patch_c in
     let s = Theory.Bitv.define 32 in

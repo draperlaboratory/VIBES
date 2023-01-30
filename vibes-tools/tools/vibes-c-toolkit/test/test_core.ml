@@ -18,7 +18,10 @@ let strip : string -> string =
 let compare_sem (sem : string) (str : string) : bool =
   String.equal (strip sem) (strip str)
 
-let assert_parse_eq ?(hvars = []) c bil =
+let assert_parse_eq
+    ?(hvars : Higher_var.t list = [])
+    (c : string)
+    (bil : string) : unit =
   match Parse_c.parse c with
   | Error e ->
     assert_failure @@
@@ -40,22 +43,22 @@ let assert_parse_eq ?(hvars = []) c bil =
     Toplevel.set state;
     assert_equal bil s ~cmp:compare_sem ~printer:Fn.id
 
-let test_var_decl _ =
+let test_var_decl (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z;"
     "{ }"
 
-let test_assign _ =
+let test_assign (_ : test_ctxt) =
   assert_parse_eq
     "int x, y; x = y;"
     "{ x := y }"
 
-let test_seq _ =
+let test_seq (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z; x = y; y = z;"
     "{ x := y y := z }"
 
-let test_ite _ =
+let test_ite (_ : test_ctxt) =
   assert_parse_eq
     "int cond_expr;
      if(cond_expr) {
@@ -75,7 +78,7 @@ let test_ite _ =
        }
      }"
 
-let test_fallthrough _ =
+let test_fallthrough (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z; if (x) { goto l; } x = z; l: (void)x; "
     "{
@@ -86,17 +89,17 @@ let test_fallthrough _ =
        label(%00000003)
      }"
 
-let test_array _ =
+let test_array (_ : test_ctxt) =
   assert_parse_eq
     "int* a, y; y = a[7];"
     "{ y := mem[a + 0x1C, el]:u32 }"
 
-let test_array_multi_ptr _ =
+let test_array_multi_ptr (_ : test_ctxt) =
   assert_parse_eq
     "int** a, y; y = a[1][2];"
     "{ y := mem[mem[a + 4, el]:u32 + 8, el]:u32 }"
 
-let test_compound _ =
+let test_compound (_ : test_ctxt) =
   assert_parse_eq
     "int x, *y, z;
      char q;
@@ -121,7 +124,7 @@ let test_compound _ =
        }
      }"
 
-let test_call_hex _ =
+let test_call_hex (_ : test_ctxt) =
   assert_parse_eq
     "int temp;
      if (temp == 0) { ((void (*)())0x3ec)(); }"
@@ -131,7 +134,7 @@ let test_call_hex _ =
        }
      }"
 
-let test_call_args_1 _ =
+let test_call_args_1 (_ : test_ctxt) =
   assert_parse_eq
     "int a, b, c;
      void (*f)(int, int, int);
@@ -145,7 +148,7 @@ let test_call_args_1 _ =
        call(f)
      }"
 
-let test_call_args_2 _ =
+let test_call_args_2 (_ : test_ctxt) =
   assert_parse_eq
     "int a, c;
      void (*f)(int, int, int);
@@ -159,7 +162,7 @@ let test_call_args_2 _ =
        call(f)
      }"
 
-let test_call_args_eff _ =
+let test_call_args_eff (_ : test_ctxt) =
   assert_parse_eq
     "int a, b, c;
      void (*f)(int, int, int);
@@ -176,7 +179,7 @@ let test_call_args_eff _ =
        call(f)
      }"
 
-let test_call_args_ret _ =
+let test_call_args_ret (_ : test_ctxt) =
   assert_parse_eq
     "int a, b, c, d;
      int (*f)(int, int, int);
@@ -191,7 +194,7 @@ let test_call_args_ret _ =
        d := reg:R0
      }"
 
-let test_call_args_ret_store _ =
+let test_call_args_ret_store (_ : test_ctxt) =
   assert_parse_eq
     "int a, b, c;
      int *d;
@@ -210,7 +213,7 @@ let test_call_args_ret_store _ =
        mem := mem with [d, el]:u32 <- #0
      }"
 
-let test_call_args_addrof _ =
+let test_call_args_addrof (_ : test_ctxt) =
   let hvars = Higher_var.[
       {
         name = "c";
@@ -232,19 +235,19 @@ let test_call_args_addrof _ =
        d := mem[c, el]:u32
      }"
 
-let test_load_short _ =
+let test_load_short (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      x = * (short *) y;"
     "{ x := extend:32[mem[y, el]:u16] }"
 
-let test_load_ushort _ =
+let test_load_ushort (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      x = * (unsigned short *) y;"
     "{ x := pad:32[mem[y, el]:u16] }"
 
-let test_ternary_assign _ =
+let test_ternary_assign (_ : test_ctxt) =
   assert_parse_eq
     "int (*f)();
      int x, c;
@@ -259,7 +262,7 @@ let test_ternary_assign _ =
       }
      }"
 
-let test_ternary_posincr _ =
+let test_ternary_posincr (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z, c;
      z = (c ? x : y)++;"
@@ -275,7 +278,7 @@ let test_ternary_posincr _ =
       z := #0
      }"
 
-let test_ternary_eff _ =
+let test_ternary_eff (_ : test_ctxt) =
   assert_parse_eq
     "void (*f)();
      int c, x, y;
@@ -291,12 +294,12 @@ let test_ternary_eff _ =
        y := x
      }"
 
-let test_posincr _ =
+let test_posincr (_ : test_ctxt) =
   assert_parse_eq
     "int x; x++;"
     "{ x := x + 1 }"
 
-let test_posincr_assign _ =
+let test_posincr_assign (_ : test_ctxt) =
   assert_parse_eq
     "int x, y; y = x++;"
     "{
@@ -305,12 +308,12 @@ let test_posincr_assign _ =
        y := #0
      }"
 
-let test_preincr _ =
+let test_preincr (_ : test_ctxt) =
   assert_parse_eq
     "int x; ++x;"
     "{ x := x + 1 }"
 
-let test_preincr_assign _ =
+let test_preincr_assign (_ : test_ctxt) =
   assert_parse_eq
     "int x, y; y = ++x;"
     "{
@@ -318,7 +321,7 @@ let test_preincr_assign _ =
        y := x
      }"
 
-let test_and_short_circ _ =
+let test_and_short_circ (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      int (*f)();
@@ -337,7 +340,7 @@ let test_and_short_circ _ =
        }
      }"
 
-let test_or_short_circ _ =
+let test_or_short_circ (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      int (*f)();
@@ -358,7 +361,7 @@ let test_or_short_circ _ =
        }
      }"
 
-let test_add_assign _ =
+let test_add_assign (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      (x += y) += (y += x);"
@@ -368,7 +371,7 @@ let test_add_assign _ =
        x := x + y
      }"
 
-let test_ternary_compound _ =
+let test_ternary_compound (_ : test_ctxt) =
   assert_parse_eq
     "int c, x, y, z;
      z = (c ? x : y) += 5;"
@@ -384,7 +387,7 @@ let test_ternary_compound _ =
        z := #0
      }"
 
-let test_comma _ =
+let test_comma (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z;
      z = (x = 5, y * x);"
@@ -393,7 +396,7 @@ let test_comma _ =
        z := y * x
      }"
 
-let test_comma_ambig _ =
+let test_comma_ambig (_ : test_ctxt) =
   assert_parse_eq
     "int x, y, z;
      z = x = 5, y * x;"
@@ -402,7 +405,7 @@ let test_comma_ambig _ =
        z := x
      }"
 
-let test_ternary_deref _ =
+let test_ternary_deref (_ : test_ctxt) =
   assert_parse_eq
     "int c, *x, *y;
      *(c ? x : y) = 5;"
@@ -416,7 +419,7 @@ let test_ternary_deref _ =
        mem := mem with [#0, el]:u32 <- 5
      }"
 
-let test_char_deref_posincr _ =
+let test_char_deref_posincr (_ : test_ctxt) =
   assert_parse_eq
     "char *a, *b;
      *a++ = *b++;"
@@ -427,7 +430,7 @@ let test_char_deref_posincr _ =
        a := a + 1
      }"
 
-let test_bool_not _ =
+let test_bool_not (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      if (!x) {
@@ -439,7 +442,7 @@ let test_bool_not _ =
        }
      }"
 
-let test_mixed_sorts _ =
+let test_mixed_sorts (_ : test_ctxt) =
   assert_parse_eq
     "int x, y;
      x += (y == 0);"
