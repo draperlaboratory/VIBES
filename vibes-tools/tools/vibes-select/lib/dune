@@ -4,7 +4,8 @@
  (name vibes_select)
  (public_name vibes-select)
  (libraries
-   bap
+   findlib.dynload
+   threads
    vibes-ir
    vibes-log
    vibes-linear-ssa

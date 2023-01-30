@@ -3,7 +3,6 @@
  (public_name vibes-c-toolkit)
  (libraries
    findlib.dynload
-   bap
    bap-arm
    FrontC
    core_unix.sys_unix

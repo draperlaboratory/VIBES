@@ -3,7 +3,6 @@
  (public_name vibes-utils)
  (libraries
    findlib.dynload
-   bap
    bap-arm
    bap-core-theory
    core

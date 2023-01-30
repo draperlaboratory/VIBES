@@ -6,6 +6,8 @@
  (flags -w -32)
  (libraries
    bap-core-theory
+   findlib.dynload
+   threads
    vibes-log
    vibes-constants
    vibes-utils

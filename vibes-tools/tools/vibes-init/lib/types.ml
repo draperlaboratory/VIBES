@@ -108,7 +108,8 @@ let create
     ~(model : string)
     ~(binary : string)
     ~(patched_binary : string)
-    ~(spaces : string) : (t, KB.conflict) result =
+    ~(spaces : string)
+    () : (t, KB.conflict) result =
   let (let+) x f = Result.map x ~f in
   let+ target, language = infer_target_and_lang binary ~language in {
     target;

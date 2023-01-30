@@ -3,7 +3,6 @@
  (public_name vibes-serializers)
  (libraries
    findlib.dynload
-   bap
    vibes-ir
    vibes-constants
    vibes-c-toolkit))

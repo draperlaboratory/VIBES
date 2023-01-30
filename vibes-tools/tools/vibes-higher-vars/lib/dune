@@ -3,7 +3,6 @@
  (public_name vibes-higher-vars)
  (libraries
    findlib.dynload
-   bap
    vibes-log
    vibes-utils
    vibes-bir)
