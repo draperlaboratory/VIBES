@@ -2,7 +2,7 @@
  (name vibes_bir)
  (public_name vibes-bir)
  (libraries
-   bap-std
+   bap
    findlib.dynload
    vibes-constants
    vibes-log)
