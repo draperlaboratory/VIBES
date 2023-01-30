@@ -142,3 +142,11 @@ init.install: init.build
 .PHONY: init.uninstall
 init.uninstall:
 	dune uninstall vibes-init
+
+###################################
+# TEST
+###################################
+
+.PHONY: test
+test:
+	dune test

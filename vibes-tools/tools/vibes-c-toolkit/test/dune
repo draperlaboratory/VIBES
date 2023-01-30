@@ -1,0 +1,7 @@
+(tests
+ (names test_core)
+ (libraries
+   vibes-c-toolkit
+   findlib.dynload
+   threads
+   ounit2))

@@ -748,10 +748,15 @@ module Main = struct
   (* Create a fresh temporary variable. *)
   let new_tmp (t : typ) : var transl =
     let* {csize; _} = get () in
-    let size = Option.value_exn (csize#bits t) in
-    let s = Theory.Bitv.define size in
-    let* v = lift @@ Theory.Var.fresh s in
-    let v = Theory.Var.forget v in
+    let* v = match csize#bits t with
+      | None ->
+        let s = Bap.Std.Type.sort Unk in
+        let+ v = lift @@ Theory.Var.fresh s in
+        Theory.Var.forget v
+      | Some size ->
+        let s = Theory.Bitv.define size in
+        let+ v = lift @@ Theory.Var.fresh s in
+        Theory.Var.forget v in
     let key = Theory.Var.name v in
     let+ () = update @@ fun env -> {
         env with tenv = Map.set env.tenv ~key ~data:t;
