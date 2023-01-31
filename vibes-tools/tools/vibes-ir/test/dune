@@ -1,0 +1,7 @@
+(tests
+ (names test_ir)
+ (libraries
+   vibes-ir
+   findlib.dynload
+   threads
+   ounit2))
