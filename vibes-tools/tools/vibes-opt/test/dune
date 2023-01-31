@@ -1,6 +1,5 @@
 (tests
  (names test_opt)
- (flags -w -32)
  (libraries
    vibes-opt
    findlib.dynload
