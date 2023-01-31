@@ -8,6 +8,7 @@ open KB.Syntax
 module Ir = Vibes_ir.Types
 module Asm = Vibes_as.Types.Assembly
 module Selector = Vibes_select.Arm_selector
+module Patch_info = Vibes_patch_info.Types
 
 let dummy_reg_alloc (t : Ir.t) : Ir.t = Ir.map_opvars t ~f:(fun v ->
     match v.preassign with
@@ -21,30 +22,30 @@ let compare_result
     (input : string list option) : bool =
   let rexpected = Option.map expected ~f:(List.map ~f:Str.regexp) in
   match input, rexpected with
+  | None, _ | _ , None -> false
   | Some input, Some expected ->
-    begin match List.zip expected input with
-      | Unequal_lengths -> false
-      | Ok pairs ->
-        List.map pairs ~f:(fun (pat, str) ->
-            Str.string_match pat str 0) |>
-        List.for_all ~f:Fn.id
-    end
-  | _ -> false
+    match List.zip expected input with
+    | Unequal_lengths -> false
+    | Ok pairs ->
+      List.map pairs ~f:(fun (pat, str) ->
+          Str.string_match pat str 0) |>
+      List.for_all ~f:Fn.id
 
 let print_opt_str_list : string list option -> string = function
   | Some l -> List.to_string l ~f:Fn.id
   | None -> "None"
 
+let dummy_patch_info : Patch_info.t = {
+  patch_point = Word.of_string "0x1234:32";
+  patch_size = 0L;
+  sp_align = 0;
+  patch_vars = [];
+}
+
 let test_ir
     (_ : test_ctxt)
     (sub : unit -> sub term)
     (expected : string list) : unit =
-  let info = Vibes_patch_info.Types.{
-      patch_point = Word.of_string "0x1234:32";
-      patch_size = 0L;
-      sp_align = 0;
-      patch_vars = [];
-    } in
   let state = Toplevel.current () in
   Toplevel.reset ();
   let result = Toplevel.var "select-arm" in
@@ -59,7 +60,7 @@ let test_ir
       | Error e ->
         failwith @@
         Format.asprintf "Failed to get ASM printer: %a" KB.Conflict.pp e in
-    printer ir info |> Result.ok |> Option.map ~f:(fun asm ->
+    printer ir dummy_patch_info |> Result.ok |> Option.map ~f:(fun asm ->
         Asm.blocks asm |> List.concat_map ~f:(fun blk ->
             (Asm.label blk ^ ":") :: Asm.insns blk))
   end;
