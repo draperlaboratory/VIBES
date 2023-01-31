@@ -1,0 +1,8 @@
+(tests
+ (names test_substituter)
+ (libraries
+   bap_wp
+   vibes-higher-vars
+   findlib.dynload
+   threads
+   ounit2))

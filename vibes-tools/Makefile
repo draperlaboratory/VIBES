@@ -210,3 +210,11 @@ init.install:
 .PHONY:
 init.uninstall:
 	$(MAKE) -C $(TOOLS_SRC) init.uninstall
+
+###################################
+# TEST
+###################################
+
+.PHONY: test
+test:
+	$(MAKE) -C $(TOOLS_SRC) test

@@ -1,0 +1,7 @@
+(tests
+ (names test_opt)
+ (libraries
+   vibes-opt
+   findlib.dynload
+   threads
+   ounit2))

@@ -1,0 +1,7 @@
+(tests
+ (names test_linear_ssa)
+ (libraries
+   vibes-linear-ssa
+   findlib.dynload
+   threads
+   ounit2))
