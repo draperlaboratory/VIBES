@@ -46,13 +46,10 @@ let blk_uncond_dir
   Blk.create ~defs:[mov2] ~jmps:[jmp] ()
 
 let apply (blks : blk term list) : blk term list =
-  let state = Toplevel.current () in
-  Toplevel.reset ();
   let result = Toplevel.var "bir-opt" in
   let sub = Sub.create () ~blks in
   Toplevel.put result @@ Vibes_opt.Opt.apply [] sub;
   let sub = Toplevel.get result in
-  Toplevel.set state;
   Seq.to_list @@ Term.enum blk_t sub
 
 let test_redir_1 (_ : test_ctxt) : unit =
