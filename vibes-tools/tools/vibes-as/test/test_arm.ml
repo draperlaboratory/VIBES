@@ -70,7 +70,6 @@ let test_ir
     ~cmp:compare_result
     ~printer:print_opt_str_list
 
-
 let v1 : var = Var.create "v1" (Imm 32)
 let v2 : var = Var.create "v2" (Imm 32)
 let v3 : var = Var.create "v3" (Imm 32)
@@ -296,6 +295,14 @@ module Prog26 = struct
 
 end
 
+module Prog27 = struct
+
+  let prog () : sub term =
+    let bil = Bil.[v1 := !!(-1)] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
 let blk_pat : string = "blk\\([0-9]\\|[a-f]\\)*"
 
 let test_ir1 (ctxt : test_ctxt) : unit = test_ir ctxt Prog1.prog [
@@ -462,31 +469,37 @@ let test_ir26 (ctxt : test_ctxt) : unit = test_ir ctxt Prog26.prog [
     blk_pat ^ ":";
   ]
 
+let test_ir27 (ctxt : test_ctxt) : unit = test_ir ctxt Prog27.prog [
+    blk_pat ^ ":";
+    "mvn R0, #0";
+  ]
+
 let suite : test = "Test ARM selector" >::: [
-    "Test Arm.ir 1" >:: test_ir1;
-    "Test Arm.ir 2" >:: test_ir2;
-    "Test Arm.ir 3" >:: test_ir3;
-    "Test Arm.ir 4" >:: test_ir4;
-    "Test Arm.ir 5" >:: test_ir5;
-    "Test Arm.ir 6" >:: test_ir6;
-    "Test Arm.ir 9" >:: test_ir9;
-    "Test Arm.ir 10" >:: test_ir10;
-    "Test Arm.ir 11" >:: test_ir11;
-    "Test Arm.ir 12" >:: test_ir12;
-    "Test Arm.ir 13" >:: test_ir13;
-    "Test Arm.ir 14" >:: test_ir14;
-    "Test Arm.ir 15" >:: test_ir15;
-    "Test Arm.ir 16" >:: test_ir16;
-    "Test Arm.ir 17" >:: test_ir17;
-    "Test Arm.ir 18" >:: test_ir18;
-    "Test Arm.ir 19" >:: test_ir19;
-    "Test Arm.ir 20" >:: test_ir20;
-    "Test Arm.ir 21" >:: test_ir21;
-    "Test Arm.ir 22" >:: test_ir22;
-    "Test Arm.ir 23" >:: test_ir23;
-    "Test Arm.ir 24" >:: test_ir24;
-    "Test Arm.ir 25" >:: test_ir25;
-    "Test Arm.ir 26" >:: test_ir26;
+    "Test ARM 1" >:: test_ir1;
+    "Test ARM 2" >:: test_ir2;
+    "Test ARM 3" >:: test_ir3;
+    "Test ARM 4" >:: test_ir4;
+    "Test ARM 5" >:: test_ir5;
+    "Test ARM 6" >:: test_ir6;
+    "Test ARM 9" >:: test_ir9;
+    "Test ARM 10" >:: test_ir10;
+    "Test ARM 11" >:: test_ir11;
+    "Test ARM 12" >:: test_ir12;
+    "Test ARM 13" >:: test_ir13;
+    "Test ARM 14" >:: test_ir14;
+    "Test ARM 15" >:: test_ir15;
+    "Test ARM 16" >:: test_ir16;
+    "Test ARM 17" >:: test_ir17;
+    "Test ARM 18" >:: test_ir18;
+    "Test ARM 19" >:: test_ir19;
+    "Test ARM 20" >:: test_ir20;
+    "Test ARM 21" >:: test_ir21;
+    "Test ARM 22" >:: test_ir22;
+    "Test ARM 23" >:: test_ir23;
+    "Test ARM 24" >:: test_ir24;
+    "Test ARM 25" >:: test_ir25;
+    "Test ARM 26" >:: test_ir26;
+    "Test ARM 27" >:: test_ir27;
   ]
 
 let () = match Bap_main.init () with
