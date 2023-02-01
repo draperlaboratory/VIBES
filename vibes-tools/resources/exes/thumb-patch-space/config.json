@@ -1,0 +1,31 @@
+{
+  "max-tries": 3,
+  "wp-params": {
+    "func": "main",
+    "postcond" : "(assert true)"
+  },
+  "ogre": "loader.ogre",
+  "patch-space" : [
+    {"address" : "0x103c8",
+     "size" : "24"}
+  ],
+  "patches" : [
+    {"patch-name" : "math",
+     "patch-code" : "int input, output, five, three, x;
+                     five = 5;
+                     x = input * five - 3;
+                     three = 3;
+                     output = x * three;",
+     "patch-point" : "0x103ee",
+     "patch-size" : 4,
+     "patch-vars" : [
+       {"name": "input",
+        "at-entry": "R0"
+       },
+       {"name": "output",
+        "at-exit": "R0"
+       }
+     ]
+    }
+  ]
+}
