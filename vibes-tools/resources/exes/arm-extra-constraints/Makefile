@@ -44,9 +44,9 @@ clean:
 
 $(PATCHED_PROG): $(PROG) config.json
 	$(MAKE) -C vibes
-	sh vibes/verify.sh
 
 patch: $(PATCHED_PROG)
+	sh vibes/verify.sh
 
 
 #####################################################
@@ -54,11 +54,12 @@ patch: $(PATCHED_PROG)
 #####################################################
 
 $(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
+	cp $(REF_PROG) $(PROG)
 	$(MAKE) -C vibes
-	mv $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
-	sh vibes/verify.sh
+	cp $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
 
 patch.reference: $(PATCHED_PROG_FOR_TESTING)
+	sh vibes/verify.sh
 
 
 #####################################################
