@@ -15,7 +15,7 @@ main.patched.reference: $(SRC_PATCHED)
 
 clean:
 	$(MAKE) -C vibes clean
-	rm -f main main.patched
+	rm -f main main.patched main.patched.ogre
 
 patch: main main.patched main.patched.reference
 

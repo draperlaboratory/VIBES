@@ -3,6 +3,7 @@ OBJ := main.o
 
 PROG := main
 PATCHED_PROG := main.patched
+PATCHED_OGRE := main.patched.ogre
 
 REF_PROG := main.reference
 PATCHED_REF_PROG := main.patched.reference
@@ -35,7 +36,7 @@ build: $(PROG)
 .PHONY: clean
 clean:
 	$(MAKE) -C vibes clean
-	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
+	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_OGRE) $(PATCHED_PROG_FOR_TESTING)
 
 
 #####################################################

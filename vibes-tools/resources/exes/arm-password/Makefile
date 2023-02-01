@@ -17,7 +17,7 @@ clean:
 	$(MAKE) -C vibes clean
 	rm -f main main.patched
 
-patch: main main.patched main.patched.reference
+patch: main main.patched main.patched.reference main.patched.ogre
 
 main.patched:
 	$(MAKE) -C vibes
