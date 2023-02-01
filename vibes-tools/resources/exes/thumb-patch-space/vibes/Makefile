@@ -5,7 +5,7 @@
 
 TARGET := bap:arm-linux-gnueabi-elf
 LANG := bap:llvm-thumb
-MODEL := /home/bqm0621/.vibes/model.mzn
+MODEL := $(HOME)/.vibes/model.mzn
 BINARY := ../main
 PATCHED_BINARY := ../main.patched
 OGRE := loader.ogre
