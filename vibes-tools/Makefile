@@ -218,3 +218,7 @@ init.uninstall:
 .PHONY: test
 test:
 	$(MAKE) -C $(TOOLS_SRC) test
+
+.PHONY: test.system
+test.system:
+	bash bin/system-tests/run-tests.bash

@@ -56,7 +56,7 @@ patch: $(PATCHED_PROG)
 
 $(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
 	cp $(REF_PROG) $(PROG)
-	$(MAKE) -c vibes
+	$(MAKE) -C vibes
 	cp $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
 
 patch.reference: $(PATCHED_PROG_FOR_TESTING)

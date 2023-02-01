@@ -43,7 +43,7 @@ clean:
 # PATCH
 #####################################################
 
-$(PATCHED_PROG): $(PROG) config.json
+$(PATCHED_PROG): $(PROG)
 	$(MAKE) -C vibes
 
 patch: $(PATCHED_PROG)
