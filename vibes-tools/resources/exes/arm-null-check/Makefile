@@ -14,6 +14,7 @@ main.patched.reference: $(SRC_PATCHED)
 	arm-linux-gnueabi-gcc -marm -o $@ $<
 
 clean:
+	$(MAKE) -C vibes clean
 	rm -f main main.patched
 
 patch: main main.patched main.patched.reference

@@ -34,6 +34,7 @@ build: $(PROG)
 
 .PHONY: clean
 clean:
+	$(MAKE) -C vibes clean
 	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
 
 
