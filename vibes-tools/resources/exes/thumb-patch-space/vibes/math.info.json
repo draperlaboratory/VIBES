@@ -1,0 +1,25 @@
+{
+  "patch-point": "0x103ee:32u",
+  "patch-size": 4,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "input",
+      "storage-class": [
+        "register",
+        {
+          "at-entry": "R0"
+        }
+      ]
+    },
+    {
+      "name": "output",
+      "storage-class": [
+        "register",
+        {
+          "at-exit": "R0"
+        }
+      ]
+    }
+  ]
+}

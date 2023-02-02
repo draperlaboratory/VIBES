@@ -200,6 +200,12 @@ class PatchEditor(QDialog):
       "--patch-names=%s" % ",".join(names),
     ]
 
+    # vibes-init doesn't always correctly infer whether the binary is
+    # using the Thumb encoding or not.
+    arch = self.data.arch.name
+    if arch == "thumb2" or arch == "thumb2eb":
+      args.append("--language=bap:llvm-thumb")
+
     ogre = self.ogre.ogre
     if ogre.functions:
       name = filename("loader", "ogre")

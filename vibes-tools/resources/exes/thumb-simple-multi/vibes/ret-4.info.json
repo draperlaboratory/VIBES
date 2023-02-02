@@ -1,0 +1,16 @@
+{
+  "patch-point": "0x103d8:32u",
+  "patch-size": 2,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "retval",
+      "storage-class": [
+        "register",
+        {
+          "at-exit": "R3"
+        }
+      ]
+    }
+  ]
+}

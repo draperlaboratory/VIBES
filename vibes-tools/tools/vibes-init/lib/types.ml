@@ -243,15 +243,16 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
   (* patch *)
   let asms =
     List.mapi t.patches ~f:const |>
-    List.map ~f:(sprintf "$(PATCH_%d_ASM)") |>
-    String.concat ~sep:"," in
+    List.map ~f:(sprintf "$(PATCH_%d_ASM)") in
+  let asms_target = String.concat asms ~sep:" " in
+  let asms_arg = String.concat asms ~sep:"," in
   Format.fprintf ppf ".PHONY: patch\n%!";
   Format.fprintf ppf "patch:\n";
   Format.fprintf ppf "\trm -f $(PATCHED_BINARY)\n%!";
   Format.fprintf ppf "\t$(MAKE) $(PATCHED_BINARY)\n\n%!";
   begin match t.ogre with
     | None ->
-      Format.fprintf ppf "$(PATCHED_BINARY): %s\n%!" asms;
+      Format.fprintf ppf "$(PATCHED_BINARY): %s\n%!" asms_target;
       Format.fprintf ppf "\tvibes-patch \
                           --target $(TARGET) \
                           --language $(LANG) \
@@ -259,9 +260,9 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --patch-spaces $(SPACES) \
                           --asm-filepaths %s \
                           --patched-binary $(PATCHED_BINARY) \
-                          --verbose\n%!" asms
+                          --verbose\n%!" asms_arg
     | Some _ ->
-      Format.fprintf ppf "$(PATCHED_BINARY): %s $(OGRE)\n%!" asms;
+      Format.fprintf ppf "$(PATCHED_BINARY): %s $(OGRE)\n%!" asms_target;
       Format.fprintf ppf "\tvibes-patch \
                           --target $(TARGET) \
                           --language $(LANG) \
@@ -270,7 +271,7 @@ let pp_makefile (ppf : Format.formatter) (t : t) : unit =
                           --asm-filepaths %s \
                           --patched-binary $(PATCHED_BINARY) \
                           --ogre $(OGRE) \
-                          --verbose\n%!" asms
+                          --verbose\n%!" asms_arg
   end;
   Format.fprintf ppf "\tchmod +x $(PATCHED_BINARY)\n\n%!";
   (* clean *)

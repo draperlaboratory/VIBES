@@ -1,0 +1,16 @@
+{
+  "patch-point": "0x103dc:32u",
+  "patch-size": 8,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "temp",
+      "storage-class": [
+        "register",
+        {
+          "at-entry": "R3"
+        }
+      ]
+    }
+  ]
+}

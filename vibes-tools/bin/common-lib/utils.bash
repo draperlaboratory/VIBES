@@ -6,6 +6,18 @@
 # --------------------------------------------------------------
 
 # DESC
+#   Check if this script is running with bash
+# RETURNS
+#   - 0 if this script is running with bash
+#   - 1 if not
+is_bash () {
+    if [ -z "${BASH_VERSION}" ];
+    then return 1;
+    else return 0;
+    fi
+}
+
+# DESC
 #   Redirects an echo to stderr
 report() {
     echo "$@" 1>&2
@@ -31,9 +43,6 @@ clean_up () {
   # Doing nothing at the moment
   return 0
 }
-
-return 0
-
 
 
 # DESC
@@ -150,7 +159,7 @@ if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
     echo "Cannot find the repo root."
     echo "Looked in REPO ROOT: '${REPO_ROOT}'"
     echo "But could not find a .gitlab-ci.yml file."
-    exit 1
+    # exit 1
 fi
 
 # Where these scripts are all kept.
