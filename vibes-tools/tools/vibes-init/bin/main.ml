@@ -60,7 +60,7 @@ module Cli = struct
       (binary : string)
       (patched_binary : string) : (unit, string) result =
     let () = Cli_opts.Verbosity.setup ~verbose ~no_color in
-    Log.send "Running 'vibes-parse'";
+    Log.send "Running 'vibes-init'";
     Runner.run
       ~language
       ~patch_names
