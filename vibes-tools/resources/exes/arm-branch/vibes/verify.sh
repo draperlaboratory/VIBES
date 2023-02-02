@@ -4,7 +4,6 @@ run () {
     bap wp main main.patched \
         --no-cache \
         --no-objdump \
-        --ext-solver-path=boolector \
         --ogre-orig=./vibes/loader.ogre \
         --ogre-mod=./main.patched.ogre \
         --func=foo \
