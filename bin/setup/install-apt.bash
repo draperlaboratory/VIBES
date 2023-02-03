@@ -1,132 +1,79 @@
-# --------------------------------------------------------------
-#
-# Install APT packages assumed by the tools.
-#
-# --------------------------------------------------------------
+# Make sure this is bash.
+if [ -z "${BASH_VERSION}" ]; then
+    1>2& echo "No BASH_VERSION found. Use bash to run this script."
+    exit 1
+fi
 
-# Define some paths.
+# Define some paths
 THIS_SCRIPT="${BASH_SOURCE[0]}"
 THIS_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
 COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
+APT_PACKAGES="${COMMON_LIB_DIR}/packages.apt"
 
-# Include the relevant libraries.
+# Include relevant libraries/data.
 . "${COMMON_LIB_DIR}/utils.bash"
-. "${COMMON_LIB_DIR}/slack.bash"
-. "${THIS_DIR}/env.bash"
-
-# Report progress to slack?
-REPORT_RESULTS="false"
 
 # Usage message
 usage () {
-    echo "USAGE: bash $(get_me) [OPTIONS]"
-    echo ""
-    echo "  Install APT packages assumed by tools."
-    echo ""
-    echo "OPTIONS"
-    echo "  -h | --help       Print this help and exit"
-    echo "  --report-results  Report the results to slack"
+    report "USAGE: bash $(get_me) [OPTIONS]"
+    report ""
+    report "  Install the APT packages that vibes-tools needs."
+    report ""
+    report "OPTIONS"
+    report "  -h | --help  Print this help and exit"
 }
 
-# Parse the command line arguments.
+# Parse command line arguments.
 while (( "${#}" )); do
     case "${1}" in
 
         -h|--help)
             usage
-            exit 1
-            ;;
+	    exit 1
+	    ;;
 
-        --report-results)
-            REPORT_RESULTS="true"
-            ;;
-
-        *)
-            echo "Unrecognized argument: ${1}"
-            help_hint
-            exit 1
-            ;;
+	*)
+            report "Unrecognized argument: ${1}"
+	    help_hint
+	    exit 1
+	    ;;
 
     esac
     shift
 done
 
-# Call `clean_up` before the script exits.
+# Call clean_up before the script exits.
 trap clean_up EXIT
 
-# Ensure we have a slack username and URL to post with.
-if [[ "${REPORT_RESULTS}" == "true" ]]; then
-    there_is_a_SLACK_USERNAME
-    if [ ${?} -ne 0 ]; then
-        echo "Halting."
-        echo "Need a SLACK_USERNAME environment variable."
-        echo "Export one to proceed."
-        exit 1
-    fi
-    there_is_a_SLACK_URL
-    if [ ${?} -ne 0 ]; then
-        echo "Halting."
-        echo "Need a SLACK_URL environment variable."
-        echo "Export one to proceed."
-        exit 1
-    fi
-fi
+report "- Installing APT packages:"
+while IFS= read -r LINE; do
+    report "  - ${LINE}"
+done < "${APT_PACKAGES}"
 
-# Where to record progress.
-REPORT="$(report_file "${REPORT_RESULTS}")"
-
-# Record some useful info.
-bap_version
-git_branch
-git_commit
-
-echo ""
-
-# Update APT repository information
-sudo -E apt update
+# Do an APT update
+sudo -E apt update 1>&2
 APT_UPDATE_RESULT="${?}"
-if [[ "${APT_UPDATE_RESULT}" != "0" ]]; then
-    echo "Unable to update APT repository information." > "${MSG_FILE}"
-    echo "...." >> "${REPORT_FILE}"
-    echo "Halting." >> "${REPORT_FILE}"
-    echo "Tried 'sudo -E apt update'." >> "${REPORT_FILE}"
-    echo "Got a non-zero exit code: ${APT_RESULT}." >> "${REPORT_FILE}"
-    echo "$(cat "${MSG_FILE}")"
-    echo "$(cat "${REPORT_FILE}")"
-    if [[ "${REPORT_RESULTS}" == "true" ]]; then
-        report_to_slack
-    fi
+if [ "${APT_UPDATE_RESULT}" -ne "0" ]; then
+    report "Unable to update APT repository information."
+    report "Halting."
+    report "Tried 'sudo -E apt update'."
+    report "Got a non-zero exit code: ${APT_UPDATE_RESULT}."
     exit 1
 else
-    echo "- APT repository information updated." | tee -a "${REPORT_FILE}"
+    report "- APT repository information updated."
 fi
 
-# Install APT dependencies.
-sudo -E apt install -y \
-    qemu \
-    binutils-arm-linux-gnueabi \
-    gcc-arm-linux-gnueabi \
-    cmake
-APT_RESULT="${?}"
-if [[ "${APT_RESULT}" != "0" ]]; then
-    echo "Unable to install APT packages." > "${MSG_FILE}"
-    echo "...." >> "${REPORT_FILE}"
-    echo "Halting." >> "${REPORT_FILE}"
-    echo "Tried to install APT packages." >> "${REPORT_FILE}"
-    echo "Got a non-zero exit code: ${APT_RESULT}." >> "${REPORT_FILE}"
-    echo "$(cat "${MSG_FILE}")"
-    echo "$(cat "${REPORT_FILE}")"
-    if [[ "${REPORT_RESULTS}" == "true" ]]; then
-        report_to_slack
-    fi
+# Install the APT packages
+sudo -E < "${APT_PACKAGES}" xargs apt install -qq -yy 1>&2
+APT_INSTALL_RESULT="${?}"
+if [ "${APT_INSTALL_RESULT}" -ne "0" ]; then
+    report "Unable to install APT packages."
+    report "Halting."
+    report "Tried to install APT packages."
+    report "Got a non-zero exit code: ${APT_INSTALL_RESULT}."
     exit 1
 else
-    echo "- APT packages installed." | tee -a "${REPORT_FILE}"
+    report "- APT packages installed."
 fi
 
-# Finish up.
-echo "Done." | tee -a "${REPORT_FILE}"
-if [[ "${REPORT_RESULTS}" == "true" ]]; then
-    echo "Installed APT packages" > "${MSG_FILE}"
-    report_to_slack
-fi
+report "- Done" 

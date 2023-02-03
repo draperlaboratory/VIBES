@@ -17,8 +17,5 @@
     .type main, %function
 main:
     mov r0, #5
-    .rept 128
-    nop
-    .endr
     bx lr
     .size main, .-main

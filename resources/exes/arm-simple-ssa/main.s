@@ -17,6 +17,5 @@
     .type main, %function
 main:
     mov r0, #5
-    mov r0, #7
     bx lr
     .size main, .-main

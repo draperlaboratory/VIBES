@@ -18,6 +18,12 @@ is_bash () {
 }
 
 # DESC
+#   Redirects an echo to stderr
+report() {
+    echo "$@" 1>&2
+}
+
+# DESC
 #   Returns the filename of this script
 get_me () {
     echo "$(basename "${0}")"
@@ -30,6 +36,14 @@ help_hint () {
     ME="$(get_me)"
     echo "See ${ME} --help for usage." 
 }
+
+# DESC
+#   Cleans up scratch files etc.
+clean_up () {
+  # Doing nothing at the moment
+  return 0
+}
+
 
 # DESC
 #   Constructs a tmp dir for use by this script
@@ -145,7 +159,7 @@ if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
     echo "Cannot find the repo root."
     echo "Looked in REPO ROOT: '${REPO_ROOT}'"
     echo "But could not find a .gitlab-ci.yml file."
-    exit 1
+    # exit 1
 fi
 
 # Where these scripts are all kept.

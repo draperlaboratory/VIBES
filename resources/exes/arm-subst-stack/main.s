@@ -17,11 +17,8 @@
     .type main, %function
 
 main:
-    @ hack to enforce that fp is a valid memory location
-    mov fp, sp
+    sub sp, sp, #8
     mov r0, #5
-    .rept 32
-     nop
-    .endr
+    add sp, sp, #8
     bx lr
     .size main, .-main

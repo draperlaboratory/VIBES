@@ -3,6 +3,7 @@ OBJ := main.o
 
 PROG := main
 PATCHED_PROG := main.patched
+PATCHED_OGRE := main.patched.ogre
 
 REF_PROG := main.reference
 PATCHED_REF_PROG := main.patched.reference
@@ -34,35 +35,32 @@ build: $(PROG)
 
 .PHONY: clean
 clean:
-	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
+	$(MAKE) -C vibes clean
+	rm -rf $(OBJ) $(PROG) $(PATCHED_PROG) $(PATCHED_OGRE) $(PATCHED_PROG_FOR_TESTING)
 
 
 #####################################################
 # PATCH
 #####################################################
 
-$(PATCHED_PROG): $(PROG) config.json
-	bap vibes $(PROG) \
-		--config=config.json \
-		-o $(PATCHED_PROG) \
-		--verbose
-	chmod +x $(PATCHED_PROG)
+$(PATCHED_PROG): $(PROG)
+	$(MAKE) -C vibes
 
 patch: $(PATCHED_PROG)
+	sh vibes/verify.sh
 
 
 #####################################################
 # PATCH THE REFERENCE EXECUTABLE
 #####################################################
 
-$(PATCHED_PROG_FOR_TESTING): $(REF_PROG) config.json
-	bap vibes $(REF_PROG) \
-		--config=config.json \
-		-o $(PATCHED_PROG_FOR_TESTING) \
-		--verbose
-	chmod +x $(PATCHED_PROG_FOR_TESTING)
+$(PATCHED_PROG_FOR_TESTING): $(REF_PROG)
+	cp $(REF_PROG) $(PROG)
+	$(MAKE) -C vibes
+	cp $(PATCHED_PROG) $(PATCHED_PROG_FOR_TESTING)
 
 patch.reference: $(PATCHED_PROG_FOR_TESTING)
+	sh vibes/verify.sh
 
 
 #####################################################
