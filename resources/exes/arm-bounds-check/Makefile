@@ -8,24 +8,20 @@ all: build patch
 build: main
 
 main: $(SRC)
-	arm-linux-gnueabi-gcc -marm -o $@ $< vibes_dummy.s
-	strip -s $@
+	arm-linux-gnueabi-gcc -marm -o $@ $<
 
 main.patched.reference: $(SRC_PATCHED)
-	arm-linux-gnueabi-gcc -marm -o $@ $< vibes_dummy.s
-	strip -s $@
+	arm-linux-gnueabi-gcc -marm -o $@ $<
 
 clean:
-	rm -f main main.patched
+	$(MAKE) -C vibes clean
+	rm -f main main.patched main.patched.ogre
 
 patch: main main.patched main.patched.reference
 
 main.patched:
-	bap vibes main \
-		--config=config.json \
-		-o main.patched \
-		--verbose
-	chmod +x main.patched
+	$(MAKE) -C vibes
+	sh vibes/verify.sh
 
 run-orig: main
 	@echo "-----------------------------------------------------------------------"

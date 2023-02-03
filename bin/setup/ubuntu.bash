@@ -1,87 +1,93 @@
-# --------------------------------------------------------------
-#
-# Install dependencies for Ubuntu (16).
-#
-# --------------------------------------------------------------
+# Make sure this is bash.
+if [ -z "${BASH_VERSION}" ]; then
+    1>2& echo "No BASH_VERSION found. Use bash to run this script."
+    exit 1
+fi
 
-# Define some paths.
+# Define some paths
 THIS_SCRIPT="${BASH_SOURCE[0]}"
 THIS_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
 COMMON_LIB_DIR="$(cd "${THIS_DIR}/../common-lib" && pwd)"
 
-# Include the relevant libraries.
+# Include relevant libraries/data.
 . "${COMMON_LIB_DIR}/utils.bash"
-. "${COMMON_LIB_DIR}/slack.bash"
 
-# Which branch of WP should we install?
-WP_BRANCH="master"
-
-# Report progress to slack?
-REPORT_RESULTS="false"
+# WP branch to install
+WP_BRANCH=master
 
 # Usage message
 usage () {
-    echo "USAGE: bash $(get_me) [OPTIONS]"
-    echo ""
-    echo "  Install dependencies for Ubuntu 16."
-    echo ""
-    echo "OPTIONS"
-    echo "  -h | --help       Print this help and exit"
-    echo "  --report-results  Report the results to slack"
-    echo "  --wp-branch VAL   Install WP from a branch"
+    report "USAGE: bash $(get_me) [OPTIONS]"
+    report ""
+    report "  Install all dependencies for vibes-tools."
+    report ""
+    report "OPTIONS"
+    report "  -h | --help      Print this help and exit"
+    report "  --wp-branch VAL  WP branch to install (default: main)"
 }
 
-# Parse the command line arguments.
+# Parse command line arguments.
 while (( "${#}" )); do
     case "${1}" in
 
         -h|--help)
             usage
-            exit 1
-            ;;
-
-        --report-results)
-            REPORT_RESULTS="true"
-            ;;
+	    exit 1
+	    ;;
 
         --wp-branch)
             shift
             WP_BRANCH="${1}"
-            ;;
+	    ;;
 
-        *)
-            echo "Unrecognized argument: ${1}"
-            help_hint
-            exit 1
-            ;;
+	*)
+            report "Unrecognized argument: ${1}"
+	    help_hint
+	    exit 1
+	    ;;
 
     esac
     shift
 done
 
-# Call `clean_up` before the script exits.
+# Call clean_up before the script exits.
 trap clean_up EXIT
 
-# Pass on a --report-results flag?
-REPORT_FLAG=""
-if [[ "${REPORT_RESULTS}" == "true" ]]; then
-    REPORT_FLAG="--report-results"
-fi
+report "= INSTALLING ALL DEPENDENCIES..."
 
-bash -x "${THIS_DIR}"/install-apt.bash ${REPORT_FLAG}
-RESULT="${?}"
-if [[ "${RESULT}" != "0" ]]; then
-    echo "Failed to install APT packages."
+bash "${THIS_DIR}/install-apt.bash"
+if [ "${?}" -ne "0" ]; then
     exit 1
 fi
 
-echo ""
-
-bash "${THIS_DIR}"/install-dependencies.bash \
-    ${REPORT_FLAG} \
-    --wp-branch "${WP_BRANCH}"
-RESULT="${?}"
-if [[ "${RESULT}" != "0" ]]; then
-    echo "Failed to install dependencies."
+bash "${THIS_DIR}/install-opam.bash"
+if [ "${?}" -ne "0" ]; then
     exit 1
 fi
+
+bash "${THIS_DIR}/install-bap.bash"
+if [ "${?}" -ne "0" ]; then
+    exit 1
+fi
+
+bash "${THIS_DIR}/install-bap-toolkit.bash"
+if [ "${?}" -ne "0" ]; then
+    exit 1
+fi
+
+bash "${THIS_DIR}/install-cbat.bash"
+if [ "${?}" -ne "0" ]; then
+    exit 1
+fi
+
+bash "${THIS_DIR}/install-minizinc.bash"
+if [ "${?}" -ne "0" ]; then
+    exit 1
+fi
+
+bash "${THIS_DIR}/install-boolector.bash"
+if [ "${?}" -ne "0" ]; then
+    exit 1
+fi
+
+report "= FINISHED INSTALLING DEPENDENCIES"

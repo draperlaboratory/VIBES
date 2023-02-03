@@ -15,6 +15,7 @@
 @ ----------------------------------------------
     .global main
     .type main, %function
+    .thumb
 main:
     mov r0, #5
     bx lr

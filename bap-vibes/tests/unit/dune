@@ -1,4 +1,0 @@
-(executable
- (name test)
- (flags -w -58-14)
- (libraries bap bap-vibes ounit2 str))
