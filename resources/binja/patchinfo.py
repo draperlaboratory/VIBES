@@ -91,9 +91,12 @@ class PatchInfo:
       if name not in result:
         result[name] = [h]
       else:
+        for h2 in result[name]:
+          if h == h2:
+            return
         result[name].append(h)
 
-    def defined_after_patch(v):
+    def defined_after_patch(v, end):
       for d in f.hlil.get_var_definitions(v):
         if d.address == end:
           return True
@@ -176,33 +179,58 @@ class PatchInfo:
         frame = stack_frame(v.storage)
         add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
 
+    idxs = []
     if lend.mmlil.hlil:
-      i = lend.mmlil.hlil.instr_index
+      idxs.append((lend.mmlil.hlil.instr_index, end))
     else:
       # Sometimes there is no mapping all the way from LLIL to MLIL
       # to HLIL, but it can show up in the list of HLIL instructions
       # like so:
-      i = None
-      for insn in f.hlil.instructions:
-        if insn.address == end:
-          i = insn.instr_index
-          break
-      assert i is not None
+      def find(end):
+        idx = None
+        for insn in f.hlil.instructions:
+          if insn.address == end:
+            idx = insn.instr_index
+            break
+        return idx
+      i = find(end)
+      if i is not None:
+        idxs.append((i, end))
+      else:
+        # Find the nearest set of blocks in the dominator tree where
+        # we hit a complete mapping up to the HLIL.
+        def traverse(bb):
+          for d in bb.dominator_tree_children:
+            found = False
+            for ii in range(d.start, d.end):
+              a = f.llil[ii].address
+              i = find(a)
+              if i is not None:
+                idxs.append((i, a))
+                found = True
+                break
+            if not found:
+              traverse(d)
+        ii = f.llil.get_instruction_start(self.addr)
+        bb = f.llil.get_basic_block_at(ii)
+        traverse(bb)
 
     # Collect the live HLIL variables.
-    for v in f.hlil.vars:
-      # Disregard this variable if it was defined within the patch
-      # region, or at the very end.
-      if defined_after_patch(v):
-        continue
-      # XXX: should we consider all variables that can be accessed
-      # from this point, not just those that are live at the end
-      # of the patch?
-      if not f.hlil.is_var_live_at(v, i):
-        if v in f.parameter_vars:
+    for i, a in idxs:
+      print("Exploring 0x%x, index %d" % (a, i))
+      for v in f.hlil.vars:
+        # Disregard this variable if it was defined within the patch
+        # region, or at the very end.
+        if defined_after_patch(v, a):
+          continue
+        # XXX: should we consider all variables that can be accessed
+        # from this point, not just those that are live at the end
+        # of the patch?
+        if not f.hlil.is_var_live_at(v, i):
+          if v in f.parameter_vars:
+            handle_live_var(v)
+        else:
           handle_live_var(v)
-      else:
-        handle_live_var(v)
 
     # Relate known register values at the patch site with known
     # data symbols.
@@ -221,14 +249,22 @@ class PatchInfo:
               name = s.name + "__ptr"
             add(name, HigherVar(s.name, reg, HigherVar.REG_VAR))
 
+    # XXX: how to deal with interworking here?
+    def add_function(name, address):
+      f = bv.get_function_at(address)
+      if f is None or f.arch != bv.arch:
+        return
+      add(name, HigherVar(name, address, HigherVar.FUNCTION_VAR))
+
     # Grab all the known function and data symbols. We should
     # ignore those which were automatically named, to avoid
     # cluttering the output.
     flow, fhigh = utils.frame_range(bv)
     for s in bv.get_symbols():
       if s.auto:
-        continue
-      if s.type == SymbolType.DataSymbol:
+        if s.type == SymbolType.ImportedFunctionSymbol:
+          add_function(s.name, s.address)
+      elif s.type == SymbolType.DataSymbol:
         a = s.address
         type = bv.get_data_var_at(a).type
         add(s.name, HigherVar(s.name, a, HigherVar.GLOBAL_VAR))
@@ -241,6 +277,6 @@ class PatchInfo:
              (off == 0 and not is_ptr(type)):
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
       elif s.type == SymbolType.FunctionSymbol:
-        add(s.name, HigherVar(s.name, s.address, HigherVar.FUNCTION_VAR))
+        add_function(s.name, s.address)
 
     return result
