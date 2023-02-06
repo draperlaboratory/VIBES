@@ -21,6 +21,14 @@ class HigherVar:
     self.value = value
     self.type = type
 
+  def __eq__(self, h):
+    if isinstance(h, HigherVar):
+      return \
+        self.name == h.name and \
+        self.value == h.value and \
+        self.type == h.type
+    return False
+
   def type_str(self):
     if self.type == HigherVar.REG_VAR:
       return "Register"
