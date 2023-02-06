@@ -193,27 +193,23 @@ class PatchInfo:
             idx = insn.instr_index
             break
         return idx
-      i = find(end)
-      if i is not None:
-        idxs.append((i, end))
-      else:
-        # Find the nearest set of blocks in the dominator tree where
-        # we hit a complete mapping up to the HLIL.
-        def traverse(bb):
-          for d in bb.dominator_tree_children:
-            found = False
-            for ii in range(d.start, d.end):
-              a = f.llil[ii].address
-              i = find(a)
-              if i is not None:
-                idxs.append((i, a))
-                found = True
-                break
-            if not found:
-              traverse(d)
-        ii = f.llil.get_instruction_start(self.addr)
-        bb = f.llil.get_basic_block_at(ii)
-        traverse(bb)
+      # Find the nearest set of blocks in the dominator tree where
+      # we hit a complete mapping up to the HLIL.
+      def traverse(bb, start=None):
+        if start is None:
+          start = bb.start
+        for ii in range(start, bb.end):
+          a = f.llil[ii].address
+          i = find(a)
+          if i is not None:
+            idxs.append((i, a))
+            return
+        for d in bb.dominator_tree_children:
+          traverse(d)
+      # Start at the current block.
+      start = lend.instr_index
+      bb = f.llil.get_basic_block_at(start)
+      traverse(bb, start)
 
     # Collect the live HLIL variables.
     for i, a in idxs:
