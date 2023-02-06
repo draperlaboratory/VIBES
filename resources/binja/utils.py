@@ -61,7 +61,7 @@ def addr_to_off(bv, addr):
     
 def rodata_of_func(bv, f):
   result = {}
-  for l in f.llil_instructions:
+  for l in f.llil.instructions:
     for r in bv.get_code_refs_from(l.address):
       if bv.get_functions_containing(r):
         continue
