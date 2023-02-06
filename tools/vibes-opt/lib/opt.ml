@@ -209,10 +209,10 @@ module Builtin : S = struct
     end in
     let e = substituter#map_exp exp in
     try Exp.fold_consts e
-    with _ ->
+    with Type_error.T err ->
       let msg = Format.asprintf
           "Vibes_opt.Opt.Builtin.substitute: expression %a is not \
-           well-formed" Exp.pp e in
+           well-formed: %a" Exp.pp e Type_error.pp err in
       raise @@ Ill_typed msg
 
   let equal_kinds j j' = compare_jmp_kind (Jmp.kind j) (Jmp.kind j') = 0
