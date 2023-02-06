@@ -254,9 +254,15 @@ class OGREEditor(QWidget):
   def _update_functions(self):
     self.available_funcs_widget.clear()
     for s in self.data.get_symbols():
-      if s.auto or s.type != SymbolType.FunctionSymbol:
+      if s.auto:
+        if s.type != SymbolType.ImportedFunctionSymbol:
+          continue
+      elif s.type != SymbolType.FunctionSymbol:
         continue
       f = self.data.get_function_at(s.address)
+      # XXX: how to deal with interworking here?
+      if f.arch != self.data.arch:
+        continue
       self.functions[f.name] = f
       self.available_funcs_widget.addItem(f.name)
     to_remove = []
