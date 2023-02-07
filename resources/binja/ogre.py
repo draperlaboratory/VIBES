@@ -269,6 +269,7 @@ class OGREEditor(QWidget):
   def _update_functions(self):
     names = []
     self.available_funcs_widget.clear()
+    self.functions.clear()
     for s in self.data.get_symbols():
       if s.auto:
         if s.type != SymbolType.ImportedFunctionSymbol:
