@@ -586,28 +586,45 @@ module Extend_ogre = struct
       else provide_code patch name root len in
     Ogre.sequence [code; provide_data patch len]
 
-  let one (ogre : Ogre.doc) (patch : patch) : res =
+  let find_root_name
+      (ogre : Ogre.doc)
+      (region : Utils.named_region) : (string, KB.conflict) result =
+    match Utils.find_symbol_chunk region.addr ogre with
+    | None ->
+      let msg = Format.asprintf
+          "No symbol chunk for named region 0x%Lx"
+          region.addr in
+      Error (Errors.Invalid_ogre msg)
+    | Some chunk -> match Utils.find_named_symbol chunk.root ogre with
+      | Some name -> Ok name
+      | None ->
+        let msg = Format.asprintf
+            "No named symbol for symbol chunk root 0x%Lx"
+            chunk.root in
+        Error (Errors.Invalid_ogre msg)
+
+  let named_region
+      (ogre : Ogre.doc)
+      (patch : patch) : (Utils.named_region, KB.conflict) result =
     match Utils.find_named_region patch.root ogre with
+    | Some region -> Ok region
     | None ->
       let msg = Format.asprintf
           "No named region for patch 0x%Lx, root 0x%Lx"
           patch.addr patch.root in
       Error (Errors.Invalid_ogre msg)
-    | Some region -> match Utils.find_named_symbol region.addr ogre with
-      | None ->
-        let msg = Format.asprintf
-            "No named symbol matching region %s, addr 0x%Lx"
-            region.name region.addr in
-        Error (Errors.Invalid_ogre msg)
-      | Some name ->
-        let name = Format.sprintf "%s@%Lx" name patch.addr in
-        match Ogre.exec (provide patch region name region.addr) ogre with
-        | Ok _ as res -> res
-        | Error err ->
-          let msg = Format.asprintf
-              "Failed to extend OGRE file for patch 0x%Lx, root 0x%Lx: %a"
-              patch.addr patch.root Error.pp err in
-          Error (Errors.Invalid_ogre msg)
+
+  let one (ogre : Ogre.doc) (patch : patch) : res =
+    let* region = named_region ogre patch in
+    let* name = find_root_name ogre region in
+    let name = Format.sprintf "%s@%Lx" name patch.addr in
+    match Ogre.exec (provide patch region name region.addr) ogre with
+    | Ok _ as res -> res
+    | Error err ->
+      let msg = Format.asprintf
+          "Failed to extend OGRE file for patch 0x%Lx, root 0x%Lx: %a"
+          patch.addr patch.root Error.pp err in
+      Error (Errors.Invalid_ogre msg)
 
   let rec go (ogre : Ogre.doc) : patch list -> res = function
     | [] -> Ok ogre

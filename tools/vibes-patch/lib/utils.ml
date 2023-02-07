@@ -27,6 +27,12 @@ type named_region = {
   name : string;
 }
 
+type symbol_chunk = {
+  addr : int64;
+  size : int64;
+  root : int64;
+}
+
 (* Search for the largest code region containing the address. *)
 let find_code_region
     (loc : int64)
@@ -75,6 +81,21 @@ let find_named_region (loc : int64) (spec : Ogre.doc) : named_region option =
   Option.map ~f:(List.sort ~compare) |>
   Option.bind ~f:List.hd |>
   Option.map ~f:(fun {S.addr; size; info=name} -> {addr; size; name})
+
+(* Search for the largest symbol chunk containing the address. *)
+let find_symbol_chunk (loc : int64) (spec : Ogre.doc) : symbol_chunk option =
+  let compare {S.size=s1;_} {S.size=s2;_} = Int64.compare s2 s1 in
+  Ogre.collect Ogre.Query.(begin
+      let open S in
+      let addr = symbol_chunk.(addr) in
+      let size = symbol_chunk.(size) in
+      select ~where:(addr <= int loc && int loc < addr + size)
+        (from symbol_chunk)
+    end) |> Fn.flip Ogre.eval spec |> Or_error.ok |>
+  Option.map ~f:Seq.to_list |>
+  Option.map ~f:(List.sort ~compare) |>
+  Option.bind ~f:List.hd |>
+  Option.map ~f:(fun {S.addr; size; info=root} -> {addr; size; root})
 
 (* Find the name of the symbol for the address. *)
 let find_named_symbol (loc : int64) (spec : Ogre.doc) : string option =
