@@ -32,7 +32,8 @@ OGRE_DECLS = \
 (declare section (addr int) (size int))
 (declare code-start (addr int))
 (declare named-symbol (addr int) (name str))
-(declare symbol-chunk (addr int) (size int) (root int))"""
+(declare symbol-chunk (addr int) (size int) (root int))
+(declare symbol-value (addr int) (value int))"""
 
 
 class OGREAddrSizeOff:
@@ -95,6 +96,16 @@ class OGRESymbolChunk:
       (self.addr, self.size, self.root)
 
 
+class OGRESymbolValue:
+  def __init__(self, addr, value):
+    self.addr = addr
+    self.value = value
+
+  def __str__(self):
+    return "(symbol-value (addr 0x%x) (value 0x%x))" % \
+      (self.addr, self.value)
+
+
 class OGREFunction:
   def __init__(self, bv, f):
     self.name = f.name
@@ -104,6 +115,10 @@ class OGREFunction:
     self.code_regions = []
     self.named_regions = []
     self.symbol_chunks = []
+    value = f.start
+    if f.arch.name.startswith("thumb2"):
+      value |= 1
+    self.symbol_value = OGRESymbolValue(f.start, value)
     for r in f.address_ranges:
       name = "%s@%x" % (f.name, r.start)
       size = r.end - r.start
@@ -120,7 +135,8 @@ class OGREFunction:
       "\n".join(map(lambda x: str(x), self.named_regions)),
       "(code-start (addr 0x%x))" % self.addr,
       "(named-symbol (addr 0x%x) (name %s))" % (self.addr, self.name),
-      "\n".join(map(lambda x: str(x), self.symbol_chunks))
+      "\n".join(map(lambda x: str(x), self.symbol_chunks)),
+      str(self.symbol_value)
     ])
 
 
@@ -142,9 +158,8 @@ class OGREData(OGREAddrSizeOff):
 class OGRE:
   def __init__(self, bv):
     self.bv = bv
-    if bv.arch.name.startswith("thumb2"):
-      self.arch = "thumb"
-    elif bv.arch.name.startswith("armv7"):
+    is_thumb = bv.arch.name.startswith("thumb2")
+    if is_thumb or bv.arch.name.startswith("armv7"):
       self.arch = "arm"
     else:
       assert False
@@ -152,7 +167,7 @@ class OGRE:
     self.base_address = bv.start
     self.is_little_endian = bv.endianness == Endianness.LittleEndian
     self.entry_point = bv.entry_point
-    if self.arch == "thumb":
+    if is_thumb:
       self.entry_point = self.entry_point & ~1
     self.functions = {}
     self.rodata = {}
