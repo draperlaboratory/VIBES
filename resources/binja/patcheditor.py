@@ -149,9 +149,7 @@ class PatchEditor(QDialog):
     if not items:
       return
     for item in items:
-      patches = db.get_patches(self.data)
       name = item.text()
-      del patches[name]
       del self.patches[name]
       db.delete_patch(self.data, name)
       row = self.patch_list_widget.row(item)
