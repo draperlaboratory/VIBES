@@ -267,6 +267,7 @@ class OGREEditor(QWidget):
     self.setLayout(layout)
 
   def _update_functions(self):
+    names = []
     self.available_funcs_widget.clear()
     for s in self.data.get_symbols():
       if s.auto:
@@ -275,11 +276,14 @@ class OGREEditor(QWidget):
       elif s.type != SymbolType.FunctionSymbol:
         continue
       f = self.data.get_function_at(s.address)
-      # XXX: how to deal with interworking here?
-      if f.arch != self.data.arch:
-        continue
-      self.functions[f.name] = f
-      self.available_funcs_widget.addItem(f.name)
+      name = f.name
+      if name in self.functions:
+        name = "%s@%x" % (name, f.start)
+      self.functions[name] = f
+      names.append(name)
+    names.sort()
+    for name in names:
+      self.available_funcs_widget.addItem(name)
     to_remove = []
     for row in range(self.lifted_funcs_widget.count()):
       item = self.lifted_funcs_widget.item(row)
