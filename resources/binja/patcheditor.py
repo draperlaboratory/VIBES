@@ -149,9 +149,7 @@ class PatchEditor(QDialog):
     if not items:
       return
     for item in items:
-      patches = db.get_patches(self.data)
       name = item.text()
-      del patches[name]
       del self.patches[name]
       db.delete_patch(self.data, name)
       row = self.patch_list_widget.row(item)
@@ -210,8 +208,7 @@ class PatchEditor(QDialog):
 
     # vibes-init doesn't always correctly infer whether the binary is
     # using the Thumb encoding or not.
-    arch = self.data.arch.name
-    if arch == "thumb2" or arch == "thumb2eb":
+    if self.data.arch.name.startswith("thumb2"):
       args.append("--language=bap:llvm-thumb")
 
     ogre = self.ogre.ogre

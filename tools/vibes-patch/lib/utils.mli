@@ -24,6 +24,13 @@ type named_region = {
   name : string;
 }
 
+(** A chunk of code associated with a named symbol. *)
+type symbol_chunk = {
+  addr : int64;
+  size : int64;
+  root : int64;
+}
+
 (** [find_code_region addr spec] looks up the code region in [spec] that
     contains [addr]. *)
 val find_code_region : int64 -> Ogre.doc -> region option
@@ -35,6 +42,10 @@ val find_mapped_region : int64 -> Ogre.doc -> region option
 (** [find_named_region addr spec] looks up the named region in [spec] that
     contains [addr]. *)
 val find_named_region : int64 -> Ogre.doc -> named_region option
+
+(** [find_symbol_chunk addr spec] looks up the symbol chunk in [spec] that
+    contains [addr]. *)
+val find_symbol_chunk : int64 -> Ogre.doc -> symbol_chunk option
 
 (** [find_named_symbol addr spec] looks up the named symbol in [spec] that
     has the address [addr]. *)
