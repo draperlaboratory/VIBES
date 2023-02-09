@@ -5,7 +5,7 @@
 
 TARGET := bap:powerpc-gnu-elf
 LANG := bap:llvm-powerpc32
-MODEL := /home/bqm0621/.vibes/model.mzn
+MODEL := $(HOME)/.vibes/model.mzn
 BINARY := ../main
 PATCHED_BINARY := ../main.patched
 OGRE := loader.ogre
