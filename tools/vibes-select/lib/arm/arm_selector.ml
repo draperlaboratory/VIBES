@@ -276,7 +276,8 @@ let str
       let mov = Ir.Operation.create_simple c tmp [Const w] in
       let op = Ir.Operation.create_simple str res ops in
       [op; mov]
-    | _ -> fail @@ Format.asprintf
+    | _ ->
+      fail @@ Format.asprintf
         "str: unsupported `value` operand %a"
         Ir.Operand.pp value.value in
   let eff = loc.eff @. value.eff @. mem.eff in
@@ -285,24 +286,26 @@ let str
 (* Special case of the `str` instruction where the address that we are
    storing to is of the shape `base + off` (e.g. `str R0, [R1, #8]`). *)
 let str_base_off
+    (bits : int)
     (mem : pure)
     (value : pure)
     (base : var)
     (off : word)
     ~(is_thumb : bool) : pure KB.t =
+  let* str = str_op bits in
   let* res = void_temp mem_ty in
   let base = Ir.Operand.Var (Ir.Opvar.create base) in
   let off = Ir.Operand.Const off in
   let+ ops = match value.value with
     | Var _ ->
       let ops = [mem.value; value.value; base; off] in
-      !![Ir.Operation.create_simple Ops.str res ops]
+      !![Ir.Operation.create_simple str res ops]
     | Const w ->
       let+ tmp = var_temp word_ty in
       let ops = [mem.value; tmp; base; off] in
       let c, w = mov_const w ~is_thumb in
       let mov = Ir.Operation.create_simple c tmp [Const w] in
-      let op = Ir.Operation.create_simple Ops.str res ops in
+      let op = Ir.Operation.create_simple str res ops in
       [op; mov]
     | _ -> fail @@ Format.asprintf
         "str_base_off: unsupported `value` operand %a"
@@ -459,47 +462,10 @@ let sel_binop
   | SLT -> !!(signed_less_than ~is_thumb ~branch)
   | SLE -> !!(signed_less_or_equal ~is_thumb ~branch)
   | XOR -> !!(xor ~is_thumb)
-  | DIVIDE | SDIVIDE | MOD | SMOD -> fail @@ Format.sprintf
+  | DIVIDE | SDIVIDE | MOD | SMOD ->
+    fail @@ Format.sprintf
       "sel_binop: unsupported operation %s"
       (Bil.string_of_binop o)
-
-let get_const (v : 'a Theory.Bitv.t Theory.value) : word option =
-  match KB.Value.get Exp.slot v with
-  | Int w -> Some w
-  | _ -> None
-
-let get_label (tid : tid) : Ir.Operand.t KB.t =
-  let+ addr = KB.collect Theory.Label.addr tid in
-  match addr with
-  | None -> Ir.Operand.Label tid
-  | Some addr ->
-    let w = Bitvec.to_int addr |> Word.of_int ~width:32 in
-    Ir.Operand.Offset w
-
-type dsts = {
-  dst : Ir.Operand.t;
-  ret : Ir.Operand.t option;
-}
-
-let get_dsts (jmp : jmp term) : dsts option KB.t =
-  let aux dst = match Jmp.resolve dst with
-    | First dst -> get_label dst >>| Option.return
-    | Second c -> KB.return @@ Option.map
-        ~f:(fun w -> Ir.Operand.Offset w) (get_const c) in
-  match Jmp.dst jmp, Jmp.alt jmp with
-  | Some dst, None ->
-    aux dst >>| begin function
-      | Some dst -> Some {dst; ret = None}
-      | None -> None
-    end
-  | Some dst, Some alt -> begin
-      aux dst >>= function
-      | None -> !!None
-      | Some ret ->  aux alt >>| function
-        | Some dst -> Some {dst; ret = Some ret}
-        | None -> None
-    end
-  | _ -> !!None
 
 let sel_unop (o : unop) ~(is_thumb : bool) : (pure -> pure KB.t) KB.t =
   match o with
@@ -567,14 +533,14 @@ let rec select_exp
     let* mem = exp mem in
     let* loc = exp loc in
     ldr (Size.in_bits size) mem loc ~is_thumb
-  | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , _size) ->
+  | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
     let* mem = exp mem in
     let* value = exp value in
-    str_base_off mem value a w ~is_thumb
-  | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , _size) ->
+    str_base_off (Size.in_bits size) mem value a w ~is_thumb
+  | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , size) ->
     let* mem = exp mem in
     let* value = exp value in
-    str_base_off mem value a Word.(-w) ~is_thumb
+    str_base_off (Size.in_bits size) mem value a Word.(-w) ~is_thumb
   | Store (mem, Int addr, value, _, size) ->
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
@@ -729,9 +695,9 @@ and select_jmp
   let exp = select_exp ~is_thumb in
   let cond = Jmp.cond jmp in
   let is_call = Helpers.is_call jmp in
-  get_dsts jmp >>= function
+  Utils.get_dsts jmp >>= function
   | None -> fail @@ Format.asprintf "Unexpected branch: %a" Jmp.pp jmp
-  | Some {dst; ret} ->
+  | Some {Utils.dst; ret} ->
     let* eff = match cond with
       | Int w when Word.(w <> b0) ->
         (* Unconditional branch. If cond is zero, this should

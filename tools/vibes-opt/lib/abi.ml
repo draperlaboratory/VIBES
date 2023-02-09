@@ -226,7 +226,7 @@ let spill_hvars_and_adjust_stack
       else
         let mem = Var.reify @@ T.Target.data target in
         let endian =
-          if T.(Endianness.(Target.endianness target = eb))
+          if T.(Endianness.(Target.endianness target <> le))
           then BigEndian else LittleEndian in
         (* Predetermined amount of space to allocate on the stack. *)
         let space =

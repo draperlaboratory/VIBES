@@ -22,6 +22,10 @@ let is_arm32 (target : T.target) : bool =
   T.Target.belongs Arm_target.parent target &&
   T.Target.bits target = 32
 
+let is_ppc32 (target : T.target) : bool =
+  T.Target.belongs Bap_powerpc_target.parent target &&
+  T.Target.bits target = 32
+
 let get_target (name : string) : (T.target, KB.conflict) result =
   match T.Target.lookup name with
   | None ->

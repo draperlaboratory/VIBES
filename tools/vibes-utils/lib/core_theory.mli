@@ -18,6 +18,9 @@ val is_thumb : Theory.language -> bool
 (** Returns [true] if the target is 32-bit ARM. *)
 val is_arm32 : Theory.target -> bool
 
+(** Returns [true] if the target is 32-bit PowerPC. *)
+val is_ppc32 : Theory.target -> bool
+
 (** [get_target name] returns the target with the name [name],
     if it exists. *)
 val get_target : string -> (Theory.target, KB.conflict) result

@@ -119,7 +119,7 @@ module Make(CT : Theory.Core) = struct
 
   let make_endian (target : T.target) : T.bool =
     let e = T.Target.endianness target in
-    if T.Endianness.(e = eb) then CT.b1 else CT.b0
+    if T.Endianness.(e <> le) then CT.b1 else CT.b0
 
   let as_unsigned (data : Data_model.t) : C.Type.t -> C.Type.t =
     let obj = object

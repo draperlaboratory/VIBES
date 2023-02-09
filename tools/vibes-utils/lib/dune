@@ -4,6 +4,7 @@
  (libraries
    findlib.dynload
    bap-arm
+   bap-powerpc
    bap-core-theory
    core
    yojson

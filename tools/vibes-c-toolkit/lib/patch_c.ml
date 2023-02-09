@@ -1903,7 +1903,7 @@ let data_of_tgt (target : Theory.target) : Data_model.t KB.t =
   let fail () =
     fail @@ Format.asprintf "Unsupported target %a"
       Theory.Target.pp target in
-  if CT.is_arm32 target then
+  if CT.is_arm32 target || CT.is_ppc32 target then
     KB.return Data_model.{sizes = `ILP32; schar = false}
   else fail ()
 

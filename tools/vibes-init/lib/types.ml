@@ -78,6 +78,7 @@ let language_of_spec (spec : Ogre.doc) (target : T.target) : T.language KB.t =
     if Int64.((entry land 1L) <> 0L)
     then Arm_target.llvm_t32
     else Arm_target.llvm_a32
+  else if CT.is_ppc32 target then !!Bap_powerpc_target.llvm_powerpc32
   else unsupported_target target
 
 let language_matches_target
@@ -89,6 +90,9 @@ let language_matches_target
   if CT.is_arm32 target then
     if eq Arm_target.llvm_t32
     || eq Arm_target.llvm_a32 then KB.return ()
+    else KB.fail @@ Errors.Invalid_target_lang msg
+  else if CT.is_ppc32 target then
+    if eq Bap_powerpc_target.llvm_powerpc32 then KB.return ()
     else KB.fail @@ Errors.Invalid_target_lang msg
   else unsupported_target target
 

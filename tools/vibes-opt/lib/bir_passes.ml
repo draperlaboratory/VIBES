@@ -17,6 +17,7 @@ open Bap_core_theory
 module T = Theory
 module Log = Vibes_log.Stream
 module Utils = Vibes_utils
+module CT = Utils.Core_theory
 module Hvar = Vibes_higher_vars.Higher_var
 module Subst = Vibes_higher_vars.Substituter
 module Patch_info = Vibes_patch_info.Types
@@ -76,6 +77,12 @@ let thumb_specific (sub : sub term) : sub term KB.t =
   log_sub sub;
   sub
 
+let ppc_specific (sub : sub term) : sub term KB.t =
+  Log.send "Splitting conditional jumps";
+  let+ sub = Shape.split_on_conditional sub in
+  log_sub sub;
+  sub
+
 let run
     (sub : sub term)
     ~(target : T.target)
@@ -84,7 +91,6 @@ let run
   let hvars = patch_info.patch_vars in
   let sp_align = patch_info.sp_align in
   Log.send "Running BIR passes";
-  let is_thumb = Utils.Core_theory.is_thumb language in
   let* () = provide_function_info sub in
   Log.send "Inserting new mems at callsites";
   let* sub = Abi.insert_new_mems_at_callsites sub ~target in
@@ -112,9 +118,12 @@ let run
   let* sub = Opt.apply hvars sub in
   log_sub sub;
   let* sub =
-    if is_thumb then begin
+    if CT.is_thumb language then begin
       Log.send "%a target detected" T.Language.pp language;
       thumb_specific sub
+    end else if CT.is_ppc32 target then begin
+      Log.send "%a target detected" T.Target.pp target;
+      ppc_specific sub
     end else !!sub in
   Log.send "Re-ordering blocks again";
   let sub = Shape.reorder_blks sub in
