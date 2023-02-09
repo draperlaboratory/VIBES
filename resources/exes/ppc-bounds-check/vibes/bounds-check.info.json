@@ -1,0 +1,34 @@
+{
+  "patch-point": "0x100004c4:32u",
+  "patch-size": 16,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "a",
+      "storage-class": [
+        "register",
+        {
+          "at-entry": "R3"
+        }
+      ]
+    },
+    {
+      "name": "i",
+      "storage-class": [
+        "register",
+        {
+          "at-entry": "R9"
+        }
+      ]
+    },
+    {
+      "name": "retval",
+      "storage-class": [
+        "register",
+        {
+          "at-exit": "R9"
+        }
+      ]
+    }
+  ]
+}
