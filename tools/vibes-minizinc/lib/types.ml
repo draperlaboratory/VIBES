@@ -273,10 +273,19 @@ module Params = struct
       (target : Theory.target)
       (language : Theory.language) : var list * var list =
     let regs =
-      Theory.Target.regs target ~exclude:Theory.Role.Register.[floating] |>
+      let exclude = Theory.Role.Register.[floating; vector; status] in
+      Theory.Target.regs target ~exclude |>
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list |>
       List.cons dummy in
+    let regs =
+      if CT.is_ppc32 target then
+        (* BAP separates the individual flags, but we actually want each
+           addressable chunk of the condition register. *)
+        List.init 8 ~f:(Format.sprintf "CR%d") |>
+        List.map ~f:(fun s -> Var.create s @@ Imm 4) |>
+        Fn.flip List.append regs
+      else regs in
     let gpr =
       let roles = Theory.Role.Register.[general; integer] in
       let roles =
