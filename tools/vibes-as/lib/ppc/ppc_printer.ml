@@ -97,6 +97,13 @@ let operands
           "operands: expected at least 2 arguments \
            for the `%s` opcode." op
     else Ok rhs in
+  (* `mfcr` may have pseudo-arguments. *)
+  let* rhs =
+    if String.(op = "mfcr") then match rhs with
+      | [x] -> Ok []
+      | _ ->
+        fail "operands: expected 1 argument for the `mfcr` opcode"
+    else Ok rhs in
   let l = rm_void_args (lhs @ rhs) in
   mk_loc_list op l |> List.zip_exn l |>
   List.mapi ~f:(fun i (o, is_loc) -> operand op o i ~is_loc) |>
