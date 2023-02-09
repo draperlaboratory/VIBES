@@ -286,16 +286,17 @@ module Params = struct
         List.map ~f:(fun s -> Var.create s @@ Imm 4) |>
         Fn.flip List.append regs
       else regs in
+    let thumb = CT.is_arm32 target && CT.is_thumb language in
     let gpr =
       let roles = Theory.Role.Register.[general; integer] in
-      let roles =
-        if CT.is_arm32 target && CT.is_thumb language
-        then Arm_target.thumb :: roles
-        else roles in
+      let roles = if thumb then Arm_target.thumb :: roles else roles in
       let exclude = Theory.Role.Register.[stack_pointer; link; reserved] in
       Theory.Target.regs target ~exclude ~roles |>
       Set.map (module Var) ~f:Var.reify |>
-      Set.to_list in
+      Set.to_list |> List.filter ~f:(fun v ->
+          match Var.name v with
+          | "R7" when thumb -> false
+          | _ -> true) in
     regs, gpr
 
   let unsupported_target (target : Theory.target) : (_, KB.conflict) result =
