@@ -228,7 +228,7 @@ let store_op (bits : int) : (Ir.opcode * Ir.opcode) KB.t =
 
 let const_off_fits (w : word) : bool =
   let i = Word.to_int_exn w in
-  i > 0xFFFF && i < 0xFFFF8000
+  i <= 0x7FFF || i >= 0xFFFF8000
 
 let load (bits : int) (mem : pure) (off : pure) (loc : pure) : pure KB.t =
   let* o, oi = load_op bits in
