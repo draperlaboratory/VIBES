@@ -154,12 +154,12 @@ COMMON_LIB_DIR="$(cd "$(dirname "${THIS_SCRIPT}")" && pwd)"
 
 # Ensure we can find the root of the repo.
 REPO_ROOT="$(cd "${COMMON_LIB_DIR}"/../../ && pwd)"
-if [ ! -f "${REPO_ROOT}"/.gitlab-ci.yml ]; then
+if [ ! -f "${REPO_ROOT}"/README.md ]; then
     echo "Halting."
     echo "Cannot find the repo root."
     echo "Looked in REPO ROOT: '${REPO_ROOT}'"
-    echo "But could not find a .gitlab-ci.yml file."
-    # exit 1
+    echo "But could not find a README.md file."
+    exit 1
 fi
 
 # Where these scripts are all kept.
