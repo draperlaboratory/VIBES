@@ -52,6 +52,7 @@ val neg : opcode
 val not : opcode
 val or_ : opcode
 val ori : opcode
+val rlwinm : opcode
 val slw : opcode
 val slwi : opcode
 val sraw : opcode

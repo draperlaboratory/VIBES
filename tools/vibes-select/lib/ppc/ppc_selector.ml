@@ -27,8 +27,8 @@ module Param = Types.Call_params
 open KB.Syntax
 open Types.Sel
 
-(* CR7 seems like a reasonable choice. *)
-let cr_num : int = 7
+(* CR0 seems like a reasonable choice. *)
+let cr_num : int = 0
 
 let fail msg = KB.fail @@ Errors.Selector_error msg
 
@@ -305,37 +305,22 @@ let binop_cmp
     let* tmp1 = var_temp word_ty in
     let cmp = Ir.Operation.create_simple o tmp_flag [l.value; r.value] in
     let cr = Ir.Operation.create_simple Ops.mfcr tmp1 [tmp_flag] in
-    let test_bit n =
-      let* tmp2 = var_temp word_ty in
-      let+ res = var_temp word_ty in
-      let r = 4 * (7 - cr_num) + n in
-      let sh = Word.of_int r ~width:32 in
-      let mask = Word.of_int (1 lsl r) ~width:32 in
-      let a = Ir.Operation.create_simple Ops.andi tmp2 [tmp1; Const mask] in
-      let s = Ir.Operation.create_simple Ops.srwi res [tmp2; Const sh] in
-      {value = res; eff = List.fold_right [s; a; cr; cmp] ~init:eff ~f:instr} in
-    match cond with
-    | EQ -> test_bit 1
-    | LT -> test_bit 3
-    | GT -> test_bit 2
-    | NE ->
-      let* eq = test_bit 1 in
-      let+ res = var_temp word_ty in
-      let one = Word.one 32 in
-      let x = Ir.Operation.create_simple Ops.xori res [eq.value; Const one] in
-      {value = res; eff = instr x eq.eff}
-    | LE ->
-      let* eq = test_bit 1 in
-      let* lt = test_bit 3 in
-      let+ res = var_temp word_ty in
-      let a = Ir.Operation.create_simple Ops.or_ res [eq.value; lt.value] in
-      {value = res; eff = instr a (eq.eff @. lt.eff)}
-    | GE ->
-      let* eq = test_bit 1 in
-      let* gt = test_bit 2 in
-      let+ res = var_temp word_ty in
-      let a = Ir.Operation.create_simple Ops.or_ res [eq.value; gt.value] in
-      {value = res; eff = instr a (eq.eff @. gt.eff)}
+    let bitnum = match cond with
+      | EQ | NE -> 2
+      | GT | LE -> 1
+      | LT | GE -> 0 in
+    let b = Ir.Operand.Const (Word.of_int ~width:32 (bitnum + 1)) in
+    let m = Ir.Operand.Const (Word.of_int ~width:32 31) in
+    let* tmp2 = var_temp word_ty in
+    let rot = Ir.Operation.create_simple Ops.rlwinm tmp2 [tmp1; b; m; m] in
+    let+ value, ops = match cond with
+      | NE | LE | GE ->
+        let+ tmp3 = var_temp word_ty in
+        let one = Ir.Operand.Const (Word.one 32) in
+        let x = Ir.Operation.create_simple Ops.xori tmp3 [tmp2; one] in
+        tmp3, [x; rot; cr; cmp]
+      | _ -> !!(tmp2, [rot; cr; cmp]) in
+    {value; eff = List.fold_right ops ~init:eff ~f:instr}
 
 let equals ~(branch : Branch.t option) : pure -> pure -> pure KB.t =
   binop_cmp EQ ~branch
