@@ -41,6 +41,12 @@ let target_info
         let target = target
       end in
       Ok (module Target : Types.Target)
+    else if CT.is_ppc32 target then
+      let module Target : Types.Target = struct
+        include Ppc_utils
+        let target = target
+      end in
+      Ok (module Target : Types.Target)
     else
       let msg = Format.asprintf "Unsupported target %a" T.Target.pp target in
       Error (Errors.Unsupported_target msg) in
