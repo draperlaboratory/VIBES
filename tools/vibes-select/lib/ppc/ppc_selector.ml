@@ -72,7 +72,7 @@ module Branch = struct
   let create (dst : Ir.Operand.t) : t = fun ~cnd ~flg ->
     let+ tmp = void_temp bit_ty in
     let c = Ops.b () ~cnd:(Some cnd) in
-    let op = Ir.Operation.create_simple c tmp [dst; flg] in
+    let op = Ir.Operation.create_simple c tmp [flg; dst] in
     op, tmp
 
 end
