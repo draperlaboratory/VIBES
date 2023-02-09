@@ -35,6 +35,11 @@ let opt
       Ok (is_nop,
           unconditional_branch_target,
           is_move)
+    else if CT.is_ppc32 target then
+      let open Ppc_utils in
+      Ok (is_nop,
+          unconditional_branch_target,
+          is_move)
     else
       let msg = Format.asprintf
           "Unsupported target %a"

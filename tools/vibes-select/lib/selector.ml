@@ -37,6 +37,8 @@ let run
     if CT.is_arm32 target then
       let is_thumb = CT.is_thumb language in
       !!(Arm_selector.select ~is_thumb, Arm_utils.preassign ~is_thumb)
+    else if CT.is_ppc32 target then
+      !!(Ppc_selector.select, fun t v -> Var.create v t)
     else
       let msg = Format.asprintf
           "Unsupported target %a"

@@ -283,7 +283,7 @@ module Params = struct
         if CT.is_arm32 target && CT.is_thumb language
         then Arm_target.thumb :: roles
         else roles in
-      let exclude = Theory.Role.Register.[stack_pointer; link] in
+      let exclude = Theory.Role.Register.[stack_pointer; link; reserved] in
       Theory.Target.regs target ~exclude ~roles |>
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list in
@@ -298,6 +298,8 @@ module Params = struct
       (target : Theory.target) : (Ir.opcode -> int, KB.conflict) result =
     if CT.is_arm32 target then Result.return @@ function
       | "ldr" | "ldrh" | "ldrb" | "mul" -> 2 | _ -> 1
+    else if CT.is_ppc32 target then Result.return @@ function
+      | _ -> 1
     else unsupported_target target
 
   let serialize

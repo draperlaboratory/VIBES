@@ -49,6 +49,14 @@ let void_temp (t : typ) : Ir.Operand.t KB.t =
   let+ v = temp t in
   Ir.Operand.Void v
 
+(* Use this to generate a temp var to store the result of a
+   comparison. *)
+let cr_temp : Ir.Operand.t KB.t =
+  let+ v = temp @@ Imm 4 in
+  let name = Format.sprintf "CR%d" cr_num in
+  let v = {v with preassign = Some (Var.create name @@ Imm 4)} in
+  Ir.Operand.Var v
+
 (* Helper data structure for generating conditional branches. *)
 module Branch = struct
 
@@ -274,7 +282,7 @@ let binop_cmp
     (l : pure)
     (r : pure)
     ~(branch : Branch.t option) : pure KB.t =
-  let* tmp_flag = void_temp bit_ty in
+  let* tmp_flag = cr_temp in
   let eff = l.eff @. r.eff in
   let o = match r.value with
     | Const _ when signed -> Ops.cmpwi
