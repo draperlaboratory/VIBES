@@ -232,6 +232,12 @@ let const_off_fits (w : word) : bool =
 
 let load (bits : int) (mem : pure) (off : pure) (loc : pure) : pure KB.t =
   let* o, oi = load_op bits in
+  let* loc = match loc.value with
+    | Const w ->
+      let* tmp = var_temp word_ty in
+      let+ c = mov_const w tmp ~eff:loc.eff in
+      {value = tmp; eff = c}
+    | _ -> !!loc in
   match off.value with
   | Const w when not @@ const_off_fits w ->
     let* tmp = var_temp word_ty in
@@ -250,6 +256,12 @@ let store
     (loc : pure) : pure KB.t =
   let* o, oi = store_op bits in
   let* res = void_temp mem_ty in
+  let* loc = match loc.value with
+    | Const w ->
+      let* tmp = var_temp word_ty in
+      let+ c = mov_const w tmp ~eff:loc.eff in
+      {value = tmp; eff = c}
+    | _ -> !!loc in
   let eff = loc.eff @. off.eff @. value.eff @. mem.eff in
   let op = match off.value with
     | Const w as c when const_off_fits w -> fun v ->
@@ -393,8 +405,6 @@ let sel_unop (o : unop) : (pure -> pure KB.t) KB.t = match o with
   | NOT -> !!lognot
   | NEG -> !!neg
 
-let r0 : var = Naming.mark_reg_unsafe @@ Var.create "R0" @@ Imm 32
-
 let rec select_exp
     ?(branch : Branch.t option = None)
     ?(lhs : var option = None)
@@ -415,9 +425,9 @@ let rec select_exp
     let* mem = exp mem in
     let* loc = exp a in
     load (Size.in_bits size) mem (const @@ Word.neg w) loc
-  | Load (mem, Int w, _, size) when const_off_fits w ->
+  | Load (mem, Int w, _, size) ->
     let* mem = exp mem in
-    load (Size.in_bits size) mem (const w) (var r0)
+    load (Size.in_bits size) mem (const @@ Word.zero 32) (const w)
   | Load (mem, loc, _, size) ->
     let* mem = exp mem in
     let* loc = exp loc in
@@ -440,10 +450,10 @@ let rec select_exp
     let* loc = exp a in
     let* value = exp value in
     store (Size.in_bits size) mem value (const @@ Word.neg w) loc
-  | Store (mem, Int w, value, _, size) when const_off_fits w ->
+  | Store (mem, Int w, value, _, size) ->
     let* mem = exp mem in
     let* value = exp value in
-    store (Size.in_bits size) mem value (const w) (var r0)
+    store (Size.in_bits size) mem value (const @@ Word.zero 32) (const w)
   | Store (mem, loc, value, _, size) ->
     let* mem = exp mem in
     let* loc = exp loc in
