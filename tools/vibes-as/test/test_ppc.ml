@@ -109,10 +109,10 @@ let test_ir15 (ctxt : test_ctxt) : unit = test_ir ctxt Prog15.prog [
     "addi 3, 3, 42";
   ]
 
-let test_ir16 (ctxt : test_ctxt) : unit = test_ir ctxt Prog16.prog
-    [blk_pat ^ ":";
-     "mr 3, 3";
-    ]
+let test_ir16 (ctxt : test_ctxt) : unit = test_ir ctxt Prog16.prog [
+    blk_pat ^ ":";
+    "mr 3, 3";
+  ]
 
 let test_ir17 (ctxt : test_ctxt) : unit = test_ir ctxt Prog17.prog [
     blk_pat ^ ":";
