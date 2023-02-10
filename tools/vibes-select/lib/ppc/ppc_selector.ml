@@ -146,6 +146,25 @@ let uop (o : Ir.opcode) (ty : typ) (arg : pure) : pure KB.t =
     let op = Ir.Operation.create_simple o res [arg.value] in
     !!{value = res; eff = instr op arg.eff}
 
+let can_be_swapped : binop -> bool = function
+  | LT | SLT | LE | SLE -> true
+  | _ -> false
+
+let commutative : binop -> bool = function
+  | PLUS | TIMES | AND | OR | XOR | EQ | NEQ -> true
+  | MINUS
+  | DIVIDE
+  | SDIVIDE
+  | MOD
+  | SMOD
+  | LSHIFT
+  | RSHIFT
+  | ARSHIFT
+  | LT
+  | SLT
+  | LE
+  | SLE -> false
+
 let binop
     ?(oi : Ir.opcode option)
     (o : Ir.opcode)
@@ -476,6 +495,19 @@ let rec select_exp
   | BinOp (o, a, b) ->
     let* a = exp a in
     let* b = exp b in
+    let move w eff =
+      let* tmp = var_temp word_ty in
+      let+ c = mov_const w tmp ~eff in
+      {value = tmp; eff = c} in
+    let* o, a, b = match a.value, b.value with
+      | Const w, Const _ ->
+        let+ a = move w a.eff in
+        o, a, b
+      | Const w, _ when not (commutative o || can_be_swapped o) ->
+        let+ a = move w a.eff in
+        o, a, b
+      | Const _, _ when not @@ can_be_swapped o -> !!(o, b, a)
+      | _ -> !!(o, a, b) in
     let* o = sel_binop o ~branch in
     o a b
   | UnOp (o, a) ->
