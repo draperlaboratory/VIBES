@@ -34,6 +34,8 @@ val cmplw : opcode
 val cmplwi : opcode
 val cmpw : opcode
 val cmpwi : opcode
+val extsb : opcode
+val extsh : opcode
 val lbz : opcode
 val lbzx : opcode
 val lha : opcode

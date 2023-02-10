@@ -229,7 +229,6 @@ module Prog28 = struct
     let bil = Bil.[v1 := load ~mem:(var mem) ~addr:(!!0x1234) BigEndian `r8] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
-
 end
 
 module Prog29 = struct
@@ -237,7 +236,6 @@ module Prog29 = struct
   let prog () : sub term =
     let bil = Bil.[mem := store ~mem:(var mem) ~addr:(!!0x1234) !!5 BigEndian `r8] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
-
 
 end
 
@@ -247,5 +245,29 @@ module Prog30 = struct
     let bil = Bil.[v1 := var v2 >= !!42] in
     Bap_wp.Bil_to_bir.bil_to_sub bil
 
+end
+
+module Prog31 = struct
+
+  let prog () : sub term =
+    let bil = Bil.[v1 := cast SIGNED 32 (load ~mem:(var mem) ~addr:(var v2 + !!8) BigEndian `r8)] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+module Prog32 = struct
+
+  let prog () : sub term =
+    let bil = Bil.[v1 := cast SIGNED 32 (load ~mem:(var mem) ~addr:(var v2 + !!8) BigEndian `r16)] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
+
+end
+
+
+module Prog33 = struct
+
+  let prog () : sub term =
+    let bil = Bil.[v1 := load ~mem:(var mem) ~addr:(var v2 + (var v3 * !!4)) BigEndian `r32] in
+    Bap_wp.Bil_to_bir.bil_to_sub bil
 
 end

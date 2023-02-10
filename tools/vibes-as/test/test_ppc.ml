@@ -222,6 +222,23 @@ let test_ir30 (ctxt : test_ctxt) : unit = test_ir ctxt Prog30.prog [
     "xori 3, 3, 1"
   ]
 
+let test_ir31 (ctxt : test_ctxt) : unit = test_ir ctxt Prog31.prog [
+    blk_pat ^ ":";
+    "lbz 3, 8(3)";
+    "extsb 3, 3";
+  ]
+
+let test_ir32 (ctxt : test_ctxt) : unit = test_ir ctxt Prog32.prog [
+    blk_pat ^ ":";
+    "lha 3, 8(3)";
+  ]
+
+let test_ir33 (ctxt : test_ctxt) : unit = test_ir ctxt Prog33.prog [
+    blk_pat ^ ":";
+    "slwi 3, 3, 2";
+    "lwzx 3, 3, 3";
+  ]
+
 let suite : test = "Test PPC selector" >::: [
     "Test PPC 1" >:: test_ir1;
     "Test PPC 2" >:: test_ir2;
@@ -251,6 +268,9 @@ let suite : test = "Test PPC selector" >::: [
     "Test PPC 28" >:: test_ir28;
     "Test PPC 29" >:: test_ir29;
     "Test PPC 30" >:: test_ir30;
+    "Test PPC 31" >:: test_ir31;
+    "Test PPC 32" >:: test_ir32;
+    "Test PPC 33" >:: test_ir33;
   ]
 
 let () = match Bap_main.init () with

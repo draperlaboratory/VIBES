@@ -233,20 +233,21 @@ let lsr_ (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
 let asr_ (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
   binop Ops.asr_ word_ty l r ~is_thumb
 
-let ldr_op (bits : int) : Ir.opcode KB.t =
+let ldr_op ?(signed : bool = false) (bits : int) : Ir.opcode KB.t =
   if bits = 32 then !!Ops.ldr
-  else if bits = 16 then !!Ops.ldrh
-  else if bits = 8 then !!Ops.ldrb
+  else if bits = 16 then !!(if signed then Ops.ldrsh else Ops.ldrh)
+  else if bits = 8 then !!(if signed then Ops.ldrsb else Ops.ldrb)
   else fail @@ Format.sprintf
       "ldr_op: loading a bit-width that is not \
        8, 16, or 32 (got %d)" bits
 
 let ldr
+    ?(signed : bool = false)
     (bits : int)
     (mem : pure)
     (loc : pure)
     ~(is_thumb : bool) : pure KB.t =
-  let* ldr = ldr_op bits in
+  let* ldr = ldr_op bits ~signed in
   binop ldr word_ty mem loc ~is_thumb
 
 let str_op (bits : int) : Ir.opcode KB.t =
@@ -489,17 +490,17 @@ let sel_unop (o : unop) ~(is_thumb : bool) : (pure -> pure KB.t) KB.t =
    things could go very wrong.
 *)
 let rec select_exp
+    ?(signed : bool = false)
     ?(branch : Branch.t option = None)
     ?(lhs : var option = None)
     (e : exp)
     ~(is_thumb : bool) : pure KB.t =
-  let exp = select_exp ~is_thumb ~branch:None ~lhs:None in
+  let exp = select_exp ~is_thumb ~branch:None ~lhs:None ~signed:false in
   let exp_binop_integer = select_exp_binop_integer ~is_thumb in
-  match e with
-  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, Int s, b)), _, size)
-    when Int.is_pow2 @@ Word.to_int_exn s ->
+  let load_lsl mem a b s size =
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let sz = Size.in_bits size in
+    let* ldr = ldr_op sz in
     let* a = exp a in
     let* b = exp b in
     let width = Word.bitwidth s in
@@ -508,16 +509,23 @@ let rec select_exp
       Word.of_int ~width @@
       Int.ctz @@
       Word.to_int_exn s in
-    quadop ldr word_ty mem a b s
+    quadop ldr word_ty mem a b s in
+  match e with
+  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, Int s, b)), _, size)
+    when Int.is_pow2 (Word.to_int_exn s) && Size.(size = `r32) ->
+    load_lsl mem a b s size
+  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, b, Int s)), _, size)
+    when Int.is_pow2 (Word.to_int_exn s) && Size.(size = `r32) ->
+    load_lsl mem a b s size
   | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     let* a = exp a in
     let w = const w in
     ternop ldr word_ty mem a w
   | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     let* a = exp a in
     let w = const (Word.neg w) in
     ternop ldr word_ty mem a w
@@ -527,12 +535,12 @@ let rec select_exp
     let c, w = mov_const addr ~is_thumb in
     let op = Ir.Operation.create_simple c tmp [Const w] in
     let a = {value = tmp; eff = instr op empty_eff} in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     ternop ldr word_ty mem a @@ const (Word.zero 32)
   | Load (mem, loc, _, size) ->
     let* mem = exp mem in
     let* loc = exp loc in
-    ldr (Size.in_bits size) mem loc ~is_thumb
+    ldr (Size.in_bits size) mem loc ~is_thumb ~signed
   | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
     let* mem = exp mem in
     let* value = exp value in
@@ -638,7 +646,41 @@ let rec select_exp
            unknown type" Var.pp v
     end
   | Cast (UNSIGNED, _, e) -> select_exp e ~is_thumb ~branch ~lhs
-  | Cast (SIGNED, _, _) -> fail @@ "select_exp: SIGNED cast is unsupported"
+  | Cast (SIGNED, 32, (Load _ as l)) ->
+    select_exp l ~is_thumb ~branch ~lhs ~signed:true
+  | Cast (SIGNED, 16, (Load _ as l)) ->
+    let* x = select_exp l ~is_thumb ~branch ~lhs ~signed:true in
+    let+ res = var_temp word_ty in
+    let mask = Ir.Operand.Const (Word.of_int ~width:32 0xFFFF) in
+    let r = Ir.Operation.create_simple Ops.and_ res [x.value; mask] in
+    {value = res; eff = instr r x.eff}
+  | Cast (SIGNED, 32, e) ->
+    let* o = match Type.infer e with
+      | Error e ->
+        fail @@ Format.asprintf
+          "select_exp: Type.infer failed: %a"
+          Type.Error.pp e
+      | Ok (Imm 8) -> !!Ops.sxtb
+      | Ok (Imm 16) -> !!Ops.sxth
+      | Ok t ->
+        fail @@ Format.asprintf
+          "select_exp: bad type %a for sign extension"
+          Type.pp t in
+    let* x = exp e in
+    let+ res = var_temp word_ty in
+    let o = Ir.Operation.create_simple o res [x.value] in
+    {value = res; eff = instr o x.eff}
+  | Cast (SIGNED, 16, e) ->
+    let* x = exp e in
+    let* tmp = var_temp word_ty in
+    let+ res = var_temp word_ty in
+    let mask = Ir.Operand.Const (Word.of_int ~width:32 0xFFFF) in
+    let e = Ir.Operation.create_simple Ops.sxth tmp [x.value] in
+    let r = Ir.Operation.create_simple Ops.and_ res [tmp; mask] in
+    {value = res; eff = instr r @@ instr e x.eff}
+  | Cast (SIGNED, bits, _) ->
+    fail @@ Format.asprintf
+      "select_exp: unsupported size %d for SIGNED cast" bits
   | Cast (LOW, _, _) -> fail @@ "select_exp: LOW Cast is unsupported"
   | Cast (HIGH, _, _) -> fail @@ "select_exp: HIGH cast is unsupported"
   | Int w -> !!(const w)
