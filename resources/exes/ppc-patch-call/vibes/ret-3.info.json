@@ -1,0 +1,14 @@
+{
+  "patch-point": "0x10000508:32u",
+  "patch-size": 4,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "ret_3",
+      "storage-class": [
+        "constant",
+        "0x100004ac:32"
+      ]
+    }
+  ]
+}
