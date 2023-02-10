@@ -76,6 +76,17 @@ let mk_loc_list (op : string) (args : Ir.Operand.t list) : bool list =
     List.mapi args ~f:(fun i _ -> i = len - 1)
   | _ -> List.map args ~f:(fun _ -> false)
 
+(* There is no comma between the offset and the source address. *)
+let rm_comma_ld_st (op : Ir.opcode) (s : string list) : string list =
+  match op with
+  | "lbz" | "lha" | "lhz" | "lwz" | "stb" | "sth" | "stw" ->
+    let rec aux acc = function
+      | [] -> List.rev acc
+      | [x; _; y] -> List.rev (y :: x :: acc)
+      | x :: xs -> aux (x :: acc) xs in
+    aux [] s
+  | _ -> s
+
 let operands
     (op : string)
     (lhs : Ir.Operand.t list)
@@ -100,6 +111,7 @@ let operands
   List.mapi ~f:(fun i (o, is_loc) -> operand op o i ~is_loc) |>
   Result.all |> Result.map ~f:(fun s ->
       List.intersperse s ~sep:", " |>
+      rm_comma_ld_st op |>
       String.concat)
 
 let operation (t : Ir.Operation.t) : (string, KB.conflict) result =
