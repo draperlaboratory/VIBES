@@ -88,15 +88,6 @@ let operands
         fail "operands: expected at least 1 argument \
               for the `bl` opcode."
     else Ok rhs in
-  (* `cmp` may have pseudo-arguments. *)
-  let* rhs =
-    if String.is_prefix op ~prefix:"cmp" then match rhs with
-      | x :: y :: _ -> Ok [x; y]
-      | _ ->
-        fail @@ Format.sprintf
-          "operands: expected at least 2 arguments \
-           for the `%s` opcode." op
-    else Ok rhs in
   (* `mfcr` may have pseudo-arguments. *)
   let* rhs =
     if String.(op = "mfcr") then match rhs with
