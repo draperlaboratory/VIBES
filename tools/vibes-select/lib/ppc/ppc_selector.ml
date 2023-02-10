@@ -27,8 +27,8 @@ module Param = Types.Call_params
 open KB.Syntax
 open Types.Sel
 
-(* CR0 seems like a reasonable choice. *)
-let cr_num : int = 0
+(* CR7 seems like a reasonable choice. *)
+let cr_num : int = 7
 
 let fail msg = KB.fail @@ Errors.Selector_error msg
 
@@ -340,7 +340,8 @@ let binop_cmp
       | EQ | NE -> 2
       | GT | LE -> 1
       | LT | GE -> 0 in
-    let b = Ir.Operand.Const (Word.of_int ~width:32 (bitnum + 1)) in
+    let bit = bitnum + (cr_num * 4) + 1 in
+    let b = Ir.Operand.Const (Word.of_int ~width:32 bit) in
     let m = Ir.Operand.Const (Word.of_int ~width:32 31) in
     let* tmp2 = var_temp word_ty in
     let rot = Ir.Operation.create_simple Ops.rlwinm tmp2 [tmp1; b; m; m] in
