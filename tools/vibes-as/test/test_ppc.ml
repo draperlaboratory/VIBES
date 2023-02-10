@@ -81,8 +81,8 @@ let test_ir11 (ctxt : test_ctxt) : unit = test_ir ctxt Prog11.prog [
 
 let test_ir12 (ctxt : test_ctxt) : unit = test_ir ctxt Prog12.prog [
     blk_pat ^ ":";
-    "cmpwi 0, 3, 0";
-    "bne 0, " ^ blk_pat;
+    "cmpwi 7, 3, 0";
+    "bne 7, " ^ blk_pat;
     "b " ^ blk_pat;
     blk_pat ^ ":";
     "li 3, 4";
@@ -121,8 +121,8 @@ let test_ir17 (ctxt : test_ctxt) : unit = test_ir ctxt Prog17.prog [
 
 let test_ir18 (ctxt : test_ctxt) : unit = test_ir ctxt Prog18.prog [
     blk_pat ^ ":";
-    "cmpwi 0, 3, 0";
-    "bne 0, " ^ blk_pat;
+    "cmpwi 7, 3, 0";
+    "bne 7, " ^ blk_pat;
     "b " ^ blk_pat;
     blk_pat ^ ":";
     "li 3, 4";
@@ -170,8 +170,8 @@ let test_ir24 (ctxt : test_ctxt) : unit = test_ir ctxt Prog24.prog [
 
 let test_ir25 (ctxt : test_ctxt) : unit = test_ir ctxt Prog25.prog [
     blk_pat ^ ":";
-    "cmplwi 0, 3, 42";
-    "bgt 0, " ^ blk_pat;
+    "cmplwi 7, 3, 42";
+    "bgt 7, " ^ blk_pat;
     "b " ^ blk_pat;
     blk_pat ^ ":";
     "li 3, 4";
@@ -184,8 +184,8 @@ let test_ir25 (ctxt : test_ctxt) : unit = test_ir ctxt Prog25.prog [
 
 let test_ir26 (ctxt : test_ctxt) : unit = test_ir ctxt Prog26.prog [
     blk_pat ^ ":";
-    "cmpwi 0, 3, 0";
-    "beq 0, " ^ blk_pat;
+    "cmpwi 7, 3, 0";
+    "beq 7, " ^ blk_pat;
     "b " ^ blk_pat;
     blk_pat ^ ":";
     "li 3, 4";
@@ -216,9 +216,9 @@ let test_ir29 (ctxt : test_ctxt) : unit = test_ir ctxt Prog29.prog [
 
 let test_ir30 (ctxt : test_ctxt) : unit = test_ir ctxt Prog30.prog [
     blk_pat ^ ":";
-    "cmplwi 0, 3, 42";
+    "cmplwi 7, 3, 42";
     "mfcr 3";
-    "rlwinm 3, 3, 1, 31, 31";
+    "rlwinm 3, 3, 29, 31, 31";
     "xori 3, 3, 1"
   ]
 
