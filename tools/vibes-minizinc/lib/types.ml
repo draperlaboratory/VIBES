@@ -278,8 +278,9 @@ module Params = struct
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list |>
       List.cons dummy in
+    let ppc = CT.is_ppc32 target in
     let regs =
-      if CT.is_ppc32 target then
+      if ppc then
         (* BAP separates the individual flags, but we actually want each
            addressable chunk of the condition register. *)
         List.init 8 ~f:(Format.sprintf "CR%d") |>
@@ -295,7 +296,13 @@ module Params = struct
       Set.map (module Var) ~f:Var.reify |>
       Set.to_list |> List.filter ~f:(fun v ->
           match Var.name v with
-          | "R7" when thumb -> false
+          | "R7" when thumb ->
+            (* R7 in Thumb mode is usually referring to the frame pointer. *)
+            false
+          | "R0" | "R31" when ppc ->
+            (* R0 in some special cases refers to the literal value 0.
+               R31 is generally used as the frame pointer. *)
+            false
           | _ -> true) in
     regs, gpr
 
