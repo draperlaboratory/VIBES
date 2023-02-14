@@ -23,7 +23,7 @@ from binaryninjaui import (
 PATCH_EDITOR = 'VIBES\\Patch Editor'
 patch_editor = None
 
-supported = ["armv7", "thumb2", "armv7eb", "thumb2eb"]
+supported = ["armv7", "thumb2", "armv7eb", "thumb2eb", "ppc", "ppc_le"]
 
 def check_arch(bv):
   arch = bv.arch.name

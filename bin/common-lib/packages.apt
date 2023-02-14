@@ -1,13 +1,15 @@
 binutils-arm-linux-gnueabi 
+binutils-powerpc-linux-gnu
 binutils-multiarch
 clang
 cmake
 debianutils
 gcc-arm-linux-gnueabi
+gcc-powerpc-linux-gnu
 libgmp-dev
 libncurses5-dev
 libzip-dev
-llvm-10-dev
+llvm-12-dev
 pkg-config
 qemu-user
 zlib1g-dev

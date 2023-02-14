@@ -1,0 +1,16 @@
+{
+    "patch-point": "0x100004c0:32",
+    "patch-size": 8,
+    "sp-align": 0,
+    "patch-vars": [
+        {
+            "name": "s",
+            "storage-class": [
+                "register",
+                {
+                    "at-entry": "R9"
+                }
+            ]
+        }
+    ]
+}

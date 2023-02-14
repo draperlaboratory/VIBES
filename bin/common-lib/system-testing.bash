@@ -119,6 +119,53 @@ run_arm_exe () {
 }
 
 # DESC
+#     Run a PPC executable with qemu
+# ARGS
+# - ${1} : The path to the executable
+# - ${2} : The expected exit code
+run_ppc_exe () {
+    local EXE_PATH="${1}"
+    local EXPECTED_EXIT_CODE="${2}"
+    local LD_PREFIX="/usr/powerpc-linux-gnu"
+    local ACTUAL_EXIT_CODE
+    local OUTPUT
+    echo "- Running ${EXE_PATH}" | tee -a "${REPORT}"
+    OUTPUT="$(QEMU_LD_PREFIX=${LD_PREFIX} qemu-ppc "${EXE_PATH}" 2>&1)"
+    ACTUAL_EXIT_CODE="${?}"
+    if [[ "${ACTUAL_EXIT_CODE}" != "${EXPECTED_EXIT_CODE}" ]]; then
+        red "  - Error. Expected exit code ${EXPECTED_EXIT_CODE}, "
+        red "but got ${ACTUAL_EXIT_CODE}"
+        echo ""
+        echo -n "  - Error. " >> "${REPORT}"
+	echo -n "Expected exit code ${EXPECTED_EXIT_CODE}, " >> "${REPORT}"
+	echo "but got ${ACTUAL_EXIT_CODE}" >> "${REPORT}" 
+	if [[ -z "${OUTPUT}" ]]; then
+	    echo "  - Program output:" | tee -a "${REPORT}"
+	    echo "    The program printed no output." |tee -a "${REPORT}"
+	else
+	    echo "  - Program output:" | tee -a "${REPORT}"
+	    rule_light | tee -a "${REPORT}"
+	    echo "${OUTPUT}" | tee -a "${REPORT}"
+	    rule_light | tee -a "${REPORT}"
+	fi
+        echo ""
+        TESTS_FINAL_STATUS="FAILED"
+        TESTS_TALLY="${TESTS_TALLY}F"
+        let TESTS_FAILED++
+    else
+        green "  - Ok. Expected exit code ${EXPECTED_EXIT_CODE}, "
+        green "and got ${ACTUAL_EXIT_CODE}"
+        echo ""
+	echo -n "  - Ok. " >> "${REPORT}"
+	echo -n "Expected exit code ${EXPECTED_EXIT_CODE}, " >> "${REPORT}"
+	echo "and got ${ACTUAL_EXIT_CODE}" >> "${REPORT}"
+        echo ""
+        TESTS_TALLY="${TESTS_TALLY}."
+        let TESTS_PASSED++
+    fi
+}
+
+# DESC
 #     Run a make command
 # ARGS
 # - ${1} : The make command

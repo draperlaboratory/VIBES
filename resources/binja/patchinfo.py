@@ -80,11 +80,39 @@ class PatchInfo:
       utils.eprint("No LLIL instruction found at 0x%x, using 0x%x" % (end, self.addr))
       lend = lstart
 
-    mmlil = f.mapped_medium_level_il
+    mmlil = f.mmlil
     available_regs = utils.available_regs(bv)
 
+    # Sometimes there is no mapping all the way from LLIL to MLIL
+    # to HLIL, but it can show up in the list of HLIL instructions
+    # like so:
+    def find(il, end):
+      idx = None
+      for insn in il.instructions:
+        if insn.address == end:
+          idx = insn.instr_index
+          break
+      return idx
+
+    # Find the nearest set of blocks in the dominator tree where
+    # we hit a complete mapping up to the HLIL.
+    def traverse(bb, idxs, ils, finder, start=None):
+      if start is None:
+        start = bb.start
+      for ii in range(start, bb.end):
+        a = f.llil[ii].address
+        i = finder(ils, a)
+        if i is not None:
+          idxs.append((i, a))
+          return
+      for d in bb.dominator_tree_children:
+        traverse(d, idxs, ils, finder)
+
     bb_patch_ll = f.llil.get_basic_block_at(lend.instr_index)
-    bb_patch_ml = mmlil.get_basic_block_at(mmlil.get_instruction_start(end))
+
+    mmlil_idxs = []
+    traverse(bb_patch_ll, mmlil_idxs, mmlil, find, start=lend.instr_index)
+
     result = {}
 
     def add(name, h):
@@ -119,8 +147,10 @@ class PatchInfo:
     def spilled(v):
       for u in mmlil.get_var_uses(v):
         bb_use = mmlil.get_basic_block_at(u.instr_index)
-        if not reachable(bb_use, bb_patch_ml, u.address, self.addr):
-          continue
+        for i, _ in mmlil_idxs:
+          bb_patch_ml = mmlil.get_basic_block_at(i)
+          if not reachable(bb_use, bb_patch_ml, u.address, self.addr):
+            continue
         # Are we defining a stack variable?
         if not isinstance(u, MediumLevelILSetVar):
           continue
@@ -183,33 +213,7 @@ class PatchInfo:
     if lend.mmlil.hlil:
       idxs.append((lend.mmlil.hlil.instr_index, end))
     else:
-      # Sometimes there is no mapping all the way from LLIL to MLIL
-      # to HLIL, but it can show up in the list of HLIL instructions
-      # like so:
-      def find(end):
-        idx = None
-        for insn in f.hlil.instructions:
-          if insn.address == end:
-            idx = insn.instr_index
-            break
-        return idx
-      # Find the nearest set of blocks in the dominator tree where
-      # we hit a complete mapping up to the HLIL.
-      def traverse(bb, start=None):
-        if start is None:
-          start = bb.start
-        for ii in range(start, bb.end):
-          a = f.llil[ii].address
-          i = find(a)
-          if i is not None:
-            idxs.append((i, a))
-            return
-        for d in bb.dominator_tree_children:
-          traverse(d)
-      # Start at the current block.
-      start = lend.instr_index
-      bb = f.llil.get_basic_block_at(start)
-      traverse(bb, start)
+      traverse(bb_patch_ll, idxs, f.hlil, find, start=lend.instr_index)
 
     # Collect the live HLIL variables.
     for i, a in idxs:
@@ -257,12 +261,17 @@ class PatchInfo:
     # cluttering the output.
     flow, fhigh = utils.frame_range(bv)
     for s in bv.get_symbols():
-      if s.auto:
-        if s.type == SymbolType.ImportedFunctionSymbol:
-          add_function(s.name, s.address)
+      if not utils.is_valid_sym_name(s):
+        continue
+      if s.type == SymbolType.ImportedFunctionSymbol or \
+         s.type == SymbolType.FunctionSymbol:
+        add_function(s.name, s.address)
       elif s.type == SymbolType.DataSymbol:
         a = s.address
-        type = bv.get_data_var_at(a).type
+        dv = bv.get_data_var_at(a)
+        if not dv:
+          continue
+        type = dv.type
         add(s.name, HigherVar(s.name, a, HigherVar.GLOBAL_VAR))
         # See if this symbol can be accessed via frame through a
         # register with a known value.
@@ -272,7 +281,5 @@ class PatchInfo:
              (a > val and off <= fhigh) or \
              (off == 0 and not is_ptr(type)):
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
-      elif s.type == SymbolType.FunctionSymbol:
-        add_function(s.name, s.address)
 
     return result

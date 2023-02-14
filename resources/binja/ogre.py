@@ -158,9 +158,12 @@ class OGREData(OGREAddrSizeOff):
 class OGRE:
   def __init__(self, bv):
     self.bv = bv
-    is_thumb = bv.arch.name.startswith("thumb2")
-    if is_thumb or bv.arch.name.startswith("armv7"):
+    a = bv.arch.name
+    is_thumb = a.startswith("thumb2")
+    if is_thumb or a.startswith("armv7"):
       self.arch = "arm"
+    elif a == "ppc" or a == "ppc_le":
+      self.arch = "powerpc"
     else:
       assert False
     self.bits = bv.address_size * 8
@@ -271,10 +274,10 @@ class OGREEditor(QWidget):
     self.available_funcs_widget.clear()
     self.functions.clear()
     for s in self.data.get_symbols():
-      if s.auto:
-        if s.type != SymbolType.ImportedFunctionSymbol:
-          continue
-      elif s.type != SymbolType.FunctionSymbol:
+      if s.type != SymbolType.ImportedFunctionSymbol and \
+         s.type != SymbolType.FunctionSymbol:
+        continue
+      if not utils.is_valid_sym_name(s):
         continue
       f = self.data.get_function_at(s.address)
       name = f.name

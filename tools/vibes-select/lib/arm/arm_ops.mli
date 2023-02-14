@@ -40,10 +40,14 @@ val orr : opcode
 val eor : opcode
 val ldr : opcode
 val ldrh : opcode
+val ldrsh : opcode
 val ldrb : opcode
+val ldrsb : opcode
 val str : opcode
 val strh : opcode
 val strb : opcode
+val sxth : opcode
+val sxtb : opcode
 val cmp : opcode
 val b : ?cnd:cond option -> unit -> opcode
 val bl : ?cnd:cond option -> unit -> opcode

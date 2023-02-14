@@ -1,0 +1,27 @@
+{
+  "patch-point": "0x100004b0:32u",
+  "patch-size": 4,
+  "sp-align": 0,
+  "patch-vars": [
+    {
+      "name": "retvar",
+      "storage-class": [
+        "register",
+        {
+          "at-exit": "R3"
+        }
+      ]
+    },
+    {
+      "name": "temp",
+      "storage-class": [
+        "memory",
+        [
+          "frame",
+          "R1",
+          "0x4:32"
+        ]
+      ]
+    }
+  ]
+}

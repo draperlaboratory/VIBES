@@ -1,5 +1,5 @@
 (tests
- (names test_arm)
+ (names test_arm test_ppc)
  (libraries
    bap_wp
    vibes-as

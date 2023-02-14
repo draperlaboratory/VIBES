@@ -65,8 +65,7 @@ module Branch = struct
   let create (dst : Ir.Operand.t) : t = fun ~cnd ~flg ->
     let+ tmp = void_temp bit_ty in
     let c = Ops.b () ~cnd:(Some cnd) in
-    let op = Ir.Operation.create_simple c tmp [dst; flg] in
-    op, tmp
+    (c $ tmp) [dst; flg], tmp
 
 end
 
@@ -102,27 +101,23 @@ let mov (l : Ir.Operand.t) (r : pure) ~(is_thumb : bool) : eff KB.t =
         List.is_empty r.eff.data ||
         (* The optimization below should not be performed on conditional
            instructions. *)
-        is_movcc @@ List.hd_exn r.eff.data) -> begin
-      (* FIXME: absolute hack! if we have vars here, we can assume
-         that the last operation assigned to a temporary, and we can
-         just replace that temporary with the known destination, and
-         return that as the effect. *)
-      match r.eff.data with
+        is_movcc @@ List.hd_exn r.eff.data) ->
+    (* FIXME: absolute hack! if we have vars here, we can assume
+       that the last operation assigned to a temporary, and we can
+       just replace that temporary with the known destination, and
+       return that as the effect. *)
+    begin match r.eff.data with
       | [] -> assert false (* excluded by the guard above *)
       | op :: ops ->
         !!{r.eff with data = {op with lhs = [l]} :: ops}
     end
-  | Var _, Var _ ->
-    let c = Ops.mov is_thumb in
-    let mov = Ir.Operation.create_simple c l [r.value] in
-    !!(instr mov r.eff)
+  | Var _, Var _ -> !!(instr ((Ops.mov is_thumb $ l) [r.value]) r.eff)
   | Var _, Const w ->
     let c, w = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c l [Const w] in
-    !!(instr mov r.eff)
-  | Void _, Void _ when not @@ List.is_empty r.eff.data -> begin
-      (* Same hack as above, but with void operands. *)
-      match r.eff.data with
+    !!(instr ((c $ l) [Const w]) r.eff)
+  | Void _, Void _ when not @@ List.is_empty r.eff.data ->
+    (* Same hack as above, but with void operands. *)
+    begin match r.eff.data with
       | [] -> assert false
       | op :: ops -> !!{r.eff with data = {op with lhs = [l]} :: ops}
     end
@@ -156,12 +151,11 @@ let uop
   | Const w ->
     let+ tmp = var_temp word_ty in
     let c, w = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c tmp [Const w] in
-    let op = Ir.Operation.create_simple o res [tmp] in
-    {value = res; eff = instr op (instr mov arg.eff)}
-  | _ ->
-    let op = Ir.Operation.create_simple o res [arg.value] in
-    !!{value = res; eff = instr op arg.eff}
+    let eff =
+      instr ((o $ res) [tmp]) @@
+      instr ((c $ tmp) [Const w]) arg.eff in
+    {value = res; eff}
+  | _ -> !!{value = res; eff = instr ((o $ res) [arg.value]) arg.eff}
 
 let binop
     (o : Ir.opcode)
@@ -176,14 +170,13 @@ let binop
        to be 12 bits according to the manual. *)
     let+ tmp = var_temp word_ty in
     let c, w = mov_const w ~is_thumb in
-    let mov = Ir.Operation.create_simple c tmp [Const w] in
-    let op = Ir.Operation.create_simple o res [l.value; tmp] in
-    let eff = l.eff @. r.eff in
-    {value = res; eff = instr op (instr mov eff)}
+    let eff =
+      instr ((o $ res) [l.value; tmp]) @@
+      instr ((c $ tmp) [Const w]) (l.eff @. r.eff) in
+    {value = res; eff}
   | _ ->
-    let op = Ir.Operation.create_simple o res [l.value; r.value] in
-    let eff = l.eff @. r.eff in
-    !!{value = res; eff = instr op eff}
+    let eff = instr ((o $ res) [l.value; r.value]) (l.eff @. r.eff) in
+    !!{value = res; eff}
 
 let ternop
     (o : Ir.opcode)
@@ -192,9 +185,10 @@ let ternop
     (y : pure)
     (z : pure) : pure KB.t =
   let+ res = var_temp ty in
-  let op = Ir.Operation.create_simple o res [x.value; y.value; z.value] in
-  let eff = x.eff @. y.eff @. z.eff in
-  {value = res; eff = instr op eff}
+  let eff =
+    instr ((o $ res) [x.value; y.value; z.value])
+      (x.eff @. y.eff @. z.eff) in
+  {value = res; eff}
 
 let quadop
     (o : Ir.opcode)
@@ -204,10 +198,10 @@ let quadop
     (y : pure)
     (z : pure) : pure KB.t =
   let+ res = var_temp ty in
-  let ops = [w.value; x.value; y.value; z.value] in
-  let op = Ir.Operation.create_simple o res ops in
-  let eff = w.eff @. x.eff @. y.eff @. z.eff in
-  {value = res; eff = instr op eff}
+  let eff =
+    instr ((o $ res) [w.value; x.value; y.value; z.value])
+      (w.eff @. x.eff @. y.eff @. z.eff) in
+  {value = res; eff}
 
 let add (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
   binop Ops.(add is_thumb) word_ty l r ~is_thumb
@@ -233,20 +227,21 @@ let lsr_ (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
 let asr_ (l : pure) (r : pure) ~(is_thumb : bool) : pure KB.t =
   binop Ops.asr_ word_ty l r ~is_thumb
 
-let ldr_op (bits : int) : Ir.opcode KB.t =
+let ldr_op ?(signed : bool = false) (bits : int) : Ir.opcode KB.t =
   if bits = 32 then !!Ops.ldr
-  else if bits = 16 then !!Ops.ldrh
-  else if bits = 8 then !!Ops.ldrb
+  else if bits = 16 then !!(if signed then Ops.ldrsh else Ops.ldrh)
+  else if bits = 8 then !!(if signed then Ops.ldrsb else Ops.ldrb)
   else fail @@ Format.sprintf
       "ldr_op: loading a bit-width that is not \
        8, 16, or 32 (got %d)" bits
 
 let ldr
+    ?(signed : bool = false)
     (bits : int)
     (mem : pure)
     (loc : pure)
     ~(is_thumb : bool) : pure KB.t =
-  let* ldr = ldr_op bits in
+  let* ldr = ldr_op bits ~signed in
   binop ldr word_ty mem loc ~is_thumb
 
 let str_op (bits : int) : Ir.opcode KB.t =
@@ -266,17 +261,13 @@ let str
   let* str = str_op bits in
   let* res = void_temp mem_ty in
   let+ ops = match value.value with
-    | Var _ ->
-      let ops = [mem.value; value.value; loc.value] in
-      !![Ir.Operation.create_simple str res ops]
+    | Var _ -> !![(str $ res) [mem.value; value.value; loc.value]]
     | Const w ->
       let+ tmp = var_temp word_ty in
-      let ops = [mem.value; tmp; loc.value] in
       let c, w = mov_const w ~is_thumb in
-      let mov = Ir.Operation.create_simple c tmp [Const w] in
-      let op = Ir.Operation.create_simple str res ops in
-      [op; mov]
-    | _ -> fail @@ Format.asprintf
+      [(str $ res) [mem.value; tmp; loc.value]; (c $ tmp) [Const w]]
+    | _ ->
+      fail @@ Format.asprintf
         "str: unsupported `value` operand %a"
         Ir.Operand.pp value.value in
   let eff = loc.eff @. value.eff @. mem.eff in
@@ -285,25 +276,22 @@ let str
 (* Special case of the `str` instruction where the address that we are
    storing to is of the shape `base + off` (e.g. `str R0, [R1, #8]`). *)
 let str_base_off
+    (bits : int)
     (mem : pure)
     (value : pure)
     (base : var)
     (off : word)
     ~(is_thumb : bool) : pure KB.t =
+  let* str = str_op bits in
   let* res = void_temp mem_ty in
   let base = Ir.Operand.Var (Ir.Opvar.create base) in
   let off = Ir.Operand.Const off in
   let+ ops = match value.value with
-    | Var _ ->
-      let ops = [mem.value; value.value; base; off] in
-      !![Ir.Operation.create_simple Ops.str res ops]
+    | Var _ -> !![(str $ res) [mem.value; value.value; base; off]]
     | Const w ->
       let+ tmp = var_temp word_ty in
-      let ops = [mem.value; tmp; base; off] in
       let c, w = mov_const w ~is_thumb in
-      let mov = Ir.Operation.create_simple c tmp [Const w] in
-      let op = Ir.Operation.create_simple Ops.str res ops in
-      [op; mov]
+      [(str $ res) [mem.value; tmp; base; off]; (c $ tmp) [Const w]]
     | _ -> fail @@ Format.asprintf
         "str_base_off: unsupported `value` operand %a"
         Ir.Operand.pp value.value in
@@ -338,11 +326,11 @@ let binop_cmp
       | _ ->
         fail "binop_cmp: encountered a branch with non-empty \
               ctrl semantics" in
-    let cmp_ops = [l.value; r.value] in
-    let cmp = Ir.Operation.create_simple Ops.cmp tmp_flag cmp_ops in
     let+ br, value = generate ~cnd:cond ~flg:tmp_flag in
     (* Keep in mind, `value` should be discarded. *)
-    {value; eff = control br (instr cmp eff)}
+    let eff =
+      control br @@ instr ((Ops.cmp $ tmp_flag) [l.value; r.value]) eff in
+    {value; eff}
   | None ->
     (* Store the result of the comparison in an intermediate destination. *)
     let* tmp1 = temp word_ty in
@@ -366,17 +354,12 @@ let binop_cmp
        if it is false. *)
     let then_ = Ops.mov is_thumb in
     let else_ = Ops.movcc @@ Ops.Cond.opposite cond in
-    let then_ =
-      Ir.Operation.create_simple then_ (Var tmp1) [Const Word.(one 32)] in
-    let cmp =
-      let ops = [l.value; r.value; Var tmp1] in
-      Ir.Operation.create_simple Ops.cmp tmp_flag ops in
-    let else_ = Ir.Operation.create_simple else_ (Var tmp2) [
-        Const Word.(zero 32);
-        tmp_flag;
-        Var tmp1
-      ] in
-    {value = Var tmp2; eff = instr else_ (instr cmp (instr then_ eff))}
+    let ops = [
+      (else_ $ Var tmp2) [Const Word.(zero 32); tmp_flag; Var tmp1];
+      (Ops.cmp $ tmp_flag) [l.value; r.value; Var tmp1];
+      (then_ $ Var tmp1) [Const Word.(one 32)];
+    ] in
+    {value = Var tmp2; eff = List.fold_right ops ~init:eff ~f:instr}
 
 let equals
     ~(is_thumb : bool)
@@ -436,8 +419,7 @@ let goto
      the return successor of each call site, where we make each effect
      explicit. *)
   let+ tmp_branch = void_temp bit_ty in
-  let op = Ir.Operation.create_simple c tmp_branch (tgt :: call_params) in
-  control op empty_eff
+  control ((c $ tmp_branch) (tgt :: call_params)) empty_eff
 
 let sel_binop
     (o : binop)
@@ -459,47 +441,10 @@ let sel_binop
   | SLT -> !!(signed_less_than ~is_thumb ~branch)
   | SLE -> !!(signed_less_or_equal ~is_thumb ~branch)
   | XOR -> !!(xor ~is_thumb)
-  | DIVIDE | SDIVIDE | MOD | SMOD -> fail @@ Format.sprintf
+  | DIVIDE | SDIVIDE | MOD | SMOD ->
+    fail @@ Format.sprintf
       "sel_binop: unsupported operation %s"
       (Bil.string_of_binop o)
-
-let get_const (v : 'a Theory.Bitv.t Theory.value) : word option =
-  match KB.Value.get Exp.slot v with
-  | Int w -> Some w
-  | _ -> None
-
-let get_label (tid : tid) : Ir.Operand.t KB.t =
-  let+ addr = KB.collect Theory.Label.addr tid in
-  match addr with
-  | None -> Ir.Operand.Label tid
-  | Some addr ->
-    let w = Bitvec.to_int addr |> Word.of_int ~width:32 in
-    Ir.Operand.Offset w
-
-type dsts = {
-  dst : Ir.Operand.t;
-  ret : Ir.Operand.t option;
-}
-
-let get_dsts (jmp : jmp term) : dsts option KB.t =
-  let aux dst = match Jmp.resolve dst with
-    | First dst -> get_label dst >>| Option.return
-    | Second c -> KB.return @@ Option.map
-        ~f:(fun w -> Ir.Operand.Offset w) (get_const c) in
-  match Jmp.dst jmp, Jmp.alt jmp with
-  | Some dst, None ->
-    aux dst >>| begin function
-      | Some dst -> Some {dst; ret = None}
-      | None -> None
-    end
-  | Some dst, Some alt -> begin
-      aux dst >>= function
-      | None -> !!None
-      | Some ret ->  aux alt >>| function
-        | Some dst -> Some {dst; ret = Some ret}
-        | None -> None
-    end
-  | _ -> !!None
 
 let sel_unop (o : unop) ~(is_thumb : bool) : (pure -> pure KB.t) KB.t =
   match o with
@@ -523,17 +468,17 @@ let sel_unop (o : unop) ~(is_thumb : bool) : (pure -> pure KB.t) KB.t =
    things could go very wrong.
 *)
 let rec select_exp
+    ?(signed : bool = false)
     ?(branch : Branch.t option = None)
     ?(lhs : var option = None)
     (e : exp)
     ~(is_thumb : bool) : pure KB.t =
-  let exp = select_exp ~is_thumb ~branch:None ~lhs:None in
+  let exp = select_exp ~is_thumb ~branch:None ~lhs:None ~signed:false in
   let exp_binop_integer = select_exp_binop_integer ~is_thumb in
-  match e with
-  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, Int s, b)), _, size)
-    when Int.is_pow2 @@ Word.to_int_exn s ->
+  let load_lsl mem a b s size =
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let sz = Size.in_bits size in
+    let* ldr = ldr_op sz in
     let* a = exp a in
     let* b = exp b in
     let width = Word.bitwidth s in
@@ -542,16 +487,23 @@ let rec select_exp
       Word.of_int ~width @@
       Int.ctz @@
       Word.to_int_exn s in
-    quadop ldr word_ty mem a b s
+    quadop ldr word_ty mem a b s in
+  match e with
+  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, Int s, b)), _, size)
+    when Int.is_pow2 (Word.to_int_exn s) && Size.(size = `r32) ->
+    load_lsl mem a b s size
+  | Load (mem, BinOp (PLUS, a, BinOp (TIMES, b, Int s)), _, size)
+    when Int.is_pow2 (Word.to_int_exn s) && Size.(size = `r32) ->
+    load_lsl mem a b s size
   | Load (mem, BinOp (PLUS, a, Int w), _, size) ->
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     let* a = exp a in
     let w = const w in
     ternop ldr word_ty mem a w
   | Load (mem, BinOp (MINUS, a, Int w), _, size) ->
     let* mem = exp mem in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     let* a = exp a in
     let w = const (Word.neg w) in
     ternop ldr word_ty mem a w
@@ -559,28 +511,26 @@ let rec select_exp
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
     let c, w = mov_const addr ~is_thumb in
-    let op = Ir.Operation.create_simple c tmp [Const w] in
-    let a = {value = tmp; eff = instr op empty_eff} in
-    let* ldr = ldr_op @@ Size.in_bits size in
+    let a = {value = tmp; eff = instr ((c $ tmp) [Const w]) empty_eff} in
+    let* ldr = ldr_op ~signed @@ Size.in_bits size in
     ternop ldr word_ty mem a @@ const (Word.zero 32)
   | Load (mem, loc, _, size) ->
     let* mem = exp mem in
     let* loc = exp loc in
-    ldr (Size.in_bits size) mem loc ~is_thumb
-  | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , _size) ->
+    ldr (Size.in_bits size) mem loc ~is_thumb ~signed
+  | Store (mem, BinOp (PLUS, Var a, Int w), value, _ , size) ->
     let* mem = exp mem in
     let* value = exp value in
-    str_base_off mem value a w ~is_thumb
-  | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , _size) ->
+    str_base_off (Size.in_bits size) mem value a w ~is_thumb
+  | Store (mem, BinOp (MINUS, Var a, Int w), value, _ , size) ->
     let* mem = exp mem in
     let* value = exp value in
-    str_base_off mem value a Word.(-w) ~is_thumb
+    str_base_off (Size.in_bits size) mem value a Word.(-w) ~is_thumb
   | Store (mem, Int addr, value, _, size) ->
     let* mem = exp mem in
     let* tmp = var_temp word_ty in
     let c, w = mov_const addr ~is_thumb in
-    let op = Ir.Operation.create_simple c tmp [Const w] in
-    let loc = {value = tmp; eff = instr op empty_eff} in
+    let loc = {value = tmp; eff = instr ((c $ tmp) [Const w]) empty_eff} in
     let* value = exp value in
     str (Size.in_bits size) mem value loc ~is_thumb
   | Store (mem, loc, value, _, size) ->
@@ -672,7 +622,40 @@ let rec select_exp
            unknown type" Var.pp v
     end
   | Cast (UNSIGNED, _, e) -> select_exp e ~is_thumb ~branch ~lhs
-  | Cast (SIGNED, _, _) -> fail @@ "select_exp: SIGNED cast is unsupported"
+  | Cast (SIGNED, 32, (Load _ as l)) ->
+    select_exp l ~is_thumb ~branch ~lhs ~signed:true
+  | Cast (SIGNED, 16, (Load _ as l)) ->
+    let* x = select_exp l ~is_thumb ~branch ~lhs ~signed:true in
+    let+ res = var_temp word_ty in
+    let mask = Ir.Operand.Const (Word.of_int ~width:32 0xFFFF) in
+    {value = res; eff = instr ((Ops.and_ $ res) [x.value; mask]) x.eff}
+  | Cast (SIGNED, 32, e) ->
+    let* o = match Type.infer e with
+      | Error e ->
+        fail @@ Format.asprintf
+          "select_exp: Type.infer failed: %a"
+          Type.Error.pp e
+      | Ok (Imm 8) -> !!Ops.sxtb
+      | Ok (Imm 16) -> !!Ops.sxth
+      | Ok t ->
+        fail @@ Format.asprintf
+          "select_exp: bad type %a for sign extension"
+          Type.pp t in
+    let* x = exp e in
+    let+ res = var_temp word_ty in
+    {value = res; eff = instr ((o $ res) [x.value]) x.eff}
+  | Cast (SIGNED, 16, e) ->
+    let* x = exp e in
+    let* tmp = var_temp word_ty in
+    let+ res = var_temp word_ty in
+    let mask = Ir.Operand.Const (Word.of_int ~width:32 0xFFFF) in
+    let eff =
+      instr ((Ops.and_ $ res) [tmp; mask]) @@
+      instr ((Ops.sxth $ tmp) [x.value]) x.eff in
+    {value = res; eff}
+  | Cast (SIGNED, bits, _) ->
+    fail @@ Format.asprintf
+      "select_exp: unsupported size %d for SIGNED cast" bits
   | Cast (LOW, _, _) -> fail @@ "select_exp: LOW Cast is unsupported"
   | Cast (HIGH, _, _) -> fail @@ "select_exp: HIGH cast is unsupported"
   | Int w -> !!(const w)
@@ -699,8 +682,7 @@ and select_exp_binop_integer
   let* o = sel_binop o ~is_thumb ~branch:None in
   let* tmp = var_temp word_ty in
   let c = Ops.mov is_thumb in
-  let op = Ir.Operation.create_simple c tmp [Const lhs] in
-  let lhs = {value = tmp; eff = instr op empty_eff} in
+  let lhs = {value = tmp; eff = instr ((c $ tmp) [Const lhs]) empty_eff} in
   if swap then o rhs lhs else o lhs rhs
 
 and select_def
@@ -729,9 +711,9 @@ and select_jmp
   let exp = select_exp ~is_thumb in
   let cond = Jmp.cond jmp in
   let is_call = Helpers.is_call jmp in
-  get_dsts jmp >>= function
+  Utils.get_dsts jmp >>= function
   | None -> fail @@ Format.asprintf "Unexpected branch: %a" Jmp.pp jmp
-  | Some {dst; ret} ->
+  | Some {Utils.dst; ret} ->
     let* eff = match cond with
       | Int w when Word.(w <> b0) ->
         (* Unconditional branch. If cond is zero, this should

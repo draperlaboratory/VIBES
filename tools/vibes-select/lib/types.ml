@@ -49,6 +49,9 @@ module Sel = struct
   let control (i : Operation.t) (eff : eff) : eff =
     {eff with ctrl = i :: eff.ctrl}
 
+  let ($) (o : opcode) (lhs : Operand.t) (ops : Operand.t list) =
+    Operation.create_simple o lhs ops
+  
 end
 
 module Preassign = struct

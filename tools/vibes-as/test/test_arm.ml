@@ -12,15 +12,13 @@
 
 open Core
 open Bap.Std
-open Bap_core_theory
 open OUnit2
 
-open KB.Syntax
-
 module Ir = Vibes_ir.Types
-module Asm = Vibes_as.Types.Assembly
 module Selector = Vibes_select.Arm_selector
-module Patch_info = Vibes_patch_info.Types
+
+open Helpers
+open Progs
 
 let dummy_reg_alloc (t : Ir.t) : Ir.t = Ir.map_opvars t ~f:(fun v ->
     match v.preassign with
@@ -29,293 +27,11 @@ let dummy_reg_alloc (t : Ir.t) : Ir.t = Ir.map_opvars t ~f:(fun v ->
       let var = List.hd_exn v.temps in
       {v with preassign = Some (Var.create "R0" (Var.typ var))})
 
-let compare_result
-    (expected : string list option)
-    (input : string list option) : bool =
-  let rexpected = Option.map expected ~f:(List.map ~f:Str.regexp) in
-  match input, rexpected with
-  | None, _ | _ , None -> false
-  | Some input, Some expected ->
-    match List.zip expected input with
-    | Unequal_lengths -> false
-    | Ok pairs ->
-      List.map pairs ~f:(fun (pat, str) ->
-          Str.string_match pat str 0) |>
-      List.for_all ~f:Fn.id
-
-let print_opt_str_list : string list option -> string = function
-  | Some l -> List.to_string l ~f:Fn.id
-  | None -> "None"
-
-let dummy_patch_info : Patch_info.t = {
-  patch_point = Word.of_string "0x1234:32";
-  patch_size = 0L;
-  sp_align = 0;
-  patch_vars = [];
-}
-
-let test_ir
-    (_ : test_ctxt)
-    (sub : unit -> sub term)
-    (expected : string list) : unit =
-  let state = Toplevel.current () in
-  Toplevel.reset ();
-  let result = Toplevel.var "select-arm" in
-  let sub = sub () in
-  Toplevel.put result begin
-    let target = Theory.Target.of_string "bap:armv7+le" in
-    let language = Theory.Language.of_string "bap:llvm-armv7" in
-    let+ ir = Selector.select sub ~is_thumb:false in
-    let ir = dummy_reg_alloc ir in
-    let printer = match Vibes_as.Utils.asm_printer target language with
-      | Ok p -> p
-      | Error e ->
-        failwith @@
-        Format.asprintf "Failed to get ASM printer: %a" KB.Conflict.pp e in
-    printer ir dummy_patch_info |> Result.ok |> Option.map ~f:(fun asm ->
-        Asm.blocks asm |> List.concat_map ~f:(fun blk ->
-            (Asm.label blk ^ ":") :: Asm.insns blk))
-  end;
-  let result = Toplevel.get result in
-  Toplevel.set state;
-  assert_equal (Some expected) result
-    ~cmp:compare_result
-    ~printer:print_opt_str_list
-
-let v1 : var = Var.create "v1" (Imm 32)
-let v2 : var = Var.create "v2" (Imm 32)
-let v3 : var = Var.create "v3" (Imm 32)
-let v : var = Var.create "v" (Imm 1)
-let func () : tid = Tid.for_name "some_function"
-let mem : var = Var.create "mem" (Mem (`r32, `r8))
-let (!!) (i : int) : exp = Bil.int (Word.of_int ~width:32 i)
-
-let add_goto (sub : sub term) (tgt : tid) : sub term =
-  Term.map blk_t sub ~f:(fun blk ->
-      let blk = Blk.Builder.init blk in
-      Blk.Builder.add_jmp blk @@ Jmp.create @@ Goto (Label.direct tgt);
-      Blk.Builder.result blk)
-
-let add_call (sub : sub term) (tgt : tid) : sub term =
-  Term.map blk_t sub ~f:(fun blk ->
-      let return_blk = Blk.Builder.create () |> Blk.Builder.result in
-      let blk = Blk.Builder.init blk in
-      let call = Call.create ()
-          ~return:(Label.direct @@ Term.tid return_blk)
-          ~target:(Label.direct tgt) in
-      Blk.Builder.add_jmp blk @@ Jmp.create @@ Call call;
-      Blk.Builder.result blk)
-
-module Prog1 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 + var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog2 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 + (var v3 + var v1)] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog3 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 lsl var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog4 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 lsr var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog5 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 land var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog6 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 lor var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog9 = struct
-
-  let prog () : sub term =
-    let tgt = Bap.Std.Tid.for_name "tgt" in
-    let bil = [] in
-    let prog = Bap_wp.Bil_to_bir.bil_to_sub bil in
-    add_goto prog tgt
-
-end
-
-module Prog10 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[mem := store ~mem:(var mem) ~addr:(var v1) (var v2) BigEndian `r32] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog11 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v2 := load ~mem:(var mem) ~addr:(var v1) BigEndian `r32] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog12 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[if_ (var v) [v1 := !!3] [v1 := !!4]] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog13 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v2 := load ~mem:(var mem) ~addr:(var v1) BigEndian `r16] in
-    let res = Bap_wp.Bil_to_bir.bil_to_sub bil in
-    res
-
-end
-
-module Prog14 = struct
-
-  let prog () =
-    let bil = [] in
-    let prog = Bap_wp.Bil_to_bir.bil_to_sub bil in
-    add_call prog @@ func ()
-
-end
-
-module Prog15 = struct
-
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 + !!42] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog16 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog17 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := !!5000] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog18 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[if_ (var v <> !!0) [v1 := !!3] [v1 := !!4]] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog19 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[mem := store ~mem:(var mem) ~addr:(var v1 + !!8) (var v2) BigEndian `r32] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog20 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 * !!5] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog21 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := var v2 * !!8] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog22 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := !!0x1FFFF] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog23 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := lnot @@ var v2; v2 := unop neg @@ var v3] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog24 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[
-        v1 := !!1 lsl !!3;
-        v2 := !!1 lsl var v1;
-        v3 := var v2 lor !!6;
-      ] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog25 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[if_ (var v1 > !!42) [v1 := !!3] [v1 := !!4]] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog26 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[if_ (lnot (var v)) [v1 := !!3] [v1 := !!4]] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-module Prog27 = struct
-
-  let prog () : sub term =
-    let bil = Bil.[v1 := !!(-1)] in
-    Bap_wp.Bil_to_bir.bil_to_sub bil
-
-end
-
-let blk_pat : string = "blk\\([0-9]\\|[a-f]\\)*"
+let test_ir = test_ir
+    ~tgt:"bap:armv7+le"
+    ~lang:"bap:llvm-armv7"
+    ~select:(Selector.select ~is_thumb:false)
+    ~dummy_reg_alloc
 
 let test_ir1 (ctxt : test_ctxt) : unit = test_ir ctxt Prog1.prog [
     blk_pat ^ ":";
@@ -393,10 +109,10 @@ let test_ir15 (ctxt : test_ctxt) : unit = test_ir ctxt Prog15.prog [
     "add R0, R0, #42";
   ]
 
-let test_ir16 (ctxt : test_ctxt) : unit = test_ir ctxt Prog16.prog
-    [blk_pat ^ ":";
-     "mov R0, R0";
-    ]
+let test_ir16 (ctxt : test_ctxt) : unit = test_ir ctxt Prog16.prog [
+    blk_pat ^ ":";
+    "mov R0, R0";
+  ]
 
 let test_ir17 (ctxt : test_ctxt) : unit = test_ir ctxt Prog17.prog [
     blk_pat ^ ":";
@@ -435,7 +151,7 @@ let test_ir21 (ctxt : test_ctxt) : unit = test_ir ctxt Prog21.prog [
 
 let test_ir22 (ctxt : test_ctxt) : unit = test_ir ctxt Prog22.prog [
     blk_pat ^ ":";
-    "ldr R0, =131071";
+    "ldr R0, =393215";
   ]
 
 let test_ir23 (ctxt : test_ctxt) : unit = test_ir ctxt Prog23.prog [
@@ -486,6 +202,42 @@ let test_ir27 (ctxt : test_ctxt) : unit = test_ir ctxt Prog27.prog [
     "mvn R0, #0";
   ]
 
+let test_ir28 (ctxt : test_ctxt) : unit = test_ir ctxt Prog28.prog [
+    blk_pat ^ ":";
+    "movw R0, #4660";
+    "ldrb R0, \\[R0, #0\\]"
+  ]
+
+let test_ir29 (ctxt : test_ctxt) : unit = test_ir ctxt Prog29.prog [
+    blk_pat ^ ":";
+    "movw R0, #4660";
+    "mov R0, #5";
+    "strb R0, \\[R0\\]"
+  ]
+
+let test_ir30 (ctxt : test_ctxt) : unit = test_ir ctxt Prog30.prog [
+    blk_pat ^ ":";
+    "mov R0, #1";
+    "cmp R0, #42";
+    "movlo R0, #0";
+    "mov R0, R0";
+  ]
+
+let test_ir31 (ctxt : test_ctxt) : unit = test_ir ctxt Prog31.prog [
+    blk_pat ^ ":";
+    "ldrsb R0, \\[R0, #8\\]";
+  ]
+
+let test_ir32 (ctxt : test_ctxt) : unit = test_ir ctxt Prog32.prog [
+    blk_pat ^ ":";
+    "ldrsh R0, \\[R0, #8\\]";
+  ]
+
+let test_ir33 (ctxt : test_ctxt) : unit = test_ir ctxt Prog33.prog [
+    blk_pat ^ ":";
+    "ldr R0, \\[R0, R0, lsl #2\\]";
+  ]
+
 let suite : test = "Test ARM selector" >::: [
     "Test ARM 1" >:: test_ir1;
     "Test ARM 2" >:: test_ir2;
@@ -512,6 +264,12 @@ let suite : test = "Test ARM selector" >::: [
     "Test ARM 25" >:: test_ir25;
     "Test ARM 26" >:: test_ir26;
     "Test ARM 27" >:: test_ir27;
+    "Test ARM 28" >:: test_ir28;
+    "Test ARM 29" >:: test_ir29;
+    "Test ARM 30" >:: test_ir30;
+    "Test ARM 31" >:: test_ir31;
+    "Test ARM 32" >:: test_ir32;
+    "Test ARM 33" >:: test_ir33;
   ]
 
 let () = match Bap_main.init () with
