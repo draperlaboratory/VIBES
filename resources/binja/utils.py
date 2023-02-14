@@ -8,6 +8,8 @@
 
 import sys
 
+from binaryninja import *
+
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
@@ -23,6 +25,8 @@ def frame_range(bv):
     return -255, 4095
   elif a == "armv7" or a == "armv7eb":
     return -4095, 4095
+  elif a == "ppc" or a == "ppc_le":
+    return -32768, 32767
   else:
     assert False
 
@@ -38,6 +42,17 @@ ARMv7_REGS = [
   "R12"
 ]
 
+PPC_REGS = [
+  "R0", "R2", "R3",
+  "R4", "R5", "R6", "R7",
+  "R8", "R9", "R10", "R11",
+  "R12", "R13", "R14", "R15",
+  "R16", "R17", "R18", "R19",
+  "R20", "R21", "R22", "R23",
+  "R24", "R25", "R26", "R27",
+  "R28", "R29", "R30", "R31",
+]
+
 def available_regs(bv, include_sp=False):
   a = bv.arch.name
   if a == "thumb2" or a == "thumb2eb":
@@ -49,6 +64,11 @@ def available_regs(bv, include_sp=False):
     l = ARMv7_REGS.copy()
     if include_sp:
       l.append("SP")
+    return l
+  elif a == "ppc" or a == "ppc_le":
+    l = PPC_REGS.copy()
+    if include_sp:
+      l.insert(1, "R1")
     return l
   else:
     assert False
@@ -81,3 +101,20 @@ def rodata_of_func(bv, f):
         name = d.name
       result[r] = (size, off, name)
   return result
+
+def is_valid_sym_name(s):
+  def not_auto(s, pre):
+    if s.name:
+      if s.auto and s.name.startswith(pre):
+        return False
+      else:
+        return True
+    else:
+      return False
+  if s.type != SymbolType.ImportedFunctionSymbol:
+    if s.type == SymbolType.FunctionSymbol:
+      return not_auto(s, "sub_") and not_auto(s, "j_sub_")
+    elif s.type != SymbolType.DataSymbol:
+      return not_auto(s, "data_")
+  else:
+    return True
