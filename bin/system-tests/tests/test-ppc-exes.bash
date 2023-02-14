@@ -82,6 +82,27 @@ test_ppc_patch_call () {
     run_ppc_exe "${TEST_PATCH_EXE}" 3
 }
 
+test_ppc_struct_ref () {
+    local TEST_DIR="${EXES_DIR}/ppc-struct-ref"
+    local MAIN_EXE="${TEST_DIR}/main.reference"
+    local PATCH_EXE="${TEST_DIR}/main.patched.reference"
+    local TEST_PATCH_EXE="${TEST_DIR}/main.patched"
+
+    print_header "Checking ${TEST_DIR}"
+
+    run_make "make clean -C ${TEST_DIR}" 0
+
+    # Check the precompiled executables.
+    run_make "make main -C ${TEST_DIR}" 0
+    run_make "make main.patched.reference -C ${TEST_DIR}" 0
+    run_ppc_exe "${MAIN_EXE}" 5
+    run_ppc_exe "${PATCH_EXE}" 3
+
+    # Check that vibes patches correctly.
+    run_make "make main.patched -C ${TEST_DIR}" 0
+    run_ppc_exe "${TEST_PATCH_EXE}" 3
+}
+
 # Run one test
 run_test() {
     local FOLDERNAME=$1
@@ -112,4 +133,5 @@ run_all () {
     test_ppc_subst_stack
     test_ppc_null_check
     test_ppc_patch_call
+    test_ppc_struct_ref
 }
