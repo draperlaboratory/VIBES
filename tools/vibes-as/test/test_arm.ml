@@ -151,7 +151,7 @@ let test_ir21 (ctxt : test_ctxt) : unit = test_ir ctxt Prog21.prog [
 
 let test_ir22 (ctxt : test_ctxt) : unit = test_ir ctxt Prog22.prog [
     blk_pat ^ ":";
-    "ldr R0, =131071";
+    "ldr R0, =393215";
   ]
 
 let test_ir23 (ctxt : test_ctxt) : unit = test_ir ctxt Prog23.prog [

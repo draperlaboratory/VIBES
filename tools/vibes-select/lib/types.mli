@@ -51,6 +51,9 @@ module Sel : sig
   (** Appends a control effect. *)
   val control : Operation.t -> eff -> eff
 
+  (** Creates a simple operation. *)
+  val ($) : opcode -> Operand.t -> Operand.t list -> Operation.t
+  
 end
 
 (** Helpers for preassigning temporaries to registers. *)

@@ -150,7 +150,7 @@ let test_ir21 (ctxt : test_ctxt) : unit = test_ir ctxt Prog21.prog [
 
 let test_ir22 (ctxt : test_ctxt) : unit = test_ir ctxt Prog22.prog [
     blk_pat ^ ":";
-    "lis 3, 1";
+    "lis 3, 5";
     "ori 3, 3, 65535";
   ]
 
