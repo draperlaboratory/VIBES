@@ -114,7 +114,7 @@ def is_valid_sym_name(s):
   if s.type != SymbolType.ImportedFunctionSymbol:
     if s.type == SymbolType.FunctionSymbol:
       return not_auto(s, "sub_") and not_auto(s, "j_sub_")
-    elif s.type != SymbolType.DataSymbol:
+    elif s.type == SymbolType.DataSymbol:
       return not_auto(s, "data_")
   else:
     return True
