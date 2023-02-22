@@ -299,8 +299,9 @@ module Params = struct
           | "R7" when thumb ->
             (* R7 in Thumb mode is usually referring to the frame pointer. *)
             false
-          | "R0" | "R31" when ppc ->
+          | "R0" | "R13" | "R31" when ppc ->
             (* R0 in some special cases refers to the literal value 0.
+               R13 is generally used as the small area data pointer.
                R31 is generally used as the frame pointer. *)
             false
           | _ -> true) in
