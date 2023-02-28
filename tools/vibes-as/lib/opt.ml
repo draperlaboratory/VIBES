@@ -39,6 +39,16 @@ let rec interleave_pairs = function
   | x :: y :: rest -> (x, y) :: interleave_pairs (y :: rest)
   | [] | [_] -> []
 
+let successor_map (ir : t) : Tid.Set.t Tid.Map.t =
+  List.fold ir.blks ~init:Tid.Map.empty ~f:(fun init blk ->
+      List.fold blk.ctrl ~init ~f:(fun acc o ->
+          Operation.operands o |> List.find_map ~f:(function
+              | Operand.Label l -> Some l | _ -> None) |>
+          Option.value_map ~default:acc ~f:(fun tid ->
+              Map.update acc blk.tid ~f:(function
+                  | None -> Tid.Set.singleton tid
+                  | Some s -> Set.add s tid))))
+
 (* Try to replace direct, unconditional jumps with fallthroughs where
    possible. *)
 let create_implicit_fallthroughs
@@ -65,18 +75,77 @@ let create_implicit_fallthroughs
             Block.{blk with ctrl = List.drop_last_exn blk.ctrl}
           | _ -> blk)
 
+let congruent (ir : t) (l : Opvar.t) (r : Opvar.t) : bool =
+  match Map.find ir.congruences @@ List.hd_exn l.temps with
+  | Some s -> Set.mem s @@ List.hd_exn r.temps
+  | None -> false
+
+let all_outs (ir : t) : Int.Set.t =
+  List.fold ir.blks ~init:Int.Set.empty ~f:(fun acc blk ->
+      Set.add acc @@ Operation.id @@ Block.outs blk)
+
+let operations_map (ir : t) : Operation.t Int.Map.t =
+  List.fold ir.blks ~init:Int.Map.empty ~f:(fun init blk ->
+      Block.all_operations blk |> List.fold ~init ~f:(fun acc o ->
+          Map.set acc ~key:(Operation.id o) ~data:o))
+
+(* Search for a user of the opvar that is a simple move. Since users
+   and definers are limited to the scope of one block, we traverse
+   the CFG using the "out" operations of each block, finding their
+   correspoinding "in" operations in the successors. *)
+let rec consumers
+    (tid : tid)
+    (v : Opvar.t)
+    ~(ir : t)
+    ~(users : Opvar.t list Var.Map.t)
+    ~(ops : Operation.t Int.Map.t)
+    ~(bins : id Tid.Map.t)
+    ~(succs : Tid.Set.t Tid.Map.t)
+    ~(outs : Int.Set.t)
+    ~(oo : Operation.t Int.Map.t)
+    ~(is_move : Operation.t -> bool) : Operation.t list =
+  let next = consumers ~ir ~users ~ops ~bins ~succs ~outs ~oo ~is_move in
+  match Map.find oo v.id with
+  | Some u when is_move u -> [u]
+  | Some u ->
+    (* Check if the consumer is in an out pseudo-operation. If so, then
+       we can follow the data flow to the next consumer. *)
+    let id = Operation.id u in
+    if Set.mem outs id then match Map.find succs tid with
+      | None -> []
+      | Some s ->
+        Set.to_list s |> List.filter_map ~f:(fun tid ->
+            let open Option.Monad_infix in
+            Map.find bins tid >>=
+            Map.find ops >>= fun o ->
+            Operation.lhs o |>
+            List.find_map ~f:(function
+                | Operand.Var u when congruent ir v u ->
+                  Some (tid, List.hd_exn u.temps)
+                | _ -> None)) |>
+        (* For each of the successors, find exactly one user. *)
+        List.concat_map ~f:(fun (tid, t) -> match Map.find users t with
+            | Some [v] -> next tid v
+            | Some _ | None -> [])
+    else []
+  | None -> []
+
 (* This is a bit of a hack since register coalescing is a hit-or-miss. *)
 let remove_redundant_moves
     (ir : t)
+    ~(succs : Tid.Set.t Tid.Map.t)
     ~(is_move : Operation.t -> bool) : t =
+  let users = users_map ir in
+  let oo = operand_to_operation ir in
+  let bins = block_to_ins ir in
+  let outs = all_outs ir in
+  let ops = operations_map ir in
+  let consumers = consumers ~ir ~users ~ops ~bins ~succs ~outs ~oo ~is_move in
   (* Keep this intra-block for now. *)
-  map_blks ir ~f:(fun blk ->
-      let users = Block.users_map blk in
-      let oo = Block.operand_to_operation blk in
-      let remove =
+  let remove =
+    List.fold ir.blks ~init:Int.Set.empty ~f:(fun init blk ->
         List.filter blk.data ~f:is_move |>
-        List.fold ~init:Int.Set.empty ~f:(fun acc (o : Operation.t) ->
-            (* Already removed? *)
+        List.fold ~init ~f:(fun acc (o : Operation.t) ->
             if not @@ Set.mem acc o.id then
               (* This shouldn't fail if `is_move` is defined correctly. *)
               match List.hd_exn o.lhs, List.hd_exn o.operands with
@@ -85,8 +154,9 @@ let remove_redundant_moves
                   match Map.find users @@ List.hd_exn l.temps with
                   | Some [v] -> begin
                       (* Is it also a move operation? *)
-                      match Map.find oo v.id with
-                      | Some u when is_move u -> begin
+                      match consumers blk.tid v with
+                      | [] -> acc
+                      | moves -> List.fold moves ~init:acc ~f:(fun acc u ->
                           match List.hd_exn u.lhs with
                           | Var l -> begin
                               (* Check if we had a pattern of `l -> r -> l`,
@@ -96,14 +166,13 @@ let remove_redundant_moves
                                 Set.add (Set.add acc o.id) u.id
                               | _ -> acc
                             end
-                          | _ -> acc
-                        end
-                      | Some _ | None -> acc
+                          | _ -> acc)
                     end
                   | Some _ | None -> acc
                 end
               | _ -> acc
-            else acc) in
+            else acc)) in
+  map_blks ir ~f:(fun blk ->
       let data = List.filter blk.data ~f:(fun o ->
           not @@ Set.mem remove o.id) in
       {blk with data})
@@ -113,8 +182,9 @@ let peephole
     ~(is_nop : Operation.t -> bool)
     ~(unconditional_branch_target : Operation.t -> tid option)
     ~(is_move : Operation.t -> bool) : t =
+  let succs = successor_map ir in
   let ir = map_blks ir ~f:(filter_nops ~is_nop) in
   let ir = create_implicit_fallthroughs ir ~unconditional_branch_target in
-  let ir = remove_redundant_moves ir ~is_move in
+  let ir = remove_redundant_moves ir ~succs ~is_move in
   let ir = filter_empty_blocks ir in
   ir
