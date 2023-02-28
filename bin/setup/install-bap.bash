@@ -60,7 +60,7 @@ if [ "${?}" -ne "0" ]; then
 	report "Halting."
 	exit 1
     fi
-    opam depext --install -y bap 1>&2
+    opam depext --install -y bap bap-elf 1>&2
     if [ "${?}" -ne "0" ]; then
         report "Failed to install BAP."
 	report "Halting."

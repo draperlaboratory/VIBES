@@ -1,4 +1,4 @@
-core
+core>=v0.15.1
 core_unix
 ounit2
 ppx_yojson_conv
