@@ -574,18 +574,21 @@ module Cond : S = struct
       end
     | _ -> !!None
 
-  let rec loop (sub : sub term) : sub term KB.t =
+  let rec loop
+      ?(excluded : Tid.Set.t = Tid.Set.empty)
+      (sub : sub term) : sub term KB.t =
     let cfg = Sub.to_graph sub in
     let doms = Graphlib.dominators (module G) cfg G.start in
     Term.enum blk_t sub |>
+    Seq.filter ~f:(fun blk -> not @@ Set.mem excluded @@ Term.tid blk) |>
     KB.Seq.find_map ~f:(find_candidate cfg doms sub) >>= function
     | None -> !!sub
     | Some (v, tid, k1, k2) ->
       match Seq.to_list @@ G.Node.preds tid cfg with
       | [t1; t2] ->
         begin transform cfg doms v t1 t2 k1 k2 tid sub >>= function
-          | None -> !!sub
-          | Some sub -> loop sub
+          | None -> loop sub ~excluded:(Set.add excluded tid)
+          | Some sub -> loop sub ~excluded
         end
       | _ -> failwith "Expected two predecessors"
 
