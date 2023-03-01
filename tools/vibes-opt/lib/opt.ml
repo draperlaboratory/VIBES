@@ -436,9 +436,8 @@ module Contract : S = struct
 
 end
 
-(* Simplify the propagation of condition variables in the presence of
-   short-circuiting. *)
-module Cond : S = struct
+(* Simplify short-circuiting conditionals. *)
+module Short_circ_cond : S = struct
 
   let last_def_of (blk : blk term) (v : var) : def term option =
     Term.enum def_t blk ~rev:true |> Seq.find ~f:(fun def ->
@@ -491,6 +490,8 @@ module Cond : S = struct
     let b2 = Term.(append jmp_t (update jmp_t b2 j21) j22) in
     Term.(remove blk_t (update blk_t (update blk_t sub b1) b2) tid_)
 
+  (* Check for canonical forms (i.e. a short-circuiting && or ||) and then
+     simplify the corresponding blocks. *)
   let transform
       (cfg : G.t)
       (doms : tid tree)
@@ -504,20 +505,24 @@ module Cond : S = struct
     let b1 = Term.find_exn blk_t sub t1 in
     let b2 = Term.find_exn blk_t sub t2 in
     guard (Blk.defines_var b1 v && Blk.defines_var b2 v) @@ fun () ->
+    (* We expect that the CFG is structured in such a way that one
+       block A has two outgoing edges (to B and C), and the other
+       block B has only one outgoing edge (to C). *)
     let s1 = G.Node.degree t1 cfg ~dir:`Out in
-    let s2 = G.Node.degree t1 cfg ~dir:`Out in
-    guard ((s1 <> 2 && s2 <> 2) || (s1 = 2 && s2 = 2)) @@ fun () ->
+    let s2 = G.Node.degree t2 cfg ~dir:`Out in
+    guard ((s1 = 2 && s2 = 1) || (s1 = 1 && s2 = 2)) @@ fun () ->
     let dom12 = Tree.is_descendant_of doms ~parent:t1 t2 in
     let dom21 = Tree.is_descendant_of doms ~parent:t2 t1 in
     guard (dom12 || dom21) @@ fun () ->
+    (* Get the correct order based on the dominance relation. *)
     let b1, b2, _t1, t2 = if dom12 then b1, b2, t1, t2 else b2, b1, t2, t1 in
     let d1 = Option.value_exn (last_def_of b1 v) in
     let d2 = Option.value_exn (last_def_of b2 v) in
     let j11 = Seq.hd_exn @@ Term.enum jmp_t b1 in
     let j12 = Seq.nth_exn (Term.enum jmp_t b1) 1 in
+    (* Checking canonical form for the condition again. *)
     match Jmp.cond j11 with
-    | BinOp (NEQ, Var w, Int i) ->
-      guard (Var.same v w && Word.is_zero i) @@ fun () ->
+    | BinOp (NEQ, Var w, Int i) when Var.same v w && Word.is_zero i ->
       begin match Jmp.kind j11, Jmp.kind j12 with
         | Goto (Direct t), Goto (Direct f) ->
           let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
@@ -537,6 +542,8 @@ module Cond : S = struct
       end
     | _ -> !!None
 
+  (* Is the var `v` used in any of the blocks dominated by the block
+     at `tid`? *)
   let used_after
       (sub : sub term)
       (v : var)
@@ -547,6 +554,9 @@ module Cond : S = struct
         | Some blk -> Blk.uses_var blk v
         | None -> false)
 
+  (* Find the actual guarding edge in the CFG. This block should
+     have exactly two predecessors and two successors, with no
+     def terms. *)
   let find_candidate
       (cfg : G.t)
       (doms : tid tree)
@@ -561,6 +571,8 @@ module Cond : S = struct
     | [j1; j2] ->
       begin match Jmp.kind j1, Jmp.kind j2 with
         | Goto (Direct t1), Goto (Direct t2) ->
+          (* We assume that this is the canonical form for testing
+             the truthiness of the short-circuiting condition. *)
           begin match Jmp.cond j1 with
             | BinOp (NEQ, Var v, Int w)
               when Var.is_virtual v
@@ -611,7 +623,7 @@ let () =
   register (module Builtin);
   register (module Merge);
   register (module Contract);
-  register (module Cond);
+  register (module Short_circ_cond);
   register (module Builtin)
 
 let apply hvars sub (module O : S) = O.go hvars sub
