@@ -436,9 +436,166 @@ module Contract : S = struct
 
 end
 
+(* Simplify the propagation of condition variables in the presence of
+   short-circuiting. *)
+module Cond : S = struct
+
+  let last_def_of (blk : blk term) (v : var) : def term option =
+    Term.enum def_t blk ~rev:true |> Seq.find ~f:(fun def ->
+        Var.same v @@ Def.lhs def)
+
+  let guard (cnd : bool) (f : unit -> 'a option KB.t) : 'a option KB.t =
+    if cnd then f () else !!None
+
+  let transform_and
+      (j11 : jmp term)
+      (j12 : jmp term)
+      (d1 : def term)
+      (k2 : tid) : jmp term * jmp term =
+    let j11 = Jmp.with_cond j11 @@ Def.rhs d1 in
+    let j12 = Jmp.with_kind j12 @@ Goto (Direct k2) in
+    j11, j12
+
+  let transform_or
+      (j11 : jmp term)
+      (j12 : jmp term)
+      (d1 : def term)
+      (k1 : tid) : jmp term * jmp term =
+    let j11 = Jmp.with_cond
+        (Jmp.with_kind j11 @@ Goto (Direct k1))
+        (Def.rhs d1) in
+    j11, j12
+
+  let transform_snd
+      (j21 : jmp term)
+      (d2 : def term)
+      (k1 : tid)
+      (k2 : tid) : (jmp term * jmp term) KB.t =
+    let j21 = Jmp.with_cond
+        (Jmp.with_kind j21 @@ Goto (Direct k1))
+        (Def.rhs d2) in
+    let+ tid = Theory.Label.fresh in
+    let j22 = Jmp.create_goto ~tid @@ Direct k2 in
+    j21, j22
+
+  let transform
+      (cfg : G.t)
+      (doms : tid tree)
+      (v : var)
+      (t1 : tid)
+      (t2 : tid)
+      (k1 : tid)
+      (k2 : tid)
+      (tid : tid)
+      (sub : sub term) : sub term option KB.t =
+    let b1 = Term.find_exn blk_t sub t1 in
+    let b2 = Term.find_exn blk_t sub t2 in
+    guard (Blk.defines_var b1 v && Blk.defines_var b2 v) @@ fun () ->
+    let s1 = G.Node.degree t1 cfg ~dir:`Out in
+    let s2 = G.Node.degree t1 cfg ~dir:`Out in
+    guard ((s1 <> 2 && s2 <> 2) || (s1 = 2 && s2 = 2)) @@ fun () ->
+    let b1, b2, _t1, t2 =
+      if Tree.is_descendant_of doms ~parent:t1 t2
+      then b1, b2, t1, t2 else b2, b1, t2, t1 in
+    let d1 = Option.value_exn (last_def_of b1 v) in
+    let d2 = Option.value_exn (last_def_of b2 v) in
+    let j11 = Seq.hd_exn @@ Term.enum jmp_t b1 in
+    let j12 = Seq.nth_exn (Term.enum jmp_t b1) 1 in
+    match Jmp.cond j11 with
+    | BinOp (NEQ, Var w, Int i) ->
+      guard (Var.same v w && Word.is_zero i) @@ fun () ->
+      begin match Jmp.kind j11, Jmp.kind j12 with
+        | Goto (Direct t), Goto (Direct f) ->
+          let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
+          begin match Jmp.kind j21 with
+            | Goto (Direct c) ->
+              let and_ = Tid.equal t t2 && Tid.equal f tid in
+              let or_ = Tid.equal t tid && Tid.equal f t2 in
+              guard (Tid.equal c tid && (or_ || and_)) @@ fun () ->
+              let j11, j12 =
+                if and_ then transform_and j11 j12 d1 k2
+                else transform_or j11 j12 d1 k1 in
+              let+ j21, j22 = transform_snd j21 d2 k1 k2 in
+              let b1 =
+                Term.update jmp_t
+                  (Term.update jmp_t b1 j11)
+                  j12 in
+              let b2 =
+                Term.append jmp_t
+                  (Term.update jmp_t b2 j21)
+                  j22 in
+              Term.remove blk_t
+                (Term.update blk_t
+                   (Term.update blk_t sub b1)
+                   b2)
+                tid |> Option.return
+            | _ -> !!None
+          end
+        | _ -> !!None
+      end
+    | _ -> !!None
+
+  let used_after
+      (sub : sub term)
+      (v : var)
+      (tid : tid)
+      (doms : tid tree) : bool =
+    Tree.descendants doms tid |> Seq.exists ~f:(fun t ->
+        Term.find blk_t sub t |> function
+        | Some blk -> Blk.uses_var blk v
+        | None -> false)
+
+  let find_candidate
+      (cfg : G.t)
+      (doms : tid tree)
+      (sub : sub term)
+      (blk : blk term) : (var * tid * tid * tid) option KB.t =
+    let tid = Term.tid blk in
+    guard begin
+      Term.length def_t blk = 0
+      && G.Node.degree tid cfg ~dir:`In = 2
+      && G.Node.degree tid cfg ~dir:`Out = 2
+    end @@ fun () ->
+    Seq.take (Term.enum jmp_t blk) 2 |>
+    Seq.to_list |> function
+    | [j1; j2] ->
+      begin match Jmp.kind j1, Jmp.kind j2 with
+        | Goto (Direct t1), Goto (Direct t2) ->
+          begin match Jmp.cond j1 with
+            | BinOp (NEQ, Var v, Int w)
+              when Var.is_virtual v
+                && Word.is_zero w
+                && not (Blk.defines_var blk v)
+                && not (used_after sub v tid doms) ->
+              !!(Some (v, tid, t1, t2))
+            | _ -> !!None
+          end
+        | _ -> !!None
+      end
+    | _ -> !!None
+
+  let rec loop (sub : sub term) : sub term KB.t =
+    let cfg = Sub.to_graph sub in
+    let doms = Graphlib.dominators (module G) cfg G.start in
+    Term.enum blk_t sub |>
+    KB.Seq.find_map ~f:(find_candidate cfg doms sub) >>= function
+    | None -> !!sub
+    | Some (v, tid, k1, k2) ->
+      match Seq.to_list @@ G.Node.preds tid cfg with
+      | [t1; t2] ->
+        begin transform cfg doms v t1 t2 k1 k2 tid sub >>= function
+          | None -> !!sub
+          | Some sub -> loop sub
+        end
+      | _ -> failwith "Expected two predecessors"
+
+  let go : t = fun _ sub -> loop sub
+
+end
+
 module Nop : S = struct
 
-  let go _ sub = !!sub
+  let go : t = fun _ sub -> !!sub
 
 end
 
@@ -450,7 +607,9 @@ let register : (module S) -> unit = Vector.append passes
 let () =
   register (module Builtin);
   register (module Merge);
-  register (module Contract)
+  register (module Contract);
+  register (module Cond);
+  register (module Builtin)
 
 let apply hvars sub (module O : S) = O.go hvars sub
 
