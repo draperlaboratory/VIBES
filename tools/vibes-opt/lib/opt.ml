@@ -478,6 +478,19 @@ module Cond : S = struct
     let j22 = Jmp.create_goto ~tid @@ Direct k2 in
     j21, j22
 
+  let update
+      (sub : sub term)
+      (b1 : blk term)
+      (b2 : blk term)
+      (j11 : jmp term)
+      (j12 : jmp term)
+      (j21 : jmp term)
+      (j22 : jmp term)
+      (tid_ : tid) : sub term =
+    let b1 = Term.(update jmp_t (update jmp_t b1 j11) j12) in
+    let b2 = Term.(append jmp_t (update jmp_t b2 j21) j22) in
+    Term.(remove blk_t (update blk_t (update blk_t sub b1) b2) tid_)
+
   let transform
       (cfg : G.t)
       (doms : tid tree)
@@ -517,19 +530,7 @@ module Cond : S = struct
                 if and_ then transform_and j11 j12 d1 k2
                 else transform_or j11 j12 d1 k1 in
               let+ j21, j22 = transform_snd j21 d2 k1 k2 in
-              let b1 =
-                Term.update jmp_t
-                  (Term.update jmp_t b1 j11)
-                  j12 in
-              let b2 =
-                Term.append jmp_t
-                  (Term.update jmp_t b2 j21)
-                  j22 in
-              Term.remove blk_t
-                (Term.update blk_t
-                   (Term.update blk_t sub b1)
-                   b2)
-                tid |> Option.return
+              Some (update sub b1 b2 j11 j12 j21 j22 tid)
             | _ -> !!None
           end
         | _ -> !!None
@@ -552,11 +553,9 @@ module Cond : S = struct
       (sub : sub term)
       (blk : blk term) : (var * tid * tid * tid) option KB.t =
     let tid = Term.tid blk in
-    guard begin
-      Term.length def_t blk = 0
-      && G.Node.degree tid cfg ~dir:`In = 2
-      && G.Node.degree tid cfg ~dir:`Out = 2
-    end @@ fun () ->
+    guard (Term.length def_t blk = 0) @@ fun () ->
+    guard (G.Node.degree tid cfg ~dir:`In = 2) @@ fun () ->
+    guard (G.Node.degree tid cfg ~dir:`Out = 2) @@ fun () ->
     Seq.take (Term.enum jmp_t blk) 2 |>
     Seq.to_list |> function
     | [j1; j2] ->
