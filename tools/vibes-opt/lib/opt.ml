@@ -494,9 +494,10 @@ module Cond : S = struct
     let s1 = G.Node.degree t1 cfg ~dir:`Out in
     let s2 = G.Node.degree t1 cfg ~dir:`Out in
     guard ((s1 <> 2 && s2 <> 2) || (s1 = 2 && s2 = 2)) @@ fun () ->
-    let b1, b2, _t1, t2 =
-      if Tree.is_descendant_of doms ~parent:t1 t2
-      then b1, b2, t1, t2 else b2, b1, t2, t1 in
+    let dom12 = Tree.is_descendant_of doms ~parent:t1 t2 in
+    let dom21 = Tree.is_descendant_of doms ~parent:t2 t1 in
+    guard (dom12 || dom21) @@ fun () ->
+    let b1, b2, _t1, t2 = if dom12 then b1, b2, t1, t2 else b2, b1, t2, t1 in
     let d1 = Option.value_exn (last_def_of b1 v) in
     let d2 = Option.value_exn (last_def_of b2 v) in
     let j11 = Seq.hd_exn @@ Term.enum jmp_t b1 in
