@@ -502,9 +502,6 @@ module Short_circ_cond : S = struct
       (k2 : tid)
       (tid : tid)
       (sub : sub term) : sub term option KB.t =
-    let b1 = Term.find_exn blk_t sub t1 in
-    let b2 = Term.find_exn blk_t sub t2 in
-    guard (Blk.defines_var b1 v && Blk.defines_var b2 v) @@ fun () ->
     (* We expect that the CFG is structured in such a way that one
        block A has two outgoing edges (to B and C), and the other
        block B has only one outgoing edge (to C). *)
@@ -515,32 +512,35 @@ module Short_circ_cond : S = struct
     let dom21 = Tree.is_descendant_of doms ~parent:t2 t1 in
     guard (dom12 || dom21) @@ fun () ->
     (* Get the correct order based on the dominance relation. *)
+    let b1 = Term.find_exn blk_t sub t1 in
+    let b2 = Term.find_exn blk_t sub t2 in
     let b1, b2, _t1, t2 = if dom12 then b1, b2, t1, t2 else b2, b1, t2, t1 in
-    let d1 = Option.value_exn (last_def_of b1 v) in
-    let d2 = Option.value_exn (last_def_of b2 v) in
-    let j11 = Seq.hd_exn @@ Term.enum jmp_t b1 in
-    let j12 = Seq.nth_exn (Term.enum jmp_t b1) 1 in
-    (* Checking canonical form for the condition again. *)
-    match Jmp.cond j11 with
-    | BinOp (NEQ, Var w, Int i) when Var.same v w && Word.is_zero i ->
-      begin match Jmp.kind j11, Jmp.kind j12 with
-        | Goto (Direct t), Goto (Direct f) ->
-          let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
-          begin match Jmp.kind j21 with
-            | Goto (Direct c) ->
-              let and_ = Tid.equal t t2 && Tid.equal f tid in
-              let or_ = Tid.equal t tid && Tid.equal f t2 in
-              guard (Tid.equal c tid && (or_ || and_)) @@ fun () ->
-              let j11, j12 =
-                if and_ then transform_and j11 j12 d1 k2
-                else transform_or j11 j12 d1 k1 in
-              let+ j21, j22 = transform_snd j21 d2 k1 k2 in
-              Some (update sub b1 b2 j11 j12 j21 j22 tid)
-            | _ -> !!None
-          end
-        | _ -> !!None
-      end
-    | _ -> !!None
+    match last_def_of b1 v, last_def_of b2 v with
+    | None, _ | _ , None -> !!None
+    | Some d1, Some d2 ->
+      let j11 = Seq.hd_exn @@ Term.enum jmp_t b1 in
+      let j12 = Seq.nth_exn (Term.enum jmp_t b1) 1 in
+      (* Checking canonical form for the condition again. *)
+      match Jmp.cond j11 with
+      | BinOp (NEQ, Var w, Int i) when Var.same v w && Word.is_zero i ->
+        begin match Jmp.kind j11, Jmp.kind j12 with
+          | Goto (Direct t), Goto (Direct f) ->
+            let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
+            begin match Jmp.kind j21 with
+              | Goto (Direct c) ->
+                let and_ = Tid.equal t t2 && Tid.equal f tid in
+                let or_ = Tid.equal t tid && Tid.equal f t2 in
+                guard (Tid.equal c tid && (or_ || and_)) @@ fun () ->
+                let j11, j12 =
+                  if and_ then transform_and j11 j12 d1 k2
+                  else transform_or j11 j12 d1 k1 in
+                let+ j21, j22 = transform_snd j21 d2 k1 k2 in
+                Some (update sub b1 b2 j11 j12 j21 j22 tid)
+              | _ -> !!None
+            end
+          | _ -> !!None
+        end
+      | _ -> !!None
 
   (* Is the var `v` used in any of the blocks dominated by the block
      at `tid`? *)
