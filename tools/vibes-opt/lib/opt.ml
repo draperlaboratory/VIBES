@@ -360,9 +360,8 @@ module Contract : S = struct
            contraction. *)
         if Tid.(tid <> entry_tid)
         && not (Term.has_attr blk Tags.split)
-        && Seq.is_empty @@ Term.enum def_t blk then
-          let jmps = Term.enum jmp_t blk |> Seq.to_list in
-          match jmps with
+        && Term.length def_t blk = 0 then
+          match Term.enum jmp_t blk |> Seq.to_list with
           | [jmp] when Helper.is_unconditional jmp -> begin
               match Jmp.kind jmp with
               | Goto lbl -> Some (tid, lbl)
