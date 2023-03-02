@@ -42,6 +42,9 @@ module Merge : S
 (** Edge contraction. *)
 module Contract : S
 
+(** Short-circuiting conditional simplification. *)
+module Short_circ_cond : S
+
 (** Registers an optimization pass. By default the above passes
     are included. *)
 val register : (module S) -> unit
