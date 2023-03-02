@@ -507,11 +507,11 @@ module Short_circ_cond : S = struct
        block B has only one outgoing edge (to C). *)
     let s1 = G.Node.degree t1 cfg ~dir:`Out in
     let s2 = G.Node.degree t2 cfg ~dir:`Out in
-    guard ((s1 = 2 && s2 = 1) || (s1 = 1 && s2 = 2)) @@ fun () ->
     let dom12 = Tree.is_descendant_of doms ~parent:t1 t2 in
     let dom21 = Tree.is_descendant_of doms ~parent:t2 t1 in
-    guard (dom12 || dom21) @@ fun () ->
-    (* Get the correct order based on the dominance relation. *)
+    guard ((dom12 && s1 = 2 && s2 = 1) ||
+           (dom21 && s1 = 1 && s2 = 2)) @@ fun () ->
+    (* Get the correct order. *)
     let b1 = Term.find_exn blk_t sub t1 in
     let b2 = Term.find_exn blk_t sub t2 in
     let b1, b2, _t1, t2 = if dom12 then b1, b2, t1, t2 else b2, b1, t2, t1 in
@@ -525,12 +525,12 @@ module Short_circ_cond : S = struct
       | BinOp (NEQ, Var w, Int i) when Var.same v w && Word.is_zero i ->
         begin match Jmp.kind j11, Jmp.kind j12 with
           | Goto (Direct t), Goto (Direct f) ->
+            let and_ = Tid.equal t t2 && Tid.equal f tid in
+            let or_ = Tid.equal t tid && Tid.equal f t2 in
+            guard (or_ || and_) @@ fun () ->
             let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
             begin match Jmp.kind j21 with
               | Goto (Direct c) when Tid.equal c tid ->
-                let and_ = Tid.equal t t2 && Tid.equal f tid in
-                let or_ = Tid.equal t tid && Tid.equal f t2 in
-                guard (or_ || and_) @@ fun () ->
                 let j11, j12 =
                   if and_ then transform_and j11 j12 d1 k2
                   else transform_or j11 j12 d1 k1 in
