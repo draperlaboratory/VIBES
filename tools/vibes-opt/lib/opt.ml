@@ -577,7 +577,6 @@ module Short_circ_cond : S = struct
             | BinOp (NEQ, Var v, Int w)
               when Var.is_virtual v
                 && Word.is_zero w
-                && not (Blk.defines_var blk v)
                 && not (used_after sub v tid doms) ->
               !!(Some (v, tid, t1, t2))
             | _ -> !!None
