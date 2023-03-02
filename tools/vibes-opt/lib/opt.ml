@@ -598,10 +598,10 @@ module Short_circ_cond : S = struct
     | Some (v, tid, k1, k2) ->
       match Seq.to_list @@ G.Node.preds tid cfg with
       | [t1; t2] ->
-        begin transform cfg doms v t1 t2 k1 k2 tid sub >>= function
-          | None -> loop sub ~excluded:(Set.add excluded tid)
-          | Some sub -> loop sub ~excluded
-        end
+        let* sub =
+          transform cfg doms v t1 t2 k1 k2 tid sub >>|
+          Option.value ~default:sub in
+        loop sub ~excluded:(Set.add excluded tid)
       | _ ->
         failwithf "Expected two predecessors for block %s"
           (Tid.to_string tid) ()
