@@ -527,10 +527,10 @@ module Short_circ_cond : S = struct
           | Goto (Direct t), Goto (Direct f) ->
             let j21 = Seq.hd_exn @@ Term.enum jmp_t b2 in
             begin match Jmp.kind j21 with
-              | Goto (Direct c) ->
+              | Goto (Direct c) when Tid.equal c tid ->
                 let and_ = Tid.equal t t2 && Tid.equal f tid in
                 let or_ = Tid.equal t tid && Tid.equal f t2 in
-                guard (Tid.equal c tid && (or_ || and_)) @@ fun () ->
+                guard (or_ || and_) @@ fun () ->
                 let j11, j12 =
                   if and_ then transform_and j11 j12 d1 k2
                   else transform_or j11 j12 d1 k1 in
@@ -602,7 +602,9 @@ module Short_circ_cond : S = struct
           | None -> loop sub ~excluded:(Set.add excluded tid)
           | Some sub -> loop sub ~excluded
         end
-      | _ -> failwith "Expected two predecessors"
+      | _ ->
+        failwithf "Expected two predecessors for block %s"
+          (Tid.to_string tid) ()
 
   let go : t = fun _ sub -> loop sub
 
