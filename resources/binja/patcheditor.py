@@ -6,6 +6,7 @@
 # This research was developed with funding from the Defense Advanced
 # Research Projects Agency (DARPA).
 
+import re
 import os
 import json
 import subprocess
@@ -37,6 +38,8 @@ from PySide6.QtWidgets import (
   QMenuBar,
   QMessageBox,
 )
+
+opam_re = re.compile("([A-Z\_]+)='(.*)'; export [A-Z\_]+;\\n")
 
 
 # The main window for holding information about the patches.
@@ -218,8 +221,16 @@ class PatchEditor(QDialog):
         f.write(str(ogre))
         args.append("--ogre=%s" % name)
 
+    # Assuming we installed VIBES to the local opam switch, we should
+    # include the path in our environment.
+    env = os.environ.copy()
+    if "OPAM_SWITCH_PREFIX" not in env:
+      opam = subprocess.check_output(["opam", "env"])
+      for k, v in opam_re.findall(opam.decode("UTF-8")):
+        env[k] = v
+
     print("Running vibes-init in", savedir)
-    proc = subprocess.run(args, cwd=savedir, stderr=subprocess.PIPE)
+    proc = subprocess.run(args, cwd=savedir, stderr=subprocess.PIPE, env=env)
     print("vibes-init exited with code", proc.returncode)
     if proc.returncode != 0:
       utils.eprint(proc.stderr.decode())
