@@ -1,0 +1,33 @@
+FROM ubuntu:20.04
+# https://docs.docker.com/build/building/multi-stage/
+WORKDIR /home/opam/
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-init/bin/main.exe ./vibes-init
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-parse/bin/main.exe ./vibes-parse
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-opt/bin/main.exe ./vibes-opt
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-select/bin/main.exe ./vibes-select
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-as/bin/main.exe ./vibes-as
+COPY --from=vibes:latest /home/opam/vibes-tools/_build/default/tools/vibes-patch/bin/main.exe ./vibes-patch
+COPY --from=vibes:latest /home/opam/MiniZincIDE-2.6.0-bundle-linux-x86_64/bin/minizinc ./minizinc
+COPY --from=vibes:latest /home/opam/boolector/build/bin/boolector ./boolector
+
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/arm.plugin /home/opam/.opam/4.14/lib/bap/arm.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/thumb.plugin /home/opam/.opam/4.14/lib/bap/thumb.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/thumb.plugin /home/opam/.opam/4.14/lib/bap/powerpc.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/optimization.plugin /home/opam/.opam/4.14/lib/bap/optimization.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/disassemble.plugin /home/opam/.opam/4.14/lib/bap/disassemble.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/core_theory.plugin /home/opam/.opam/4.14/lib/bap/core_theory.plugin
+COPY --from=vibes:latest /home/opam/.opam/4.14/lib/bap/bil.plugin /home/opam/.opam/4.14/lib/bap/bil.plugin
+
+COPY --from=vibes:latest /home/opam/.opam/4.14/share/bap/primus/  /home/opam/.opam/4.14/share/bap/primus/
+
+COPY --from=vibes:latest  /usr/bin/zip  /usr/bin/zip
+COPY --from=vibes:latest  /usr/bin/make  /usr/bin/make
+RUN zip --delete /home/opam/.opam/4.14/lib/bap/arm.plugin "*.cma"
+RUN zip --delete /home/opam/.opam/4.14/lib/bap/thumb.plugin "*.cma"
+
+# User gzexe to compress binaries. Is this actually smart?
+RUN gzexe ./*
+RUN rm ./*~
+
+ENV PATH="$PATH:/home/opam/.opam/4.14/bin"
+ENV PATH="$PATH:/home/opam/"
