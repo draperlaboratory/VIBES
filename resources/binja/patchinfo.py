@@ -66,15 +66,18 @@ class PatchInfo:
       p.vars[v.name] = v
     return p
 
+  # Collect the mappings from high-level variables to low-level locations.
   def collect_higher_vars(self, bv):
     end = self.end_addr()
     f = self.function(bv)
 
+    # LLIL at the start of the patch.
     lstart = f.get_low_level_il_at(self.addr)
     if lstart is None:
       utils.eprint("No LLIL instruction found at 0x%x" % self.addr)
       return {}
 
+    # LLIL at the end of the patch.
     lend = f.get_low_level_il_at(end)
     if lend is None:
       utils.eprint("No LLIL instruction found at 0x%x, using 0x%x" % (end, self.addr))
@@ -108,13 +111,17 @@ class PatchInfo:
       for d in bb.dominator_tree_children:
         traverse(d, idxs, ils, finder)
 
+    # LLIL block at the end of our patch.
     bb_patch_ll = f.llil.get_basic_block_at(lend.instr_index)
 
+    # MMLIL mappings at the end of our patch.
     mmlil_idxs = []
     traverse(bb_patch_ll, mmlil_idxs, mmlil, find, start=lend.instr_index)
 
+    # The higher var mappings. This is a one-to-many relationship.
     result = {}
 
+    # Add a mapping.
     def add(name, h):
       if name not in result:
         result[name] = [h]
@@ -124,6 +131,8 @@ class PatchInfo:
             return
         result[name].append(h)
 
+    # Check if the high-level variable is defined at exactly the end of
+    # the patch.
     def defined_after_patch(v, end):
       for d in f.hlil.get_var_definitions(v):
         if d.address == end:
@@ -146,11 +155,16 @@ class PatchInfo:
     # Check for variables that were spilled to the stack.
     def spilled(v):
       for u in mmlil.get_var_uses(v):
+        # Find if a use of this variable reaches our patch.
+        cont = False
         bb_use = mmlil.get_basic_block_at(u.instr_index)
         for i, _ in mmlil_idxs:
           bb_patch_ml = mmlil.get_basic_block_at(i)
-          if not reachable(bb_use, bb_patch_ml, u.address, self.addr):
-            continue
+          if reachable(bb_use, bb_patch_ml, u.address, self.addr):
+            cont = True
+            break
+        if not cont:
+          continue
         # Are we defining a stack variable?
         if not isinstance(u, MediumLevelILSetVar):
           continue
@@ -190,11 +204,13 @@ class PatchInfo:
             return True
       return False
 
+    # Pointer types.
     def is_ptr(type):
       return \
         isinstance(type, ArrayType) or \
         isinstance(type, PointerType)
 
+    # Add the appropriate low-level mapping for the variable `v`.
     def handle_live_var(v):
       if v.source_type == VariableSourceType.RegisterVariableSourceType:
         s = spilled(v)
@@ -209,6 +225,7 @@ class PatchInfo:
         frame = stack_frame(v.storage)
         add(v.name, HigherVar(v.name, frame, HigherVar.FRAME_VAR))
 
+    # Collect the instructions where we will need to check for liveness.
     idxs = []
     if lend.mmlil.hlil:
       idxs.append((lend.mmlil.hlil.instr_index, end))
@@ -258,7 +275,8 @@ class PatchInfo:
 
     # Grab all the known function and data symbols. We should
     # ignore those which were automatically named, to avoid
-    # cluttering the output.
+    # cluttering the output (we make an exception for imported
+    # function symbols).
     flow, fhigh = utils.frame_range(bv)
     for s in bv.get_symbols():
       if not utils.is_valid_sym_name(s):
@@ -277,8 +295,8 @@ class PatchInfo:
         # register with a known value.
         for reg, val in possible_frames:
           off = a - val
-          if (a < val and off >= flow)  or \
-             (a > val and off <= fhigh) or \
+          if (a < val  and off >= flow)  or \
+             (a > val  and off <= fhigh) or \
              (off == 0 and not is_ptr(type)):
             add(s.name, HigherVar(s.name, (reg, off), HigherVar.FRAME_VAR))
 

@@ -170,8 +170,6 @@ class OGRE:
     self.base_address = bv.start
     self.is_little_endian = bv.endianness == Endianness.LittleEndian
     self.entry_point = bv.entry_point
-    if is_thumb:
-      self.entry_point = self.entry_point & ~1
     self.functions = {}
     self.rodata = {}
 
