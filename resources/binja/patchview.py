@@ -161,7 +161,10 @@ class PatchView:
     return self.code_edit.document().toPlainText()
 
   def _save_code(self):
-    db.save_patch_code(self.bv, self.name, self.c_code())
+    c = self.c_code()
+    if c[-1] != '\n':
+      c += '\n'
+    db.save_patch_code(self.bv, self.name, c)
 
   def _load_code(self):
     filename = get_open_filename_input("filename:", "*.c")
